@@ -22,4 +22,38 @@ void FillDepressions(rd::Array2D<label_t> &label, rd::Array2D<float> &dem, const
   }
 }
 
+
+
+
+  { //Depression filling code
+    rd::Array2D<elev_t> dhfilled(dem);
+    for(int i=0;i<(int)dem.size();i++)
+      dhfilled(i) = dem(i);
+
+    //Get the marginal depression cell counts and total elevations
+    progress.start(dem.size());
+    for(unsigned int i=0;i<dem.size();i++){
+      ++progress;
+      auto clabel        = label(i);
+      
+      if(clabel==OCEAN)
+        continue;
+
+      while(depressions[clabel].parent!=OCEAN && !depressions[clabel].ocean_parent)
+        clabel = depressions[clabel].parent;
+
+      if(dem(i)<depressions[clabel].out_elev)
+        dhfilled(i) = depressions[clabel].out_elev;
+    }
+    progress.stop();
+
+    SaveAsNetCDF(dhfilled,"/z/out-dhfilled.nc","value");
+  }
+
+
+
+
+
+
+
 #endif
