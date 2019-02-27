@@ -152,9 +152,26 @@ void FillSpillMerge(
   //Sanity checks
   for(int d=1;d<(int)deps.size();d++){
     const auto &dep = deps.at(d);
-    assert(dep.water_vol==0 || dep.water_vol<=dep.dep_vol);
-    assert(dep.water_vol==0 || (dep.lchild==NO_VALUE && dep.rchild==NO_VALUE) || (dep.lchild!=NO_VALUE && deps.at(dep.lchild).water_vol<dep.water_vol));
-    assert(dep.water_vol==0 || (dep.lchild==NO_VALUE && dep.rchild==NO_VALUE) || (dep.rchild!=NO_VALUE && deps.at(dep.rchild).water_vol<dep.water_vol));
+    if(dep.water_vol==0)
+      continue;
+    assert(dep.water_vol<=dep.dep_vol);
+    if(dep.lchild==NO_VALUE && dep.rchild==NO_VALUE)
+      continue;
+    assert(dep.lchild!=NO_VALUE && dep.rchild!=NO_VALUE);
+    const auto &lchild = deps.at(dep.lchild);
+    const auto &rchild = deps.at(dep.rchild);
+    assert(lchild.water_vol<=lchild.dep_vol && rchild.water_vol<=rchild.dep_vol);
+    if(lchild.water_vol<lchild.dep_vol && rchild.water_vol<rchild.dep_vol)
+      continue;
+    if(dep.water_vol>0){
+      assert(lchild.water_vol==lchild.dep_vol && rchild.water_vol==rchild.dep_vol);
+    }
+    if(lchild.water_vol+rchild.water_vol>dep.water_vol){
+      std::cerr<<"E lchild wv = "<<lchild.water_vol<<std::endl;
+      std::cerr<<"E rchild wv = "<<rchild.water_vol<<std::endl;
+      std::cerr<<"E dep    wv = "<<dep.water_vol<<std::endl;
+      throw std::runtime_error("Depression has less water than its children!");
+    }
   }
 
   std::cerr<<"p Finding filled..."<<std::endl;
