@@ -692,6 +692,29 @@ static void ResolveFlats(
   rd::Array2D<int>          &label,
   rd::Array2D<int8_t>       &flowdirs
 ){
+  DisjointSet ds;
+  std::vector<int> has_edge;
+
+  //Find flats
+  #pragma omp parallel for default(none) shared(pits,labels) reduction(merge:has_edge)
+  for(int i=0;i<pits.size();i++){
+    const auto ci = pits[i];
+    labels(ci)     = i;
+    ds.makeSet(ci);
+    const auto my_elev = dem(ci);
+
+    int cx,cy;
+    pits.iToXY(c,cx,cy);
+    for(int n=1;n<=neighbours;n++){
+      const auto nx = cx+dx[n];
+      const auto ny = cy+dy[n];
+      const auto ni = dem.xyToI(ni);
+      if(dem(ni)==my_elev)
+        ds.union(ci,ni);
+      if(flowdirs(ni)!=NO_FLOW)
+        has_edge.emplace_back(ni);
+    }
+  }
 
 }
 
@@ -712,7 +735,7 @@ static void ResolveFlats(
 //                   flows in order to go "downhill". All cells have a flow
 //                   direction (even flats) except for pit cells.
 template<class elev_t, Topology topo>                                                     
-DepressionHierarchy<elev_t> GetDepressionHierarchy(
+DepressionHierarchy<elev_t> GetDepressionHierarchyParallel(
   const rd::Array2D<elev_t> &dem,
   rd::Array2D<int>          &label,
   rd::Array2D<int8_t>       &flowdirs
@@ -775,30 +798,7 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
       pits.emplace_back(dem.xyToI(x,y));
   }
 
-  DisjointSet ds;
-  std::vector<int> has_edge;
-
-  //Find flats
-  #pragma omp parallel for default(none) shared(pits,labels) reduction(merge:has_edge)
-  for(int i=0;i<pits.size();i++){
-    const auto ci = pits[i];
-    labels(ci)     = i;
-    ds.makeSet(ci);
-    const auto my_elev = dem(ci);
-
-    int cx,cy;
-    pits.iToXY(c,cx,cy);
-    for(int n=1;n<=neighbours;n++){
-      const auto nx = cx+dx[n];
-      const auto ny = cy+dy[n];
-      const auto ni = dem.xyToI(ni);
-      if(dem(ni)==my_elev)
-        ds.union(ci,ni);
-      if(flowdirs(ni)!=NO_FLOW)
-        has_edge.emplace_back(ni);
-    }
-  }
-
+  ResolveFlats(dem,labels,flowdirs);
   
 
 
