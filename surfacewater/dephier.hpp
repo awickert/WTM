@@ -952,9 +952,9 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
 //                   flows in order to go "downhill". All cells have a flow
 //                   direction (even flats) except for pit cells.
 template<class elev_t, Topology topo>                                                     
-DepressionHierarchy<elev_t> GetDepressionHierarchy(
+DepressionHierarchy<elev_t> GetDepressionHierarchy2(
   const rd::Array2D<elev_t> &dem,
-  rd::Array2D<int>          &label,
+  rd::Array2D<dh_label_t>   &label,
   rd::Array2D<int8_t>       &flowdirs
 ){
   rd::ProgressBar progress;
@@ -978,13 +978,13 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
   typedef std::unordered_map<OutletLink, Outlet<elev_t>, OutletHash<elev_t>> outletdb_t;
   outletdb_t outlet_database;
 
-  //Vector for holding pit cells
-  std::vector<int> pits;
+  FlatResolutionParallel<elev_t,topo>(dem, flowdirs);
 
-  //Get flow directions
-  #pragma omp parallel for collapse(2) reduction(merge:pits)
+  #pragma omp parallel for default(none) shared(dem,flowdirs,dx,dy,dr,neighbours) collapse(2)
   for(int y=0;y<dem.height();y++)
   for(int x=0;x<dem.width();x++){
+    if(flowdirs(x,y)!=NO_FLOW)
+      continue;
     double greatest_slope = 0;
     int    flowdir        = NO_FLOW;
     for(int n=1;n<=neighbours;n++){
@@ -997,37 +997,9 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
       }
     }
     flowdirs(x,y) = flowdir;
-    if(flowdir==NO_FLOW)
-      pits.emplace_back(dem.xyToI(x,y));
   }
 
-  DisjointSet ds;
-  std::vector<int> has_edge;
-
-  //Find flats
-  #pragma omp parallel for default(none) shared(pits,labels) reduction(merge:has_edge)
-  for(int i=0;i<pits.size();i++){
-    const auto ci = pits[i];
-    labels(ci)     = i;
-    ds.makeSet(ci);
-    const auto my_elev = dem(ci);
-
-    int cx,cy;
-    pits.iToXY(c,cx,cy);
-    for(int n=1;n<=neighbours;n++){
-      const auto nx = cx+dx[n];
-      const auto ny = cy+dy[n];
-      const auto ni = dem.xyToI(ni);
-      if(dem(ni)==my_elev)
-        ds.union(ci,ni);
-      if(flowdirs(ni)!=NO_FLOW)
-        has_edge.emplace_back(ni);
-    }
-  }
-
-  
-
-
+  GetBasins<elev_t,topo>(dem, flowdirs, outlet_database, label);
 
   //The priority queue ensures that cells are visited in order from lowest to
   //highest. If two or more cells are of equal elevation then the one added last
