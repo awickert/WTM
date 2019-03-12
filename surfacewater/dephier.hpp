@@ -7,6 +7,7 @@
 #include <richdem/common/grid_cell.hpp>
 #include <richdem/common/constants.hpp>
 #include "DisjointDenseIntSet.hpp"
+#include "DisjointHashIntSet.hpp"
 #include "../common/netcdf.hpp"
 #include <algorithm>
 #include <cassert>
@@ -20,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <omp.h>
 
 namespace richdem {
 
@@ -170,8 +172,6 @@ int ModFloor(int a, int n) {
   return ((a % n) + n) % n;
 }
 
-
-
 //Cell is not part of a depression
 const dh_label_t NO_DEP = -1; 
 //Cell is part of the ocean and a place from which we begin searching for
@@ -187,6 +187,273 @@ void CalculateMarginalVolumes(DepressionHierarchy<elev_t> &deps, const rd::Array
 template<class elev_t>
 void CalculateTotalVolumes(DepressionHierarchy<elev_t> &deps);
 
+//TODO
+template<class elev_t>
+using outletdb_t = std::unordered_map<OutletLink, Outlet<elev_t>, OutletHash<elev_t>>;
+
+
+template<class elev_t, Topology topo>
+void ResolveFlat(
+  const uint64_t c0,
+  const rd::Array2D<elev_t> &dem,
+  rd::Array2D<int8_t>       &flowdirs
+){
+  //A D4 or D8 topology can be used.
+  const int *dx, *dy, *dinverse;
+  const double *dr;
+  int neighbours;
+  TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
+
+  std::unordered_set<uint64_t> in_flat;
+  std::deque<uint64_t> lower;
+  //Find lower
+  std::queue<uint64_t> q;
+  q.push(c0);
+  in_flat.insert(c0);
+  while(!q.empty()){
+    const auto ci = q.front();
+    q.pop();
+
+    int cx,cy;
+    dem.iToxy(ci,cx,cy);
+
+    bool has_lower = false;
+    for(int n=1;n<neighbours;n++){
+      const int nx = cx+dx[n];
+      const int ny = cy+dy[n];
+      const int ni = dem.xyToI(nx,ny);
+      if(dem(ci)>dem(nx,ny)){
+        has_lower = true;
+        break;
+      } else if(dem(ci)==dem(nx,ny)){
+        q.push(ni);
+        in_flat.insert(ni);
+      }
+    }
+    if(has_lower)
+      lower.push_back(ci);
+  }
+
+  assert(q.empty());
+
+  //If there is no way out of the flat to lower ground, suck everything
+  //arbitrarily to this one cell
+  if(lower.empty())
+    lower.push_back(c0);
+
+  q = std::queue<uint64_t>(std::move(lower));
+  lower.clear();
+  lower.shrink_to_fit();
+
+  while(!q.empty()){
+    const auto ci = q.front();
+    q.pop();
+
+    int cx,cy;
+    dem.iToxy(ci,cx,cy);
+
+    for(int n=1;n<neighbours;n++){
+      const int nx=cx+dx[n];
+      const int ny=cy+dy[n];
+      const auto ni=dem.xyToI(nx,ny);
+      if(in_flat.count(ni) && flowdirs(ni)==NO_FLOW){
+        flowdirs(ni) = dinverse[n];
+        q.push(ni);
+      }
+    }
+  }
+}
+
+
+
+template<class elev_t, Topology topo>
+void FlatResolutionParallel(
+  const rd::Array2D<elev_t> &dem,
+  rd::Array2D<int8_t>       &flowdirs
+){
+  //A D4 or D8 topology can be used.
+  const int *dx, *dy, *dinverse;
+  const double *dr;
+  int neighbours;
+  TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
+
+  const auto FlatSetCell = [&](
+    const int x,
+    const int y,
+    DisjointHashIntSet<int64_t> &dhis
+  ){
+    bool    has_lower  = false;
+    int64_t nset       = -1;
+    const auto ci      = dem.xyToI(x,y);
+    const auto my_elev = dem(x,y);
+    for(int n=1;n<=neighbours;n++){
+      const int nx     = x+dx[n];
+      const int ny     = y+dy[n];
+      const int ni     = dem.xyToI(nx,ny);
+      const auto nelev = dem(x,y);
+      if(my_elev>nelev){
+        has_lower = true;
+        break;
+      } else if(my_elev==nelev && dhis.isSet(ni)){
+        nset = ni;
+      }
+    }
+
+    if(has_lower)
+      return;
+
+    if(nset==-1){
+      dhis.makeSet(ci);
+    } else {
+      dhis.unionSet(ci,nset);
+    }
+  };
+
+  DisjointHashIntSet<int64_t> dhis;
+
+  #pragma omp declare reduction (merge : DisjointHashIntSet<int64_t>: omp_out=MergeDisjointHashIntSet(omp_out, omp_in))
+
+  int thread_count=-1;
+
+  #pragma omp parallel default(none) shared(dem) reduction(merge:dhis) reduction(max:thread_count)
+  {
+    thread_count = omp_get_num_threads(); //Will be the same for all threads
+    //Calculate horizontal stripes of the dataset to hand to each thread
+    const int tnum   = omp_get_thread_num();
+    const int inc    = dem.height()/thread_count;
+    int lbound = tnum*inc;
+    int ubound = std::max((tnum+1)*inc,dem.height());
+    //But leave a seam between each stripe that will be calculated in serial
+    if(lbound>0)
+      lbound++;
+    if(ubound<dem.height())
+      ubound--;
+
+    for(int y=lbound;y<ubound;y++)
+    for(int x=0;x<dem.width();x++)
+      FlatSetCell(x,y,dhis);
+  }
+
+  //Stitch seams together
+  for(int tnum=1;tnum<thread_count;tnum++){
+    const int inc = dem.height()/thread_count;
+    int lbound    = tnum*inc-1;
+    for(int y=lbound;y<lbound+2;y++)
+    for(int x=0;x<dem.width();x++)
+      FlatSetCell(x,y,dhis);
+  }
+
+  //Identify unique flats
+  std::vector<int64_t> uflats;
+  for(const auto &kv: dhis.getParentData())
+    uflats.push_back(dhis.findSet(kv.second));
+  auto last = std::unique(uflats.begin(), uflats.end());
+  uflats.erase(last, uflats.end()); 
+
+  dhis.clear();
+  dhis.shrink_to_fit();
+
+  //For each flat, resolve it
+  #pragma omp parallel for schedule(dynamic)
+  for(unsigned int i=0;i<uflats.size();i++)
+    ResolveFlat<elev_t,topo>(uflats[i],dem,flowdirs);
+}
+
+
+
+template<class elev_t>
+outletdb_t<elev_t>& MergeOutletDatabases(outletdb_t<elev_t> &out, outletdb_t<elev_t> &in){
+  for(const auto &kv: in){
+    if(out.count(kv.first)==0){
+      out[kv.first] = kv.second;
+      continue;
+    }
+
+    auto& oo = out[kv.first];
+    if(oo.out_elev>kv.second.out_elev){
+      oo.out_elev = kv.second.out_elev;
+      oo.out_cell = kv.second.out_cell;
+    }
+  }
+
+  return out;
+}
+
+
+
+template<class elev_t, Topology topo>
+void GetBasins(
+  const rd::Array2D<elev_t> &dem,
+  rd::Array2D<int8_t>       &flowdirs,
+  outletdb_t<elev_t>        &outlet_database,
+  rd::Array2D<dh_label_t>   &labels
+){
+  //A D4 or D8 topology can be used.
+  const int *dx, *dy, *dinverse;
+  const double *dr;
+  int neighbours;
+  TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
+
+
+  //Identify pit cells
+  std::vector<int64_t> pit_cells;
+  #pragma omp declare reduction (merge : std::vector<int64_t> :  omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
+  #pragma omp parallel for reduction(merge:pit_cells)
+  for(auto c=flowdirs.i0();c<flowdirs.size();c++){
+    if(flowdirs(c)==NO_FLOW)
+      pit_cells.push_back(c);
+  }
+
+  #pragma omp declare reduction (merge : outletdb_t<elev_t>: omp_out=MergeOutletDatabases(omp_out, omp_in))
+
+  #pragma omp parallel for schedule(dynamic) reduction(merge:outlet_database)
+  for(unsigned int i=0;i<pit_cells.size();i++){
+    std::queue<uint64_t> q;
+    const int c0 = pit_cells[i];
+    q.push(c0);
+    labels(c0) = c0;
+
+    while(!q.empty()){
+      const auto ci = q.front();
+      q.pop();
+      const auto clabel = labels(ci);
+      const auto celev  = dem(ci);
+
+      int cx,cy;
+      dem.iToxy(ci,cx,cy);
+
+      for(int n=1;n<neighbours;n++){
+        const int nx = cx+dx[n];
+        const int ny = cy+dy[n];
+        const auto ni=dem.xyToI(nx,ny);
+        const auto nlabel=labels(ni);
+        if(flowdirs(nx,ny)==dinverse[n]){ //Flows into me
+          q.push(ni);
+          labels(ni) = labels(ci);
+        } else if (nlabel!=clabel) {
+          auto out_cell = ci;    //Pretend focal cell is the outlet
+          auto out_elev = celev; //Note its height
+
+          if(dem(ni)>out_elev){  //Check to see if we were wrong and the neighbour cell is higher.
+            out_cell = ni;       //Neighbour cell was higher. Note it.
+            out_elev = dem(ni);  //Note neighbour's elevation
+          }
+
+          const OutletLink olink(clabel,nlabel);      //Create outlet link (order of clabel and nlabel doesn't matter)
+          if(outlet_database.count(olink)!=0){        //Determine if the outlet is already present
+            auto &outlet = outlet_database.at(olink); //It was. Use the outlet link to get the outlet information
+            if(outlet.out_elev>out_elev){             //Is the previously stored link higher than the new one?
+              outlet.out_cell = out_cell;             //Yes. So update the link with new outlet cell
+              outlet.out_elev = out_elev;             //Also, update the outlet's elevation
+            }
+          } else {                                    //No preexisting link found; create a new one
+            outlet_database[olink] = Outlet<elev_t>(clabel,nlabel,out_cell,out_elev);   
+          }
+        }
+      }
+    }
+  }
+}
 
 
 //Calculate the hierarchy of depressions. Takes as input a digital elevation
@@ -666,17 +933,6 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
   std::cerr<<"t Depression Hierarchy Wall-Time = "<<timer_overall.stop()<<" s"<<std::endl;
 
   return depressions;
-}
-
-
-
-template<class elev_t, Topology topo>
-static void ResolveFlats(
-  const rd::Array2D<elev_t> &dem,
-  rd::Array2D<int>          &label,
-  rd::Array2D<int8_t>       &flowdirs
-){
-
 }
 
 
