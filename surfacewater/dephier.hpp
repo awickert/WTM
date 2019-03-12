@@ -216,26 +216,10 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
   std::cerr<<"\033[91m##########Getting depression hierarchy\033[39m"<<std::endl;
 
   //A D4 or D8 topology can be used.
-  const int    *dx;
-  const int    *dy;
-  const int    *dinverse;
+  const int *dx, *dy, *dinverse;
   const double *dr;
-  int     neighbours;
-  if(topo==Topology::D4){
-    dx         = d4x;
-    dy         = d4y;
-    dinverse   = d4_inverse;
-    dr         = d4r;
-    neighbours = 4;
-  } else if(topo==Topology::D8){
-    dx         = d8x;
-    dy         = d8y;
-    dinverse   = d8_inverse;
-    dr         = d8r;
-    neighbours = 8;    
-  } else {
-    throw std::runtime_error("Unrecognised topology!");
-  }
+  int neighbours;
+  TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
 
   //Depressions are identified by a number [0,*). The ocean is always
   //"depression" 0. This vector holds the depressions.
@@ -723,24 +707,10 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy(
 
   std::cerr<<"\033[91m##########Getting depression hierarchy\033[39m"<<std::endl;
 
-  //A D4 or D8 topology can be used.
-  const int    *dx;
-  const int    *dy;
-  const int    *dinverse;
-  int     neighbours;
-  if(topo==Topology::D4){
-    dx         = d4x;
-    dy         = d4y;
-    dinverse   = d4_inverse;
-    neighbours = 4;
-  } else if(topo==Topology::D8){
-    dx         = d8x;
-    dy         = d8y;
-    dinverse   = d8_inverse;
-    neighbours = 8;    
-  } else {
-    throw std::runtime_error("Unrecognised topology!");
-  }
+  const int *dx, *dy, *dinverse;
+  const double *dr;
+  int neighbours;
+  TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
 
   //Depressions are identified by a number [0,*). The ocean is always
   //"depression" 0. This vector holds the depressions.
