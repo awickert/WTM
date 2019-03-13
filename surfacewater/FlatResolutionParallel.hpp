@@ -39,11 +39,13 @@ void ResolveFlat(
     for(int n=1;n<neighbours;n++){
       const int nx = cx+dx[n];
       const int ny = cy+dy[n];
+      if(!dem.inGrid(nx,ny))
+        continue;
       const int ni = dem.xyToI(nx,ny);
       if(dem(ci)>dem(nx,ny)){
         has_lower = true;
         break;
-      } else if(dem(ci)==dem(nx,ny)){
+      } else if(dem(ci)==dem(nx,ny) && in_flat.count(ni)==0){
         q.push(ni);
         in_flat.insert(ni);
       }
@@ -73,6 +75,8 @@ void ResolveFlat(
     for(int n=1;n<neighbours;n++){
       const int nx=cx+dx[n];
       const int ny=cy+dy[n];
+      if(!dem.inGrid(nx,ny))
+        continue;
       const auto ni=dem.xyToI(nx,ny);
       if(in_flat.count(ni) && flowdirs(ni)==NO_FLOW){
         flowdirs(ni) = dinverse[n];
@@ -107,6 +111,8 @@ void FlatResolutionParallel(
     for(int n=1;n<=neighbours;n++){
       const int nx     = x+dx[n];
       const int ny     = y+dy[n];
+      if(!dem.inGrid(nx,ny))
+        continue;
       const int ni     = dem.xyToI(nx,ny);
       const auto nelev = dem(x,y);
       if(my_elev>nelev){
