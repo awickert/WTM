@@ -258,6 +258,8 @@ void GetBasins(
       for(int n=1;n<neighbours;n++){
         const int nx = cx+dx[n];
         const int ny = cy+dy[n];
+        if(!dem.inGrid(nx,ny))
+          continue;
         const auto ni=dem.xyToI(nx,ny);
         const auto nlabel=labels(ni);
         if(flowdirs(nx,ny)==dinverse[n]){ //Flows into me
