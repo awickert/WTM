@@ -146,7 +146,7 @@ void FlatResolutionParallel(
     const int tnum   = omp_get_thread_num();
     const int inc    = dem.height()/thread_count;
     int lbound = tnum*inc;
-    int ubound = std::max((tnum+1)*inc,dem.height());
+    int ubound = std::min((tnum+1)*inc,dem.height());
     //But leave a seam between each stripe that will be calculated in serial
     if(lbound>0)
       lbound++;
