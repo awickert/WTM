@@ -60,7 +60,7 @@ class DisjointHashIntSet {
     parent[n] = n;
   }
 
-  bool isSet(const T n){
+  bool isSet(const T n) const {
     return rank.count(n)!=0;
   }
 
