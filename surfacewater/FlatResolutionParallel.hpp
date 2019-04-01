@@ -208,7 +208,7 @@ void FlatResolutionParallel(
   std::vector<int64_t> vuflats(uflats.begin(),uflats.end());
 
   //For each flat, resolve it
-  #pragma omp parallel for schedule(dynamic)
+  #pragma omp parallel for schedule(guided)
   for(unsigned int i=0;i<vuflats.size();i++)
     ResolveFlat<elev_t,flowdir_t,topo>(vuflats[i],dhis,dem,flowdirs);
 

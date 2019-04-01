@@ -785,7 +785,7 @@ void GetBasins(
 
   //For each depression, we identify all of its cells and give them all the same
   //label.
-  #pragma omp parallel for default(none) shared(std::cerr,dephier,seed_cells,dem,labels,flowdirs,dx,dy,dinverse,neighbours) schedule(dynamic)
+  #pragma omp parallel for default(none) shared(std::cerr,dephier,seed_cells,dem,labels,flowdirs,dx,dy,dinverse,neighbours) schedule(guided)
   for(unsigned int i=0;i<seed_cells.size();i++){
     std::queue<uint64_t> q;
     const int c0 = seed_cells[i];
