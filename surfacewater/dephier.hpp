@@ -741,7 +741,7 @@ void GetBasins(
     int cx,cy;
     dem.iToxy(c,cx,cy);
     if(labels(c)==OCEAN){
-      for(int n=1;n<neighbours;n++){
+      for(int n=1;n<=neighbours;n++){
         const int nx = cx+dx[n];
         const int ny = cy+dy[n];
         if(labels.inGrid(nx,ny) && labels(nx,ny)!=OCEAN){
@@ -810,7 +810,7 @@ void GetBasins(
       int cx,cy;
       dem.iToxy(ci,cx,cy);
 
-      for(int n=1;n<neighbours;n++){
+      for(int n=1;n<=neighbours;n++){
         const int nx = cx+dx[n];
         const int ny = cy+dy[n];
         if(!dem.inGrid(nx,ny))

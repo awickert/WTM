@@ -43,7 +43,7 @@ void ResolveFlat(
     const auto my_elev = dem(ci);
 
     bool has_lower = false;             //Does it have a lower neighbour?
-    for(int n=1;n<neighbours;n++){
+    for(int n=1;n<=neighbours;n++){
       const int  nx      = cx+dx[n];    //Get neighbour coordinates
       const int  ny      = cy+dy[n];
       const auto in_grid = dem.inGrid(nx,ny); //Is neighbour in grid?
@@ -96,7 +96,7 @@ void ResolveFlat(
     int cx,cy;
     dem.iToxy(ci,cx,cy);
 
-    for(int n=1;n<neighbours;n++){
+    for(int n=1;n<=neighbours;n++){
       const int nx=cx+dx[n];
       const int ny=cy+dy[n];
       if(!dem.inGrid(nx,ny))
