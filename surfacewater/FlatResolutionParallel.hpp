@@ -130,7 +130,7 @@ void FlatResolutionParallel(
 
   //Assign steepest-slope flow directions to all cells that don't already have
   //them
-  #pragma omp parallel for
+  #pragma omp parallel for default(none) shared(dem,flowdirs,dx,dy,dr,neighbours) collapse(2)
   for(int y=0;y<dem.height();y++)
   for(int x=0;x<dem.width ();x++){
     if(flowdirs(x,y)!=NO_FLOW)
