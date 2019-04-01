@@ -123,6 +123,7 @@ void FlatResolutionParallel(
   int neighbours;
   TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
 
+  std::cerr<<"Assign flow directions..."<<std::endl;
   //Assign steepest-slope flow directions to all cells that don't already have
   //them
   #pragma omp parallel for default(none) shared(dem,flowdirs,dx,dy,dr,neighbours) collapse(2)
@@ -159,6 +160,7 @@ void FlatResolutionParallel(
   DisjointHashIntSet<int64_t> dhis;
 
 
+  std::cerr<<"Create and merge flats..."<<std::endl;
   //Identifies whether a cell is in a flat and, if so, makes a note of this and
   //merges the cell into any preexisting flats its neighbours at the same
   //elevation are at. Even if the cell is not part of a flat, any neighbours of
@@ -195,6 +197,7 @@ void FlatResolutionParallel(
   //   std::cerr<<std::endl;
   // }
 
+  std::cerr<<"Identify unique flats..."<<std::endl;
   //Identify unique flats. If we don't do this, than more than one process might
   //begin filling in a flat at once! This takes O(N) time in the number of cells
   //in flats, but could be parallelized with an appropriate hash table (C++ hash
@@ -207,6 +210,7 @@ void FlatResolutionParallel(
   //Transfor into a vector so we can parallelize flat resolution
   std::vector<int64_t> vuflats(uflats.begin(),uflats.end());
 
+  std::cerr<<"Resolve flats..."<<std::endl;
   //For each flat, resolve it
   #pragma omp parallel for schedule(guided)
   for(unsigned int i=0;i<vuflats.size();i++)
