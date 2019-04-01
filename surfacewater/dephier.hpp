@@ -227,22 +227,21 @@ void GetBasins(
   int neighbours;
   TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
 
-
   //Identify pit cells
-  std::vector<int64_t> pit_cells;
+  std::vector<int64_t> seed_cells;
   #pragma omp declare reduction (merge : std::vector<int64_t> :  omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-  #pragma omp parallel for reduction(merge:pit_cells)
+  #pragma omp parallel for reduction(merge:seed_cells)
   for(auto c=flowdirs.i0();c<flowdirs.size();c++){
     if(flowdirs(c)==NO_FLOW)
-      pit_cells.push_back(c);
+      seed_cells.push_back(c);
   }
 
   #pragma omp declare reduction (merge : outletdb_t<elev_t>: omp_out=MergeOutletDatabases(omp_out, omp_in))
 
   #pragma omp parallel for schedule(dynamic) reduction(merge:outlet_database)
-  for(unsigned int i=0;i<pit_cells.size();i++){
+  for(unsigned int i=0;i<seed_cells.size();i++){
     std::queue<uint64_t> q;
-    const int c0 = pit_cells[i];
+    const int c0 = seed_cells[i];
     q.push(c0);
     labels(c0) = c0;
 
