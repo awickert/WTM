@@ -282,7 +282,6 @@ void GetBasins(
   //label.
   #pragma omp parallel for default(none) shared(std::cerr,dephier,seed_cells,dem,labels,flowdirs,dx,dy,dinverse,neighbours) schedule(dynamic)
   for(unsigned int i=0;i<seed_cells.size();i++){
-    std::cerr<<"Considering "<<seed_cells[i]<<std::endl;
     std::queue<uint64_t> q;
     const int c0 = seed_cells[i];
     q.push(c0);
