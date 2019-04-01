@@ -131,6 +131,10 @@ void FlatResolutionParallel(
   for(int x=0;x<dem.width ();x++){
     if(flowdirs(x,y)!=NO_FLOW)
       continue;
+    if(flowdirs.isEdgeCell(x,y)){
+      flowdirs(x,y) = NO_FLOW;
+      continue;
+    }
     double greatest_slope = 0;
     auto   greatest_n    = NO_FLOW;
     const auto my_elev = dem(x,y);
