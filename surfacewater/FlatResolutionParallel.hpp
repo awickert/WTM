@@ -154,8 +154,7 @@ void FlatResolutionParallel(
     flowdirs(x,y) = greatest_n;
   }
 
-  // std::cerr<<"Flowdirs:";
-  // flowdirs.printAll();
+  // flowdirs.printAll("Flowdirs before resolving");
 
   DisjointHashIntSet<int64_t> dhis;
 
@@ -212,6 +211,23 @@ void FlatResolutionParallel(
   #pragma omp parallel for schedule(dynamic)
   for(unsigned int i=0;i<vuflats.size();i++)
     ResolveFlat<elev_t,flowdir_t,topo>(vuflats[i],dhis,dem,flowdirs);
+
+  // flowdirs.printAll("Flowdirs in FlatResolutionParallel");
+
+  #ifndef NDEBUG
+    for(int y=0;y<flowdirs.height();y++)
+    for(int x=0;x<flowdirs.width ();x++){
+      if(flowdirs(x,y)==NO_FLOW)
+        continue;
+      const auto cfd = flowdirs(x,y);
+      const int  nx  = x+dx[cfd];
+      const int  ny  = y+dy[cfd];
+      if(dinverse[cfd]==flowdirs(nx,ny)){
+        std::cerr<<"Circular flow at x="<<x<<", y="<<y<<", ci="<<flowdirs.xyToI(x,y)<<std::endl;
+        throw std::runtime_error("Circular flow detected!");
+      }
+    }
+  #endif
 }
 
 }
