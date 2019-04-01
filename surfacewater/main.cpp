@@ -43,8 +43,6 @@ int main(int argc, char **argv){
   //connecting them
   auto deps = dh::GetDepressionHierarchy2<float,rd::Topology::D8>(topo, label, flowdirs);
 
-  dh::FillSpillMerge(topo, label, flowdirs, deps, wtd);
-
   //TODO: Remove. For viewing test cases.
   if(label.width()<1000){
     //GraphViz dot-style output for drawing depression hierarchy graphs.
@@ -58,6 +56,8 @@ int main(int argc, char **argv){
     }
     fgraph<<"}\n";
   }
+
+  dh::FillSpillMerge(topo, label, flowdirs, deps, wtd);
 
   for(unsigned int i=0;i<topo.size();i++)
     if(!topo.isNoData(i))
