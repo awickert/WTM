@@ -41,6 +41,13 @@ class DisjointHashIntSet {
     }
   }
 
+  T _findSet(const T n) const {
+    if(parent.at(n)==n)
+      return n;
+    else
+      return findSet(parent.at(n));
+  }
+
  public:
   //Construct a DisjointHashIntSet without any sets. Sets will be dynamically
   //created as the data structure is used.
@@ -66,6 +73,12 @@ class DisjointHashIntSet {
 
   T findSet(const T n){
     makeSet(n);
+    return _findSet(n);
+  }
+
+  T findSet(const T n) const {
+    if(parent.count(n)==0)
+      throw std::runtime_error("Could not get key from set!");
     return _findSet(n);
   }
 
@@ -123,6 +136,11 @@ class DisjointHashIntSet {
 
   //Returns true if A and B belong to the same set.
   bool sameSet(const T a, const T b){
+    return findSet(a)==findSet(b);
+  }
+
+  //Returns true if A and B belong to the same set.
+  bool sameSet(const T a, const T b) const {
     return findSet(a)==findSet(b);
   }
 
