@@ -102,7 +102,7 @@ void ResolveFlat(
       if(!dem.inGrid(nx,ny))
         continue;
       const auto ni=dem.xyToI(nx,ny);
-      if(visited.count(ni) && flowdirs(ni)==NO_FLOW && ni!=c0){
+      if(visited.count(ni) && flowdirs(ni)==NO_FLOW && ni!=c0 && !flowdirs.isEdgeCell(nx,ny)){
         flowdirs(ni) = dinverse[n];
         q.push(ni);
       }
