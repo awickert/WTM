@@ -24,8 +24,8 @@ void ResolveFlat(
   const Array2D<elev_t> &dem,
   Array2D<flowdir_t>    &flowdirs
 ){
-  #pragma omp critical
-  std::cout<<"Found flat at "<<c0<<std::endl;
+  // #pragma omp critical
+  // std::cout<<"Found flat at "<<c0<<std::endl;
   //A D4 or D8 topology can be used.
   const int *dx, *dy, *dinverse;
   const double *dr;
@@ -76,17 +76,17 @@ void ResolveFlat(
   if(lower.empty())
     lower.push_back(c0);
 
-  std::cerr<<"Lower: ";
-  for(const auto &x: lower)
-    std::cerr<<x<<" ";
-  std::cerr<<std::endl;
+  // std::cerr<<"Lower: ";
+  // for(const auto &x: lower)
+  //   std::cerr<<x<<" ";
+  // std::cerr<<std::endl;
 
-  std::cerr<<"Visited:\n";
-  for(int y=0;y<dem.height();y++){
-    for(int x=0;x<dem.width();x++)
-      std::cerr<<(int)visited.count(dem.xyToI(x,y));
-    std::cerr<<std::endl;
-  }
+  // std::cerr<<"Visited:\n";
+  // for(int y=0;y<dem.height();y++){
+  //   for(int x=0;x<dem.width();x++)
+  //     std::cerr<<(int)visited.count(dem.xyToI(x,y));
+  //   std::cerr<<std::endl;
+  // }
 
   //Let's visit all of the cells in the flat using a breadth-first traversal,
   //starting at the lower edges
@@ -155,8 +155,8 @@ void FlatResolutionParallel(
     flowdirs(x,y) = greatest_n;
   }
 
-  std::cerr<<"Flowdirs:";
-  flowdirs.printAll();
+  // std::cerr<<"Flowdirs:";
+  // flowdirs.printAll();
 
   DisjointHashIntSet<int64_t> dhis;
 
@@ -186,16 +186,16 @@ void FlatResolutionParallel(
     }
   }
 
-  std::cerr<<"Sets:\n";
-  for(int y=0;y<dem.height();y++){
-    for(int x=0;x<dem.width();x++){
-      if(dhis.isSet(dem.xyToI(x,y)))
-        std::cerr<<std::setw(3)<<dhis.findSet(dem.xyToI(x,y))<<" ";
-      else
-        std::cerr<<std::setw(3)<<"-"<<" ";
-    }
-    std::cerr<<std::endl;
-  }
+  // std::cerr<<"Sets:\n";
+  // for(int y=0;y<dem.height();y++){
+  //   for(int x=0;x<dem.width();x++){
+  //     if(dhis.isSet(dem.xyToI(x,y)))
+  //       std::cerr<<std::setw(3)<<dhis.findSet(dem.xyToI(x,y))<<" ";
+  //     else
+  //       std::cerr<<std::setw(3)<<"-"<<" ";
+  //   }
+  //   std::cerr<<std::endl;
+  // }
 
   //Identify unique flats. If we don't do this, than more than one process might
   //begin filling in a flat at once! This takes O(N) time in the number of cells
