@@ -29,9 +29,9 @@ void ResolveFlat(
 
   //Use a breadth-first search to identify all those cells on the edge of the
   //flat
-  std::unordered_set<uint64_t> visited; //Cells we've visited (for ensuring BFS progresses)
-  std::deque<uint64_t> lower;           //Cells which have lower neighbours (edge of flat)
-  std::queue<uint64_t> q;               //Frontier of the BFS
+  std::unordered_set<uint64_t> visited(1000); //Cells we've visited (for ensuring BFS progresses)
+  std::deque<uint64_t> lower;                 //Cells which have lower neighbours (edge of flat)
+  std::queue<uint64_t> q;                     //Frontier of the BFS
   q.push(c0);
   visited.insert(c0);
   while(!q.empty()){
@@ -200,7 +200,7 @@ void FlatResolutionParallel(
   //in flats, but could be parallelized with an appropriate hash table (C++ hash
   //table doesn't allow random access to entries) and benign race conditions
   //arising from finding parents in the disjoint-set.
-  std::unordered_set<int64_t> uflats;
+  std::unordered_set<int64_t> uflats(1000);
   for(const auto &kv: dhis.getParentData())
     uflats.insert(dhis.findSet(kv.second));
 

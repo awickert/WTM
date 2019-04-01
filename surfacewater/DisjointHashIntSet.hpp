@@ -51,7 +51,10 @@ class DisjointHashIntSet {
  public:
   //Construct a DisjointHashIntSet without any sets. Sets will be dynamically
   //created as the data structure is used.
-  DisjointHashIntSet() = default;
+  DisjointHashIntSet(){
+    rank.reserve(1000);
+    parent.reserve(1000);
+  }
 
   //Create a DisjointHashIntSet with enough space for `N` sets initially.
   DisjointHashIntSet(const T N){
