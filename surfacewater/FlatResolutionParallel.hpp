@@ -165,7 +165,7 @@ void FlatResolutionParallel(
   //the same elevation which are in flats are merged into this cell. In this
   //way, we find the drainage zones of the flat.
   #pragma omp declare reduction (merge : DisjointHashIntSet<int64_t>: omp_out=MergeDisjointHashIntSet(omp_out, omp_in))
-  #pragma omp parallel for default(none) shared(dem,flowdirs,dx,dy,neighbours) reduction(merge:dhis)
+  #pragma omp parallel for collapse(2) default(none) shared(dem,flowdirs,dx,dy,neighbours) reduction(merge:dhis)
   for(int y=0;y<dem.height();y++)
   for(int x=0;x<dem.width();x++){
     const auto ci         = dem.xyToI(x,y);  //Flat index of cell
