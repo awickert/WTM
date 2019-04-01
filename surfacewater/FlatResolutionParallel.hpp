@@ -42,10 +42,10 @@ void ResolveFlat(
       if(!dem.inGrid(nx,ny))
         continue;
       const int ni = dem.xyToI(nx,ny);
-      if(dem(ci)>dem(nx,ny)){
+      if(dem(ci)>dem(ni)){
         has_lower = true;
         break;
-      } else if(dem(ci)==dem(nx,ny) && in_flat.count(ni)==0){
+      } else if(dem(ci)==dem(ni) && in_flat.count(ni)==0){
         q.push(ni);
         in_flat.insert(ni);
       }
