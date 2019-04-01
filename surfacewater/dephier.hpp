@@ -758,7 +758,7 @@ void GetBasins(
   ocean_cells.clear();
   ocean_cells.shrink_to_fit();
 
-  flowdirs.printAll();
+  // flowdirs.printAll();
 
   dephier.resize(seed_cells.size()+1); //Add one for the ocean
 
@@ -824,8 +824,8 @@ void GetBasins(
     }
   }
 
-  std::cerr<<"Labels in GetBasins\n";
-  labels.printAll();
+  // std::cerr<<"Labels in GetBasins\n";
+  // labels.printAll();
 
   //TODO: Testing
   for(auto i=labels.i0();i<labels.size();i++)
@@ -867,25 +867,25 @@ void GetBasins(
     }
   }
 
-  std::cout<<"Outlet database:\n";
-  for(const auto &x: outlet_database)
-    std::cout<<x.second.depa<<" "<<x.second.depb<<" "<<x.second.out_elev<<std::endl;
+  // std::cout<<"Outlet database:\n";
+  // for(const auto &x: outlet_database)
+  //   std::cout<<x.second.depa<<" "<<x.second.depb<<" "<<x.second.out_elev<<std::endl;
 
-  std::cout<<"Labels:"<<std::endl;
-  for(int y=0;y<labels.height();y++){
-    for(int x=0;x<labels.width();x++){
-      std::cout<<std::setw(4)<<labels(x,y)<<" ";
-    }
-    std::cout<<std::endl;
-  }
+  // std::cout<<"Labels:"<<std::endl;
+  // for(int y=0;y<labels.height();y++){
+  //   for(int x=0;x<labels.width();x++){
+  //     std::cout<<std::setw(4)<<labels(x,y)<<" ";
+  //   }
+  //   std::cout<<std::endl;
+  // }
 
-  std::cout<<"Flowdirs:"<<std::endl;
-  for(int y=0;y<flowdirs.height();y++){
-    for(int x=0;x<flowdirs.width();x++){
-      std::cout<<std::setw(4)<<(int)flowdirs(x,y)<<" ";
-    }
-    std::cout<<std::endl;
-  }
+  // std::cout<<"Flowdirs:"<<std::endl;
+  // for(int y=0;y<flowdirs.height();y++){
+  //   for(int x=0;x<flowdirs.width();x++){
+  //     std::cout<<std::setw(4)<<(int)flowdirs(x,y)<<" ";
+  //   }
+  //   std::cout<<std::endl;
+  // }
 }
 
 
