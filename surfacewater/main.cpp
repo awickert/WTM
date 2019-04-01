@@ -41,7 +41,7 @@ int main(int argc, char **argv){
 
   //Generate flow directions, label all the depressions, and get the hierarchy
   //connecting them
-  auto deps = dh::GetDepressionHierarchy<float,rd::Topology::D8>(topo, label, flowdirs);
+  auto deps = dh::GetDepressionHierarchy2<float,rd::Topology::D8>(topo, label, flowdirs);
 
   dh::FillSpillMerge(topo, label, flowdirs, deps, wtd);
 
