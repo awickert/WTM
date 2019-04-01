@@ -758,6 +758,11 @@ void GetBasins(
   ocean_cells.clear();
   ocean_cells.shrink_to_fit();
 
+  // std::cerr<<"Seed cells: ";
+  // for(const auto &x: seed_cells)
+  //   std::cerr<<x<<" ";
+  // std::cerr<<std::endl;
+
   // flowdirs.printAll();
 
   dephier.resize(seed_cells.size()+1); //Add one for the ocean
@@ -824,8 +829,9 @@ void GetBasins(
     }
   }
 
-  // std::cerr<<"Labels in GetBasins\n";
-  // labels.printAll();
+  // labels.printAllIndices("Indices");
+  // flowdirs.printAll("Flowdirs in GetBasins");
+  // labels.printAll("Labels in GetBasins");
 
   //TODO: Testing
   for(auto i=labels.i0();i<labels.size();i++)
