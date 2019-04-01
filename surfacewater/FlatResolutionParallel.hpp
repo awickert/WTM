@@ -6,7 +6,6 @@
 #include <richdem/common/constants.hpp>
 #include <deque>
 #include <limits>
-#include <omp.h>
 #include <queue>
 
 #include "DisjointHashIntSet.hpp"
