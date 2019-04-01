@@ -162,15 +162,8 @@ class DisjointHashIntSet {
 
 template<class T>
 DisjointHashIntSet<T>& MergeDisjointHashIntSet(DisjointHashIntSet<T> &out, DisjointHashIntSet<T> &in){
-  for(const auto &kv: in.rank){
-    assert(out.rank.count(kv.first)==0);
-    out.rank[kv.first] = kv.second;
-  }
-
-  for(const auto &kv: in.parent){
-    assert(out.parent.count(kv.first)==0);
-    out.parent[kv.first] = kv.second;
-  }
+  for(const auto &kv: in.parent)
+    out.unionSet(kv.first, kv.second);
 
   return out;
 }
