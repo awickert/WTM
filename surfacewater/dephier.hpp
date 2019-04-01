@@ -216,10 +216,11 @@ outletdb_t<elev_t>& MergeOutletDatabases(outletdb_t<elev_t> &out, outletdb_t<ele
 
 template<class elev_t, Topology topo>
 void GetBasins(
-  const rd::Array2D<elev_t> &dem,
-  rd::Array2D<int8_t>       &flowdirs,
-  outletdb_t<elev_t>        &outlet_database,
-  rd::Array2D<dh_label_t>   &labels
+  const rd::Array2D<elev_t>   &dem,
+  const rd::Array2D<int8_t>   &flowdirs,
+  DepressionHierarchy<elev_t> &dephier,
+  outletdb_t<elev_t>          &outlet_database,
+  rd::Array2D<dh_label_t>     &labels
 ){
   //A D4 or D8 topology can be used.
   const int *dx, *dy, *dinverse;
@@ -227,30 +228,86 @@ void GetBasins(
   int neighbours;
   TopologicalResolver<topo>(dx,dy,dr,dinverse,neighbours);
 
-  //Identify pit cells
+  ////////////////////////////
+  //Find pit cells of basins and ocean cells next to land
+
+  //TODO: Can be collapsed into ParallelFlatResolution
+  //Identify pit cells (one per basin, even if there are flats) and ocean cells
   std::vector<int64_t> seed_cells;
+  std::vector<int64_t> ocean_cells;
   #pragma omp declare reduction (merge : std::vector<int64_t> :  omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
-  #pragma omp parallel for reduction(merge:seed_cells)
+  #pragma omp parallel for reduction(merge:seed_cells) reduction(merge:ocean_cells)
   for(auto c=flowdirs.i0();c<flowdirs.size();c++){
-    if(flowdirs(c)==NO_FLOW)
+    int cx,cy;
+    dem.iToxy(c,cx,cy);
+    if(labels(c)==OCEAN){
+      for(int n=1;n<neighbours;n++){
+        const int nx = cx+dx[n];
+        const int ny = cy+dy[n];
+        if(labels.inGrid(nx,ny) && labels(nx,ny)!=OCEAN){
+          ocean_cells.push_back(c);
+          break;
+        }
+      }
+    } else if(flowdirs(c)==NO_FLOW){
       seed_cells.push_back(c);
+    }
   }
+
+  seed_cells.insert(seed_cells.end(), ocean_cells.begin(), ocean_cells.end());
+  ocean_cells.clear();
+  ocean_cells.shrink_to_fit();
+
+  flowdirs.printAll();
+
+  dephier.resize(seed_cells.size()+1); //Add one for the ocean
+
+  //The 0th depression is the ocean. We add it to the list of depressions now
+  //that we're sure there is an ocean!
+  { //Use a little scope to avoid having `oceandep` linger around
+    auto &oceandep    = dephier.at(0);
+    //The ocean is deep
+    oceandep.pit_elev = -std::numeric_limits<elev_t>::infinity();
+    //It's so deep we can't find its bottom
+    oceandep.pit_cell = NO_VALUE;
+    oceandep.dep_label = 0;
+  }
+
+  ////////////////////////////
+  //Label all cells according to which pit cell or ocean they flow into
 
   #pragma omp declare reduction (merge : outletdb_t<elev_t>: omp_out=MergeOutletDatabases(omp_out, omp_in))
 
-  #pragma omp parallel for schedule(dynamic) reduction(merge:outlet_database)
+  //For each depression, we identify all of its cells and give them all the same
+  //label.
+  #pragma omp parallel for default(none) shared(std::cerr,dephier,seed_cells,dem,labels,flowdirs,dx,dy,dinverse,neighbours) schedule(dynamic)
   for(unsigned int i=0;i<seed_cells.size();i++){
+    std::cerr<<"Considering "<<seed_cells[i]<<std::endl;
     std::queue<uint64_t> q;
     const int c0 = seed_cells[i];
     q.push(c0);
-    labels(c0) = c0;
+
+    int my_label = labels(c0);
+    if(my_label==NO_DEP){
+      my_label = i+1;
+      labels(c0) = my_label;
+      //Since cells label their neighbours and ocean cells are labeled in the
+      //initialization, the only way to get to a cell that is still labeled as
+      //not being part of a depression is if that cell were added as a pit cell.
+      //For each pit cell we find, we make a new depression and label it
+      //accordingly. Not all the pit cells originally added will form new
+      //depressions as flat cells will relabel their neighbours and the first                                                 
+      //cell found in a flat determines the label for the entirety of that flat.
+      //TODO: Comment accuracy
+      auto &newdep      = dephier.at(my_label);   //Add the next flat (increases size by 1)
+      newdep.pit_cell   = c0;                         //Make a note of the pit cell's location
+      newdep.pit_elev   = dem(c0);                    //Make a note of the pit cell's elevation
+      newdep.dep_label  = my_label;                   //I am storing the label in the object so that I can find it later and call up the number of cells and volume (better way of doing this?) -- I have since realised I can use the index in the depressions array. So perhaps the label is no longer needed?
+    }
 
     while(!q.empty()){
       const auto ci = q.front();
       q.pop();
-      const auto clabel = labels(ci);
-      const auto celev  = dem(ci);
-
       int cx,cy;
       dem.iToxy(ci,cx,cy);
 
@@ -260,32 +317,75 @@ void GetBasins(
         if(!dem.inGrid(nx,ny))
           continue;
         const auto ni=dem.xyToI(nx,ny);
-        const auto nlabel=labels(ni);
-        if(flowdirs(nx,ny)==dinverse[n]){ //Flows into me
+        if(flowdirs(ni)==dinverse[n]){ //Flows into me
           q.push(ni);
-          labels(ni) = labels(ci);
-        } else if (nlabel!=clabel) {
-          auto out_cell = ci;    //Pretend focal cell is the outlet
-          auto out_elev = celev; //Note its height
-
-          if(dem(ni)>out_elev){  //Check to see if we were wrong and the neighbour cell is higher.
-            out_cell = ni;       //Neighbour cell was higher. Note it.
-            out_elev = dem(ni);  //Note neighbour's elevation
-          }
-
-          const OutletLink olink(clabel,nlabel);      //Create outlet link (order of clabel and nlabel doesn't matter)
-          if(outlet_database.count(olink)!=0){        //Determine if the outlet is already present
-            auto &outlet = outlet_database.at(olink); //It was. Use the outlet link to get the outlet information
-            if(outlet.out_elev>out_elev){             //Is the previously stored link higher than the new one?
-              outlet.out_cell = out_cell;             //Yes. So update the link with new outlet cell
-              outlet.out_elev = out_elev;             //Also, update the outlet's elevation
-            }
-          } else {                                    //No preexisting link found; create a new one
-            outlet_database[olink] = Outlet<elev_t>(clabel,nlabel,out_cell,out_elev);   
-          }
+          labels(ni) = my_label;
         }
       }
     }
+  }
+
+  std::cerr<<"Labels in GetBasins\n";
+  labels.printAll();
+
+  //TODO: Testing
+  for(auto i=labels.i0();i<labels.size();i++)
+    assert(labels(i)!=NO_DEP);
+
+  ////////////////////////////
+  //Find outlets: adjacent cells with differing labels
+
+  #pragma omp parallel for collapse(2) default(none) shared(dem,labels,dx,dy,neighbours) reduction(merge:outlet_database)
+  for(int y=0;y<dem.height();y++)
+  for(int x=0;x<dem.width();x++){
+    const int ci = dem.xyToI(x,y);
+    for(int n=1;n<=neighbours;n++){
+      const int nx=x+dx[n];
+      const int ny=y+dy[n];
+      if(!dem.inGrid(nx,ny))
+        continue;
+      const int ni=dem.xyToI(nx,ny);
+      if(labels(ci)!=labels(ni)){
+        auto out_cell = ci;      //Pretend focal cell is the outlet
+        auto out_elev = dem(ci); //Note its height
+
+        if(dem(ni)>out_elev){  //Check to see if we were wrong and the neighbour cell is higher.
+          out_cell = ni;       //Neighbour cell was higher. Note it.
+          out_elev = dem(ni);  //Note neighbour's elevation
+        }
+
+        const OutletLink olink(labels(ci),labels(ni));      //Create outlet link (order of clabel and nlabel doesn't matter)
+        if(outlet_database.count(olink)!=0){        //Determine if the outlet is already present
+          auto &outlet = outlet_database.at(olink); //It was. Use the outlet link to get the outlet information
+          if(outlet.out_elev>out_elev){             //Is the previously stored link higher than the new one?
+            outlet.out_cell = out_cell;             //Yes. So update the link with new outlet cell
+            outlet.out_elev = out_elev;             //Also, update the outlet's elevation
+          }
+        } else {                                    //No preexisting link found; create a new one
+          outlet_database[olink] = Outlet<elev_t>(labels(ci),labels(ni),out_cell,out_elev);   
+        }
+      }
+    }
+  }
+
+  std::cout<<"Outlet database:\n";
+  for(const auto &x: outlet_database)
+    std::cout<<x.second.depa<<" "<<x.second.depb<<" "<<x.second.out_elev<<std::endl;
+
+  std::cout<<"Labels:"<<std::endl;
+  for(int y=0;y<labels.height();y++){
+    for(int x=0;x<labels.width();x++){
+      std::cout<<std::setw(4)<<labels(x,y)<<" ";
+    }
+    std::cout<<std::endl;
+  }
+
+  std::cout<<"Flowdirs:"<<std::endl;
+  for(int y=0;y<flowdirs.height();y++){
+    for(int x=0;x<flowdirs.width();x++){
+      std::cout<<std::setw(4)<<(int)flowdirs(x,y)<<" ";
+    }
+    std::cout<<std::endl;
   }
 }
 
@@ -812,28 +912,20 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy2(
   typedef std::unordered_map<OutletLink, Outlet<elev_t>, OutletHash<elev_t>> outletdb_t;
   outletdb_t outlet_database;
 
+  std::cerr<<"p Resolving flats..."<<std::endl;
+  flowdirs.setAll(NO_FLOW);
   FlatResolutionParallel<elev_t, int8_t, topo>(dem, flowdirs);
 
-  #pragma omp parallel for default(none) shared(dem,flowdirs,dx,dy,dr,neighbours) collapse(2)
-  for(int y=0;y<dem.height();y++)
-  for(int x=0;x<dem.width();x++){
-    if(flowdirs(x,y)!=NO_FLOW)
-      continue;
-    double greatest_slope = 0;
-    int    flowdir        = NO_FLOW;
-    for(int n=1;n<=neighbours;n++){
-      const auto   nx    = x+dx[n];
-      const auto   ny    = y+dy[n];
-      const double slope = (dem(x,y)-dem(nx,ny))/dr[n];
-      if(slope>greatest_slope){
-        greatest_slope = slope;
-        flowdir        = n;
-      }
-    }
-    flowdirs(x,y) = flowdir;
-  }
+  // std::cout<<"Flowdirs after FRP:"<<std::endl;
+  // for(int y=0;y<flowdirs.height();y++){
+  //   for(int x=0;x<flowdirs.width();x++){
+  //     std::cout<<std::setw(4)<<(int)flowdirs(x,y)<<" ";
+  //   }
+  //   std::cout<<std::endl;
+  // }
 
-  GetBasins<elev_t,topo>(dem, flowdirs, outlet_database, label);
+  std::cerr<<"Getting basins..."<<std::endl;
+  GetBasins<elev_t,topo>(dem, flowdirs, depressions, outlet_database, label);
 
   //At this point every cell is associated with the label of a depression. Each
   //depression contains the cells lower than its outlet elevation as well as all
@@ -900,7 +992,8 @@ DepressionHierarchy<elev_t> GetDepressionHierarchy2(
   //are building a binary tree the number of leaf nodes is about equal to the
   //number of non-leaf nodes. The data structure will expand dynamically as
   //needed.
-  DisjointDenseIntSet djset(depressions.size());
+  // DisjointDenseIntSet djset(depressions.size());
+  DisjointHashIntSet<int64_t> djset;
 
   std::cerr<<"p Constructing hierarchy from outlets..."<<std::endl;
 
