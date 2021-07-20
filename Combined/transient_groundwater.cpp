@@ -34,7 +34,7 @@ struct FanDarcyPack {
   d2d_pointer   fdepth;
  // ui82d_pointer land_mask;
   f2d_pointer   land_mask;
- 
+
   f2d_pointer   porosity;
   f2d_pointer   topo;
   d2d_pointer   transmissivity;
@@ -250,6 +250,40 @@ void computeWTDchangeAtCell(
   const double headE      = c2d(fdp.topo, x+1, y  ) + local_wtd[3];
   const double headW      = c2d(fdp.topo, x-1, y  ) + local_wtd[4];
 
+  // Assume uniform grid for test case
+  // Update central cell
+  // -- update cell sizes when working
+  local_wtd[0] += dt / c2d(fdp.porosity, x, y) / (fdp.cellsize_n_s_metres*fdp.cellsize_n_s_metres) \
+                  // E-W component
+                   * ( c2d(fdp.transmissivity, x, y) * (headW - 2*headCenter + headE) \
+                    + 0.25 * (c2d(fdp.transmissivity, x+1  , y)) - c2d(fdp.transmissivity, x-1  , y) \
+                      * (headE - headW)
+                   // Add in the N-S component
+                   + c2d(fdp.transmissivity, x, y) * (headS - 2*headCenter + headN) \
+                    + 0.25 * (c2d(fdp.transmissivity, x  , y+1)) - c2d(fdp.transmissivity, x  , y-1) \
+                      * (headN - headS) );
+
+  // For local dynamic time stepping (consider switching to global later),
+  // update the neighboring cell WTDs
+
+  /*
+  // North
+  local_wtd[1] +=
+  // South
+  local_wtd[2] = dt / c2d(fdp.porosity, x, y) / (fdp.cellsize_n_s_metres*fdp.cellsize_n_s_metres) \
+                   * ( c2d(fdp.transmissivity, x, y-1) * (-2*headS + 3*headCenter - headN) \
+                    + 0.5 * (c2d(fdp.transmissivity, x  , y)) - c2d(fdp.transmissivity, x  , y-1) \
+                      * (headCenter - headS);
+  // East
+  local_wtd[3] = computeNewWTD( -QE*dt, local_wtd[3], c2d(fdp.porosity, x+1, y), fdp.cell_area[y] );
+  // West
+  local_wtd[4] = dt / c2d(fdp.porosity, x, y) / (fdp.cellsize_n_s_metres*fdp.cellsize_n_s_metres) \
+                   * ( c2d(fdp.transmissivity, x-1, y) * (-2*headW + 3*headCenter - headE) \
+                    + 0.5 * (c2d(fdp.transmissivity, x  , y)) - c2d(fdp.transmissivity, x-1  , y) \
+                      * (headCenter - headW);
+  */
+
+  /*
   const double transmissivityN = (c2d(fdp.transmissivity, x, y) + c2d(fdp.transmissivity, x  , y+1)) / 2.;
   const double transmissivityS = (c2d(fdp.transmissivity, x, y) + c2d(fdp.transmissivity, x  , y-1)) / 2.;
   const double transmissivityE = (c2d(fdp.transmissivity, x, y) + c2d(fdp.transmissivity, x+1  , y)) / 2.;
@@ -275,6 +309,7 @@ void computeWTDchangeAtCell(
   local_wtd[2] = computeNewWTD( -QS*dt, local_wtd[2], c2d(fdp.porosity, x, y-1), fdp.cell_area[y-1] );
   local_wtd[3] = computeNewWTD( -QE*dt, local_wtd[3], c2d(fdp.porosity, x+1, y), fdp.cell_area[y] );
   local_wtd[4] = computeNewWTD( -QW*dt, local_wtd[4], c2d(fdp.porosity, x-1, y), fdp.cell_area[y] );
+  */
 }
 
 
