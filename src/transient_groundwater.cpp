@@ -39,32 +39,75 @@ std::tuple<PetscInt, PetscInt, PetscInt, PetscInt> get_corners(const DM da) {
 static PetscErrorCode FormRHS(AppCtx*, DM, Vec);
 static PetscErrorCode FormInitialGuess(AppCtx*, DM, Vec);
 static PetscErrorCode FormFunctionLocal(DMDALocalInfo*, PetscScalar**, PetscScalar**, AppCtx*);
+static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat, AppCtx*);
 
 //////////////////////
 // PUBLIC FUNCTIONS //
 //////////////////////
 
 double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, const double ksat) {
+  if (fdepth <= 0) return 0;
   constexpr double shallow = 1.5;
-  // Global soil datasets include information for shallow soils.
-  // if the water table is deeper than this, the permeability
-  // of the soil sees an exponential decay with depth.
-  if (fdepth <= 0) {
-    // If the fdepth is zero, there is no water transmission below the surface
-    // soil layer.
-    // If it is less than zero, it is incorrect -- but no water transmission
-    // also seems an okay thing to do in this case.
-    return 0;
-  } else if (wtd_T < -shallow) {  // Equation S6 from the Fan paper
-    return std::max(0.0, fdepth * ksat * std::exp((wtd_T + shallow) / fdepth));
-  } else if (wtd_T > 0) {
-    // If wtd_T is greater than 0, max out rate of groundwater movement
-    // as though wtd_T were 0. The surface water will get to move in
-    // FillSpillMerge.
-    return std::max(0.0, ksat * (0 + shallow + fdepth));
-  } else {                                                    // Equation S4 from the Fan paper
-    return std::max(0.0, ksat * (wtd_T + shallow + fdepth));  // max because you can't have a negative transmissivity.
+  constexpr double eps0    = 0.01;  // smooth clamping at WTD=0 boundary
+  constexpr double eps1    = 0.01;  // smooth blend at WTD=-shallow boundary
+
+  const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
+  const double u       = wtd_T + shallow;
+  const double sigma_1 = 1.0 / (1.0 + std::exp(u / eps1));
+
+  const double T_linear = ksat * (wtd_eff + shallow + fdepth);
+  const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
+
+  return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
+}
+
+// Analytic derivative of (1/T) with respect to wtd_T, matching the smooth T above.
+static double dTransmissivityInverseDwtd(const double wtd_T, const double fdepth, const double ksat) {
+  if (fdepth <= 0) return 0.0;
+  constexpr double shallow = 1.5;
+  constexpr double eps0    = 0.01;
+  constexpr double eps1    = 0.01;
+
+  const double sq0      = std::sqrt(wtd_T * wtd_T + eps0 * eps0);
+  const double wtd_eff  = (wtd_T - sq0) * 0.5;
+  const double dwtd_eff = (1.0 - wtd_T / sq0) * 0.5;
+
+  const double u       = wtd_T + shallow;
+  const double sigma_1 = 1.0 / (1.0 + std::exp(u / eps1));
+  const double dsigma1 = -sigma_1 * (1.0 - sigma_1) / eps1;
+
+  const double T_linear = ksat * (wtd_eff + shallow + fdepth);
+  const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
+  const double T        = std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
+  if (T <= 0.0) return 0.0;
+
+  const double dT = dsigma1 * (T_exp - T_linear)
+                  + (1.0 - sigma_1) * ksat * dwtd_eff
+                  + sigma_1 * ksat * std::exp(u / fdepth);
+  return -dT / (T * T);
+}
+
+// Analytic derivative of S_eff with respect to my_new_wtd, matching the smooth S formula.
+// Uses the same V(w) = [w(1+p) + sqrt(w²+eps²)(1-p)] / 2 construction.
+static double dEffectiveStorativityDnew(
+    const double my_original_wtd, const double my_new_wtd, const double my_porosity) {
+  constexpr double eps = 0.01;
+  const double dwtd    = my_new_wtd - my_original_wtd;
+
+  const auto V = [&](double w) {
+    return (w * (1.0 + my_porosity) + std::sqrt(w * w + eps * eps) * (1.0 - my_porosity)) * 0.5;
+  };
+  const auto Vprime = [&](double w) {
+    return ((1.0 + my_porosity) + w * (1.0 - my_porosity) / std::sqrt(w * w + eps * eps)) * 0.5;
+  };
+
+  if (std::abs(dwtd) > 1e-10) {
+    const double S = (V(my_new_wtd) - V(my_original_wtd)) / dwtd;
+    return (Vprime(my_new_wtd) - S) / dwtd;
   }
+  // Near convergence (new ≈ old): dS/d(new) → V''(old)/2
+  const double w = my_original_wtd;
+  return (1.0 - my_porosity) * eps * eps / (2.0 * std::pow(w * w + eps * eps, 1.5));
 }
 
 void set_starting_values(Parameters& params, ArrayPack& arp) {
@@ -109,12 +152,26 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
-  // Set local function evaluation routine
+  // Set local function evaluation routine (always needed).
   DMDASNESSetFunctionLocal(
       user_context.da,
       INSERT_VALUES,
       (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
       &user_context);
+
+  // Register analytic Jacobian only for Newton-Krylov.
+  // FormJacobianLocal accesses neighbor arrays from global (non-ghost) vectors,
+  // which is safe only within a single MPI process partition boundary.
+  // Registering it for Anderson causes PETSc to call it on divergence, triggering
+  // a segfault under multi-process MPI. Skip it for Anderson (Jacobian unused).
+  SNESType snes_type;
+  SNESGetType(user_context.snes, &snes_type);
+  if (std::string(snes_type) != std::string(SNESANDERSON)) {
+    DMDASNESSetJacobianLocal(
+        user_context.da,
+        (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
+        &user_context);
+  }
 
   // Evaluate initial guess
   FormInitialGuess(&user_context, user_context.da, user_context.x);
@@ -273,7 +330,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       if (my_mask[j][i] == 0) {
-        f[j][i] = 0;
+        // Dirichlet condition: x = 0 for ocean cells (topo = wtd = 0 there).
+        // Writing f = x rather than f = 0 gives a unit Jacobian diagonal,
+        // which is required for the Newton-Krylov linear solve to be
+        // non-singular. Anderson is unaffected: x starts at 0 and stays at 0.
+        f[j][i] = x[j][i];
       } else {
         double this_x          = x[j][i];
         double this_T          = my_T[j][i];
@@ -310,6 +371,161 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
 
   PetscLogFlops(info->xm * info->ym * (72.0));
+  return 0;
+}
+
+/* ------------------------------------------------------------------- */
+/*
+   FormJacobianLocal - Analytic 5-point Jacobian of FormFunctionLocal.
+
+   For ocean cells (mask == 0): J = I (unit diagonal for Dirichlet).
+   For land cells: differentiates
+       f = (uxx + uyy) * dt/S + x - rech
+   analytically through the smooth transmissivity T(x) and storativity S(x).
+   All smoothing constants must match those in depthIntegratedTransmissivity
+   and updateEffectiveStorativity.
+
+   NOTE: neighbor arrays (fdepth, ksat, topo) are accessed via global DM
+   vectors; for single-process runs this is always safe.  A future MPI
+   extension should scatter those arrays to local vectors with ghosts first.
+ */
+static PetscErrorCode FormJacobianLocal(
+    DMDALocalInfo* info, PetscScalar** x, Mat Jmat, Mat P, AppCtx* user_context) {
+  DM           da = user_context->da;
+  PetscScalar **cellsize_ew_sq, **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_porosity, **my_starting_wtd;
+
+  PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecGetArray(da, user_context->fdepth_vec, &my_fdepth));
+  PetscCall(DMDAVecGetArray(da, user_context->ksat_vec, &my_ksat));
+  PetscCall(DMDAVecGetArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+
+  for (auto j = info->ys; j < info->ys + info->ym; j++) {
+    for (auto i = info->xs; i < info->xs + info->xm; i++) {
+      MatStencil row;
+      row.j = j; row.i = i; row.c = 0;
+
+      if (my_mask[j][i] == 0) {
+        const PetscScalar one = 1.0;
+        MatStencil col;
+        col.j = j; col.i = i; col.c = 0;
+        MatSetValuesStencil(Jmat, 1, &row, 1, &col, &one, INSERT_VALUES);
+        MatSetValuesStencil(P,    1, &row, 1, &col, &one, INSERT_VALUES);
+      } else {
+        // WTD at center and 4 neighbours
+        const double wtd_c = x[j][i]     - my_topo[j][i];
+        const double wtd_E = x[j][i + 1] - my_topo[j][i + 1];
+        const double wtd_W = x[j][i - 1] - my_topo[j][i - 1];
+        const double wtd_N = x[j + 1][i] - my_topo[j + 1][i];
+        const double wtd_S = x[j - 1][i] - my_topo[j - 1][i];
+
+        // 1/T at centre and 4 neighbours; cap at 1e30 when T ≈ 0
+        const auto T_inv = [](double T) { return T > 0.0 ? 1.0 / T : 1e30; };
+        const double Tinv_c = T_inv(depthIntegratedTransmissivity(wtd_c, my_fdepth[j][i],     my_ksat[j][i]));
+        const double Tinv_E = T_inv(depthIntegratedTransmissivity(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]));
+        const double Tinv_W = T_inv(depthIntegratedTransmissivity(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]));
+        const double Tinv_N = T_inv(depthIntegratedTransmissivity(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]));
+        const double Tinv_S = T_inv(depthIntegratedTransmissivity(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]));
+
+        // d(1/T)/dwtd at centre and 4 neighbours (needed for full Jacobian only)
+        const double dTinv_c = dTransmissivityInverseDwtd(wtd_c, my_fdepth[j][i],     my_ksat[j][i]);
+        const double dTinv_E = dTransmissivityInverseDwtd(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
+        const double dTinv_W = dTransmissivityInverseDwtd(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
+        const double dTinv_N = dTransmissivityInverseDwtd(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
+        const double dTinv_S = dTransmissivityInverseDwtd(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
+
+        // Harmonic-mean conductances and their sums
+        const double sumE = Tinv_c + Tinv_E,  e_E = 2.0 / sumE;
+        const double sumW = Tinv_c + Tinv_W,  e_W = 2.0 / sumW;
+        const double sumN = Tinv_c + Tinv_N,  e_N = 2.0 / sumN;
+        const double sumS = Tinv_c + Tinv_S,  e_S = 2.0 / sumS;
+
+        // Head differences
+        const double ux_E = x[j][i + 1] - x[j][i];
+        const double ux_W = x[j][i]     - x[j][i - 1];
+        const double uy_N = x[j + 1][i] - x[j][i];
+        const double uy_S = x[j][i]     - x[j - 1][i];
+
+        // Storativity at center and its derivative w.r.t. x[j,i]
+        const double S         = updateEffectiveStorativity(my_starting_wtd[j][i], wtd_c, my_porosity[j][i]);
+        const double dS_dnew   = dEffectiveStorativityDnew(my_starting_wtd[j][i], wtd_c, my_porosity[j][i]);
+        const double dt_over_S = user_context->deltat / S;
+        const double cns2      = user_context->cellsize_NS_squared;
+        const double cew2      = cellsize_ew_sq[j][i];
+
+        // uxx + uyy needed for the storativity part of the diagonal
+        const double uxx = (e_W * ux_W - e_E * ux_E) / cns2;
+        const double uyy = (e_S * uy_S - e_N * uy_N) / cew2;
+
+        // ∂e_X/∂x[neighbour] = -2·dTinv_X / sumX²
+        const double de_E_dxE = -2.0 * dTinv_E / (sumE * sumE);
+        const double de_W_dxW = -2.0 * dTinv_W / (sumW * sumW);
+        const double de_N_dxN = -2.0 * dTinv_N / (sumN * sumN);
+        const double de_S_dxS = -2.0 * dTinv_S / (sumS * sumS);
+
+        // ∂e_X/∂x[j,i] = -2·dTinv_c / sumX²  (centre changes all four conductances)
+        const double de_E_dxc = -2.0 * dTinv_c / (sumE * sumE);
+        const double de_W_dxc = -2.0 * dTinv_c / (sumW * sumW);
+        const double de_N_dxc = -2.0 * dTinv_c / (sumN * sumN);
+        const double de_S_dxc = -2.0 * dTinv_c / (sumS * sumS);
+
+        // Full analytic Jacobian off-diagonal entries
+        const double J_east  = -(de_E_dxE * ux_E + e_E) * dt_over_S / cns2;
+        const double J_west  = (de_W_dxW * ux_W - e_W) * dt_over_S / cns2;
+        const double J_north = -(de_N_dxN * uy_N + e_N) * dt_over_S / cew2;
+        const double J_south = (de_S_dxS * uy_S - e_S) * dt_over_S / cew2;
+
+        const double d_uxx_dc = (de_W_dxc * ux_W + e_W - de_E_dxc * ux_E + e_E) / cns2;
+        const double d_uyy_dc = (de_S_dxc * uy_S + e_S - de_N_dxc * uy_N + e_N) / cew2;
+        const double J_center = (d_uxx_dc + d_uyy_dc) * dt_over_S
+                              - (uxx + uyy) * user_context->deltat * dS_dnew / (S * S)
+                              + 1.0;
+
+        // Symmetric Picard preconditioner: freeze T, average S between neighbors.
+        // P[i,j][i+1,j] = P[i+1,j][i,j] by construction → symmetric → GAMG-compatible.
+        const double S_E = updateEffectiveStorativity(my_starting_wtd[j][i+1], wtd_E, my_porosity[j][i+1]);
+        const double S_W = updateEffectiveStorativity(my_starting_wtd[j][i-1], wtd_W, my_porosity[j][i-1]);
+        const double S_N = updateEffectiveStorativity(my_starting_wtd[j+1][i], wtd_N, my_porosity[j+1][i]);
+        const double S_S = updateEffectiveStorativity(my_starting_wtd[j-1][i], wtd_S, my_porosity[j-1][i]);
+
+        const double P_east  = -e_E * user_context->deltat / (0.5 * (S + S_E) * cns2);
+        const double P_west  = -e_W * user_context->deltat / (0.5 * (S + S_W) * cns2);
+        const double P_north = -e_N * user_context->deltat / (0.5 * (S + S_N) * cew2);
+        const double P_south = -e_S * user_context->deltat / (0.5 * (S + S_S) * cew2);
+        // Diagonal = -(sum of off-diagonals) + 1; strictly diagonally dominant → SPD.
+        const double P_center = -(P_east + P_west + P_north + P_south) + 1.0;
+
+        MatStencil  cols[5];
+        PetscScalar vals[5];
+        cols[0].j = j;     cols[0].i = i + 1; cols[0].c = 0;
+        cols[1].j = j;     cols[1].i = i - 1; cols[1].c = 0;
+        cols[2].j = j + 1; cols[2].i = i;     cols[2].c = 0;
+        cols[3].j = j - 1; cols[3].i = i;     cols[3].c = 0;
+        cols[4].j = j;     cols[4].i = i;     cols[4].c = 0;
+
+        vals[0] = J_east; vals[1] = J_west; vals[2] = J_north; vals[3] = J_south; vals[4] = J_center;
+        MatSetValuesStencil(Jmat, 1, &row, 5, cols, vals, INSERT_VALUES);
+
+        vals[0] = P_east; vals[1] = P_west; vals[2] = P_north; vals[3] = P_south; vals[4] = P_center;
+        MatSetValuesStencil(P, 1, &row, 5, cols, vals, INSERT_VALUES);
+      }
+    }
+  }
+
+  MatAssemblyBegin(Jmat, MAT_FINAL_ASSEMBLY);
+  MatAssemblyEnd(Jmat, MAT_FINAL_ASSEMBLY);
+  MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
+  MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY);
+
+  PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_vec, &my_fdepth));
+  PetscCall(DMDAVecRestoreArray(da, user_context->ksat_vec, &my_ksat));
+  PetscCall(DMDAVecRestoreArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   return 0;
 }
 

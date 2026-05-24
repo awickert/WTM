@@ -1,0 +1,4 @@
+# Override root .gitignore patterns so benchmark inputs are tracked
+!*.cfg
+!*.tif
+!*.tif.aux.xml

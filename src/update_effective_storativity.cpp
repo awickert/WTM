@@ -1,40 +1,20 @@
 #include <cmath>
 
-// Deal with the fact that porosity is 1 above ground but [value] below ground. It is included directly in the matrix
-// calculation, so we can't just scale water change before or after. Instead, we are scaling the effective storativity
-// according to how much change in water table we are projecting to see during that time step.
+// Smooth, C∞ effective storativity for a WTD step from my_original_wtd to my_new_wtd.
 double updateEffectiveStorativity(const double my_original_wtd, const double my_new_wtd, const double my_porosity) {
-  if (my_original_wtd <= 0. && my_new_wtd <= 0.) {  // both are below ground, so we can use the original porosity
-    return my_porosity;
-  } else if (my_original_wtd > 0. && my_new_wtd > 0.) {  // both are above ground, so the porosity is 1
-    return 1.;                                           // 1.;
-  } else {
-    const double change_in_water_column_thickness = std::abs(my_new_wtd - my_original_wtd);
-    if (my_original_wtd <= 0. && my_new_wtd > 0.) {  // started below ground and ended above ground
+  constexpr double eps = 0.01;  // 1 cm smooth transition at the land surface (sub-grid roughness)
 
-      // Then get just that portion that is >0 (aboveground), and scale it back down to the equivalent thickness with
-      // 100% porosity (surface water)
-      const double aboveground_water_column_thickness =
-          (change_in_water_column_thickness + my_original_wtd) * my_porosity;
+  const auto V = [&](double w) {
+    return (w * (1.0 + my_porosity) + std::sqrt(w * w + eps * eps) * (1.0 - my_porosity)) * 0.5;
+  };
 
-      // belowground water column thickness is equal to -original_wtd, so no need to assign it to a new variable.
-      return (aboveground_water_column_thickness + my_porosity * -my_original_wtd) /
-             (aboveground_water_column_thickness - my_original_wtd);
-    } else {
-      // This means that (my_original_wtd > 0. && my_new_wtd < 0.). started above ground and ended below
-      // ground.
-      //  if (scaled_change_in_water_column_thickness < my_new_wtd) {
-      // when rescaling the water according to the porosity values, there is no longer enough to reach below ground;
-      // so the scaled new porosity will be = 1
-      //    return 1;
-      // } else {
-      // Get the belowground water thickness and expand it to a deeper depth in order to account for changing porosity
-      const double belowground_water_column_thickness =
-          (change_in_water_column_thickness - my_original_wtd) / my_porosity;
-      return (my_original_wtd + my_porosity * belowground_water_column_thickness) /
-             (my_original_wtd + belowground_water_column_thickness);
-    }
+  const double dwtd = my_new_wtd - my_original_wtd;
+  if (std::abs(dwtd) > 1e-10) {
+    return (V(my_new_wtd) - V(my_original_wtd)) / dwtd;
   }
+  // Near convergence: use the analytic derivative dV/dw to avoid 0/0
+  const double w = my_original_wtd;
+  return ((1.0 + my_porosity) + w * (1.0 - my_porosity) / std::sqrt(w * w + eps * eps)) * 0.5;
 }
 
 // double updateEffectiveStorativity(
