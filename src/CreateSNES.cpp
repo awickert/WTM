@@ -31,5 +31,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   DMSetApplicationContext(user_context.da, &user_context);
   SNESSetDM(user_context.snes, user_context.da);
 
+  // Default to Anderson mixing (matrix-free, robust for heterogeneous media).
+  // Override at runtime: -snes_type newtonls -ksp_type gmres -pc_type gamg
+  // to use Newton-Krylov with the analytic Jacobian and Picard preconditioner.
+  SNESSetType(user_context.snes, SNESANDERSON);
+
   SNESSetFromOptions(user_context.snes);
 }
