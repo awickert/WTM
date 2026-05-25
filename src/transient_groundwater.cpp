@@ -150,6 +150,22 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
+  // Assemble the full wtd field across all MPI ranks.  Each rank has updated
+  // only its owned cells; non-owned entries are left at their previous values.
+  // Build a buffer with owned cells non-zero and everything else zeroed, then
+  // sum across ranks so that every rank ends up with the complete correct field.
+  {
+    const int total = params.ncells_x * params.ncells_y;
+    std::vector<double> owned_only(total, 0.0);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        owned_only[j * params.ncells_x + i] = arp.wtd(i, j);
+    MPI_Allreduce(MPI_IN_PLACE, owned_only.data(), total, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+    for (int j = 0; j < params.ncells_y; j++)
+      for (int i = 0; i < params.ncells_x; i++)
+        arp.wtd(i, j) = owned_only[j * params.ncells_x + i];
+  }
+
   return 0;
 }
 

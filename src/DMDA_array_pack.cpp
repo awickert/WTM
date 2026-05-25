@@ -38,10 +38,13 @@ void scatter_static_fields(AppCtx& user_context, ArrayPack& arp) {
   DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &fdepth_arr);
   DMDAVecRestoreArray(user_context.da, user_context.ksat_vec, &ksat_arr);
 
+  // The DMDA's internal PetscSF is shared across all GlobalToLocal operations on the same DM.
+  // Overlapping Begin calls (Begin A, Begin B, End A, End B) confuse the SF state machine;
+  // each pair must be completed sequentially.
   DMGlobalToLocalBegin(user_context.da, user_context.topo_vec,   INSERT_VALUES, user_context.topo_local);
+  DMGlobalToLocalEnd(user_context.da, user_context.topo_vec,     INSERT_VALUES, user_context.topo_local);
   DMGlobalToLocalBegin(user_context.da, user_context.fdepth_vec, INSERT_VALUES, user_context.fdepth_local);
+  DMGlobalToLocalEnd(user_context.da, user_context.fdepth_vec,   INSERT_VALUES, user_context.fdepth_local);
   DMGlobalToLocalBegin(user_context.da, user_context.ksat_vec,   INSERT_VALUES, user_context.ksat_local);
-  DMGlobalToLocalEnd(user_context.da, user_context.topo_vec,   INSERT_VALUES, user_context.topo_local);
-  DMGlobalToLocalEnd(user_context.da, user_context.fdepth_vec, INSERT_VALUES, user_context.fdepth_local);
-  DMGlobalToLocalEnd(user_context.da, user_context.ksat_vec,   INSERT_VALUES, user_context.ksat_local);
+  DMGlobalToLocalEnd(user_context.da, user_context.ksat_vec,     INSERT_VALUES, user_context.ksat_local);
 }

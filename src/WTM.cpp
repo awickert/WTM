@@ -104,8 +104,13 @@ void update(
   if ((params.cycles_done % params.cycles_to_save) == 0) {
     // Save the output every "cycles_to_save" iterations, under a new filename
     // so we can compare how the water table has changed through time.
-    arp.wtd.setNoData(-9999);
-    arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+    // wtd is fully assembled on all ranks by FanDarcyGroundwater::update; rank 0 writes.
+    PetscMPIInt rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    if (rank == 0) {
+      arp.wtd.setNoData(-9999);
+      arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+    }
   }
 
   arp.wtd_old = arp.wtd;  // These are used to see how much change occurs
@@ -228,9 +233,13 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   std::ofstream textfile(params.textfilename, std::ios_base::app);
 
   textfile << "p done with processing" << std::endl;
-  // save the final answer for water table depth.
-  arp.wtd.setNoData(-9999);
-  arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+  // Save the final answer. wtd is assembled on all ranks; only rank 0 writes to avoid conflicts.
+  PetscMPIInt rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+  if (rank == 0) {
+    arp.wtd.setNoData(-9999);
+    arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+  }
 
   textfile.close();
 
