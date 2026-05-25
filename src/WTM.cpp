@@ -244,9 +244,12 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.mask);
   VecDestroy(&user_context.topo_vec);
   VecDestroy(&user_context.rech_vec);
-  VecDestroy(&user_context.T_vec);
   VecDestroy(&user_context.porosity_vec);
   VecDestroy(&user_context.starting_wtd);
+  VecDestroy(&user_context.topo_local);
+  VecDestroy(&user_context.fdepth_local);
+  VecDestroy(&user_context.ksat_local);
+  VecDestroy(&user_context.T_local);
 }
 
 int main(int argc, char** argv) {
@@ -269,6 +272,9 @@ int main(int argc, char** argv) {
 
   DMDA_Array_Pack dmdapack(user_context);  // this needs to come after initialise
   populate_DMDA_array_pack(user_context, arp, dmdapack);
+  // Scatter topo/fdepth/ksat to local ghost vectors. These global vecs are not held by
+  // dmdapack so there is no GetArray lock conflict.
+  scatter_static_fields(user_context, arp);
 
   run(params, arp, user_context, dmdapack);
 
