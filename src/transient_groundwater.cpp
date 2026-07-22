@@ -137,8 +137,19 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
 
+  // --- diagnostic: profile the non-PETSc O(N) overhead; appears in -log_view ---
+  static PetscLogEvent EVENT_SETSTART = 0, EVENT_FULLREDUCE = 0;
+  static bool events_registered = false;
+  if (!events_registered) {
+    PetscLogEventRegister("SetStartVals", 0, &EVENT_SETSTART);
+    PetscLogEventRegister("FullGridReduce", 0, &EVENT_FULLREDUCE);
+    events_registered = true;
+  }
+
   // compute any starting values needed for arrays
+  PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
   set_starting_values(params, arp);
+  PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
   // Get local array bounds
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
@@ -211,6 +222,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // only its owned cells; non-owned entries are left at their previous values.
   // Build a buffer with owned cells non-zero and everything else zeroed, then
   // sum across ranks so that every rank ends up with the complete correct field.
+  PetscLogEventBegin(EVENT_FULLREDUCE, 0, 0, 0, 0);
   {
     const int total = params.ncells_x * params.ncells_y;
     std::vector<double> owned_only(total, 0.0);
@@ -222,6 +234,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       for (int i = 0; i < params.ncells_x; i++)
         arp.wtd(i, j) = owned_only[j * params.ncells_x + i];
   }
+  PetscLogEventEnd(EVENT_FULLREDUCE, 0, 0, 0, 0);
 
   return 0;
 }
