@@ -231,23 +231,45 @@ all ranks: DMDA static vecs (scattered once at init) + distributed GW solve    (
 
 ## C. Increment order (each bit-identical or consistency-gated)
 
-1. **2c — recharge on rank 0 + `rech` scatter.** Move the recharge loop (both evap modes) to rank
-   0; `scatterFromZero(arp.rech → rech_vec)`. Note evap-mode-0 also zeros surface-water `wtd`;
-   that write must be on rank 0 and reflected before the wtd scatter. Gate: mass-balance + bit-
-   identical (both evap modes).
-2. **2d — diagnostics/bookkeeping on rank 0.** `PrintValues` loop, `wtd_old`/`wtd_mid` copies, and
-   `UpdateTransientArrays` guarded to rank 0. Gate: mass-balance + bit-identical.
-3. **2e — static intake from rank-0 `arp`.** Convert `set_starting_values`, rech/starting_wtd fill,
-   and copy-back to read DMDA-local static vecs (add porosity/mask/cellsize/cell_area as DMDA or
-   Class-C replicated); scatter static fields from rank-0 `arp` at init. Gate: full suite.
-4. **2f — the flip.** Allocate `arp` full only on rank 0; loading (`irf.cpp`) becomes rank-0 GDAL
-   read. Non-root ranks hold only DMDA subdomain vectors + Class-C 1-D arrays. **Memory win lands
-   here.** Gate: full suite at several rank counts + a large-grid memory check.
+Status as of 2026-07-23. Note that 2d/2e diverged from the original plan: tracing the code
+surfaced two pre-existing transient bugs (both since fixed), and 2e became a physics fix rather
+than the static-intake conversion. The intake conversion is now folded into 2f.
+
+1. **2c — recharge on rank 0 (DONE, commit 88665c7).** Recharge loop (both evap modes) guarded to
+   rank 0; broadcast `rech` and `wtd`. `runoff` needs no broadcast (overwritten before reuse). The
+   `rech`/`wtd` broadcasts become `scatterFromZero` at the flip.
+2. **2d — UpdateTransientArrays on rank 0 (DONE, commit 6094ced).** Guarded to rank 0 with the
+   dephier build; broadcast `topo`. `PrintValues`' loop was already rank-0-only (Phase 0);
+   `wtd_old`/`wtd_mid` copies were left replicated (trivial memcpy; folded into 2f).
+   - *Bug found + fixed (commit 4b8e13b):* the interpolation weight `f = cycles_done/total_cycles`
+     was integer division → all transient forcing frozen at start values. Cast to double.
+3. **2e — re-scatter topo/fdepth each cycle (DONE, commit 7fb7b72).** *Not* the originally-planned
+   static-intake conversion. Tracing 2e revealed the solve reads topo/fdepth from vectors scattered
+   only once at init, so in transient the solve ignored the (now-interpolating) topography change.
+   Fix: broadcast `fdepth`, re-scatter topo/fdepth to the solve each transient cycle. Physics change
+   (approved); transient golden reference regenerated. Equilibrium/test unaffected.
+4. **2f — the flip (REMAINING; the big step).** Still to do, and it now also absorbs the
+   static-intake conversion that original-2e was meant to cover:
+   - Convert the solve↔arp bridges (`set_starting_values`, rech/starting_wtd fill, copy-back) to
+     read/write DMDA-backed data instead of `arp` (wtd, rech via scatter; porosity/mask via DMDA
+     vecs; topo via the re-scattered `topo_local`; cell_area/cellsize stay Class-C replicated).
+   - Gate `wtd_old`/`wtd_mid` copies to rank 0; switch the post-solve `gatherToAll` to `gatherToZero`
+     (wtd resident on rank 0 through the serial sections; scattered to the solve each cycle).
+   - Allocate `arp` full only on rank 0; loading (`irf.cpp`) becomes a rank-0 GDAL read.
+   - **Memory win lands here.** Gate: full suite at several rank counts + a large-grid memory check.
 
 ## D. Ordering invariant (the safety rule)
 
 The flip (2f) must be **last**: `arp` may become rank-0-only only after *every* full-grid access on
-non-root ranks has been removed (2c–2e). A single missed non-root `arp(i,j)` read after 2f is an
+non-root ranks has been removed. A single missed non-root `arp(i,j)` read after the flip is an
 out-of-bounds / stale-data bug, not a compile error — which is exactly why the `*_local` accessor
-rename (compile-time guard) and the test suite below matter. Before 2f, grep for every `arp.<name>(`
+rename (compile-time guard) and the test suite matter. Before the flip, grep every `arp.<name>(`
 outside rank-0 guards and confirm each is either Class C or converted.
+
+## E. Known pre-existing issues surfaced (not blocking; flagged for the record)
+
+- **Integer-division interpolation** — fixed (4b8e13b).
+- **Solve ignored transient topography** — fixed (7fb7b72).
+- **Solve still uses `topo_start` reference internally vs current topo in copy-back**: with the
+  2e re-scatter the solve now uses current topo, so this is resolved for topo; watch for any other
+  field scattered once at init that a transient run mutates.
