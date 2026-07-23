@@ -92,19 +92,24 @@ void update(
   timer_overall.start();
 
   if (params.run_type == "transient") {
-    UpdateTransientArrays(params, arp);
-    // linear interpolation of input data from start to end times.
-    // with transient runs, we have to redo the depression hierarchy every time,
-    // since the topography is changing.
-    // deps feeds only FillSpillMerge, which now runs on rank 0 only, so build
-    // the hierarchy on rank 0 only as well (its label/flowdir outputs are also
-    // FSM-only). See benchmark/DISTRIBUTED_ARP_DESIGN.md.
-    PetscMPIInt deps_rank;
-    MPI_Comm_rank(PETSC_COMM_WORLD, &deps_rank);
-    if (deps_rank == 0) {
+    // UpdateTransientArrays (linear interpolation of the forcing fields from
+    // start to end, plus fdepth and the depression hierarchy rebuild) is serial
+    // full-grid work; run it on rank 0. Its interpolated fields feed only rank-0
+    // sections now -- the recharge loop (2c), dephier/FSM (2a/2b) -- or reach the
+    // solve through the init-time scatter, EXCEPT topo, which the non-root
+    // copy-back still reads. Broadcast topo (a float field) after. deps and the
+    // label/flowdir arrays feed only FillSpillMerge (rank 0). See
+    // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2d).
+    PetscMPIInt trans_rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &trans_rank);
+    if (trans_rank == 0) {
+      UpdateTransientArrays(params, arp);
+      // with transient runs, we have to redo the depression hierarchy every time,
+      // since the topography is changing.
       deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
           arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
     }
+    MPI_Bcast(arp.topo.data(), arp.topo.size(), MPI_FLOAT, 0, PETSC_COMM_WORLD);
   }
 
   // TODO: How should equilibrium know when to exit?
