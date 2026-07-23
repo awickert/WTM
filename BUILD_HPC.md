@@ -291,7 +291,29 @@ the node maximum, so a quick scaling sweep (8, 16, 32) is worth doing once.
 ## Verify the build is correct
 
 The test suite confirms the build (including the MPI flip) end-to-end. It needs
-`python3` with `rasterio` (`pip install rasterio` or `mamba install -c conda-forge rasterio`):
+`python3` with `rasterio` + `numpy` (to compare output rasters). This is
+**decoupled from the C++ build** — rasterio just reads the output GeoTIFFs — so it
+does not need to match the build toolchain.
+
+**On MSI, use the anaconda Python module, not the plain `python/*-gcc-*` ones.**
+The plain Python modules are each tied to a *different* gcc (13.1.0, 8.2.0, …) and
+loading one can swap your `gcc/11.3.0`, breaking `wtm.x` at runtime. The anaconda
+module is self-contained and won't swap gcc:
+
+```sh
+module load python/3.10.9_anaconda2023.03_libmamba
+conda init bash                              # once; then: source ~/.bashrc
+conda config --set auto_activate_base false  # so base never auto-activates (would shadow future builds)
+conda create -n wtmtest -c conda-forge rasterio numpy
+conda activate wtmtest
+
+# confirm nothing got shadowed:
+module list         # WTM modules (petsc/gdal/gcc-11.3.0) still loaded
+which mpirun        # must be $PETSC_DIR/bin/mpirun (PETSc's MPICH), NOT a conda one
+python3 -c "import rasterio, numpy; print('ok', rasterio.__version__)"
+```
+
+Then run the suite (keep the WTM modules loaded; `wtmtest` supplies only rasterio):
 
 ```sh
 cd tests
@@ -300,7 +322,12 @@ cd tests
 
 All six suites should report PASS at n = 1..8. `tests/run_unit_tests.sh` alone
 (the DMDA gather/scatter unit tests) is a fast smoke test that only needs the
-built `test_dmda.x`.
+built `test_dmda.x` — no Python.
+
+(Off MSI, a plain-Python `venv` + `pip install rasterio numpy` is cleaner than
+conda, since a venv doesn't touch `LD_LIBRARY_PATH` and so can't shadow the
+compiled `wtm.x`. On MSI the anaconda module wins only because the plain-Python
+modules would swap gcc.)
 
 ## Quick troubleshooting
 
