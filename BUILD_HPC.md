@@ -13,11 +13,10 @@ The golden rule up front:
 > sources (e.g. conda GDAL with system PETSc/MPI) causes link failures. Every
 > build problem we hit locally was a mixed-toolchain problem.
 
-## Quickstart (MSI, modules path)
+## Quickstart — MSI (verified module set, 2026-07)
 
-Copy-paste sequence for the common case. Details, alternatives (conda), and
-troubleshooting are in the sections below. Replace module versions/names with
-whatever `module avail` shows on the node.
+The exact modules that give a consistent toolchain on MSI (Agate, Rocky 8). See
+"Path A" below for how these were found and what to substitute on another cluster.
 
 ```sh
 # 0. Clone the fork + branch + submodules (git may itself be a module)
@@ -28,30 +27,31 @@ git clone --recurse-submodules -b solver-optimization-2 \
 # 1. Get an interactive compute node (do NOT build on the login node)
 srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
 
-# 2. Discover the exact module names/versions. petsc must be >= 3.17.1.
-#    (avail prints to stderr, so redirect to grep; -t = terse, one per line.)
-module -t avail 2>&1 | grep -iE 'petsc|openmpi|ompi|mpi|gdal|gcc|cmake'
+# 2. Load the toolchain. Load PETSc FIRST -- it auto-loads gcc/11.3.0 and a
+#    serial HDF5, and provides its own MPICH wrappers (mpicc/mpicxx/mpiexec in
+#    $PETSC_DIR/bin). Then add the gcc-11.3.0-matched GDAL (shares that HDF5) and CMake.
+module load petsc/3.24.5-gnu-rocky8
+module load gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3
+module load cmake/3.29.2-rocky8
+module list                       # sanity: gcc/11.3.0 + petsc + gdal all present
 
-# 3. Load by EXACT name (substitute what step 2 printed): compiler, MPI, PETSc, GDAL
-module load gcc/<ver> <mpi-module> <petsc-module> gdal cmake
+# 3. Verify the toolchain BEFORE building
+pkg-config --modversion PETSc     # 3.24.5  (>= 3.17.1 required)
+which mpicc mpicxx                # $PETSC_DIR/bin/... (PETSc's MPICH)
+gdal-config --version             # 3.12.1
 
-# 4. Verify the toolchain BEFORE building
-pkg-config --modversion PETSc   # must print >= 3.17.1
-mpicxx --version                # should match the gcc you loaded
-gdal-config --version
-
-# 5. Build -- use the MPI compiler wrappers (the code makes direct MPI_* calls)
+# 4. Build -- use PETSc's MPI compiler wrappers (the code makes direct MPI_* calls)
 cd WTM && mkdir build && cd build
 CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON ..
 make -j 8
 
-# 6. Confirm the build (incl. the MPI flip); needs python3 + rasterio
+# 5. Confirm the build (incl. the MPI flip); needs python3 + rasterio
 cd ../tests && ./run_all.sh
 ```
 
-If step 2 shows **no PETSc, or < 3.17.1** → use the conda path (Path B). If cmake
-can't find PETSc despite the module → `export PKG_CONFIG_PATH=$PETSC_DIR/$PETSC_ARCH/lib/pkgconfig:$PKG_CONFIG_PATH`.
-See the troubleshooting table at the bottom for other symptoms.
+Module names change over time; if these exact versions are gone, use the
+discovery steps in Path A to find the current equivalents. If no PETSc >= 3.17.1
+exists, use the conda path (Path B).
 
 ## Dependencies
 
@@ -60,7 +60,7 @@ External (must be provided by modules or conda):
 | Dep | Constraint | Notes |
 |-----|-----------|-------|
 | C++ compiler | **C++20** (`gcc`/`g++` ≥ 11; 13 ideal) | `cxx_std_20` in CMakeLists |
-| MPI | OpenMPI or Intel MPI | **must be the same MPI PETSc was built against** |
+| MPI | any (OpenMPI, MPICH, Intel) | **must be the same MPI PETSc was built against** — often bundled *inside* the PETSc install (MSI: MPICH, wrappers in `$PETSC_DIR/bin`) |
 | PETSc | **≥ 3.17.1**, real scalars, MPI | found via `pkg-config` (`PETSc.pc`) |
 | GDAL | any recent | `find_package(GDAL REQUIRED)` |
 | CMake | ≥ 3.16 | |
@@ -145,22 +145,47 @@ flat, so everything shows at once. Two consequences:
   that exact name doesn't exist — the real name has a version or path suffix
   (e.g. `ompi/4.1.5/gnu`). Use the names the grep above prints.
 
-Load by **exact name** (compiler first is still good practice for consistency):
+**Load PETSc first — it pulls its own toolchain.** On MSI, `petsc/3.24.5-gnu-rocky8`
+auto-loads `gcc/11.3.0`, a serial HDF5, and — crucially — **bundles its own MPICH**
+(wrappers at `$PETSC_DIR/bin/{mpicc,mpicxx,mpiexec}`); there is **no standalone
+`openmpi` module** on MSI, and you don't need one. So the discovery order is:
+find PETSc, load it, and read what it brought:
 
 ```sh
-module load gcc/<ver> <exact-mpi-module> <exact-petsc-module> gdal cmake
+module load petsc/<version>
+module list                       # shows the gcc + (maybe) MPI it auto-loaded
+which mpicc mpicxx                 # PETSc's wrappers should be on PATH
 ```
 
-If the grep shows **no PETSc, or only a version < 3.17.1**, use Path B (conda) —
-it avoids site modules entirely.
+**Confirm the PETSc is *parallel*, not a serial MPIUNI stub** (a serial build
+would compile WTM but run on 1 rank, defeating the point). The `which mpicc mpicxx`
+above succeeding is the first sign; confirm with:
+
+```sh
+grep -iE 'MPIUNI|HAVE_MPI(CH|_)' $PETSC_DIR/include/petscconf.h
+# good: shows PETSC_HAVE_MPICH 1 (or another real MPI) and NO PETSC_HAVE_MPIUNI 1
+```
+
+Then add a GDAL and CMake. **Match GDAL to PETSc's compiler** so they share one
+HDF5/netcdf lineage (avoids a mixed-HDF5 link clash): on MSI,
+`gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3` is built with the same `gcc-11.3.0` as PETSc
+and reuses PETSc's `hdf5-gcc-11.3.0-serial`. CMake is only the build driver, so
+any recent one works (`cmake/3.29.2-rocky8`).
+
+```sh
+module load gdal/<gcc-matched-version> cmake/<recent>
+module list                       # verify gcc did NOT get bumped to a different version
+```
+
+If the grep shows **no PETSc, or only a version < 3.17.1, or only serial/MPIUNI
+builds**, use Path B (conda) — its `petsc>=3.17` is MPI-parallel by default.
 
 **Verify the toolchain is consistent BEFORE building:**
 
 ```sh
-pkg-config --modversion PETSc     # must print >= 3.17.1
-pkg-config --variable=ccompiler PETSc   # note which MPI/compiler PETSc used
-mpicxx --version                  # should be the same gcc family
-gdal-config --version
+pkg-config --modversion PETSc     # must print >= 3.17.1  (MSI: 3.24.5)
+which mpicc mpicxx                # PETSc's wrappers (MSI: $PETSC_DIR/bin/...)
+gdal-config --version             # MSI: 3.12.1
 ```
 
 If `pkg-config --modversion PETSc` fails, add PETSc's pkgconfig dir:
@@ -219,9 +244,14 @@ The memory win only shows with `>1` rank. Interactive testing (inside the
 Step-1 session) is just:
 
 ```sh
-srun -n 8 ./wtm.x <config.cfg>
-# or mpirun -n 8 ./wtm.x <config.cfg>
+mpiexec -n 8 ./wtm.x <config.cfg>      # PETSc's own launcher ($PETSC_DIR/bin/mpiexec)
+# or with Slurm:  srun --mpi=pmi2 -n 8 ./wtm.x <config.cfg>
 ```
+
+**Launcher note (MSI):** the MPI is **MPICH** (bundled with PETSc), so use PETSc's
+`$PETSC_DIR/bin/mpiexec`, or `srun --mpi=pmi2` — MPICH under Slurm typically needs
+the `pmi2` PMI. A plain `srun ./wtm.x` may fail to wire up the ranks; `mpiexec`
+inside an interactive allocation is the reliable smoke test.
 
 Production runs go through `sbatch` on a production partition (msilong for long
 single-node runs, msismall for shorter single-node, msilarge for multi-node).
@@ -237,11 +267,12 @@ Load the **same** modules/env you built with. Example `run_wtm.sbatch`:
 #SBATCH --time=7-00:00:00          # D-HH:MM:SS; msilong allows up to 37 days
 #SBATCH --output=wtm-%j.out
 
-module load gcc openmpi petsc gdal cmake   # the SAME modules used to build
+# the SAME modules used to build (MSI):
+module load petsc/3.24.5-gnu-rocky8 gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3 cmake/3.29.2-rocky8
 # (or: source activate wtm, if you built via the conda path)
 
 cd /path/to/WTM/build
-srun ./wtm.x /path/to/config.cfg           # uses the allocation's 32 ranks
+srun --mpi=pmi2 ./wtm.x /path/to/config.cfg   # MPICH under Slurm; uses the 32 ranks
 ```
 
 Submit and monitor:
