@@ -70,9 +70,13 @@ class DMDAFullGridGather {
   // each rank receives its owned cells. `full` is read only on rank 0 (may be
   // empty elsewhere). This is the rank-0 -> distributed handoff the solve needs
   // for per-cycle inputs (e.g. recharge) once ArrayPack lives only on rank 0.
-  void scatterFromZero(const std::vector<double>& full, Vec global) {
-    // Load rank 0's full buffer into the sequential-on-rank-0 vector, then run
-    // the scatter in reverse (rank 0 -> natural), then natural -> DMDA global.
+  // `full` is a contiguous row-major buffer of Mx*My values on rank 0 (read only
+  // there; may be null/empty elsewhere). Templated on the source element type so
+  // it accepts both the double per-cycle fields (wtd, rech, fdepth) and the float
+  // ArrayPack static fields (topo, ksat, porosity, mask), converting to
+  // PetscScalar during the load.
+  template <typename T>
+  void scatterFromZero(const T* full, Vec global) {
     PetscMPIInt rank;
     MPI_Comm_rank(PetscObjectComm((PetscObject)da_), &rank);
     if (rank == 0) {
@@ -80,7 +84,7 @@ class DMDAFullGridGather {
       VecGetArray(seq_on_zero_, &s);
       const PetscInt total = Mx_ * My_;
       for (PetscInt k = 0; k < total; k++) {
-        s[k] = full[k];
+        s[k] = static_cast<PetscScalar>(full[k]);
       }
       VecRestoreArray(seq_on_zero_, &s);
     }
@@ -88,6 +92,12 @@ class DMDAFullGridGather {
     VecScatterEnd(to_zero_, seq_on_zero_, natural_, INSERT_VALUES, SCATTER_REVERSE);
     DMDANaturalToGlobalBegin(da_, natural_, INSERT_VALUES, global);
     DMDANaturalToGlobalEnd(da_, natural_, INSERT_VALUES, global);
+  }
+
+  // Convenience overload for a std::vector<double> source (used by the round-trip
+  // unit tests and any double-typed caller).
+  void scatterFromZero(const std::vector<double>& full, Vec global) {
+    scatterFromZero(full.data(), global);
   }
 
  private:

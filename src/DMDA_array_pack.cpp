@@ -17,26 +17,15 @@ void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp, DMDA_Array_P
   }
 }
 
-// Populate the global topo/fdepth/ksat vecs from arp and scatter to local ghost vectors.
-// Must be called while these global vecs are NOT under DMDAVecGetArray (i.e., before or after
-// DMDA_Array_Pack holds them — which it does NOT, by design).
+// Populate the global topo/fdepth/ksat vecs from rank-0 arp and scatter to local ghost vectors.
+// Sourcing from rank 0 (via the natural-ordering scatter) rather than an owned copy of a replicated
+// arp is what allows arp.topo/fdepth/ksat to be dropped on non-root ranks. topo/ksat are float,
+// fdepth is double; scatterFromZero converts to PetscScalar. Must be called while these global vecs
+// are NOT under DMDAVecGetArray (DMDA_Array_Pack does not hold them, by design).
 void scatter_static_fields(AppCtx& user_context, ArrayPack& arp) {
-  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
-  PetscScalar **topo_arr, **fdepth_arr, **ksat_arr;
-
-  DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_arr);
-  DMDAVecGetArray(user_context.da, user_context.fdepth_vec, &fdepth_arr);
-  DMDAVecGetArray(user_context.da, user_context.ksat_vec, &ksat_arr);
-  for (auto j = ys; j < ys + ym; j++) {
-    for (auto i = xs; i < xs + xm; i++) {
-      topo_arr[j][i]   = arp.topo(i, j);
-      fdepth_arr[j][i] = arp.fdepth(i, j);
-      ksat_arr[j][i]   = arp.ksat(i, j);
-    }
-  }
-  DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_arr);
-  DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &fdepth_arr);
-  DMDAVecRestoreArray(user_context.da, user_context.ksat_vec, &ksat_arr);
+  user_context.full_grid_gather->scatterFromZero(arp.topo.data(), user_context.topo_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.fdepth.data(), user_context.fdepth_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.ksat.data(), user_context.ksat_vec);
 
   // The DMDA's internal PetscSF is shared across all GlobalToLocal operations on the same DM.
   // Overlapping Begin calls (Begin A, Begin B, End A, End B) confuse the SF state machine;

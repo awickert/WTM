@@ -110,16 +110,12 @@ void update(
       deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
           arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
     }
-    // Broadcast the interpolated fields the non-root ranks read: topo (float,
-    // read by the copy-back) and fdepth (double). Then re-scatter topo/fdepth to
-    // the solve's DMDA vectors so the groundwater solve uses the CURRENT
-    // topography this cycle. Those vectors are otherwise scattered only once at
-    // init, so without this the solve would ignore the transient topography
-    // change entirely (ksat is genuinely static and does not change in time, but
-    // scatter_static_fields re-scatters it too, harmlessly). See
-    // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2e).
-    MPI_Bcast(arp.topo.data(), arp.topo.size(), MPI_FLOAT, 0, PETSC_COMM_WORLD);
-    MPI_Bcast(arp.fdepth.data(), arp.fdepth.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    // Re-scatter topo/fdepth (and ksat, unchanged) from rank-0 arp to the solve's
+    // DMDA vectors so the groundwater solve uses the CURRENT topography this cycle.
+    // Those vectors are otherwise scattered only once at init, so without this the
+    // solve would ignore the transient topography change entirely. scatter_static_fields
+    // now sources from rank 0, so no broadcast of arp.topo/fdepth is needed. See
+    // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2e/2f).
     scatter_static_fields(user_context, arp);
   }
 
