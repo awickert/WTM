@@ -78,3 +78,12 @@ add_executable(tests.x
 target_compile_options(tests.x PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
 target_link_libraries(tests.x PRIVATE wtm)
 target_compile_features(tests.x PRIVATE cxx_std_20)
+
+# MPI unit tests for the DMDA gather/scatter primitives. Run under mpirun at
+# several rank counts (see tests/run_unit_tests.sh); the row-major layout must
+# hold independent of decomposition, which only n>1 exercises.
+add_executable(test_dmda.x
+  src/test_dmda_gather.cpp
+)
+target_link_libraries(test_dmda.x PRIVATE wtm)
+target_compile_features(test_dmda.x PRIVATE cxx_std_20)
