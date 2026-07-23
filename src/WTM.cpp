@@ -180,50 +180,62 @@ void update(
   richdem::Timer recharge_timer;
   recharge_timer.start();
 
-  // Evap mode 1: Use the computed open-water evaporation rate
-  if (params.evap_mode) {
-    std::cout << "p updating the recharge field" << std::endl;
+  // The recharge computation is serial full-grid work. Run it on rank 0 only
+  // (arrays are still replicated, so rank 0 sees identical input), then
+  // broadcast the outputs the rest of the model consumes: rech (read by the
+  // next cycle's solve) and wtd (modified by evap_mode 0's surface-water
+  // removal). runoff is overwritten by this same loop before it is read again,
+  // so it needs no broadcast. See benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2c).
+  PetscMPIInt rech_rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
+  if (rech_rank == 0) {
+    // Evap mode 1: Use the computed open-water evaporation rate
+    if (params.evap_mode) {
+      std::cout << "p updating the recharge field" << std::endl;
 #pragma omp parallel for default(none) shared(arp, params)
-    for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (arp.wtd(i) > 0) {  // if there is surface water present
-        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
-      } else {  // water table is below the surface
-        // Recharge is always positive.
-        arp.rech(i) =
-            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
-      }
+      for (unsigned int i = 0; i < arp.topo.size(); i++) {
+        if (arp.wtd(i) > 0) {  // if there is surface water present
+          arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
+        } else {  // water table is below the surface
+          // Recharge is always positive.
+          arp.rech(i) =
+              (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
+        }
 
-      if (arp.rech(i) > 0) {
-        // if there is positive recharge, some of it may run off.
-        // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
+        if (arp.rech(i) > 0) {
+          // if there is positive recharge, some of it may run off.
+          // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
+          arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
+          arp.rech(i) -= arp.runoff(i);
+        }
+      }
+    }
+
+    // Evap mode 0: remove all surface water (like Fan Reinfelder et al., 2013)
+    else {
+      std::cout << "p removing all surface water" << std::endl;
+#pragma omp parallel for default(none) shared(arp, params)
+      for (unsigned int i = 0; i < arp.topo.size(); i++) {
+        if (arp.wtd(i) > 0) {  // if there is surface water present
+          arp.wtd(i) = 0;      // use this option when testing GW component alone
+          // still set recharge because it could be positive in this cell, and some may run off or move to neighbouring
+          // cells
+          arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
+        } else {  // water table is below the surface
+          arp.rech(i) =
+              (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
+        }
+        if (arp.rech(i) > 0) {
+          // if there is positive recharge, some of it may run off.
+          // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
+          arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
+          arp.rech(i) -= arp.runoff(i);
+        }
       }
     }
   }
-
-  // Evap mode 0: remove all surface water (like Fan Reinfelder et al., 2013)
-  else {
-    std::cout << "p removing all surface water" << std::endl;
-#pragma omp parallel for default(none) shared(arp, params)
-    for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (arp.wtd(i) > 0) {  // if there is surface water present
-        arp.wtd(i) = 0;      // use this option when testing GW component alone
-        // still set recharge because it could be positive in this cell, and some may run off or move to neighbouring
-        // cells
-        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
-      } else {  // water table is below the surface
-        arp.rech(i) =
-            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
-      }
-      if (arp.rech(i) > 0) {
-        // if there is positive recharge, some of it may run off.
-        // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
-      }
-    }
-  }
+  MPI_Bcast(arp.rech.data(), arp.rech.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+  MPI_Bcast(arp.wtd.data(), arp.wtd.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
 
   std::cerr << "t Set recharge time = " << recharge_timer.lap() << std::endl;
   std::cerr << "After setting recharge values: " << get_current_time_and_date_as_str() << std::endl;
