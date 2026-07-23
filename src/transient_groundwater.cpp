@@ -223,31 +223,27 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
-  // Assemble the full wtd field on every rank. Each rank has updated only its
-  // owned cells; copy those into a DMDA global vector and use the reusable
-  // natural-ordering gather to reproduce the complete row-major field on all
-  // ranks. (Replaces a hand-rolled zero-and-Allreduce reassembly with the
-  // PETSc gather primitive that Phase 2+ will reuse for FSM/output; see
-  // benchmark/DISTRIBUTED_ARP_DESIGN.md.)
-  PetscLogEventBegin(EVENT_FULLREDUCE, 0, 0, 0, 0);
-  {
-    PetscScalar** wg;
-    DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
-    for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++)
-        wg[j][i] = arp.wtd(i, j);
-    DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
-
-    std::vector<double> full;
-    user_context.full_grid_gather->gatherToAll(user_context.wtd_global, full);
-
-    for (int j = 0; j < params.ncells_y; j++)
-      for (int i = 0; i < params.ncells_x; i++)
-        arp.wtd(i, j) = full[j * params.ncells_x + i];
-  }
-  PetscLogEventEnd(EVENT_FULLREDUCE, 0, 0, 0, 0);
-
+  // The full wtd field is assembled once per cycle, after the maxiter loop, by
+  // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
   return 0;
+}
+
+// Assemble the full wtd field on every rank from each rank's owned cells.
+void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** wg;
+  DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      wg[j][i] = arp.wtd(i, j);
+  DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
+
+  std::vector<double> full;
+  user_context.full_grid_gather->gatherToAll(user_context.wtd_global, full);
+
+  for (int j = 0; j < params.ncells_y; j++)
+    for (int i = 0; i < params.ncells_x; i++)
+      arp.wtd(i, j) = full[j * params.ncells_x + i];
 }
 
 /* ------------------------------------------------------------------- */

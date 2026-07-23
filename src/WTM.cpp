@@ -150,6 +150,9 @@ void update(
   while (iter_count++ < params.maxiter) {
     FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
   }
+  // Assemble the full wtd field once, now that the solve loop is done (the
+  // intermediate solves only need each rank's owned cells).
+  FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context);
 
   std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;
   std::cerr << "t After GW time: " << get_current_time_and_date_as_str() << std::endl;
