@@ -248,15 +248,32 @@ than the static-intake conversion. The intake conversion is now folded into 2f.
    only once at init, so in transient the solve ignored the (now-interpolating) topography change.
    Fix: broadcast `fdepth`, re-scatter topo/fdepth to the solve each transient cycle. Physics change
    (approved); transient golden reference regenerated. Equilibrium/test unaffected.
-4. **2f — the flip (REMAINING; the big step).** Still to do, and it now also absorbs the
-   static-intake conversion that original-2e was meant to cover:
-   - Convert the solve↔arp bridges (`set_starting_values`, rech/starting_wtd fill, copy-back) to
-     read/write DMDA-backed data instead of `arp` (wtd, rech via scatter; porosity/mask via DMDA
-     vecs; topo via the re-scattered `topo_local`; cell_area/cellsize stay Class-C replicated).
-   - Gate `wtd_old`/`wtd_mid` copies to rank 0; switch the post-solve `gatherToAll` to `gatherToZero`
-     (wtd resident on rank 0 through the serial sections; scattered to the solve each cycle).
-   - Allocate `arp` full only on rank 0; loading (`irf.cpp`) becomes a rank-0 GDAL read.
-   - **Memory win lands here.** Gate: full suite at several rank counts + a large-grid memory check.
+4. **2f — the flip (IN PROGRESS; the big step).** Scope decision (Andy, 2026-07-23): **full flip** —
+   distribute `wtd`/`rech` too, not just the static arrays. Rationale: on msilong's 128 GB cap,
+   keeping `wtd`+`rech` replicated (~2.26 GB/rank × 32 = ~72 GB) leaves only ~15 GB headroom (~113 GB
+   used); distributing them drops the job to ~43 GB. Distributing them adds **no compute overhead**
+   (the bridges are already owned-range) and is communication-neutral; it also naturally folds in the
+   lever-#2 gather-hoist. Broken into sub-steps:
+   - **2f-A — hoist the per-solve gather (DONE, commit fd2188f).** `gatherToAll` ran once per solve
+     (`maxiter`×/cycle); the intermediate solves only need owned wtd. Extracted to
+     `gather_wtd_to_all`, called once per cycle after the maxiter loop. Bit-identical; ~499/500
+     redundant full-grid gathers per cycle removed. This is "lever #2."
+   - **2f-B — distribute the solve dataflow (NEXT).** Rewrite the maxiter loop to keep wtd/rech in
+     DMDA vectors: once per cycle `scatterFromZero(arp.wtd→starting_wtd)` and
+     `scatterFromZero(arp.rech→rech_dist)`; per solve the three bridges read/write
+     `starting_wtd`/`rech_dist`/`porosity_vec`/`mask` over the owned range (no `arp`); wtd lives in
+     `starting_wtd` through the loop (copy-back writes it back); `gather_wtd_to_all` after. Done while
+     `arp` is still replicated → bit-identical and cross-checkable. **Care points:** PETSc vec
+     lifecycle (the solve currently holds these DMDA arrays for the whole run via `DMDAVecGetArray`;
+     scatter-in needs them un-held at scatter time — use scratch vecs or restructure dmdapack's
+     get/restore), the per-solve vs per-cycle split of the ocean-loss/recharge accumulators, and the
+     float(`topo`,`mask`,`porosity`)/double(DMDA) boundary.
+   - **2f-C — drop `arp` on non-root + acceptance check (LAST).** Gate `wtd_old`/`wtd_mid` copies to
+     rank 0; make loading (`irf.cpp`) a rank-0 GDAL read; scatter the static fields from rank-0 `arp`;
+     allocate the full-grid `arp` arrays only on rank 0 (`cell_area`/`cellsize` stay Class-C, computed
+     on all ranks). **Memory win lands here.** Add the **structural acceptance check**: assert the
+     full-grid `arp` arrays are empty/unallocated on non-root ranks (a structural assertion, not RSS —
+     works at any grid size). Gate: full suite at several rank counts + the acceptance check.
 
 ## D. Ordering invariant (the safety rule)
 
