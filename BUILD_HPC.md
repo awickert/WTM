@@ -17,7 +17,7 @@ The golden rule up front:
 
 Copy-paste sequence for the common case. Details, alternatives (conda), and
 troubleshooting are in the sections below. Replace module versions/names with
-whatever `module spider` shows on the node.
+whatever `module avail` shows on the node.
 
 ```sh
 # 0. Clone the fork + branch + submodules (git may itself be a module)
@@ -28,14 +28,12 @@ git clone --recurse-submodules -b solver-optimization-2 \
 # 1. Get an interactive compute node (do NOT build on the login node)
 srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
 
-# 2. Discover modules (hierarchical: spider sees hidden ones). petsc must be >= 3.17.1.
-module spider petsc
-module spider openmpi
+# 2. Discover the exact module names/versions. petsc must be >= 3.17.1.
+#    (avail prints to stderr, so redirect to grep; -t = terse, one per line.)
+module -t avail 2>&1 | grep -iE 'petsc|openmpi|ompi|mpi|gdal|gcc|cmake'
 
-# 3. Load in dependency order: compiler -> MPI -> PETSc/GDAL
-module load gcc/13.1.0          # or whatever C++20-capable gcc spider shows
-module load openmpi             # visible only after gcc
-module load petsc gdal cmake    # petsc usually visible only after gcc + openmpi
+# 3. Load by EXACT name (substitute what step 2 printed): compiler, MPI, PETSc, GDAL
+module load gcc/<ver> <mpi-module> <petsc-module> gdal cmake
 
 # 4. Verify the toolchain BEFORE building
 pkg-config --modversion PETSc   # must print >= 3.17.1
@@ -80,7 +78,7 @@ needs nothing external.
 `git` itself may be a module on the cluster (the system git can be old or absent):
 
 ```sh
-module avail git        # or: module spider git
+module -t avail 2>&1 | grep -i git      # find the exact git module name
 module load git         # if a git module is listed
 ```
 
@@ -131,32 +129,30 @@ interactive-job command — `salloc`/`srun --pty` are the usual variants.)
 
 ## Path A — cluster modules (try this first; MSI shown)
 
-**MSI (and most modern clusters) use a *hierarchical* module tree (Lmod):** MPI
-and libraries built on top of a compiler are **hidden until you load that
-compiler**. So `module load openmpi` on a fresh shell fails with
-`Unable to locate a modulefile for 'openmpi'` — openmpi does not exist until a
-gcc is loaded. Load in dependency order: **compiler → MPI → PETSc/GDAL**.
+**MSI uses classic Environment Modules (Tmod), not Lmod** — there is **no
+`module spider`** (it errors with `Invalid command 'spider'`), and the tree is
+flat, so everything shows at once. Two consequences:
 
-`module spider` is the tool that cuts through this: it searches the *entire*
-tree (including hidden modules) and prints the exact prerequisites to load first.
+- `module avail` dumps the *entire* (huge) list and can flood the terminal.
+  Always **filter**, and note that `avail` prints to **stderr** (so `2>&1`):
+
+  ```sh
+  module -t avail 2>&1 | grep -iE 'petsc|openmpi|ompi|mpi|gdal|gcc|cmake'
+  # ( -t = terse, one per line; add "| less" if still long )
+  ```
+
+- `module load openmpi` failing with `Unable to locate a modulefile` just means
+  that exact name doesn't exist — the real name has a version or path suffix
+  (e.g. `ompi/4.1.5/gnu`). Use the names the grep above prints.
+
+Load by **exact name** (compiler first is still good practice for consistency):
 
 ```sh
-module avail                 # what's directly loadable right now (compilers, cmake, …)
-module spider openmpi        # finds openmpi even when hidden; prints "load gcc/X first"
-module spider petsc          # same for PETSc, and shows its version (need >= 3.17.1)
+module load gcc/<ver> <exact-mpi-module> <exact-petsc-module> gdal cmake
 ```
 
-Then load in order (re-run `module avail` after each step to see what unlocked):
-
-```sh
-module load gcc/<11-or-newer>   # a C++20-capable gcc (e.g. gcc/13.1.0)
-module avail                    # openmpi now appears, built for that gcc
-module load openmpi
-module load petsc gdal cmake    # petsc typically appears only after gcc + openmpi
-```
-
-If `module spider petsc` finds nothing, or only a version < 3.17.1, use Path B
-(conda) — it avoids the module hierarchy entirely.
+If the grep shows **no PETSc, or only a version < 3.17.1**, use Path B (conda) —
+it avoids site modules entirely.
 
 **Verify the toolchain is consistent BEFORE building:**
 
