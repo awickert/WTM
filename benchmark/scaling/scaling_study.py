@@ -240,6 +240,15 @@ def main():
         write_cfg(cfg, sdir, grid, args.maxiter, args.total_cycles)
         for label, binary in builds:
             for n in args.ranks:
+                # kcallaghan (v2.0.1) is a single-process code: it SEGVs at every
+                # n>1 (the ghost bug -- OOB neighbor reads once the DMDA is
+                # decomposed), confirmed against KCallaghan/master locally and on
+                # MSI. Its only valid, and only ever-used, configuration is n=1
+                # (which the GMD v2.0.1 paper's O(n^2) serial scaling reflects).
+                # So run it once, at n=1, as the baseline; skip the pointless n>1
+                # crashes. before/after sweep all ranks.
+                if label == "kcallaghan" and n != 1:
+                    continue
                 # Never let a single run (or a parse hiccup) abort the sweep.
                 # Repeat --reps times; keep the best (min-wall) successful run to
                 # suppress shared-node timing noise. Fall back to the last result
