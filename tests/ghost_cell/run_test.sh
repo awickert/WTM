@@ -14,6 +14,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Pin OpenMP to one thread per rank (as the other test runners do). Without this,
+# each MPI rank spawns a thread per core; on a many-core node the thread
+# spawn/sync overhead for this tiny grid dominates, and at n>1 with a busy-wait
+# MPI (e.g. MPICH on MSI) the oversubscription makes the run crawl.
+export OMP_NUM_THREADS=1
+
 WTM=${1:-../../build/wtm.x}
 
 if [[ ! -x "$WTM" ]]; then
