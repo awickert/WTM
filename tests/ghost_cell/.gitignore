@@ -1,0 +1,4 @@
+# ghost_cell.cfg is the committed config the ghost-cell test needs; keep it
+# tracked despite the repo-wide *.cfg ignore. (Test inputs are *.tif, regenerated
+# by make_inputs.py at run time, so they stay ignored.)
+!ghost_cell.cfg
