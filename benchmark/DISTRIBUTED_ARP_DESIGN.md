@@ -159,9 +159,11 @@ correctness is established incrementally. Do not skip to Phase 4.
 - **richdem coupling:** FSM's reliance on `richdem::Array2D` means the gathered Class B arrays must
   present exactly that type/layout. The natural-ordering gather must reproduce row-major
   `Array2D` indexing precisely — a likely source of subtle bugs; test with the ghost harness.
-- **Accessor ergonomics:** `arp.wtd(i,j)` global→owned index change is a footgun across ~32 sites.
-  Consider a distinct accessor name (e.g. `arp.wtd_local(i,j)`) so global-index misuse fails to
-  compile rather than silently reading the wrong cell.
+- **Accessor ergonomics — DECIDED:** distributed arrays use a distinct accessor name,
+  `arp.wtd_local(i,j)` (owned/local indices), rather than reusing the global `arp.wtd(i,j)`.
+  Rationale (Andy, 2026-07-23): clearer to the reader, and a global-index misuse then fails to
+  *compile* rather than silently reading the wrong cell. Apply this naming to every distributed
+  (Class A) array as it is converted.
 - **Transient `_start`/`_end` endpoints** double the Class A array count during interpolation;
   confirm they distribute cleanly and don't reintroduce a memory spike.
 - **Is rank-0-read-then-scatter fast enough** at 141M cells, or is parallel-windowed GDAL needed?
