@@ -146,13 +146,16 @@ void update(
   // These iterations refer to how many times to repeat the time step within the groundwater
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
   // 2x 6 months GW then FSM.
-  // Populate the distributed wtd carrier (starting_wtd) from the full wtd once
-  // per cycle; the maxiter solves then advance it in place (2f-B).
+  // Populate the distributed per-cycle solve inputs from the full arrays once
+  // per cycle: the wtd carrier (starting_wtd, advanced in place by the maxiter
+  // solves) and the recharge source (rech_dist, constant across the loop). 2f-B.
   {
     const auto [xs, ys, xm, ym] = get_corners(user_context.da);
     for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++)
+      for (int i = xs; i < xs + xm; i++) {
         dmdapack.starting_wtd[j][i] = arp.wtd(i, j);
+        dmdapack.rech_dist[j][i]    = arp.rech(i, j);
+      }
   }
 
   int iter_count = 0;
@@ -307,6 +310,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   delete user_context.full_grid_gather;  // destroys PETSc scatter/vecs; must precede PetscFinalize
   user_context.full_grid_gather = nullptr;
   VecDestroy(&user_context.wtd_global);
+  VecDestroy(&user_context.rech_source);
 
   SNESDestroy(&user_context.snes);
   DMDestroy(&user_context.da);

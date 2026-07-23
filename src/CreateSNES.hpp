@@ -34,6 +34,10 @@ struct AppCtx {
   Vec wtd_global                       = nullptr;
   DMDAFullGridGather* full_grid_gather = nullptr;
 
+  // Distributed per-cycle recharge source (populated from arp.rech each cycle),
+  // so the solve loop reads recharge from DMDA-owned data rather than arp.rech.
+  Vec rech_source = nullptr;
+
   // Extract global vectors from DM; then duplicate for remaining
   // vectors that are the same types
   void make_global_vectors() {
@@ -48,6 +52,7 @@ struct AppCtx {
     VecDuplicate(x, &porosity_vec);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &wtd_global);
+    VecDuplicate(x, &rech_source);
   }
 
   void make_local_vectors() {

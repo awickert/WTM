@@ -114,8 +114,8 @@ static double dEffectiveStorativityDnew(
 // over the owned range) rather than in the full-grid arp.wtd, so that arp.wtd
 // need not exist on non-root ranks. mask/porosity/rech/cell_area are still read
 // from arp (replicated) at this phase. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2f-B).
-void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscInt xs, PetscInt ys, PetscInt xm,
-                         PetscInt ym) {
+void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscScalar** rech_dist, PetscInt xs,
+                         PetscInt ys, PetscInt xm, PetscInt ym) {
   // no pragma because we're editing arp accumulators
   // Accumulate over this rank's OWNED cells only (DMDA owned range, which is
   // non-overlapping across ranks), so under MPI each ocean/recharge cell is
@@ -133,8 +133,8 @@ void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscInt xs
           arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y] * arp.porosity(x, y);
         starting_wtd[y][x] = 0.;
       } else {
-        double rech_count = arp.rech(x, y);
-        if (starting_wtd[y][x] >= 0 && starting_wtd[y][x] + arp.rech(x, y) < 0)
+        double rech_count = rech_dist[y][x];
+        if (starting_wtd[y][x] >= 0 && starting_wtd[y][x] + rech_dist[y][x] < 0)
           rech_count = -starting_wtd[y][x];
 
         arp.total_added_recharge += rech_count * arp.cell_area[y];
@@ -163,14 +163,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
   // maxiter loop, then maintained by the copy-back below), not in arp.wtd.
   PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
-  set_starting_values(arp, dmdapack.starting_wtd, xs, ys, xm, ym);
+  set_starting_values(arp, dmdapack.starting_wtd, dmdapack.rech_dist, xs, ys, xm, ym);
   PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      dmdapack.rech_vec[j][i] = add_recharge(arp.rech(i, j), dmdapack.starting_wtd[j][i], arp.porosity(i, j));
+      dmdapack.rech_vec[j][i] = add_recharge(dmdapack.rech_dist[j][i], dmdapack.starting_wtd[j][i], arp.porosity(i, j));
     }
   }
 
