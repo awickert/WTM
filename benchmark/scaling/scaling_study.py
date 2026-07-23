@@ -66,7 +66,13 @@ BUILD_FOLDERS = {
     "kcallaghan": "WTM-kcallaghan",
 }
 
-SNES_ARGS = ["-snes_type", "anderson", "-snes_stol", "1e-6"]  # no -snes_mf (deadlocks under MPICH)
+# Solver arguments per build (no -snes_mf anywhere -- it deadlocks under MPICH).
+# after/before use the project's Anderson default explicitly. kcallaghan runs with
+# NO solver override so it uses its own published default solver -- the honest
+# "as Kerry actually runs it" baseline (Andy, 2026-07-24), which also folds the
+# Newton->Anderson default change into the kcallaghan->after comparison.
+ANDERSON_ARGS = ["-snes_type", "anderson", "-snes_stol", "1e-6"]
+SOLVER_ARGS = {"after": ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": []}
 
 # A single well-formed float. Bounded so it stops at the next number even when
 # concurrent MPI ranks interleave their output with no separator (e.g. two ranks
@@ -142,9 +148,9 @@ def parse(out):
     return gw, it, mem
 
 
-def run_one(binary, mpiexec, nranks, cfg):
+def run_one(binary, mpiexec, nranks, cfg, snes_args):
     env = dict(os.environ, OMP_NUM_THREADS="1")
-    cmd = [mpiexec, "-n", str(nranks), binary, cfg, *SNES_ARGS, "-memory_view"]
+    cmd = [mpiexec, "-n", str(nranks), binary, cfg, *snes_args, "-memory_view"]
     t0 = time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     wall = time.time() - t0
@@ -206,7 +212,8 @@ def main():
     print(f"grids       : {grids}")
     print(f"ranks       : {args.ranks}")
     print(f"maxiter     : {args.maxiter}   total_cycles: {args.total_cycles}")
-    print(f"solver args : {' '.join(SNES_ARGS)}\n")
+    print(f"solver args : after/before = {' '.join(ANDERSON_ARGS)}")
+    print(f"              kcallaghan   = (its own default solver -- no -snes_type)\n")
 
     rows = []
     header = f"{'build':<11}{'grid':>6}{'n':>4}{'rc':>4}{'iters':>6}{'wall_s':>9}{'gw_s':>9}   mem GB total/max/min"
@@ -235,7 +242,8 @@ def main():
                 r = None
                 for _ in range(max(1, args.reps)):
                     try:
-                        cur = run_one(binary, args.mpiexec, n, cfg)
+                        cur = run_one(binary, args.mpiexec, n, cfg,
+                                      SOLVER_ARGS.get(label, ANDERSON_ARGS))
                     except Exception as e:  # noqa: BLE001 -- record and keep going
                         cur = {"rc": -99, "wall": None, "gw": None, "iters": None,
                                "mem_total": None, "mem_max": None, "mem_min": None,
