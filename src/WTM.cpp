@@ -94,12 +94,8 @@ void update(
   if (params.run_type == "transient") {
     // UpdateTransientArrays (linear interpolation of the forcing fields from
     // start to end, plus fdepth and the depression hierarchy rebuild) is serial
-    // full-grid work; run it on rank 0. Its interpolated fields feed only rank-0
-    // sections now -- the recharge loop (2c), dephier/FSM (2a/2b) -- or reach the
-    // solve through the init-time scatter, EXCEPT topo, which the non-root
-    // copy-back still reads. Broadcast topo (a float field) after. deps and the
-    // label/flowdir arrays feed only FillSpillMerge (rank 0). See
-    // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2d).
+    // full-grid work; run it on rank 0 (2d). deps and the label/flowdir arrays
+    // feed only FillSpillMerge (rank 0). See benchmark/DISTRIBUTED_ARP_DESIGN.md.
     PetscMPIInt trans_rank;
     MPI_Comm_rank(PETSC_COMM_WORLD, &trans_rank);
     if (trans_rank == 0) {
@@ -109,7 +105,17 @@ void update(
       deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
           arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
     }
+    // Broadcast the interpolated fields the non-root ranks read: topo (float,
+    // read by the copy-back) and fdepth (double). Then re-scatter topo/fdepth to
+    // the solve's DMDA vectors so the groundwater solve uses the CURRENT
+    // topography this cycle. Those vectors are otherwise scattered only once at
+    // init, so without this the solve would ignore the transient topography
+    // change entirely (ksat is genuinely static and does not change in time, but
+    // scatter_static_fields re-scatters it too, harmlessly). See
+    // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2e).
     MPI_Bcast(arp.topo.data(), arp.topo.size(), MPI_FLOAT, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(arp.fdepth.data(), arp.fdepth.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    scatter_static_fields(user_context, arp);
   }
 
   // TODO: How should equilibrium know when to exit?
