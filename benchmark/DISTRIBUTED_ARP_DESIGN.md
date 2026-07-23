@@ -301,6 +301,35 @@ outside rank-0 guards and confirm each is either Class C or converted.
   2e re-scatter the solve now uses current topo, so this is resolved for topo; watch for any other
   field scattered once at init that a transient run mutates.
 
+## G. 2f-C drop progress (2026-07-23)
+
+The solve dataflow is fully converted to source from rank-0; only the arp *allocation* drop remains.
+
+- **drop-1a DONE (3099b75):** topo/ksat/fdepth scattered from rank-0 (`scatterFromZero`, templated on
+  float/double); transient topo/fdepth broadcasts removed.
+- **drop-1b DONE (1b3eb7b):** mask/porosity scattered from rank-0; cellsize from the 1-D Class-C
+  array; `populate_DMDA_array_pack` moved before the `DMDA_Array_Pack` ctor and writes the global
+  vecs directly.
+- **drop-2 DONE (e5aab70):** wtd/rech scattered from rank-0 into the distributed carriers (via the
+  un-held `wtd_global` scratch), `gather_wtd_to_all` uses `gatherToZero` (rank-0-only), and the FSM
+  and recharge wtd/rech broadcasts are removed. wtd/rech now live on rank 0 through the serial
+  sections. **All bit-identical; full suite green at n=1-8.**
+- **Verified:** every non-root full-grid arp access is now either rank-0-guarded (recharge loop,
+  PrintValues early-return, FSM, dephier, save, the gather write) or Class-C 1-D (`cell_area`). The
+  non-root solve is arp-free.
+- **REMAINING (the allocation drop + acceptance check):**
+  1. Make loading rank-0-only: gate `InitialiseTransient/Equilibrium/Test` (and `InitialiseBoth`,
+     which sets up labels/runoff for FSM) to rank 0; **broadcast `params.ncells_x`/`ncells_y`** to all
+     ranks (the DMDA needs them). `cell_size_area` runs on all ranks (1-D, needs ncells).
+  2. Gate `arp.check()` (full-grid dimension checks) to rank 0.
+  3. Confirm the full-grid arp arrays are simply not allocated on non-root (they start empty; nothing
+     allocates them there once loading is gated). `.data()` on the empty arrays is passed to
+     `scatterFromZero` but only dereferenced on rank 0, so that is safe.
+  4. **Structural acceptance check:** assert (e.g. in a small runtime check or test) that a
+     representative full-grid arp array has size 0 on non-root ranks and full size on rank 0.
+  Gate: full suite at several rank counts + the acceptance check. This is the segfault-prone step
+  (arp finally empty on non-root); read the loading functions first, do it as one careful unit.
+
 ## F. Style note (optional, low priority)
 
 `src/dmda_gather.hpp` (`DMDAFullGridGather`) is a net-new module and is written in a more
