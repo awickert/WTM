@@ -80,6 +80,8 @@ cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRICHDEM_LOGGING=ON  -GNinja ..
 ninja
 ```
 
+For building on HPC clusters (e.g. MSI) with module- or conda-based toolchains, and for running with MPI under Slurm, see [BUILD_HPC.md](BUILD_HPC.md).
+
 ## Running the code
 Ensure that all of the data files are located appropriately in a folder together. Edit the Config_file.cfg configuration file as appropriate. The configuration file contains the following variables:
 
