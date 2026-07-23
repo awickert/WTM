@@ -317,18 +317,17 @@ The solve dataflow is fully converted to source from rank-0; only the arp *alloc
 - **Verified:** every non-root full-grid arp access is now either rank-0-guarded (recharge loop,
   PrintValues early-return, FSM, dephier, save, the gather write) or Class-C 1-D (`cell_area`). The
   non-root solve is arp-free.
-- **REMAINING (the allocation drop + acceptance check):**
-  1. Make loading rank-0-only: gate `InitialiseTransient/Equilibrium/Test` (and `InitialiseBoth`,
-     which sets up labels/runoff for FSM) to rank 0; **broadcast `params.ncells_x`/`ncells_y`** to all
-     ranks (the DMDA needs them). `cell_size_area` runs on all ranks (1-D, needs ncells).
-  2. Gate `arp.check()` (full-grid dimension checks) to rank 0.
-  3. Confirm the full-grid arp arrays are simply not allocated on non-root (they start empty; nothing
-     allocates them there once loading is gated). `.data()` on the empty arrays is passed to
-     `scatterFromZero` but only dereferenced on rank 0, so that is safe.
-  4. **Structural acceptance check:** assert (e.g. in a small runtime check or test) that a
-     representative full-grid arp array has size 0 on non-root ranks and full size on rank 0.
-  Gate: full suite at several rank counts + the acceptance check. This is the segfault-prone step
-  (arp finally empty on non-root); read the loading functions first, do it as one careful unit.
+- **drop-3 DONE (674615c) -- THE MEMORY WIN LANDED.** Loading (`InitialiseTransient/Equilibrium/Test`
+  + `InitialiseBoth`) gated to rank 0; `ncells_x/y` broadcast to all ranks; `cell_size_area` (1-D)
+  and DMDA setup on all ranks; `arp.check()` rank-0 only. Non-root ranks never allocate the full-grid
+  ArrayPack. A structural acceptance check in `main()` asserts `arp.topo.size()` is 0 on non-root and
+  `ncells_x*ncells_y` on rank 0 -- shown to bite (un-gating loading throws). Full suite green at
+  n=1..8.
+
+**2f (the flip) is COMPLETE.** Per-rank non-root footprint at 141M cells drops from ~26 GB
+(replicated ArrayPack) to the DMDA subdomain vectors. Next: measure the actual scaling/memory on MSI
+(the pre-change baseline was never taken; now compare before/after). Optional follow-ups: the §F
+style cleanup; distributing `wtd_old`/`wtd_mid` is unnecessary (already rank-0-only).
 
 ## F. Style note (optional, low priority)
 
