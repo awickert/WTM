@@ -110,12 +110,21 @@ static double dEffectiveStorativityDnew(
   return (1.0 - my_porosity) * eps * eps / (2.0 * std::pow(w * w + eps * eps, 1.5));
 }
 
-// wtd is carried in the distributed DMDA array `starting_wtd` (indexed [y][x]
-// over the owned range) rather than in the full-grid arp.wtd, so that arp.wtd
-// need not exist on non-root ranks. mask/porosity/rech/cell_area are still read
-// from arp (replicated) at this phase. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2f-B).
-void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscScalar** rech_dist, PetscInt xs,
-                         PetscInt ys, PetscInt xm, PetscInt ym) {
+// The solve inputs are read from distributed DMDA arrays (indexed [y][x] over
+// the owned range) rather than from full-grid arp arrays, so those arp arrays
+// need not exist on non-root ranks: wtd from starting_wtd, recharge from
+// rech_dist, land mask from mask, porosity from porosity_vec. cell_area is 1-D
+// (Class-C) and stays replicated on all ranks. See DISTRIBUTED_ARP_DESIGN.md (2f-C).
+void set_starting_values(
+    ArrayPack& arp,
+    PetscScalar** starting_wtd,
+    PetscScalar** rech_dist,
+    PetscScalar** mask,
+    PetscScalar** porosity,
+    PetscInt xs,
+    PetscInt ys,
+    PetscInt xm,
+    PetscInt ym) {
   // no pragma because we're editing arp accumulators
   // Accumulate over this rank's OWNED cells only (DMDA owned range, which is
   // non-overlapping across ranks), so under MPI each ocean/recharge cell is
@@ -126,11 +135,11 @@ void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscScalar
   // cells, and if so, record these values as changes to the ocean.
   for (int y = ys; y < ys + ym; y++) {
     for (int x = xs; x < xs + xm; x++) {
-      if (arp.land_mask(x, y) == 0.f) {
+      if (mask[y][x] == 0) {
         if (starting_wtd[y][x] > 0)
           arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y];
         else
-          arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y] * arp.porosity(x, y);
+          arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y] * porosity[y][x];
         starting_wtd[y][x] = 0.;
       } else {
         double rech_count = rech_dist[y][x];
@@ -163,14 +172,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
   // maxiter loop, then maintained by the copy-back below), not in arp.wtd.
   PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
-  set_starting_values(arp, dmdapack.starting_wtd, dmdapack.rech_dist, xs, ys, xm, ym);
+  set_starting_values(
+      arp, dmdapack.starting_wtd, dmdapack.rech_dist, dmdapack.mask, dmdapack.porosity_vec, xs, ys, xm, ym);
   PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      dmdapack.rech_vec[j][i] = add_recharge(dmdapack.rech_dist[j][i], dmdapack.starting_wtd[j][i], arp.porosity(i, j));
+      dmdapack.rech_vec[j][i] =
+          add_recharge(dmdapack.rech_dist[j][i], dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
     }
   }
 
@@ -215,19 +226,23 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
   // copy the result back into the distributed wtd carrier (starting_wtd), which
   // feeds the next solve in the maxiter loop and is assembled to arp.wtd once
-  // per cycle by gather_wtd_to_all.
+  // per cycle by gather_wtd_to_all. Read topo/mask/porosity from DMDA arrays
+  // (topo_vec is re-scattered each cycle in transient) so arp is not needed here.
+  PetscScalar** my_topo;
+  DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
-      dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - arp.topo(i, j);
-      if (arp.land_mask(i, j) == 0.f) {
+      dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - my_topo[j][i];
+      if (dmdapack.mask[j][i] == 0) {
         if (dmdapack.starting_wtd[j][i] > 0)
           arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j];
         else
-          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * arp.porosity(i, j);
+          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * dmdapack.porosity_vec[j][i];
         dmdapack.starting_wtd[j][i] = 0.;
       }
     }
   }
+  DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
 
   // The full wtd field is assembled once per cycle, after the maxiter loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
