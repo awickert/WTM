@@ -38,38 +38,49 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   // Text file to save outputs of how much is changing and
   // min and max wtd at various times
 
+  // Load the full-grid ArrayPack on rank 0 only, so its arrays are never
+  // allocated on non-root ranks (the memory win: 2f-C). ncells_x/y are set from
+  // the loaded topography on rank 0 and broadcast to all ranks (the DMDA needs
+  // them everywhere). cell_size_area computes only 1-D Class-C arrays and runs
+  // on all ranks. InitialiseBoth (labels/runoff/etc. for FSM) and arp.check
+  // (full-grid dimension checks) are rank-0 only. See DISTRIBUTED_ARP_DESIGN.md.
+  PetscMPIInt rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
   if (params.run_type == "transient") {
     textfile << "Initialise transient" << std::endl;
-    InitialiseTransient(params, arp);
-    // compute changing cell size and distances between cells as
-    // these change with latitude:
+    if (rank == 0)
+      InitialiseTransient(params, arp);
+    MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
-    // finalise some setup for runoff, labels, etc that is the
-    // same for both run types.
-    InitialiseBoth(params, arp);
+    if (rank == 0)
+      InitialiseBoth(params, arp);
   } else if (params.run_type == "equilibrium") {
     textfile << "Initialise equilibrium" << std::endl;
-    InitialiseEquilibrium(params, arp);
-    // compute changing cell size and distances between cells as
-    // these change with latitude:
+    if (rank == 0)
+      InitialiseEquilibrium(params, arp);
+    MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
-    // finalise some setup for runoff, labels, etc that is the
-    // same for both run types.
-    InitialiseBoth(params, arp);
+    if (rank == 0)
+      InitialiseBoth(params, arp);
   } else if (params.run_type == "test") {
     textfile << "Initialise test" << std::endl;
-    InitialiseTest(params, arp);
-    // compute changing cell size and distances between cells as
-    // these change with latitude:
+    if (rank == 0)
+      InitialiseTest(params, arp);
+    MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
   } else {
     throw std::runtime_error("That was not a recognised run type! Please choose transient or equilibrium.");
   }
 
-  arp.check();
+  if (rank == 0)
+    arp.check();
 
   InitialiseSNES(user_context, params);
 
@@ -359,6 +370,20 @@ int main(int argc, char** argv) {
   PetscCall(PetscInitialize(&argc, &argv, (char*)0, help));
 
   initialise(params, arp, user_context);
+
+  // Structural acceptance check (2f-C, the memory win): the full-grid ArrayPack
+  // is allocated only on rank 0; non-root ranks hold it empty. Assert it so a
+  // regression that reintroduces full-grid allocation on non-root is caught.
+  {
+    PetscMPIInt r;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &r);
+    const size_t expected = (r == 0) ? static_cast<size_t>(params.ncells_x) * params.ncells_y : 0;
+    if (arp.topo.size() != expected) {
+      throw std::runtime_error(
+          "2f-C acceptance check failed: ArrayPack is not rank-0-only (topo size " + std::to_string(arp.topo.size()) +
+          " on rank " + std::to_string(r) + ", expected " + std::to_string(expected) + ")");
+    }
+  }
 
   // Populate the static global vecs (mask/porosity from rank-0, cellsize from the 1-D array)
   // BEFORE DMDA_Array_Pack holds them, then scatter topo/fdepth/ksat to their local ghost vectors.
