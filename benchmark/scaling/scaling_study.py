@@ -301,36 +301,60 @@ def analyze(rows, grids, ranks, labels):
                 return r[key]
         return None
 
-    print("=== Strong scaling (wall speedup vs n=1, per build/grid) ===")
+    def wall_ok(build, grid, n):
+        """Wall time only if the run actually succeeded (rc==0); else None, so a
+        crash never fabricates a speedup. A wrong-but-completed run DOES count."""
+        return get(build, grid, n, "wall_s") if get(build, grid, n, "rc") == 0 else None
+
+    print("=== Strong scaling (wall speedup vs n=1, per build/grid; * = run failed) ===")
     for label in labels:
         for grid in grids:
-            base = get(label, grid, 1, "wall_s")
-            if not base:
-                continue
+            base = wall_ok(label, grid, 1)
             parts = []
             for n in ranks:
-                w = get(label, grid, n, "wall_s")
-                parts.append(f"n={n}:{base / w:.2f}x" if w else f"n={n}:-")
-            print(f"  {label:<11} grid={grid:<6} {'  '.join(parts)}")
+                w = wall_ok(label, grid, n)
+                if w and base:
+                    parts.append(f"n={n}:{base / w:.2f}x")
+                elif get(label, grid, n, "rc") not in (0, None):
+                    parts.append(f"n={n}:*")  # ran but failed (e.g. kcallaghan SEGV)
+                else:
+                    parts.append(f"n={n}:-")
+            print(f"  {label:<11} grid={grid:<6} {'  '.join(parts)}"
+                  + ("   (no successful n=1 baseline)" if not base else ""))
+
+    # The number Kerry wants: new capability vs the published version's BEST. The
+    # published build tops out at n=1 (it SEGVs at n>1 -- the ghost bug), so its
+    # best achievable is its n=1 time; compare after/before at every n against it.
+    if "kcallaghan" in labels:
+        print("\n=== Realized speedup vs kcallaghan's best (its n=1) ===")
+        for grid in grids:
+            kbest = wall_ok("kcallaghan", grid, 1)
+            if not kbest:
+                print(f"  grid={grid:<6} kcallaghan n=1 did not complete -- no baseline")
+                continue
+            for label in ("before", "after"):
+                if label not in labels:
+                    continue
+                parts = []
+                for n in ranks:
+                    w = wall_ok(label, grid, n)
+                    parts.append(f"n={n}:{kbest / w:.2f}x" if w else f"n={n}:-")
+                print(f"  grid={grid:<6} {label:<7} vs kcallaghan(n=1={kbest:.1f}s): {'  '.join(parts)}")
 
     print("\n=== Memory: min per-rank (GB) -- the flip's payoff ===")
     print("  (before/kcallaghan replicate the full grid on every rank; after does not)")
     for grid in grids:
         for n in ranks:
-            cells = []
-            for label in labels:
-                mn = get(label, grid, n, "mem_min")
-                if mn is not None and not (label == "kcallaghan" and n > 1):
-                    cells.append(f"{label}={mn:.2f}")
+            cells = [f"{label}={get(label, grid, n, 'mem_min'):.2f}"
+                     for label in labels if get(label, grid, n, "mem_min") is not None]
             if cells:
                 print(f"  grid={grid:<6} n={n:<3} {'  '.join(cells)}")
 
     if len(labels) > 1:
         print("\n=== Speedup decomposition at n=1 (wall_s ratios) ===")
         for grid in grids:
-            k = get("kcallaghan", grid, 1, "wall_s")
-            b = get("before", grid, 1, "wall_s")
-            a = get("after", grid, 1, "wall_s")
+            k, b, a = (wall_ok("kcallaghan", grid, 1), wall_ok("before", grid, 1),
+                       wall_ok("after", grid, 1))
             msgs = []
             if k and b:
                 msgs.append(f"solver+ghostfix (kcallaghan/before)={k / b:.2f}x")
