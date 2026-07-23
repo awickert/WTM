@@ -267,17 +267,23 @@ than the static-intake conversion. The intake conversion is now folded into 2f.
      read the same values). The vec-lifecycle worry was sidestepped: while arp is replicated the
      cycle-boundary transfer is a plain owned-range copy through the held local arrays, not a
      VecScatter — so no un-held vec is needed until 2f-C.
-   - **2f-C — drop `arp` on non-root + acceptance check (LAST; the memory win).** Remaining:
-     (a) convert the loop's static reads (`arp.porosity`→`porosity_vec`, `arp.land_mask`→`mask`,
-     `arp.topo`→`topo_local`; `cell_area` stays Class-C replicated) — bit-identical while arp is
-     replicated; (b) replace the cycle-boundary owned copies with `scatterFromZero`
-     (`arp.wtd`/`arp.rech` → distributed) and `gatherToAll`→`gatherToZero`, so only rank 0 needs the
-     full wtd/rech (needs the float/double handling and a raw-pointer `scatterFromZero` overload for
-     the float static fields); (c) gate `wtd_old`/`wtd_mid` copies to rank 0; (d) make loading
-     (`irf.cpp`) a rank-0 GDAL read and scatter the static fields from rank-0 `arp`; (e) allocate the
-     full-grid `arp` arrays only on rank 0. Add the **structural acceptance check**: assert the
-     full-grid `arp` arrays are empty/unallocated on non-root ranks (structural, not RSS — works at
-     any grid size). Gate: full suite at several rank counts + the acceptance check.
+   - **2f-C — drop `arp` on non-root + acceptance check (the memory win). Bit-identical prep DONE;
+     the coordinated drop REMAINS.**
+     - **(a) DONE (commit 6...C(a)):** loop static reads now come from DMDA (`porosity_vec`, `mask`,
+       `topo_vec`); `cell_area` stays Class-C. The per-solve loop reads no full-grid arp array.
+     - **(c) DONE (commit 9d6e18d):** `wtd_old`/`wtd_mid` copies gated to rank 0.
+     - **(b)+(d)+(e) REMAINING — one coordinated, non-bit-identical-in-structure step (do together;
+       arp cannot be half-dropped):** replace the cycle-boundary owned copies with `scatterFromZero`
+       (`arp.wtd`/`arp.rech` → distributed) and `gatherToAll`→`gatherToZero`; drop the now-unnecessary
+       FSM/recharge wtd broadcasts (wtd stays rank-0 through the serial sections) and scatter the
+       static fields (topo/fdepth/ksat/porosity/mask/cellsize) to the DMDA vecs from rank-0 `arp`
+       instead of broadcasting-then-owned-copy; make loading (`irf.cpp`) a rank-0 GDAL read; allocate
+       the full-grid `arp` arrays only on rank 0. Needs a raw-pointer `scatterFromZero` overload and
+       float/double handling for the float static fields. **This is where bugs surface as segfaults /
+       silent wrong-data (arp finally empty on non-root), not compile errors** — do it as one careful
+       unit. Add the **structural acceptance check**: assert the full-grid `arp` arrays are
+       empty/unallocated on non-root (structural, not RSS). Gate: full suite at several rank counts +
+       the acceptance check.
 
 ## D. Ordering invariant (the safety rule)
 
