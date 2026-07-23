@@ -258,22 +258,26 @@ than the static-intake conversion. The intake conversion is now folded into 2f.
      (`maxiter`×/cycle); the intermediate solves only need owned wtd. Extracted to
      `gather_wtd_to_all`, called once per cycle after the maxiter loop. Bit-identical; ~499/500
      redundant full-grid gathers per cycle removed. This is "lever #2."
-   - **2f-B — distribute the solve dataflow (NEXT).** Rewrite the maxiter loop to keep wtd/rech in
-     DMDA vectors: once per cycle `scatterFromZero(arp.wtd→starting_wtd)` and
-     `scatterFromZero(arp.rech→rech_dist)`; per solve the three bridges read/write
-     `starting_wtd`/`rech_dist`/`porosity_vec`/`mask` over the owned range (no `arp`); wtd lives in
-     `starting_wtd` through the loop (copy-back writes it back); `gather_wtd_to_all` after. Done while
-     `arp` is still replicated → bit-identical and cross-checkable. **Care points:** PETSc vec
-     lifecycle (the solve currently holds these DMDA arrays for the whole run via `DMDAVecGetArray`;
-     scatter-in needs them un-held at scatter time — use scratch vecs or restructure dmdapack's
-     get/restore), the per-solve vs per-cycle split of the ocean-loss/recharge accumulators, and the
-     float(`topo`,`mask`,`porosity`)/double(DMDA) boundary.
-   - **2f-C — drop `arp` on non-root + acceptance check (LAST).** Gate `wtd_old`/`wtd_mid` copies to
-     rank 0; make loading (`irf.cpp`) a rank-0 GDAL read; scatter the static fields from rank-0 `arp`;
-     allocate the full-grid `arp` arrays only on rank 0 (`cell_area`/`cellsize` stay Class-C, computed
-     on all ranks). **Memory win lands here.** Add the **structural acceptance check**: assert the
-     full-grid `arp` arrays are empty/unallocated on non-root ranks (a structural assertion, not RSS —
-     works at any grid size). Gate: full suite at several rank counts + the acceptance check.
+   - **2f-B — distribute the solve dataflow (DONE, commits 06f6b7c wtd, f9a9647 rech).** wtd is now
+     carried in `dmdapack.starting_wtd` and rech in a new `dmdapack.rech_dist` (backed by
+     `AppCtx::rech_source`): both populated from `arp` once per cycle (owned copy) before the maxiter
+     loop, read/written by the bridges over the owned range, wtd advanced in place by the copy-back,
+     and wtd assembled back to `arp.wtd` once per cycle in `gather_wtd_to_all`. The per-solve loop no
+     longer touches `arp.wtd`/`arp.rech`. Bit-identical (arp still replicated, so the owned copies
+     read the same values). The vec-lifecycle worry was sidestepped: while arp is replicated the
+     cycle-boundary transfer is a plain owned-range copy through the held local arrays, not a
+     VecScatter — so no un-held vec is needed until 2f-C.
+   - **2f-C — drop `arp` on non-root + acceptance check (LAST; the memory win).** Remaining:
+     (a) convert the loop's static reads (`arp.porosity`→`porosity_vec`, `arp.land_mask`→`mask`,
+     `arp.topo`→`topo_local`; `cell_area` stays Class-C replicated) — bit-identical while arp is
+     replicated; (b) replace the cycle-boundary owned copies with `scatterFromZero`
+     (`arp.wtd`/`arp.rech` → distributed) and `gatherToAll`→`gatherToZero`, so only rank 0 needs the
+     full wtd/rech (needs the float/double handling and a raw-pointer `scatterFromZero` overload for
+     the float static fields); (c) gate `wtd_old`/`wtd_mid` copies to rank 0; (d) make loading
+     (`irf.cpp`) a rank-0 GDAL read and scatter the static fields from rank-0 `arp`; (e) allocate the
+     full-grid `arp` arrays only on rank 0. Add the **structural acceptance check**: assert the
+     full-grid `arp` arrays are empty/unallocated on non-root ranks (structural, not RSS — works at
+     any grid size). Gate: full suite at several rank counts + the acceptance check.
 
 ## D. Ordering invariant (the safety rule)
 
