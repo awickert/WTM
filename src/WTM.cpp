@@ -96,8 +96,15 @@ void update(
     // linear interpolation of input data from start to end times.
     // with transient runs, we have to redo the depression hierarchy every time,
     // since the topography is changing.
-    deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
-        arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
+    // deps feeds only FillSpillMerge, which now runs on rank 0 only, so build
+    // the hierarchy on rank 0 only as well (its label/flowdir outputs are also
+    // FSM-only). See benchmark/DISTRIBUTED_ARP_DESIGN.md.
+    PetscMPIInt deps_rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &deps_rank);
+    if (deps_rank == 0) {
+      deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
+          arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
+    }
   }
 
   // TODO: How should equilibrium know when to exit?
@@ -233,8 +240,15 @@ void update(
 void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   // Set the initial depression hierarchy.
   // For equilibrium runs, this is the only time this needs to be done.
-  auto deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
-      arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
+  // deps feeds only FillSpillMerge (rank 0 only), so build it on rank 0 only;
+  // on other ranks it stays default-constructed and unused.
+  richdem::dephier::DepressionHierarchy<float> deps;
+  PetscMPIInt deps_rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &deps_rank);
+  if (deps_rank == 0) {
+    deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
+        arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
+  }
 
   while (params.cycles_done < params.total_cycles) {
     update(params, arp, user_context, dmdapack, deps);
