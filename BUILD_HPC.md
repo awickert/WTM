@@ -72,19 +72,32 @@ interactive-job command — `salloc`/`srun --pty` are the usual variants.)
 
 ## Path A — cluster modules (try this first; MSI shown)
 
-Find what's actually available (module names/versions vary by site and change over
-time; always verify on the node):
+**MSI (and most modern clusters) use a *hierarchical* module tree (Lmod):** MPI
+and libraries built on top of a compiler are **hidden until you load that
+compiler**. So `module load openmpi` on a fresh shell fails with
+`Unable to locate a modulefile for 'openmpi'` — openmpi does not exist until a
+gcc is loaded. Load in dependency order: **compiler → MPI → PETSc/GDAL**.
+
+`module spider` is the tool that cuts through this: it searches the *entire*
+tree (including hidden modules) and prints the exact prerequisites to load first.
 
 ```sh
-module avail                      # full list
-module spider petsc               # or: gdal, openmpi, cmake, gcc
+module avail                 # what's directly loadable right now (compilers, cmake, …)
+module spider openmpi        # finds openmpi even when hidden; prints "load gcc/X first"
+module spider petsc          # same for PETSc, and shows its version (need >= 3.17.1)
 ```
 
-Load a C++20 gcc, an OpenMPI, PETSc ≥ 3.17.1 (built with that OpenMPI), GDAL, CMake:
+Then load in order (re-run `module avail` after each step to see what unlocked):
 
 ```sh
-module load gcc/<11-or-newer> openmpi/<ver> petsc/<>=3.17> gdal cmake
+module load gcc/<11-or-newer>   # a C++20-capable gcc (e.g. gcc/13.1.0)
+module avail                    # openmpi now appears, built for that gcc
+module load openmpi
+module load petsc gdal cmake    # petsc typically appears only after gcc + openmpi
 ```
+
+If `module spider petsc` finds nothing, or only a version < 3.17.1, use Path B
+(conda) — it avoids the module hierarchy entirely.
 
 **Verify the toolchain is consistent BEFORE building:**
 
