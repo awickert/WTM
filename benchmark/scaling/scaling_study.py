@@ -66,13 +66,18 @@ BUILD_FOLDERS = {
     "kcallaghan": "WTM-kcallaghan",
 }
 
-# Solver arguments per build (no -snes_mf anywhere -- it deadlocks under MPICH).
-# after/before use the project's Anderson default explicitly. kcallaghan runs with
-# NO solver override so it uses its own published default solver -- the honest
-# "as Kerry actually runs it" baseline (Andy, 2026-07-24), which also folds the
-# Newton->Anderson default change into the kcallaghan->after comparison.
+# Solver arguments (no -snes_mf anywhere -- it deadlocks under MPICH). All builds
+# use -snes_type anderson, which is how kcallaghan is ACTUALLY run: her benchmark
+# scripts pass it at runtime, and it is the only working configuration.
+# Empirically (2026-07-24, local build of KCallaghan/master):
+#   * kcallaghan's compiled-in DEFAULT solver (Newton) does NOT converge -- it
+#     throws "The SNES solver has not converged." and aborts even at n=1, so
+#     running it "native" yields no data at all.
+#   * with anderson it runs at n=1, but SEGVs at every n>1 (the ghost bug -- OOB
+#     neighbor reads at subdomain boundaries). So kcallaghan has exactly one
+#     working config: anderson at n=1. Its n>1 rows will show rc 59 (caught SEGV).
 ANDERSON_ARGS = ["-snes_type", "anderson", "-snes_stol", "1e-6"]
-SOLVER_ARGS = {"after": ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": []}
+SOLVER_ARGS = {"after": ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": ANDERSON_ARGS}
 
 # A single well-formed float. Bounded so it stops at the next number even when
 # concurrent MPI ranks interleave their output with no separator (e.g. two ranks
@@ -212,8 +217,8 @@ def main():
     print(f"grids       : {grids}")
     print(f"ranks       : {args.ranks}")
     print(f"maxiter     : {args.maxiter}   total_cycles: {args.total_cycles}")
-    print(f"solver args : after/before = {' '.join(ANDERSON_ARGS)}")
-    print(f"              kcallaghan   = (its own default solver -- no -snes_type)\n")
+    print(f"solver args : {' '.join(ANDERSON_ARGS)}  (all builds; Anderson is what")
+    print(f"              KCallaghan's scripts pass and the v2.0.1 paper recommends)\n")
 
     rows = []
     header = f"{'build':<11}{'grid':>6}{'n':>4}{'rc':>4}{'iters':>6}{'wall_s':>9}{'gw_s':>9}   mem GB total/max/min"
