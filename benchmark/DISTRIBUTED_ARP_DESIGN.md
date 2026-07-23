@@ -178,3 +178,76 @@ the lowest-risk way to build and prove the one genuinely new mechanism (natural-
 gather/scatter) in isolation, with bit-identical output as the gate. Only then distribute arrays
 (Phases 2–4), where the memory payoff lands. Take one MSI single-node scaling measurement
 (pre-change) to anchor the expected speedup before investing in Phases 2–4.
+
+---
+
+# Addendum (2026-07-23): the solve-intake rewrite (the "flip")
+
+Phases 1, 2a, 2b are committed and bit-identical. This addendum specifies the remaining,
+correctness-critical work discovered by tracing the code: how the groundwater solve gets its
+data, and how to feed it once `ArrayPack` is allocated only on rank 0.
+
+## A. What the solve actually reads and writes from `arp`
+
+The solve (`FanDarcyGroundwater::update`) never touches `arp` inside PETSc; it touches it at four
+boundary sites, all of which currently assume `arp` is full on every rank:
+
+| site | reads from `arp` | writes to `arp` |
+|------|------------------|-----------------|
+| `scatter_static_fields` (init) | topo, fdepth, ksat | — |
+| `populate_DMDA_array_pack` (init) | cellsize_e_w_metres, land_mask, porosity | — |
+| `set_starting_values` (per solve) | wtd, rech, porosity, land_mask, cell_area | (accumulators only) |
+| rech/starting_wtd fill (per solve) | rech, wtd, porosity | — |
+| copy-back (per solve) | topo, land_mask, cell_area, porosity | wtd (owned range) |
+
+Two access classes fall out:
+
+- **Static intake** — topo, fdepth, ksat, porosity, land_mask, cellsize_e_w_metres, cell_area.
+  Loaded once (topo also changes each transient cycle). Already partly in DMDA vectors
+  (topo/fdepth/ksat local ghost vecs; mask/porosity/cellsize global vecs).
+- **Per-cycle intake** — `rech` (produced by the recharge loop) and `wtd` (from the prior cycle).
+
+## B. Target end state
+
+`arp` (all 34 full-grid arrays) is allocated **only on rank 0**. The solve reads and writes
+**only DMDA-backed data** (never `arp`). The two data models meet at exactly two handoffs:
+
+```
+rank 0: load / UpdateTransientArrays / recharge / FSM / diagnostics / output   (full-grid serial)
+            |  scatterFromZero(rech), scatterFromZero(wtd)   ^  gatherToZero(wtd)
+            v                                                 |
+all ranks: DMDA static vecs (scattered once at init) + distributed GW solve    (owned + ghost)
+```
+
+- **Static intake:** at init, scatter each static field rank-0→DMDA once (topo/fdepth/ksat already
+  do this from `arp`; change the source to be rank-0-only and add porosity, land_mask, cellsize,
+  cell_area). `set_starting_values`, the rech/starting_wtd fill, and copy-back are rewritten to
+  read these DMDA-local arrays via the `*_local(i,j)` accessors — never `arp`.
+- **Per-cycle intake:** the recharge loop runs on rank 0 producing full `rech`; `scatterFromZero`
+  distributes it into the solve's `rech_vec`. `wtd` is `scatterFromZero`'d in before the solve and
+  `gatherToZero`'d out after (the primitive built and tested for this).
+- `cell_area`/`cellsize_e_w_metres` are 1-D per-row (length `ncells_y`); cheap to keep replicated
+  on all ranks (Class C) so owned-range loops can index them directly without a scatter.
+
+## C. Increment order (each bit-identical or consistency-gated)
+
+1. **2c — recharge on rank 0 + `rech` scatter.** Move the recharge loop (both evap modes) to rank
+   0; `scatterFromZero(arp.rech → rech_vec)`. Note evap-mode-0 also zeros surface-water `wtd`;
+   that write must be on rank 0 and reflected before the wtd scatter. Gate: mass-balance + bit-
+   identical (both evap modes).
+2. **2d — diagnostics/bookkeeping on rank 0.** `PrintValues` loop, `wtd_old`/`wtd_mid` copies, and
+   `UpdateTransientArrays` guarded to rank 0. Gate: mass-balance + bit-identical.
+3. **2e — static intake from rank-0 `arp`.** Convert `set_starting_values`, rech/starting_wtd fill,
+   and copy-back to read DMDA-local static vecs (add porosity/mask/cellsize/cell_area as DMDA or
+   Class-C replicated); scatter static fields from rank-0 `arp` at init. Gate: full suite.
+4. **2f — the flip.** Allocate `arp` full only on rank 0; loading (`irf.cpp`) becomes rank-0 GDAL
+   read. Non-root ranks hold only DMDA subdomain vectors + Class-C 1-D arrays. **Memory win lands
+   here.** Gate: full suite at several rank counts + a large-grid memory check.
+
+## D. Ordering invariant (the safety rule)
+
+The flip (2f) must be **last**: `arp` may become rank-0-only only after *every* full-grid access on
+non-root ranks has been removed (2c–2e). A single missed non-root `arp(i,j)` read after 2f is an
+out-of-bounds / stale-data bug, not a compile error — which is exactly why the `*_local` accessor
+rename (compile-time guard) and the test suite below matter. Before 2f, grep for every `arp.<name>(`
+outside rank-0 guards and confirm each is either Class C or converted.
