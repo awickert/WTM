@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 BIN=${1:-../build/test_dmda.x}
 shift || true
 RANKS=("$@")
-if [[ ${#RANKS[@]} -eq 0 ]]; then RANKS=(1 2 3 4 8); fi
+if [[ ${#RANKS[@]} -eq 0 ]]; then RANKS=(1 2 3 4 6 8); fi
 
 if [[ ! -x "$BIN" ]]; then
     echo "ERROR: test binary not found at $BIN (build test_dmda.x first)" >&2

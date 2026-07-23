@@ -90,7 +90,7 @@ for name in "${CASES[@]}"; do
         run_case "$name" 1
         python3 golden.py generate "$PREFIX" "$REFDIR/${name}.txt"
     else
-        for n in 1 4; do
+        for n in 1 2 4 6 8; do
             run_case "$name" "$n"
             if python3 golden.py check "$PREFIX" "$REFDIR/${name}.txt"; then
                 printf "  %-14s n=%-2s : PASS\n" "$name" "$n"

@@ -26,8 +26,8 @@ run() { # name  command...
 run "unit: DMDA gather/scatter" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" 8
-run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" 2 4
-run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" 2 4
+run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" 2 4 6 8
+run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" 2 4 6 8
 run "golden (expected results)" ./golden/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
