@@ -300,3 +300,15 @@ outside rank-0 guards and confirm each is either Class C or converted.
 - **Solve still uses `topo_start` reference internally vs current topo in copy-back**: with the
   2e re-scatter the solve now uses current topo, so this is resolved for topo; watch for any other
   field scattered once at init that a transient run mutates.
+
+## F. Style note (optional, low priority)
+
+`src/dmda_gather.hpp` (`DMDAFullGridGather`) is a net-new module and is written in a more
+encapsulated modern-C++ idiom than the rest of the codebase: a `class` with `private:` members,
+deleted copy/assignment, trailing-underscore members (`Mx_`, `da_`), and camelCase methods
+(`gatherToAll`/`scatterFromZero`). The surrounding house style uses plain `struct`s with public
+members and snake_case methods (`DMDA_Array_Pack::make_global_vectors`, `release`). Edits to
+existing (Kerry's) functions were kept in her style; only this new file differs, so it does not make
+her code read foreign. Optional future cleanup: restyle to a public-member `struct` with
+`gather_to_all`/`scatter_from_zero` etc. to match house conventions. Purely mechanical, no behavior
+change; the test suite would confirm bit-identical.
