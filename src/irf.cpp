@@ -4,6 +4,9 @@
 
 #include <richdem/common/Array2D.hpp>
 
+#define OMPI_SKIP_MPICXX 1  // we use the MPI C API only; skip the deprecated C++ bindings
+#include <mpi.h>
+
 namespace rd = richdem;
 namespace dh = richdem::dephier;
 
@@ -455,6 +458,25 @@ void UpdateTransientArrays(const Parameters& params, ArrayPack& arp) {
 /// is changing per iteration, and where in
 /// the code that change is occurring. We print these values to a text file.
 void PrintValues(Parameters& params, const ArrayPack& arp) {
+  // total_added_recharge and total_loss_to_ocean_gw are per-rank owned-cell partials
+  // (see set_starting_values), so reduce them to global totals. total_loss_to_ocean is
+  // accumulated by FillSpillMerge on the full replicated grid on every rank, so it is
+  // already global (rank 0's copy is correct) and must NOT be reduced. MPI_Allreduce is
+  // collective -- every rank must reach these calls.
+  double global_added_recharge = 0.0;
+  double global_gw_loss_to_ocean = 0.0;
+  MPI_Allreduce(&arp.total_added_recharge, &global_added_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_loss_to_ocean_gw, &global_gw_loss_to_ocean, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+  int mpi_rank = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  if (mpi_rank != 0) {
+    return;  // only rank 0 writes the diagnostic text file
+  }
+
+  // Total ocean loss = groundwater part (owned-partial, reduced) + FSM part (already global).
+  const double global_loss_to_ocean = global_gw_loss_to_ocean + arp.total_loss_to_ocean;
+
   std::ofstream textfile(params.textfilename, std::ios_base::app);
 
   double abs_total_wtd_change = 0.0;
@@ -484,7 +506,7 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
 
   textfile << params.cycles_done << " " << total_wtd_change << " " << GW_wtd_change << " " << wtd_mid_change << " "
            << abs_total_wtd_change << " " << abs_GW_wtd_change << " " << abs_wtd_mid_change << " "
-           << params.infiltration_change << " " << arp.total_added_recharge << " " << arp.total_loss_to_ocean << " "
+           << params.infiltration_change << " " << global_added_recharge << " " << global_loss_to_ocean << " "
            << wtd_sum << " " << std::endl;
 
   textfile.close();

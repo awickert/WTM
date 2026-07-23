@@ -110,17 +110,22 @@ static double dEffectiveStorativityDnew(
   return (1.0 - my_porosity) * eps * eps / (2.0 * std::pow(w * w + eps * eps, 1.5));
 }
 
-void set_starting_values(Parameters& params, ArrayPack& arp) {
-  // no pragma because we're editing arp.total_loss_to_ocean
+void set_starting_values(ArrayPack& arp, PetscInt xs, PetscInt ys, PetscInt xm, PetscInt ym) {
+  // no pragma because we're editing arp accumulators
+  // Accumulate over this rank's OWNED cells only (DMDA owned range, which is
+  // non-overlapping across ranks), so under MPI each ocean/recharge cell is
+  // counted exactly once by its owner. total_loss_to_ocean_gw and
+  // total_added_recharge are therefore per-rank partials; PrintValues reduces
+  // them to global totals for reporting.
   // check to see if there is any non-zero water table in ocean
   // cells, and if so, record these values as changes to the ocean.
-  for (int y = 0; y < params.ncells_y; y++) {
-    for (int x = 0; x < params.ncells_x; x++) {
+  for (int y = ys; y < ys + ym; y++) {
+    for (int x = xs; x < xs + xm; x++) {
       if (arp.land_mask(x, y) == 0.f) {
         if (arp.wtd(x, y) > 0)
-          arp.total_loss_to_ocean += arp.wtd(x, y) * arp.cell_area[y];
+          arp.total_loss_to_ocean_gw += arp.wtd(x, y) * arp.cell_area[y];
         else
-          arp.total_loss_to_ocean += arp.wtd(x, y) * arp.cell_area[y] * arp.porosity(x, y);
+          arp.total_loss_to_ocean_gw += arp.wtd(x, y) * arp.cell_area[y] * arp.porosity(x, y);
         arp.wtd(x, y) = 0.;
       } else {
         double rech_count = arp.rech(x, y);
@@ -146,13 +151,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     events_registered = true;
   }
 
-  // compute any starting values needed for arrays
-  PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
-  set_starting_values(params, arp);
-  PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
-
   // Get local array bounds
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+
+  // compute any starting values needed for arrays (owned cells only)
+  PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
+  set_starting_values(arp, xs, ys, xm, ym);
+  PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params) collapse(2)
@@ -208,11 +213,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       arp.wtd(i, j) = dmdapack.x[j][i] - arp.topo(i, j);
       if (arp.land_mask(i, j) == 0.f) {
         if (arp.wtd(i, j) > 0)
-          arp.total_loss_to_ocean +=
+          arp.total_loss_to_ocean_gw +=
               arp.wtd(i, j) * arp.cell_area[j];  // could it be that because ocean cells are just set = x in the
                                                  // formula, that loss to/gain from ocean is not properly recorded?
         else
-          arp.total_loss_to_ocean += arp.wtd(i, j) * arp.cell_area[j] * arp.porosity(i, j);
+          arp.total_loss_to_ocean_gw += arp.wtd(i, j) * arp.cell_area[j] * arp.porosity(i, j);
         arp.wtd(i, j) = 0.;
       }
     }

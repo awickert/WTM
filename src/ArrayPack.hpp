@@ -72,6 +72,11 @@ struct ArrayPack {
   // Cumulative state variables
   double total_added_recharge = 0;
   double total_loss_to_ocean  = 0;
+  // Groundwater-only ocean loss (set_starting_values + solve copy-back). Under MPI this is a
+  // per-rank OWNED-cell partial, reduced to a global total in PrintValues. Kept separate from
+  // total_loss_to_ocean, which FillSpillMerge accumulates on the full replicated grid on every
+  // rank (already global, so it must NOT be reduced).
+  double total_loss_to_ocean_gw = 0;
 
   void check() const;
 };
