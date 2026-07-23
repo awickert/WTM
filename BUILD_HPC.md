@@ -42,6 +42,34 @@ cd WTM
 git submodule update --init --recursive
 ```
 
+## Step 1 — get onto a compute node (MSI: interactive session)
+
+Do **not** build or run on the login node. Grab an interactive session on a
+compute node first. MSI uses Slurm; the `interactive` partition is for exactly
+this (the job ends when the shell exits).
+
+```sh
+# from your laptop: ssh to an MSI login host
+ssh <username>@agate.msi.umn.edu          # or the current login host per MSI docs
+
+# request an interactive shell: 1 node, 8 cores, 4 GB/core, 2 hours, interactive partition
+srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
+```
+
+You are now on a compute node with 8 cores allocated — enough to build
+(`make -j`) and smoke-test with a handful of MPI ranks. Load modules and build
+(Path A or B below) **inside this session** so the build sees the compute node's
+environment. To run the model on the allocated cores from the interactive shell:
+
+```sh
+srun -n 8 ./wtm.x <config.cfg>            # Slurm launches 8 MPI ranks
+# or, within the allocation:
+mpirun -n 8 ./wtm.x <config.cfg>
+```
+
+(On another cluster, substitute your site's login host, partition name, and
+interactive-job command — `salloc`/`srun --pty` are the usual variants.)
+
 ## Path A — cluster modules (try this first; MSI shown)
 
 Find what's actually available (module names/versions vary by site and change over
@@ -117,20 +145,49 @@ conda `libcurl` that lacked `CURL_OPENSSL_4` and broke linking against the syste
 consistent. If you see `undefined reference to curl_*@CURL_OPENSSL_4` or an
 `mpi.h: No such file`, it's a mixed-toolchain symptom — pick one source.
 
-## Running (Slurm)
+## Running
 
-Launch with the same modules/env loaded in the batch script. The memory win only
-shows with `>1` rank:
+The memory win only shows with `>1` rank. Interactive testing (inside the
+Step-1 session) is just:
 
 ```sh
-# interactive example
 srun -n 8 ./wtm.x <config.cfg>
-# or mpirun -n 8 ./wtm.x <config.cfg>   (per MSI's MPI-launch guidance)
+# or mpirun -n 8 ./wtm.x <config.cfg>
+```
+
+Production runs go through `sbatch` on a production partition (msilong for long
+single-node runs, msismall for shorter single-node, msilarge for multi-node).
+Load the **same** modules/env you built with. Example `run_wtm.sbatch`:
+
+```bash
+#!/bin/bash -l
+#SBATCH --job-name=wtm
+#SBATCH --partition=msilong        # long single-node; or msismall / msilarge
+#SBATCH --nodes=1
+#SBATCH --ntasks=32                # MPI ranks (msilong caps at 32 cores / 128 GB)
+#SBATCH --mem=120gb
+#SBATCH --time=7-00:00:00          # D-HH:MM:SS; msilong allows up to 37 days
+#SBATCH --output=wtm-%j.out
+
+module load gcc openmpi petsc gdal cmake   # the SAME modules used to build
+# (or: source activate wtm, if you built via the conda path)
+
+cd /path/to/WTM/build
+srun ./wtm.x /path/to/config.cfg           # uses the allocation's 32 ranks
+```
+
+Submit and monitor:
+
+```sh
+sbatch run_wtm.sbatch
+squeue --me
 ```
 
 For production at 141M cells, the point of the distributed-ArrayPack work is that
 non-root ranks no longer hold the full grid — so you can use many more ranks per
-node than before (e.g. all 32 on msilong, formerly ~4).
+node than before (e.g. all 32 on msilong, formerly ~4). Set `--ntasks` to the
+cores you want; on a bandwidth-bound stencil the useful count may plateau below
+the node maximum, so a quick scaling sweep (8, 16, 32) is worth doing once.
 
 ## Verify the build is correct
 
