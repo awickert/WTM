@@ -13,6 +13,48 @@ The golden rule up front:
 > sources (e.g. conda GDAL with system PETSc/MPI) causes link failures. Every
 > build problem we hit locally was a mixed-toolchain problem.
 
+## Quickstart (MSI, modules path)
+
+Copy-paste sequence for the common case. Details, alternatives (conda), and
+troubleshooting are in the sections below. Replace module versions/names with
+whatever `module spider` shows on the node.
+
+```sh
+# 0. Clone the fork + branch + submodules (git may itself be a module)
+module load git
+git clone --recurse-submodules -b solver-optimization-2 \
+    https://github.com/awickert/WTM.git WTM
+
+# 1. Get an interactive compute node (do NOT build on the login node)
+srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
+
+# 2. Discover modules (hierarchical: spider sees hidden ones). petsc must be >= 3.17.1.
+module spider petsc
+module spider openmpi
+
+# 3. Load in dependency order: compiler -> MPI -> PETSc/GDAL
+module load gcc/13.1.0          # or whatever C++20-capable gcc spider shows
+module load openmpi             # visible only after gcc
+module load petsc gdal cmake    # petsc usually visible only after gcc + openmpi
+
+# 4. Verify the toolchain BEFORE building
+pkg-config --modversion PETSc   # must print >= 3.17.1
+mpicxx --version                # should match the gcc you loaded
+gdal-config --version
+
+# 5. Build -- use the MPI compiler wrappers (the code makes direct MPI_* calls)
+cd WTM && mkdir build && cd build
+CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON ..
+make -j 8
+
+# 6. Confirm the build (incl. the MPI flip); needs python3 + rasterio
+cd ../tests && ./run_all.sh
+```
+
+If step 2 shows **no PETSc, or < 3.17.1** → use the conda path (Path B). If cmake
+can't find PETSc despite the module → `export PKG_CONFIG_PATH=$PETSC_DIR/$PETSC_ARCH/lib/pkgconfig:$PKG_CONFIG_PATH`.
+See the troubleshooting table at the bottom for other symptoms.
+
 ## Dependencies
 
 External (must be provided by modules or conda):
