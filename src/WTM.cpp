@@ -91,6 +91,11 @@ void update(
   richdem::Timer timer_overall;
   timer_overall.start();
 
+  // wtd_old and wtd_mid are diagnostic snapshots read only by rank-0 PrintValues,
+  // so maintain them on rank 0 only (they need not exist on non-root ranks).
+  PetscMPIInt mpi_rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
+
   if (params.run_type == "transient") {
     // UpdateTransientArrays (linear interpolation of the forcing fields from
     // start to end, plus fdepth and the depression hierarchy rebuild) is serial
@@ -131,8 +136,10 @@ void update(
     }
   }
 
-  arp.wtd_old = arp.wtd;  // These are used to see how much change occurs
-  arp.wtd_mid = arp.wtd;  // in FSM vs in the groundwater portion.
+  if (mpi_rank == 0) {
+    arp.wtd_old = arp.wtd;  // These are used to see how much change occurs
+    arp.wtd_mid = arp.wtd;  // in FSM vs in the groundwater portion.
+  }
 
   //////////////////////
   // Move groundwater //
@@ -169,7 +176,9 @@ void update(
   std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;
   std::cerr << "t After GW time: " << get_current_time_and_date_as_str() << std::endl;
 
-  arp.wtd_mid = arp.wtd;
+  if (mpi_rank == 0) {
+    arp.wtd_mid = arp.wtd;
+  }
 
   ////////////////////////
   // Move surface water //
@@ -269,7 +278,9 @@ void update(
   // Print values about the change in water table depth to the text file.
   PrintValues(params, arp);
 
-  arp.wtd_old = arp.wtd;
+  if (mpi_rank == 0) {
+    arp.wtd_old = arp.wtd;
+  }
   params.cycles_done += 1;
   std::cerr << "t Done time = " << get_current_time_and_date_as_str() << std::endl;
   std::cerr << "t WTM update time = " << timer_overall.lap() << std::endl;
