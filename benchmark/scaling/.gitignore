@@ -1,0 +1,8 @@
+# Generated scaling artifacts -- do NOT track. The parent benchmark/.gitignore
+# negates *.tif/*.cfg to keep the committed benchmark inputs; re-ignore the
+# synthetic grids (potentially many GB) and sweep outputs here.
+synth/
+*.csv
+results.csv
+__pycache__/
+fail_*.log
