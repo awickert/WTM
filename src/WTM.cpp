@@ -243,6 +243,10 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
 
   textfile.close();
 
+  delete user_context.full_grid_gather;  // destroys PETSc scatter/vecs; must precede PetscFinalize
+  user_context.full_grid_gather = nullptr;
+  VecDestroy(&user_context.wtd_global);
+
   SNESDestroy(&user_context.snes);
   DMDestroy(&user_context.da);
   VecDestroy(&user_context.x);

@@ -28,6 +28,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   user_context.make_global_vectors();
   user_context.make_local_vectors();
+  user_context.full_grid_gather = new DMDAFullGridGather(user_context.da);
 
   DMSetApplicationContext(user_context.da, &user_context);
   SNESSetDM(user_context.snes, user_context.da);

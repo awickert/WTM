@@ -1,3 +1,4 @@
+#include "dmda_gather.hpp"
 #include "parameters.hpp"
 
 #include <petscdm.h>
@@ -27,6 +28,12 @@ struct AppCtx {
   Vec ksat_local   = nullptr;
   Vec T_local      = nullptr;  // scratch: 1/T, computed over ghost range each F eval
 
+  // Scratch global vector + reusable gather for assembling the full wtd field
+  // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
+  // context; destroyed in finalise() before PetscFinalize.
+  Vec wtd_global                       = nullptr;
+  DMDAFullGridGather* full_grid_gather = nullptr;
+
   // Extract global vectors from DM; then duplicate for remaining
   // vectors that are the same types
   void make_global_vectors() {
@@ -40,6 +47,7 @@ struct AppCtx {
     VecDuplicate(x, &rech_vec);
     VecDuplicate(x, &porosity_vec);
     VecDuplicate(x, &starting_wtd);
+    VecDuplicate(x, &wtd_global);
   }
 
   void make_local_vectors() {
