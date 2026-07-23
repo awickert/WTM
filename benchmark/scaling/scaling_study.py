@@ -176,6 +176,9 @@ def main():
                     choices=list(BUILD_FOLDERS), help="which builds to run")
     ap.add_argument("--maxiter", type=int, default=5,
                     help="GW solves per cycle (higher amortizes one-time serial init)")
+    ap.add_argument("--reps", type=int, default=1,
+                    help="repeat each run N times and keep the best (min-wall); "
+                         "on a shared node single-shot timing is noisy -- use 3 for timing runs")
     ap.add_argument("--total-cycles", type=int, default=1)
     ap.add_argument("--mpiexec", default="mpiexec")
     ap.add_argument("--outcsv", default=os.path.join(SCRIPT_DIR, "results.csv"))
@@ -210,35 +213,60 @@ def main():
     print(header)
     print("-" * len(header))
 
+    # Write the CSV incrementally and flush after every run, so a crash or an
+    # aborted session never loses the rows already gathered.
+    fields = ["build", "binary", "grid", "cells", "nranks", "rc", "iters",
+              "wall_s", "gw_s", "mem_total", "mem_max", "mem_min"]
+    csvf = open(args.outcsv, "w", newline="")
+    writer = csv.DictWriter(csvf, fieldnames=fields)
+    writer.writeheader()
+    csvf.flush()
+
     for grid in grids:
         sdir = ensure_inputs(grid, synth_root)
         cfg = os.path.join(sdir, f"synth_m{args.maxiter}_c{args.total_cycles}.cfg")
         write_cfg(cfg, sdir, grid, args.maxiter, args.total_cycles)
         for label, binary in builds:
             for n in args.ranks:
-                r = run_one(binary, args.mpiexec, n, cfg)
-                tag = ""
-                if label == "kcallaghan" and n > 1:
-                    tag = "  [INDICATIVE: ghost bug at n>1]"
+                # Never let a single run (or a parse hiccup) abort the sweep.
+                # Repeat --reps times; keep the best (min-wall) successful run to
+                # suppress shared-node timing noise. Fall back to the last result
+                # if every rep failed.
+                r = None
+                for _ in range(max(1, args.reps)):
+                    try:
+                        cur = run_one(binary, args.mpiexec, n, cfg)
+                    except Exception as e:  # noqa: BLE001 -- record and keep going
+                        cur = {"rc": -99, "wall": None, "gw": None, "iters": None,
+                               "mem_total": None, "mem_max": None, "mem_min": None,
+                               "raw": f"scaling_study exception: {e!r}"}
+                    if r is None:
+                        r = cur
+                    elif cur["rc"] == 0 and (r["rc"] != 0 or
+                                             (cur["wall"] or 1e9) < (r["wall"] or 1e9)):
+                        r = cur
+                tag = "  [INDICATIVE: ghost bug at n>1]" if (label == "kcallaghan" and n > 1) else ""
+                if r["rc"] == -99:
+                    tag += "  [run/parse error -- see log]"
                 mem = f"{fmt(r['mem_total'])} / {fmt(r['mem_max'])} / {fmt(r['mem_min'])}"
                 print(f"{label:<11}{grid:>6}{n:>4}{r['rc']:>4}"
-                      f"{fmt(r['iters'],'d') if r['iters'] is not None else '?':>6}"
+                      f"{(fmt(r['iters'],'d') if r['iters'] is not None else '?'):>6}"
                       f"{fmt(r['wall'],'.1f'):>9}{fmt(r['gw'],'.2f'):>9}   {mem}{tag}")
-                rows.append(dict(build=label, binary=binary, grid=grid, cells=grid * grid,
-                                 nranks=n, rc=r["rc"], iters=r["iters"], wall_s=r["wall"],
-                                 gw_s=r["gw"], mem_total=r["mem_total"], mem_max=r["mem_max"],
-                                 mem_min=r["mem_min"]))
-                if r["rc"] != 0 and args.keep_failed_logs:
+                row = dict(build=label, binary=binary, grid=grid, cells=grid * grid,
+                           nranks=n, rc=r["rc"], iters=r["iters"], wall_s=r["wall"],
+                           gw_s=r["gw"], mem_total=r["mem_total"], mem_max=r["mem_max"],
+                           mem_min=r["mem_min"])
+                rows.append(row)
+                writer.writerow(row)
+                csvf.flush()
+                if r["rc"] != 0 and (args.keep_failed_logs or r["rc"] == -99):
                     lp = os.path.join(SCRIPT_DIR, f"fail_{label}_{grid}_n{n}.log")
                     with open(lp, "w") as f:
-                        f.write(r["raw"])
+                        f.write(r.get("raw", ""))
                     print(f"      (rc={r['rc']}; log: {lp})")
         print()
 
-    with open(args.outcsv, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=[k for k in rows[0] if k != "raw"])
-        w.writeheader()
-        w.writerows(rows)
+    csvf.close()
     print(f"CSV: {args.outcsv}\n")
 
     analyze(rows, grids, args.ranks, [l for l, _ in builds])
