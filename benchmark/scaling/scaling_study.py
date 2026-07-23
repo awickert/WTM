@@ -68,8 +68,12 @@ BUILD_FOLDERS = {
 
 SNES_ARGS = ["-snes_type", "anderson", "-snes_stol", "1e-6"]  # no -snes_mf (deadlocks under MPICH)
 
-MEM_RE = re.compile(r"process memory:.*?total\s+(\S+)\s+max\s+(\S+)\s+min\s+(\S+)", re.I)
-GW_RE = re.compile(r"GW time =\s*([0-9.eE+-]+)")
+# A single well-formed float. Bounded so it stops at the next number even when
+# concurrent MPI ranks interleave their output with no separator (e.g. two ranks
+# printing "t GW time = 16.8993" and "16.9009" can arrive as "...16.899316.9009").
+_NUM = r"(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+MEM_RE = re.compile(r"process memory:.*?total\s+" + _NUM + r"\s+max\s+" + _NUM + r"\s+min\s+" + _NUM, re.I)
+GW_RE = re.compile(r"GW time =\s*" + _NUM)
 ITER_RE = re.compile(r"nonlinear iterations =\s*(\d+)")
 
 
