@@ -39,5 +39,5 @@ struct DMDA_Array_Pack {
   }
 };
 
-void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack);
+void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp);
 void scatter_static_fields(AppCtx& user_context, ArrayPack& arp);

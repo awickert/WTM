@@ -4,17 +4,23 @@ std::tuple<PetscInt, PetscInt, PetscInt, PetscInt> get_corners(const DM da) {
   return {xs, ys, xm, ym};
 }
 
-void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack) {
-  // Get local array bounds
-  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+// Populate the static global vecs from arp. mask and porosity are scattered from rank-0 arp (float)
+// so those arp arrays need not exist on non-root ranks; cellsize_EW_squared is derived from the 1-D
+// Class-C array cellsize_e_w_metres (present on all ranks) by an owned-range copy. Writes the global
+// vecs directly, so this must be called BEFORE DMDA_Array_Pack holds them.
+void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp) {
+  user_context.full_grid_gather->scatterFromZero(arp.land_mask.data(), user_context.mask);
+  user_context.full_grid_gather->scatterFromZero(arp.porosity.data(), user_context.porosity_vec);
 
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** cellsize;
+  DMDAVecGetArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      dmdapack.cellsize_EW_squared[j][i] = arp.cellsize_e_w_metres[j] * arp.cellsize_e_w_metres[j];
-      dmdapack.mask[j][i]                = arp.land_mask(i, j);
-      dmdapack.porosity_vec[j][i]        = arp.porosity(i, j);
+      cellsize[j][i] = arp.cellsize_e_w_metres[j] * arp.cellsize_e_w_metres[j];
     }
   }
+  DMDAVecRestoreArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
 }
 
 // Populate the global topo/fdepth/ksat vecs from rank-0 arp and scatter to local ghost vectors.

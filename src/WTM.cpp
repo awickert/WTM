@@ -355,11 +355,12 @@ int main(int argc, char** argv) {
 
   initialise(params, arp, user_context);
 
-  DMDA_Array_Pack dmdapack(user_context);  // this needs to come after initialise
-  populate_DMDA_array_pack(user_context, arp, dmdapack);
-  // Scatter topo/fdepth/ksat to local ghost vectors. These global vecs are not held by
-  // dmdapack so there is no GetArray lock conflict.
+  // Populate the static global vecs (mask/porosity from rank-0, cellsize from the 1-D array)
+  // BEFORE DMDA_Array_Pack holds them, then scatter topo/fdepth/ksat to their local ghost vectors.
+  populate_DMDA_array_pack(user_context, arp);
   scatter_static_fields(user_context, arp);
+
+  DMDA_Array_Pack dmdapack(user_context);  // holds the now-populated vecs; must come after the above
 
   run(params, arp, user_context, dmdapack);
 
