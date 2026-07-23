@@ -149,16 +149,27 @@ void update(
   // These iterations refer to how many times to repeat the time step within the groundwater
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
   // 2x 6 months GW then FSM.
-  // Populate the distributed per-cycle solve inputs from the full arrays once
-  // per cycle: the wtd carrier (starting_wtd, advanced in place by the maxiter
-  // solves) and the recharge source (rech_dist, constant across the loop). 2f-B.
+  // Scatter the per-cycle solve inputs from rank-0 arp into the distributed
+  // carriers once per cycle: the wtd carrier (starting_wtd, advanced in place by
+  // the maxiter solves) and the recharge source (rech_dist, constant across the
+  // loop). Scatter through the un-held wtd_global scratch, then copy its owned
+  // cells into the dmdapack-held arrays. Sourcing from rank 0 lets arp.wtd/rech
+  // be dropped on non-root ranks. 2f-B / 2f-C.
   {
     const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+    PetscScalar** scratch;
+
+    user_context.full_grid_gather->scatterFromZero(arp.wtd.data(), user_context.wtd_global);
+    DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
     for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++) {
-        dmdapack.starting_wtd[j][i] = arp.wtd(i, j);
-        dmdapack.rech_dist[j][i]    = arp.rech(i, j);
-      }
+      for (int i = xs; i < xs + xm; i++) dmdapack.starting_wtd[j][i] = scratch[j][i];
+    DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
+
+    user_context.full_grid_gather->scatterFromZero(arp.rech.data(), user_context.wtd_global);
+    DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++) dmdapack.rech_dist[j][i] = scratch[j][i];
+    DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
   }
 
   int iter_count = 0;
@@ -184,19 +195,13 @@ void update(
     richdem::Timer fsm_timer;
     fsm_timer.start();
 
-    // FillSpillMerge is a global serial algorithm. Run it on rank 0 only (all
-    // ranks currently hold identical replicated arrays, so rank 0 produces the
-    // same result they all would), then broadcast the one output the rest of
-    // the cycle consumes: wtd. FSM's other mutations are not consumed
-    // downstream -- runoff is overwritten by the recharge loop before it is
-    // read, and label/final_label/flowdirs are regenerated each cycle by
-    // GetDepressionHierarchy. See benchmark/DISTRIBUTED_ARP_DESIGN.md.
-    PetscMPIInt fsm_rank;
-    MPI_Comm_rank(PETSC_COMM_WORLD, &fsm_rank);
-    if (fsm_rank == 0) {
+    // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds
+    // the full arp. Its wtd output stays on rank 0 (the following serial sections
+    // and the next-cycle scatter all read rank-0 arp.wtd); no broadcast is needed.
+    // See benchmark/DISTRIBUTED_ARP_DESIGN.md.
+    if (mpi_rank == 0) {
       dh::FillSpillMerge(params, deps, arp);
     }
-    MPI_Bcast(arp.wtd.data(), arp.wtd.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
 
     std::cerr << "t FSM time = " << fsm_timer.lap() << std::endl;
     std::cerr << "t After FSM time: " << get_current_time_and_date_as_str() << std::endl;
@@ -265,8 +270,8 @@ void update(
       }
     }
   }
-  MPI_Bcast(arp.rech.data(), arp.rech.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
-  MPI_Bcast(arp.wtd.data(), arp.wtd.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+  // rech and wtd stay on rank 0 -- the next cycle scatters them from rank-0 arp
+  // into the distributed solve carriers, so no broadcast is needed.
 
   std::cerr << "t Set recharge time = " << recharge_timer.lap() << std::endl;
   std::cerr << "After setting recharge values: " << get_current_time_and_date_as_str() << std::endl;

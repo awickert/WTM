@@ -261,11 +261,18 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
   DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
 
   std::vector<double> full;
-  user_context.full_grid_gather->gatherToAll(user_context.wtd_global, full);
+  // Gather to rank 0 only: wtd is consumed by the serial sections (FSM, recharge,
+  // diagnostics, output), which all run on rank 0, and re-scattered to the solve
+  // next cycle. Non-root ranks do not need the full field, so arp.wtd can be
+  // rank-0-only.
+  user_context.full_grid_gather->gatherToZero(user_context.wtd_global, full);
 
-  for (int j = 0; j < params.ncells_y; j++)
-    for (int i = 0; i < params.ncells_x; i++)
-      arp.wtd(i, j) = full[j * params.ncells_x + i];
+  PetscMPIInt rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+  if (rank == 0)
+    for (int j = 0; j < params.ncells_y; j++)
+      for (int i = 0; i < params.ncells_x; i++)
+        arp.wtd(i, j) = full[j * params.ncells_x + i];
 }
 
 /* ------------------------------------------------------------------- */
