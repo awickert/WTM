@@ -65,6 +65,31 @@ class DMDAFullGridGather {
     gatherToZeroBuffer(global, full);
   }
 
+  // Inverse of gatherToZero: scatter a full row-major field held on rank 0
+  // (index = j*Mx + i) into the distributed DMDA global vector `global`, so
+  // each rank receives its owned cells. `full` is read only on rank 0 (may be
+  // empty elsewhere). This is the rank-0 -> distributed handoff the solve needs
+  // for per-cycle inputs (e.g. recharge) once ArrayPack lives only on rank 0.
+  void scatterFromZero(const std::vector<double>& full, Vec global) {
+    // Load rank 0's full buffer into the sequential-on-rank-0 vector, then run
+    // the scatter in reverse (rank 0 -> natural), then natural -> DMDA global.
+    PetscMPIInt rank;
+    MPI_Comm_rank(PetscObjectComm((PetscObject)da_), &rank);
+    if (rank == 0) {
+      PetscScalar* s;
+      VecGetArray(seq_on_zero_, &s);
+      const PetscInt total = Mx_ * My_;
+      for (PetscInt k = 0; k < total; k++) {
+        s[k] = full[k];
+      }
+      VecRestoreArray(seq_on_zero_, &s);
+    }
+    VecScatterBegin(to_zero_, seq_on_zero_, natural_, INSERT_VALUES, SCATTER_REVERSE);
+    VecScatterEnd(to_zero_, seq_on_zero_, natural_, INSERT_VALUES, SCATTER_REVERSE);
+    DMDANaturalToGlobalBegin(da_, natural_, INSERT_VALUES, global);
+    DMDANaturalToGlobalEnd(da_, natural_, INSERT_VALUES, global);
+  }
+
  private:
   // Core scatter: distributed global -> natural -> sequential-on-rank-0.
   // On rank 0, copies the sequential values into `full` (which the caller has
