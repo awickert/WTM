@@ -42,7 +42,6 @@ CFG_1P=$(mktemp /tmp/ghost_cell_1p_XXXXXX.cfg)
 sed 's|^outfile_prefix.*|outfile_prefix     out_1p/out_|;
      s|^textfilename.*|textfilename       run_1p.txt|' ghost_cell.cfg > "$CFG_1P"
 mpirun -n 1 "$WTM" "$CFG_1P" \
-    -snes_mf \
     -snes_stol 1e-6 \
     2>&1 | grep -E 'SNES|converged|norm|Error|error' || true
 echo "1-process run complete."
@@ -57,7 +56,6 @@ CFG_2P=$(mktemp /tmp/ghost_cell_2p_XXXXXX.cfg)
 sed 's|^outfile_prefix.*|outfile_prefix     out_2p/out_|;
      s|^textfilename.*|textfilename       run_2p.txt|' ghost_cell.cfg > "$CFG_2P"
 mpirun -n 2 "$WTM" "$CFG_2P" \
-    -snes_mf \
     -snes_stol 1e-6 \
     -da_processors_x 2 -da_processors_y 1 \
     2>&1 | grep -E 'SNES|converged|norm|Error|error' || true
