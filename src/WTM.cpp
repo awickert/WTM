@@ -146,7 +146,19 @@ void update(
     richdem::Timer fsm_timer;
     fsm_timer.start();
 
-    dh::FillSpillMerge(params, deps, arp);
+    // FillSpillMerge is a global serial algorithm. Run it on rank 0 only (all
+    // ranks currently hold identical replicated arrays, so rank 0 produces the
+    // same result they all would), then broadcast the one output the rest of
+    // the cycle consumes: wtd. FSM's other mutations are not consumed
+    // downstream -- runoff is overwritten by the recharge loop before it is
+    // read, and label/final_label/flowdirs are regenerated each cycle by
+    // GetDepressionHierarchy. See benchmark/DISTRIBUTED_ARP_DESIGN.md.
+    PetscMPIInt fsm_rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &fsm_rank);
+    if (fsm_rank == 0) {
+      dh::FillSpillMerge(params, deps, arp);
+    }
+    MPI_Bcast(arp.wtd.data(), arp.wtd.size(), MPI_DOUBLE, 0, PETSC_COMM_WORLD);
 
     std::cerr << "t FSM time = " << fsm_timer.lap() << std::endl;
     std::cerr << "t After FSM time: " << get_current_time_and_date_as_str() << std::endl;
