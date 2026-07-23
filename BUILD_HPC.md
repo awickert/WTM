@@ -53,6 +53,11 @@ Module names change over time; if these exact versions are gone, use the
 discovery steps in Path A to find the current equivalents. If no PETSc >= 3.17.1
 exists, use the conda path (Path B).
 
+**Per-session shortcut:** after the first successful setup, `msi_env.sh` (in the
+repo root) loads this whole toolchain in one line — `source msi_env.sh` to build
+or run, or `source msi_env.sh test` to also activate the `wtmtest` conda env for
+the Python test suite.
+
 ## Dependencies
 
 External (must be provided by modules or conda):
