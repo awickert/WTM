@@ -140,3 +140,119 @@ Same issue: neighbor arrays accessed from global vectors. Currently guarded agai
 ### Anderson m=1 vs higher m
 
 m=1 outperforms m=5 on this problem. The near-solution oscillation phase is dampened better by m=1 (less memory means simpler, more stable updates). This may be problem-specific; re-test if the grid or forcing changes significantly.
+
+---
+
+# 2026-07-23 — MPI scaling, physics validation, and the replicated-data ceiling
+
+**Branch:** `solver-optimization-2` — the solver work above, rebased on top of `mpi-ghost-fix`
+(PR #69). **Investigators:** Andy Wickert + Claude.
+
+## Status update: the CRITICAL ghost-cell bug is FIXED
+
+The ghost-cell bug documented under "Known Bugs / Future Work" above is resolved. PR #69
+(`mpi-ghost-fix`) converts the neighbor-accessed fields (`T`, `topo`, `fdepth`, `ksat`) to
+local ghost vectors in `FormFunctionLocal`. `solver-optimization-2` is stacked on top of #69
+and inherits the fix. Verified: the `tests/ghost_cell` regression passes (1-proc vs 2-proc
+agree to 0.000000 m at the MPI boundary). `FormJacobianLocal` still reads global vectors, but
+it is guarded off for Anderson (the default) and Newton is dead (Finding 4 above), so this is
+latent, not active.
+
+## Physics: the smooth T/S formulas are faithful and bounded
+
+Compared `solver-optimization-2` (smooth T/S) against the `mpi-ghost-fix` discontinuous
+baseline on an identical config, tracking the water-table divergence over 30 cycles:
+
+| cycle | mean \|Δwtd\| | p99 \|Δwtd\| | max \|Δwtd\| | mean \|wtd\| | relative |
+|-------|-------------|------------|------------|------------|----------|
+| 5     | 5.9 mm      | 17 mm      | 0.385 m    | 4.9 m      | 0.12%    |
+| 15    | 4.5 mm      | 15 mm      | 0.326 m    | 10.9 m     | 0.041%   |
+| 30    | 3.7 mm      | 14 mm      | 0.307 m    | 16.3 m     | 0.023%   |
+
+The difference does **not** accumulate — it saturates and shrinks as a fraction of signal
+(0.12% → 0.023%), because as the water table fills and moves deeper, fewer cells sit near the
+wtd=0 / wtd=−shallow transitions where the two formulations differ. Differences are localized
+to those transition zones; deep cells and the (~50% of domain) ocean cells are essentially
+identical. Conclusion: the smooth formulas are a controlled regularization, safe to keep.
+(Caveat: measured in `test` mode on the benchmark region; a real transient with time-varying
+forcing could differ in detail, but the bounded/saturating character is a strong signal.)
+
+Ocean BC (`f=0` → `f=x`, Finding under Code Changes): introduced only for the now-dead Newton
+path. Kept for now — arguably the more correct Dirichlet sea-level BC, and reversible. Open
+decision.
+
+## MPI scaling (single-node measurements)
+
+1000×1000 benchmark, `OMP_NUM_THREADS=1`, `maxiter=20` (60 solves), single 16-core node. Two
+`PetscLogEvent`s (`SetStartVals`, `FullGridReduce`) were added to split the GW-section time
+(commit "Add PetscLogEvents to profile solve-loop O(N) overhead").
+
+| ranks | SNESSolve | SetStartVals | FullGridReduce | overhead share |
+|-------|-----------|--------------|----------------|----------------|
+| 1     | 50.4 s    | 5.1 s        | 2.3 s          | 12.8%          |
+| 4     | 20.0 s    | 5.9 s        | 2.3 s          | 29.0%          |
+| 8     | 15.3 s    | 6.9 s        | 3.5 s          | 40.5%          |
+
+- The SNES solve **scales well** (~3.6× at n=8); iteration counts are bit-identical to n=1, so
+  the domain decomposition is correct as well as fast.
+- `set_starting_values` and the full-grid `MPI_Allreduce` are **replicated O(N) work that does
+  not scale** (roughly flat, even rising with ranks — likely memory-bandwidth contention).
+  Their share of GW time grows 13% → 40% from n=1 to n=8 and would dominate at higher counts.
+- `set_starting_values` (a whole-grid loop run on *every* rank) is the larger of the two
+  (~2.5× the allreduce) — not the allreduce, as first assumed.
+- n=16 failed on the test box (oversubscription of 16 cores); everything past n=8 is unmeasured.
+- All single-node, shared-memory MPI. Cross-node behavior of the full-grid allreduce (InfiniBand)
+  is unmeasured and expected to be worse.
+
+## The production ceiling at 141M cells: replicated data structures
+
+Production grids reach ~141,120,000 cells. `ArrayPack` holds **25 `float` + 9 `double`
+full-grid arrays, replicated on every MPI rank**:
+
+- (25 × 4 B + 9 × 8 B) × 141.12M ≈ **~26 GB per rank** (before PETSc vectors, halo buffers,
+  and the 1.13 GB allreduce buffer).
+- On a 128-core / 512 GB Agate node only ~12–16 ranks fit → **~85% of each node's cores are
+  stranded by memory**, not compute.
+- The per-solve full-grid allreduce is 1.13 GB, done ~500× per cycle = **~565 GB/cycle** of
+  collective traffic; over InfiniBand (msilarge) this is the dominant communication cost.
+
+FSM is *not* a concern: it runs ~once per simulated year (many GW solves per FSM) and costs less
+than a single GW solve, so its amortized share is negligible.
+
+### Why the structures are replicated (design)
+
+1. **FillSpillMerge and the depression hierarchy are global serial algorithms.** Depressions,
+   spill points, and watersheds are global topological structures — they cannot be computed from
+   a subdomain. RichDEM's FSM has no MPI, so the surface-water side requires the full grid in one
+   place.
+2. **Historical:** serial-first richdem model; MPI was added *only* to the GW solve via PETSc.
+   The two data models — replicated richdem `arp` vs distributed PETSc DMDA — were never unified;
+   the full-grid `MPI_Allreduce` is the seam between them.
+3. **Coupling simplicity:** a full-grid `arp` on every rank lets FSM, recharge, ocean accounting,
+   and I/O be plain serial loops over global (x,y), with no ownership/halos/communication.
+
+### How the replication is realized (mechanism)
+
+- SPMD: each rank runs `main()` (`WTM.cpp`) and builds its own full-grid `ArrayPack`.
+- `initialise()` → `InitialiseTransient` (`irf.cpp`) loads **every input full-grid via GDAL on
+  every rank** — no rank guard. The *only* rank-0 guards in the code are for output (`saveGDAL`,
+  `WTM.cpp:110,239`).
+- The distributed PETSc solve is bridged back to the replicated `arp` by a copy-back of owned
+  cells + the full-grid `MPI_Allreduce` (`transient_groundwater.cpp`) after every solve.
+- FSM and the depression hierarchy run redundantly on the full `arp` on every rank.
+
+## Path forward
+
+- **Lever #2 — down payment (tractable, contained):** hoist the full-grid allreduce out of the
+  per-solve loop (it is needed only once per cycle before FSM/output, not `maxiter` times → ~500×
+  fewer 1.13 GB collectives), and make `set_starting_values` owned-cells-only with a scalar
+  reduction for the mass-balance diagnostics. Removes both non-scaling GW-section overheads.
+  Does **not** fix memory. **Blocked on a decision:** should each rank hold the *global*
+  `total_loss_to_ocean` or its *local* contribution? — this determines the correct reduce.
+  Requires a mass-balance regression (before/after totals at n=1 and n=8) plus the ghost test.
+- **Distributed data model — the real fix (architectural, large):** make `arp` distributed like
+  the PETSc vectors (each rank owns its subdomain + halos); gather to a full grid only for the
+  rare FSM step and for I/O. Drops per-rank memory from ~26 GB to tens of MB → use all 128
+  cores/node, and subsumes lever #2 (no per-solve allreduce, no replicated loops). Touches
+  `ArrayPack`, initialization/loading, I/O, and the FSM handoff. Lever #2's owned-only
+  `set_starting_values` is literally the first step of this, so it is **not** throwaway work.
