@@ -33,14 +33,31 @@ Bundled (git submodules — no module needed, but you MUST clone them):
 The sanitizer CMake modules are vendored in `cmake/`, so `find_package(Sanitizers)`
 needs nothing external.
 
-## Step 0 — clone with submodules
+## Step 0 — clone the fork + branch (with submodules)
+
+`git` itself may be a module on the cluster (the system git can be old or absent):
 
 ```sh
-git clone --recurse-submodules <your fork URL> WTM
+module avail git        # or: module spider git
+module load git         # if a git module is listed
+```
+
+Cloning from GitHub needs auth — either an SSH key registered with your GitHub
+account (then use the `git@github.com:` URL) or a personal access token (for the
+`https://` URL). Clone the fork, the branch, and the submodules in one go:
+
+```sh
+# WTM fork + working branch:
+git clone --recurse-submodules -b solver-optimization-2 \
+    https://github.com/awickert/WTM.git WTM
 cd WTM
+
 # if you forgot --recurse-submodules:
 git submodule update --init --recursive
 ```
+
+Make sure the branch was **pushed to the fork first** (`git push` from wherever
+the commits live) — a clone only sees what is on the remote.
 
 ## Step 1 — get onto a compute node (MSI: interactive session)
 
