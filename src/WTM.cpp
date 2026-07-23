@@ -146,13 +146,22 @@ void update(
   // These iterations refer to how many times to repeat the time step within the groundwater
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
   // 2x 6 months GW then FSM.
+  // Populate the distributed wtd carrier (starting_wtd) from the full wtd once
+  // per cycle; the maxiter solves then advance it in place (2f-B).
+  {
+    const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        dmdapack.starting_wtd[j][i] = arp.wtd(i, j);
+  }
+
   int iter_count = 0;
   while (iter_count++ < params.maxiter) {
     FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
   }
   // Assemble the full wtd field once, now that the solve loop is done (the
   // intermediate solves only need each rank's owned cells).
-  FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context);
+  FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
 
   std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;
   std::cerr << "t After GW time: " << get_current_time_and_date_as_str() << std::endl;

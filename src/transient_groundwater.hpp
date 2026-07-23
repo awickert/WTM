@@ -14,6 +14,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 // Called once per cycle after the maxiter solve loop -- the intermediate solves
 // only need each rank's own owned wtd, so the full-grid assembly is not needed
 // per solve. See benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2f, lever #2).
-void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context);
+void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
 
 }

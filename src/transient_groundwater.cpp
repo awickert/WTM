@@ -110,7 +110,12 @@ static double dEffectiveStorativityDnew(
   return (1.0 - my_porosity) * eps * eps / (2.0 * std::pow(w * w + eps * eps, 1.5));
 }
 
-void set_starting_values(ArrayPack& arp, PetscInt xs, PetscInt ys, PetscInt xm, PetscInt ym) {
+// wtd is carried in the distributed DMDA array `starting_wtd` (indexed [y][x]
+// over the owned range) rather than in the full-grid arp.wtd, so that arp.wtd
+// need not exist on non-root ranks. mask/porosity/rech/cell_area are still read
+// from arp (replicated) at this phase. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2f-B).
+void set_starting_values(ArrayPack& arp, PetscScalar** starting_wtd, PetscInt xs, PetscInt ys, PetscInt xm,
+                         PetscInt ym) {
   // no pragma because we're editing arp accumulators
   // Accumulate over this rank's OWNED cells only (DMDA owned range, which is
   // non-overlapping across ranks), so under MPI each ocean/recharge cell is
@@ -122,15 +127,15 @@ void set_starting_values(ArrayPack& arp, PetscInt xs, PetscInt ys, PetscInt xm, 
   for (int y = ys; y < ys + ym; y++) {
     for (int x = xs; x < xs + xm; x++) {
       if (arp.land_mask(x, y) == 0.f) {
-        if (arp.wtd(x, y) > 0)
-          arp.total_loss_to_ocean_gw += arp.wtd(x, y) * arp.cell_area[y];
+        if (starting_wtd[y][x] > 0)
+          arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y];
         else
-          arp.total_loss_to_ocean_gw += arp.wtd(x, y) * arp.cell_area[y] * arp.porosity(x, y);
-        arp.wtd(x, y) = 0.;
+          arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y] * arp.porosity(x, y);
+        starting_wtd[y][x] = 0.;
       } else {
         double rech_count = arp.rech(x, y);
-        if (arp.wtd(x, y) >= 0 && arp.wtd(x, y) + arp.rech(x, y) < 0)
-          rech_count = -arp.wtd(x, y);
+        if (starting_wtd[y][x] >= 0 && starting_wtd[y][x] + arp.rech(x, y) < 0)
+          rech_count = -starting_wtd[y][x];
 
         arp.total_added_recharge += rech_count * arp.cell_area[y];
       }
@@ -154,17 +159,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // Get local array bounds
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
 
-  // compute any starting values needed for arrays (owned cells only)
+  // compute any starting values needed for arrays (owned cells only).
+  // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
+  // maxiter loop, then maintained by the copy-back below), not in arp.wtd.
   PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
-  set_starting_values(arp, xs, ys, xm, ym);
+  set_starting_values(arp, dmdapack.starting_wtd, xs, ys, xm, ym);
   PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      dmdapack.rech_vec[j][i]     = add_recharge(arp.rech(i, j), arp.wtd(i, j), arp.porosity(i, j));
-      dmdapack.starting_wtd[j][i] = arp.wtd(i, j);
+      dmdapack.rech_vec[j][i] = add_recharge(arp.rech(i, j), dmdapack.starting_wtd[j][i], arp.porosity(i, j));
     }
   }
 
@@ -207,18 +213,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     throw std::runtime_error("The SNES solver has not converged.");
   }
 
-  // copy the result back into the wtd array
+  // copy the result back into the distributed wtd carrier (starting_wtd), which
+  // feeds the next solve in the maxiter loop and is assembled to arp.wtd once
+  // per cycle by gather_wtd_to_all.
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
-      arp.wtd(i, j) = dmdapack.x[j][i] - arp.topo(i, j);
+      dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - arp.topo(i, j);
       if (arp.land_mask(i, j) == 0.f) {
-        if (arp.wtd(i, j) > 0)
-          arp.total_loss_to_ocean_gw +=
-              arp.wtd(i, j) * arp.cell_area[j];  // could it be that because ocean cells are just set = x in the
-                                                 // formula, that loss to/gain from ocean is not properly recorded?
+        if (dmdapack.starting_wtd[j][i] > 0)
+          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j];
         else
-          arp.total_loss_to_ocean_gw += arp.wtd(i, j) * arp.cell_area[j] * arp.porosity(i, j);
-        arp.wtd(i, j) = 0.;
+          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * arp.porosity(i, j);
+        dmdapack.starting_wtd[j][i] = 0.;
       }
     }
   }
@@ -228,14 +234,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   return 0;
 }
 
-// Assemble the full wtd field on every rank from each rank's owned cells.
-void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
+// Assemble the full wtd field on every rank from each rank's owned cells of the
+// distributed carrier (starting_wtd).
+void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** wg;
   DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
   for (int j = ys; j < ys + ym; j++)
     for (int i = xs; i < xs + xm; i++)
-      wg[j][i] = arp.wtd(i, j);
+      wg[j][i] = dmdapack.starting_wtd[j][i];
   DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
 
   std::vector<double> full;
