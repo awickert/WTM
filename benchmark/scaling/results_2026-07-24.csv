@@ -1,7 +1,9 @@
 # WTM strong-scaling & memory study — 2026-07-24, MSI (Agate, Rocky 8)
+# session memory ceiling: 64 GB (chosen to just fit 8000^2 n=1 ~= 57 GB). OOM rows are relative to THIS 64 GB, not a fundamental limit.
 # builds: after=distributed-arp flip (solver-optimization-2); before=e5aab70 (ghost-fixed, arp replicated); kcallaghan=KCallaghan/WTM v2.0.1
 # solver: -snes_type anderson -snes_stol 1e-6 (all builds); run_type=test, synthetic smooth topography; cells_per_degree=grid/120
-# kcallaghan is single-process (SEGVs at n>1, ghost bug) -> run at n=1 only. rc!=0 = run failed (255/9 = OOM: before replicates arp per rank).
+# kcallaghan is single-process (SEGVs at n>1, ghost bug) -> run at n=1 only. rc!=0 = OOM: before replicates arp per rank so its total memory
+#   grows ~linearly with ranks and crosses 64 GB (8000^2 at n>=4, 4000^2 at n=32); after stays flat (~58 GB at 8000^2) and fits at every rank.
 # units: wall_s,gw_s = seconds; mem_*_gb = PETSc -memory_view peak process memory (GB, total over ranks / max rank / min rank).
 # derived (rc==0 only): strong_speedup = wall(n=1)/wall(n) same build+grid; parallel_efficiency = strong_speedup/nranks;
 #   realized_speedup_vs_kcallaghan = wall(kcallaghan,n=1,same grid)/wall(this). Source: benchmark/scaling/scaling_study.py -> results.csv.

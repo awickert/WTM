@@ -317,9 +317,14 @@ memory (GB):
 | 8000² | before | 56.7 | **OOM at n≥4** | — | — |
 
 `after` total memory is **flat** (full grid once on rank 0 + distributed subdomains);
-`before` grows ~linearly with ranks (replicated `arp`) and **actually OOMs** — at
-8000² it cannot use even 4 ranks. So at continental scale the replicated model is
-confined to n=1; the flip is what makes many-core runs *exist*. Non-root per-rank at
+`before` grows ~linearly with ranks (replicated `arp`) and **actually OOMs**. The
+session had a **64 GB ceiling** (chosen to just fit 8000²/n=1 ≈ 57 GB), so that is
+the exact OOM boundary: `before` adds ~6.8 GB per rank at 8000² (56.7→63.5 GB from
+n=1→2) and crosses 64 GB at n≥4, while `after` stays ~57 GB through n=32. The OOM
+rank is node-relative — on a bigger node `before` reaches more ranks — but the
+**invariant is growth-vs-flat**: to match `after` at n=32/64M, `before` would need
+~270 GB. So at continental scale the replicated model is effectively confined to a
+few ranks; the flip is what makes many-core runs *exist*. Non-root per-rank at
 8000²/n=32: after **1.55 GB**.
 
 **5. `after` also out-times `before` at multi-rank** (no per-solve gather, less memory
