@@ -35,10 +35,10 @@ runs a cell past the pole (which is a hard error in the area calculation).
 
 Usage (from anywhere; paths are resolved relative to this file):
     source ~/models/WTM/msi_env.sh          # load mpiexec / petsc / gdal
-    python3 scaling_study.py                 # defaults below
-    python3 scaling_study.py --grids 1000 2000 4000 --ranks 1 2 4 8 --maxiter 5
+    python3 scaling_study.py                 # defaults: grids 1000..8000, ranks 1..32
+    python3 scaling_study.py --grids 1000 2000 --ranks 1 2 4 8   # small/constrained session
     python3 scaling_study.py --builds after before kcallaghan
-    python3 scaling_study.py --strong 4000 --ranks 1 2 4 8 16   # one grid, many ranks
+    python3 scaling_study.py --strong 8000 --ranks 1 2 4 8 16 32   # one grid, many ranks
 
 Comparisons are only meaningful with the sibling builds present; kcallaghan is
 physically correct only at n=1 (its ghost-cell bug mis-runs at >1 rank), so its
@@ -84,8 +84,13 @@ SOLVER_ARGS = {"after": ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": AN
 # printing "t GW time = 16.8993" and "16.9009" can arrive as "...16.899316.9009").
 _NUM = r"(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
 MEM_RE = re.compile(r"process memory:.*?total\s+" + _NUM + r"\s+max\s+" + _NUM + r"\s+min\s+" + _NUM, re.I)
-GW_RE = re.compile(r"GW time =\s*" + _NUM)
+# "t GW time = <seconds>". Require the value to be delimited by whitespace/end so
+# an interleaved timestamp ("... = 2026-07-24 ...", where "2026" is followed by
+# "-") or a concatenated token ("16.899316.9009") is rejected, not misparsed as a
+# bogus GW time. A numeric bound in parse() catches anything that still slips by.
+GW_RE = re.compile(r"GW time =\s*(\d+(?:\.\d+)?)(?=\s|$)")
 ITER_RE = re.compile(r"nonlinear iterations =\s*(\d+)")
+GW_MAX_S = 1e6  # a per-cycle solve time above ~11.5 days is a parse artifact
 
 
 def build_path(label):
@@ -136,7 +141,7 @@ def write_cfg(path, sdir, grid, maxiter, total_cycles):
 
 def parse(out):
     """Extract (gw_max, iters, mem_total, mem_max, mem_min) in GB from run output."""
-    gws = [float(x) for x in GW_RE.findall(out)]
+    gws = [v for v in (float(x) for x in GW_RE.findall(out)) if v < GW_MAX_S]
     iters = [int(x) for x in ITER_RE.findall(out)]
     # PETSc -memory_view prints a "Current" and a "Maximum (over computational
     # time)" process-memory line; we want the Maximum, else the first available.
@@ -177,12 +182,14 @@ def fmt(x, spec=".2f"):
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--grids", type=int, nargs="+", default=[1000, 2000, 4000],
-                    help="square grid side lengths (cells per side)")
+    ap.add_argument("--grids", type=int, nargs="+", default=[1000, 2000, 4000, 8000],
+                    help="square grid side lengths (cells per side). NOTE: 8000^2 = 64M "
+                         "cells needs ~57 GB for the n=1 run (holds the full grid) -- "
+                         "use an MSI-long fat node, or drop 8000 on a small session.")
     ap.add_argument("--strong", type=int, default=None,
                     help="shortcut: sweep a single grid over --ranks (overrides --grids)")
-    ap.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 4, 8],
-                    help="MPI rank counts")
+    ap.add_argument("--ranks", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32],
+                    help="MPI rank counts (kcallaghan is always run at n=1 only)")
     ap.add_argument("--builds", nargs="+", default=list(BUILD_FOLDERS),
                     choices=list(BUILD_FOLDERS), help="which builds to run")
     ap.add_argument("--maxiter", type=int, default=5,
