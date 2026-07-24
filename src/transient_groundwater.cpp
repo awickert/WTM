@@ -45,6 +45,21 @@ static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat,
 // PUBLIC FUNCTIONS //
 //////////////////////
 
+// Depth-integrated transmissivity. Two forms are kept side by side:
+//
+//   * depthIntegratedTransmissivity      -- SMOOTH (C-inf) form; OUR version and
+//     the intended production choice. Differentiable everywhere, so it supports an
+//     analytic Jacobian (dTransmissivityInverseDwtd) for a future Newton+multigrid
+//     path. This is the one wired into the solve (residual and Jacobian).
+//   * depthIntegratedTransmissivityPiecewise -- the published Fan et al. (2013)
+//     S4/S6 form, held alongside as a faster alternative (an exp only for deep
+//     cells vs. this one's unconditional 2*exp + sqrt). Profiling found the smooth
+//     form's transcendentals to be the bulk of the per-core solve cost at -O3
+//     (~8%; benchmark/SOLVER_NOTES.md). Swap it into FormFunctionLocal's precompute
+//     if a piecewise fast path is ever wanted.
+//
+// Keeping both documents the trade-off and preserves the smooth form as the
+// production default while leaving the fast piecewise form one edit away.
 double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0;
   constexpr double shallow = 1.5;
@@ -59,6 +74,32 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
   const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
 
   return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
+}
+
+// Published Fan et al. (2013) piecewise transmissivity (Eqs S4/S6). Held as the
+// fast alternative to the smooth form above -- see that comment. Not currently
+// called by the solve.
+double depthIntegratedTransmissivityPiecewise(const double wtd_T, const double fdepth, const double ksat) {
+  constexpr double shallow = 1.5;
+  // Global soil datasets include information for shallow soils.
+  // if the water table is deeper than this, the permeability
+  // of the soil sees an exponential decay with depth.
+  if (fdepth <= 0) {
+    // If the fdepth is zero, there is no water transmission below the surface
+    // soil layer.
+    // If it is less than zero, it is incorrect -- but no water transmission
+    // also seems an okay thing to do in this case.
+    return 0;
+  } else if (wtd_T < -shallow) {  // Equation S6 from the Fan paper
+    return std::max(0.0, fdepth * ksat * std::exp((wtd_T + shallow) / fdepth));
+  } else if (wtd_T > 0) {
+    // If wtd_T is greater than 0, max out rate of groundwater movement
+    // as though wtd_T were 0. The surface water will get to move in
+    // FillSpillMerge.
+    return std::max(0.0, ksat * (0 + shallow + fdepth));
+  } else {                                                    // Equation S4 from the Fan paper
+    return std::max(0.0, ksat * (wtd_T + shallow + fdepth));  // max because you can't have a negative transmissivity.
+  }
 }
 
 // Analytic derivative of (1/T) with respect to wtd_T, matching the smooth T above.
