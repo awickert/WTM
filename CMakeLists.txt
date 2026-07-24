@@ -4,6 +4,14 @@ project(WTM LANGUAGES CXX)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
+# Default to an optimized build. Without this, a plain `cmake ..` leaves
+# CMAKE_BUILD_TYPE empty -> no optimization flags -> an -O0 binary that runs the
+# groundwater solve several times slower. Override with -DCMAKE_BUILD_TYPE=Debug.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Release, Debug, RelTesting)" FORCE)
+  message(STATUS "CMAKE_BUILD_TYPE not set; defaulting to Release (-O3).")
+endif()
+
 # use -fsanitize=address to check for memory errors
 set(CMAKE_CXX_FLAGS_RELTESTING "-O3 -g -Wall -Wextra -pedantic -Wshadow")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -Wall -Wextra -pedantic -Wshadow")
