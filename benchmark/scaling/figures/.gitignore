@@ -1,0 +1,3 @@
+# Generated figures -- regenerate with make_figures.py (which IS tracked).
+*.png
+*.pdf
