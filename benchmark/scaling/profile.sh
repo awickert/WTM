@@ -43,7 +43,25 @@ mkdir -p "$OUT"
 # 1) synthetic grid (run_type test needs only topography + slope)
 SDIR=$HERE/synth/$GRID
 if [ ! -f "$SDIR/synth_topography.tif" ]; then
-    python3 make_synthetic.py "$GRID" --outdir "$SDIR" --region synth
+    # Pick a Python that actually has rasterio. On MSI the module `python3` on
+    # PATH often shadows the active conda env (e.g. wtmtest), so prefer the env's
+    # own interpreter ($CONDA_PREFIX/bin/python) when present. Override: PYTHON=...
+    PYTHON=${PYTHON:-}
+    if [ -z "$PYTHON" ]; then
+        if [ -n "${CONDA_PREFIX:-}" ] && [ -x "$CONDA_PREFIX/bin/python" ]; then
+            PYTHON="$CONDA_PREFIX/bin/python"
+        else
+            PYTHON=python3
+        fi
+    fi
+    if ! "$PYTHON" -c "import rasterio" 2>/dev/null; then
+        echo "ERROR: '$PYTHON' cannot import rasterio (needed only to generate the grid)." >&2
+        echo "  Fix: activate the env with rasterio (e.g. conda activate wtmtest), or run" >&2
+        echo "       PYTHON=\$CONDA_PREFIX/bin/python ./profile.sh" >&2
+        exit 1
+    fi
+    echo "generating ${GRID}^2 grid with $PYTHON"
+    "$PYTHON" make_synthetic.py "$GRID" --outdir "$SDIR" --region synth
 fi
 
 # 2) matching config (cells_per_degree = grid/120 keeps the domain on the globe)
