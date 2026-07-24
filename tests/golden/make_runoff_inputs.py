@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Synthetic inputs for the runoff-distribution golden case (runoff_ratio_on + FSM).
+"""Synthetic inputs for the runoff-distribution golden cases (runoff_ratio_on + FSM).
 
-Topography comes from the shared spectral (Fourier-mode) terrain generator: the
-fundamental (1,1) mode gives two hills and two closed depressions. It is band-limited
-(smooth gradients -> deterministic FillSpillMerge routing -> cross-rank reproducible).
-The recharge is split by a large runoff_ratio so most of it becomes runoff, which FSM
-routes into the depressions; the water table starts deep and ksat is low, so groundwater
-stays below the surface and the runoff is the dominant signal. Run with evap_mode 1
-(keeps surface water). See tests/spectral_terrain.py and the golden fsm_runoff case.
+Topography comes from the shared spectral (Fourier-mode) terrain generator. Two regions
+are produced, differing ONLY in their mode spectrum:
+
+  * runoff_test    -- the fundamental (1,1) mode: two hills, two closed depressions.
+  * runoff_test_hi -- fundamental plus overtones (2,2) and (3,1): more, smaller basins.
+
+Both are band-limited (smooth gradients -> deterministic FillSpillMerge routing ->
+cross-rank reproducible) and share the same forcing. The recharge is split by a large
+runoff_ratio so most of it becomes runoff, which FSM routes into the depressions; the
+water table starts deep and ksat is low, so groundwater stays below the surface and the
+runoff is the dominant signal. Run with evap_mode 1 (keeps surface water). See
+tests/spectral_terrain.py and the golden fsm_runoff / fsm_runoff_hi cases.
 """
 import numpy as np
 import os
@@ -28,7 +33,8 @@ CRS = "EPSG:4326"
 # region name -> Fourier mode spectrum (kx, ky, amplitude_m). Base 50 m; kept band-limited
 # (max wavenumber 3 << Nyquist 7) so gradients stay smooth and FSM routing is deterministic.
 REGIONS = {
-    "runoff_test": [(1, 1, 10.0)],
+    "runoff_test":    [(1, 1, 10.0)],
+    "runoff_test_hi": [(1, 1, 10.0), (2, 2, 4.0), (3, 1, 3.0)],
 }
 BASE = 50.0
 

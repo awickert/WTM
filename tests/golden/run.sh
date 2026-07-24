@@ -69,7 +69,8 @@ case_cfg() {
       below_ground)  emit_cfg "$GHOST" ghost_cell_test ;;
       fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 0" ;;
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
-      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
+      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
+      fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_cycles 4" ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
@@ -80,8 +81,10 @@ case_cfg() {
 # distributed recharge must compute rech and its runoff and gather the runoff to rank-0
 # arp.runoff for FSM -- reproducing the serial rank-0 recharge bit-identically. The case
 # is strongly sensitive to the runoff path (runoff_ratio on vs off shifts the water table
-# ~35 m) and cross-rank stable (smooth gradient -> deterministic FSM routing).
-CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff transient)
+# ~35 m) and cross-rank stable (smooth gradient -> deterministic FSM routing). fsm_runoff_hi
+# is the same setup on higher-overtone terrain (more, smaller depressions) -- exercising the
+# runoff path over a richer routing pattern, still band-limited and cross-rank stable.
+CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff fsm_runoff_hi transient)
 
 run_case() { # name nranks -> sets $PREFIX
     local name="$1" n="$2"
