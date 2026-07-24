@@ -159,6 +159,23 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
   DMDAVecRestoreArray(user_context.da, user_context.runoff_ratio_vec, &runoff_ratio);
 }
 
+// Scatter a rank-0 full-grid array (row-major) into a DMDA_Array_Pack-held owned
+// array, through the un-held wtd_global scratch. The pack HOLDS its arrays across
+// cycles (persistent DMDAVecGetArray), so we cannot scatter into them directly --
+// we scatter into wtd_global, then copy its owned cells into the held destination.
+// Templated on the source type so it serves double (wtd/rech) sources; scatterFromZero
+// converts to PetscScalar.
+template <typename T>
+static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScalar** dest) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** scratch;
+  user_context.full_grid_gather->scatterFromZero(full_r0, user_context.wtd_global);
+  DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
+  for (auto j = ys; j < ys + ym; j++)
+    for (auto i = xs; i < xs + xm; i++) dest[j][i] = scratch[j][i];
+  DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
+}
+
 template <class elev_t>
 void update(
     Parameters& params,
@@ -246,20 +263,8 @@ void update(
   // arp.wtd/rech between cycles, so the carriers persist -- scatter only at cycle 0
   // (the initial state). This removes both per-cycle scatters from the fsm-off path.
   if (params.fsm_on || params.cycles_done == 0) {
-    const auto [xs, ys, xm, ym] = get_corners(user_context.da);
-    PetscScalar** scratch;
-
-    user_context.full_grid_gather->scatterFromZero(arp.wtd.data(), user_context.wtd_global);
-    DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
-    for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++) dmdapack.starting_wtd[j][i] = scratch[j][i];
-    DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
-
-    user_context.full_grid_gather->scatterFromZero(arp.rech.data(), user_context.wtd_global);
-    DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
-    for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++) dmdapack.rech_dist[j][i] = scratch[j][i];
-    DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
+    scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
+    scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
 
   int iter_count = 0;
