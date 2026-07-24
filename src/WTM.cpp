@@ -97,9 +97,11 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
 // table from the distributed carrier (starting_wtd), writing rech_dist and (evap
 // mode 0) zeroing surface water in starting_wtd. This is the same computation the
 // serial rank-0 loop in update() does, but with no full-grid work and no arp -- so
-// the O(N) serial recharge is removed at scale. Only valid with FSM OFF: with FSM on,
-// arp.runoff (set by the serial loop) feeds the next cycle's FillSpillMerge, which is
-// why the fsm-on path keeps the serial loop (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
+// the O(N) serial recharge is removed at scale. Used whenever the recharge produces
+// no cross-boundary runoff for FillSpillMerge (fsm off, or fsm on with runoff_ratio
+// off): it does not write arp.runoff, which FSM leaves at 0 and re-derives from wtd
+// itself. The caller (update()) gates this via distribute_recharge and, when fsm is
+// on, resyncs starting_wtd from post-FSM arp.wtd first. See DISTRIBUTED_ARP_DESIGN.md.
 //
 // Forcing is read into float locals so the arithmetic is bit-identical to the arp
 // (float) loop: the surface-water branch subtracts precip-open_water_evap in float;
@@ -163,7 +165,8 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
 // array, through the un-held wtd_global scratch. The pack HOLDS its arrays across
 // cycles (persistent DMDAVecGetArray), so we cannot scatter into them directly --
 // we scatter into wtd_global, then copy its owned cells into the held destination.
-// Templated on the source type so it serves double (wtd/rech) sources; scatterFromZero
+// Used for the cycle-0 solve-input load and the post-FSM wtd resync. Templated on
+// the source type so it serves both double (wtd/rech) sources; scatterFromZero
 // converts to PetscScalar.
 template <typename T>
 static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScalar** dest) {
@@ -191,6 +194,18 @@ void update(
   PetscMPIInt mpi_rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
 
+  // Distribute the recharge (over each rank's owned cells) instead of the serial
+  // rank-0 loop whenever it is safe. The only cross-boundary output the serial
+  // recharge produces for FillSpillMerge is arp.runoff = runoff_ratio * rech, which
+  // is nonzero only when runoff_ratio_on -- so with FSM on we distribute only when
+  // runoff_ratio is off. "Cell-crossing runoff" (infiltration_on) is entirely
+  // FSM-internal (rank 0) and does not affect recharge correctness, but no fixture
+  // exercises infiltration_on, so we keep that case on the serial path until it has
+  // a test. fsm-off always distributes (no FSM consumer at all). See
+  // benchmark/DISTRIBUTED_ARP_DESIGN.md.
+  const bool distribute_recharge =
+      !params.fsm_on || (!params.runoff_ratio_on && !params.infiltration_on);
+
   if (params.run_type == "transient") {
     // UpdateTransientArrays (linear interpolation of the forcing fields from
     // start to end, plus fdepth and the depression hierarchy rebuild) is serial
@@ -213,11 +228,11 @@ void update(
     // benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2e/2f).
     scatter_static_fields(user_context, arp);
 
-    // fsm-off runs distribute the recharge, which reads the forcing (precip, evap,
+    // Runs that distribute the recharge read the forcing (precip, evap,
     // open_water_evap, runoff_ratio) from the DMDA vecs. UpdateTransientArrays just
-    // re-interpolated those on rank 0, so re-scatter them each cycle. (fsm-on keeps the
-    // serial rank-0 recharge, which reads arp directly, so needs no scatter.)
-    if (!params.fsm_on)
+    // re-interpolated those on rank 0, so re-scatter them each cycle. (The serial
+    // rank-0 recharge reads arp directly, so needs no scatter.)
+    if (distribute_recharge)
       scatter_forcing_fields(user_context, arp);
   }
 
@@ -251,18 +266,18 @@ void update(
   // These iterations refer to how many times to repeat the time step within the groundwater
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
   // 2x 6 months GW then FSM.
-  // Scatter the per-cycle solve inputs from rank-0 arp into the distributed
-  // carriers: the wtd carrier (starting_wtd, advanced in place by the maxiter
-  // solves) and the recharge source (rech_dist). Scatter through the un-held
-  // wtd_global scratch, then copy its owned cells into the dmdapack-held arrays.
-  // Sourcing from rank 0 lets arp.wtd/rech be dropped on non-root ranks. 2f-B / 2f-C.
+  // Load the per-cycle solve inputs from rank-0 arp into the distributed carriers:
+  // the wtd carrier (starting_wtd, advanced in place by the maxiter solves) and the
+  // recharge source (rech_dist). Sourcing from rank 0 lets arp.wtd/rech be dropped
+  // on non-root ranks. 2f-B / 2f-C.
   //
-  // With FSM ON, the serial rank-0 recharge writes arp.rech and FSM writes arp.wtd
-  // each cycle, so re-scatter every cycle. With FSM OFF the recharge is distributed
-  // (writes rech_dist and starting_wtd in place) and nothing on rank 0 mutates
-  // arp.wtd/rech between cycles, so the carriers persist -- scatter only at cycle 0
-  // (the initial state). This removes both per-cycle scatters from the fsm-off path.
-  if (params.fsm_on || params.cycles_done == 0) {
+  // When the recharge is NOT distributed (serial rank-0 recharge writes arp.rech,
+  // FSM writes arp.wtd, both each cycle), re-load every cycle. When it IS distributed
+  // the carriers persist: rech_dist is written in place by distributed_recharge and
+  // starting_wtd is resynced from arp.wtd only where FSM changed it (post-FSM, below),
+  // so we load only at cycle 0 (the initial state). This removes the per-cycle wtd/rech
+  // scatters from the distributed path.
+  if (!distribute_recharge || params.cycles_done == 0) {
     scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
@@ -300,6 +315,14 @@ void update(
 
     std::cerr << "t FSM time = " << fsm_timer.lap() << std::endl;
     std::cerr << "t After FSM time: " << get_current_time_and_date_as_str() << std::endl;
+
+    // FSM changed arp.wtd on rank 0. When the recharge is distributed, it reads the
+    // water table from the distributed carrier (starting_wtd), so resync starting_wtd
+    // from the post-FSM arp.wtd. (When the recharge is serial it reads arp.wtd on
+    // rank 0 directly, so no resync is needed.) This is the fsm-on leg of the round
+    // trip: gather wtd -> FSM (rank 0) -> scatter wtd back. See DISTRIBUTED_ARP_DESIGN.md.
+    if (distribute_recharge)
+      scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
   }
 
   /////////////////////////
@@ -311,14 +334,15 @@ void update(
   richdem::Timer recharge_timer;
   recharge_timer.start();
 
-  // With FSM ON, the recharge is serial full-grid work on rank 0: it writes
-  // arp.rech (read by the next cycle's solve), arp.wtd (evap_mode 0's surface-water
-  // removal), and arp.runoff, which the NEXT cycle's FillSpillMerge consumes -- so
-  // this must stay on rank 0 alongside FSM. With FSM off, this block is skipped and
-  // the recharge is distributed instead (below). See DISTRIBUTED_ARP_DESIGN.md.
+  // The serial rank-0 recharge is kept only when the recharge is NOT distributed
+  // (fsm_on && (runoff_ratio_on || infiltration_on)): it writes arp.rech (read by the
+  // next cycle's solve), arp.wtd (evap_mode 0's surface-water removal), and arp.runoff,
+  // which the NEXT cycle's FillSpillMerge consumes -- so it must stay on rank 0
+  // alongside FSM. Otherwise this block is skipped and the recharge is distributed
+  // (below). See DISTRIBUTED_ARP_DESIGN.md.
   PetscMPIInt rech_rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
-  if (params.fsm_on && rech_rank == 0) {
+  if (!distribute_recharge && rech_rank == 0) {
     // Evap mode 1: Use the computed open-water evaporation rate
     if (params.evap_mode) {
       std::cout << "p updating the recharge field" << std::endl;
@@ -364,15 +388,15 @@ void update(
       }
     }
   }
-  // (fsm-on) rech and wtd stay on rank 0 -- the next cycle scatters them from
+  // (serial path) rech and wtd stay on rank 0 -- the next cycle re-loads them from
   // rank-0 arp into the distributed solve carriers, so no broadcast is needed.
 
-  // FSM off: compute the recharge distributed over each rank's owned cells
-  // (writing rech_dist and, in evap_mode 0, zeroing surface water in starting_wtd),
-  // then assemble the post-recharge wtd on rank 0 for PrintValues and the next
-  // output. starting_wtd and rech_dist persist to the next cycle (the start-of-cycle
-  // scatter is gated to cycle 0), so no per-cycle round-trip through arp.
-  if (!params.fsm_on) {
+  // Distributed recharge: compute over each rank's owned cells (writing rech_dist
+  // and, in evap_mode 0, zeroing surface water in starting_wtd), then assemble the
+  // post-recharge wtd on rank 0 for PrintValues and the next output. starting_wtd and
+  // rech_dist persist to the next cycle (cycle-0-gated load above; fsm-on resyncs
+  // starting_wtd post-FSM), so no per-cycle round-trip through arp for the recharge.
+  if (distribute_recharge) {
     distributed_recharge(params, user_context, dmdapack);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
   }
