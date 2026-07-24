@@ -97,6 +97,25 @@ def build_path(label):
     return os.path.join(MODELS_ROOT, BUILD_FOLDERS[label], "build", "wtm.x")
 
 
+def build_type(label):
+    """CMAKE_BUILD_TYPE from a build's CMakeCache.txt, or None if unreadable.
+
+    An empty string means the cache exists but no type was set -- which for the
+    older before/kcallaghan trees (no Release default in their CMakeLists) means
+    -O0. Cross-build TIMINGS are only comparable if every build is Release/-O3;
+    a -O0 build silently inflated the original study's per-core "regression".
+    """
+    cache = os.path.join(MODELS_ROOT, BUILD_FOLDERS[label], "build", "CMakeCache.txt")
+    try:
+        with open(cache) as f:
+            for line in f:
+                if line.startswith("CMAKE_BUILD_TYPE:"):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        return None
+    return ""  # cache present but no explicit build type -> -O0 for these trees
+
+
 def ensure_inputs(grid, root):
     """Generate the topography+slope pair for a square grid if not already present."""
     sdir = os.path.join(root, f"{grid}x{grid}")
@@ -218,6 +237,22 @@ def main():
             print(f"  note: {label} build not found at {p} -- skipping")
     if not builds:
         sys.exit("No usable builds found. Build at least WTM/build/wtm.x.")
+
+    # Cross-build timings are only comparable when every build is Release/-O3.
+    # `after` gets it by default now (CMakeLists), but the older before/kcallaghan
+    # trees do NOT default to Release -- plain `cmake` there gives -O0, which is
+    # exactly what contaminated the original study. Refuse to run silently.
+    nonrelease = [(l, build_type(l)) for l, _ in builds if build_type(l) != "Release"]
+    if nonrelease:
+        print("  " + "!" * 74)
+        for l, bt in nonrelease:
+            print(f"  WARNING: build '{l}' is CMAKE_BUILD_TYPE='{bt or '(unset -> -O0)'}', "
+                  f"NOT Release/-O3.")
+        print("  Cross-build timings will be CONTAMINATED (this is what broke the original")
+        print("  study). Rebuild each with:  cmake -DCMAKE_BUILD_TYPE=Release .. && make -j")
+        print("  " + "!" * 74)
+        if input("  Continue anyway? [y/N] ").strip().lower() != "y":
+            sys.exit("Aborted -- rebuild at -O3 and rerun.")
 
     print(f"\nmodels root : {MODELS_ROOT}")
     print(f"builds      : {', '.join(l for l, _ in builds)}")
