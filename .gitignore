@@ -55,3 +55,7 @@ build/
 
 # Profiling artifacts
 perf.data*
+
+# Python bytecode (test fixtures import the shared spectral_terrain module)
+__pycache__/
+*.pyc
