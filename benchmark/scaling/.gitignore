@@ -6,3 +6,6 @@ synth/
 results.csv
 __pycache__/
 fail_*.log
+
+# ...but DO track curated, dated result sets meant for publication.
+!results_2026-*.csv
