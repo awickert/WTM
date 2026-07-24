@@ -301,6 +301,20 @@ iterations, but each ~2.1× more expensive). Decomposition `kcallaghan/after` at
 rank gets nothing back for. **The parallel speedup is built on a per-core solve that
 is ~2× slower than kcallaghan's — fixing that roughly doubles the realized number.**
 
+> **CORRECTION (2026-07-24, later).** Finding #2 was largely two artifacts, now
+> addressed — the per-core "regression" is much smaller than 2.35× and mostly closed:
+> 1. **Build flags.** `WTM-before` (and, when first profiled, the local `after`) were
+>    built `-O0` while kcallaghan was `-O3` — a ~1.5× penalty that inflated the gap.
+>    CMakeLists now defaults to Release/`-O3`; rebuild all three identically before
+>    trusting any per-core number. Clean local `-O3` gap is ~1.2× at 2000², not 2.35×.
+> 2. **Smooth T/S.** The rest was the smooth transmissivity's unconditional
+>    `2*exp + sqrt` per cell (profiled via `-log_view`, not guessed). The Anderson
+>    residual now uses the published piecewise Fan form — ~20% faster per core at
+>    identical iterations; the smooth form is kept for a future Newton path.
+> Plus a default `-snes_anderson_m 10` (~10–15%, no iteration cost). Awaiting clean
+> `-O3` MSI numbers to requote #2/#3. Dead ends ruled out: Newton+GAMG (15–25× slower),
+> QN/NGMRES (worse), multigrid (doesn't fix the nonlinear iteration growth).
+
 **3. Realized speedup (after ÷ kcallaghan n=1), grows with size:** 8000² reaches
 **4.71× at n=32** (4.42× at n=16), vs 3.84× at 4000² and 2.34× at 2000². Rising with
 grid → larger at production. Note this is throttled by finding #2: strong scaling is
