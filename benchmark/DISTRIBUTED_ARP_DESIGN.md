@@ -340,3 +340,61 @@ existing (Kerry's) functions were kept in her style; only this new file differs,
 her code read foreign. Optional future cleanup: restyle to a public-member `struct` with
 `gather_to_all`/`scatter_from_zero` etc. to match house conventions. Purely mechanical, no behavior
 change; the test suite would confirm bit-identical.
+
+---
+
+# Next phase: distributed per-cycle dataflow (raise the strong-scaling knee)
+
+The flip distributed the *storage* (arp on rank 0, solve distributed). This phase
+distributes the *per-cycle dataflow* so the water table stays distributed across
+cycles instead of round-tripping through rank 0. Removes the fixed serial fraction
+that caps strong scaling at high core counts / global scale.
+
+## Current per-cycle serial work (WTM.cpp update())
+1. Scatter arp.wtd + arp.rech -> starting_wtd + rech_dist (start of cycle, ~169-184).
+2. gather_wtd_to_all: starting_wtd -> arp.wtd (~192).
+3. Recharge: rank-0 O(N) loop (~227-283) computing arp.rech, mutating arp.wtd (evap-0).
+The wtd round-trips through rank 0 only so FSM / PrintValues / output can read the
+full grid.
+
+## Downstream safety map (verified 2026-07-24)
+- arp.rech: ONLY consumer is the next-cycle scatter -> once recharge writes rech_dist
+  directly, arp.rech and its scatter both go away.
+- wtd_mid / wtd_old / PrintValues: rank-0 DIAGNOSTICS (text file + mass_balance test).
+  golden checks the .tif (written from arp.wtd at output). Invariant: arp.wtd correct
+  at output (one gather after recharge) + mass-balance reductions correct (already
+  owned-range from the flip; accumulated in set_starting_values from rech_dist, so
+  distributing the recharge preserves them).
+
+## Increments (each bit-identical, test-gated: golden n=1..8 + mpi/fsm consistency + mass_balance)
+- 1a (DONE, commit 4bab462): add + scatter distributed forcing vecs
+  precip/evap/open_water_evap/runoff_ratio; unused, bit-identical.
+- 1b: distribute the recharge:
+  1. Add the 4 forcing arrays to DMDA_Array_Pack.
+  2. Gate the start-of-cycle scatter to cycle 0 only (init); after that starting_wtd
+     + rech_dist persist.
+  3. After FSM: if fsm_on, sync arp.wtd -> starting_wtd (via the wtd_global scratch-copy
+     pattern -- the pack HOLDS the DMDA arrays across cycles, so cannot scatter into a
+     held vec directly).
+  4. Distributed recharge over owned cells: starting_wtd + forcing -> rech_dist, mutate
+     starting_wtd (evap-0 surface-water removal). Delete the rank-0 loop.
+  5. Gather starting_wtd -> arp.wtd once, for PrintValues + output.
+  6. Transient: re-scatter forcing after UpdateTransientArrays (forcing changes each
+     cycle; one-directional, cheaper than the round-trip).
+- 1f (later): distribute PrintValues (reductions) to drop the post-recharge gather.
+
+## Wrinkles
+- Pack holds DMDA arrays across cycles -> scatter-into-held-vec needs the scratch-copy
+  dance (steps 3 & 6). Same lock issue the flip navigated.
+- Do NOT rush: this is a 6-touch coupled MPI change with 3 lock-navigation points, in
+  the same area as the earlier 8x mass-balance bug. Implement as a careful, individually
+  -tested pass.
+
+## Payoff (measured, honest)
+Per-cycle serial is only ~4% at 8000^2/n=16 (update 172 s vs GW 156 s, minus one-time
+dephier), where COMMUNICATION co-binds. So this lifts n=32 from ~11x toward the ~14x
+Amdahl-with-comm ceiling -- modest at today's scale. The real payoff is at high core
+counts (n>=64) and global / many-node runs, where the O(N) rank-0 recharge + casts
+dominate as the solve shrinks. Right lever for the *massive*-scaling goal, not a quick
+n<=32 win. (DH+FSM parallelization is a separate lever: ~0 for equilibrium, the Amdahl
+wall for transient at high cores.)
