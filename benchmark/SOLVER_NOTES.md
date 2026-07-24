@@ -311,9 +311,22 @@ is ~2× slower than kcallaghan's — fixing that roughly doubles the realized nu
 >    `2*exp + sqrt` per cell (profiled via `-log_view`, not guessed). The Anderson
 >    residual now uses the published piecewise Fan form — ~20% faster per core at
 >    identical iterations; the smooth form is kept for a future Newton path.
-> Plus a default `-snes_anderson_m 10` (~10–15%, no iteration cost). Awaiting clean
-> `-O3` MSI numbers to requote #2/#3. Dead ends ruled out: Newton+GAMG (15–25× slower),
-> QN/NGMRES (worse), multigrid (doesn't fix the nonlinear iteration growth).
+> Plus a default `-snes_anderson_m 10` (~10–15%, no iteration cost). Dead ends ruled
+> out: Newton+GAMG (15–25× slower), QN/NGMRES (worse), FAS/multigrid (can't coarsen
+> without making the residual level-aware — the coefficient fields aren't restricted
+> to coarse DMDA levels; medium-high effort, uncertain payoff — parked).
+>
+> **RESOLVED (2026-07-24, MSI clean `-O3`, current tip w/ piecewise + m=10).** At
+> 4000² (16M) all builds `-O3`: **`after` 45.0 s / 56 iters ≈ kcallaghan 46.5 s /
+> 60 iters — per-core PARITY** (`after` 3% faster, and *fewer* iterations), and 1.83×
+> faster than the pre-fix smooth `before` (82.3 s). Per-iteration is now 0.80 vs 0.78 s
+> (equal). So **finding #2's 2.35× was the smooth build + `-O0`, not a real regression**
+> — the "ghost-fix memory grows with grid" and smooth-`S` iteration-gap worries were
+> artifacts of the earlier *smooth* 8000² snapshot (where kcallaghan's iters were also
+> anomalous — 11 then 39, first solve faster than second). **Per-core thread retired.**
+> One open check: confirm parity at 8000² with the current `after` (that 2.2× snapshot
+> was the smooth build). Remaining levers are all *scaling* (distributed dataflow;
+> DH+FSM for transient), not per-core.
 
 **3. Realized speedup (after ÷ kcallaghan n=1), grows with size:** 8000² reaches
 **4.71× at n=32** (4.42× at n=16), vs 3.84× at 4000² and 2.34× at 2000². Rising with
