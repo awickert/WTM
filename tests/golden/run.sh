@@ -25,6 +25,7 @@ if [[ ! -x "$WTM" ]]; then echo "ERROR: WTM binary not found at $WTM" >&2; exit 
 [[ -f ../fsm_consistency/inputs/fsm_test_t0_topography.tif ]] || ( cd ../fsm_consistency && python3 make_inputs.py >/dev/null )
 [[ -f ../ghost_cell/inputs/ghost_cell_test_t0_topography.tif ]] || ( cd ../ghost_cell && python3 make_inputs.py >/dev/null )
 [[ -f inputs/transient_test_ta_topography.tif ]] || python3 make_transient_inputs.py >/dev/null
+[[ -f inputs_runoff/runoff_test_t0_topography.tif ]] || python3 make_runoff_inputs.py >/dev/null
 
 WORK=$(mktemp -d /tmp/golden_XXXX)
 trap 'rm -rf "$WORK"' EXIT
@@ -59,20 +60,28 @@ EOF
 
 # case name -> emits config body via the function above
 case_cfg() {
-    local GHOST FSM TRANS
+    local GHOST FSM TRANS RUNOFF
     GHOST=$(readlink -f ../ghost_cell/inputs)
     FSM=$(readlink -f ../fsm_consistency/inputs)
     TRANS=$(readlink -f inputs)
+    RUNOFF=$(readlink -f inputs_runoff)
     case "$1" in
       below_ground)  emit_cfg "$GHOST" ghost_cell_test ;;
       fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 0" ;;
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
+      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_cycles 4" ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
 }
 
-CASES=(below_ground fsm_evap0 fsm_evap1 transient)
+# fsm_runoff exercises runoff_ratio_on with FSM on (a 2D-sinusoid fixture: two hills, two
+# closed depressions, deep water table). The recharge is split by the runoff ratio, so the
+# distributed recharge must compute rech and its runoff and gather the runoff to rank-0
+# arp.runoff for FSM -- reproducing the serial rank-0 recharge bit-identically. The case
+# is strongly sensitive to the runoff path (runoff_ratio on vs off shifts the water table
+# ~35 m) and cross-rank stable (smooth gradient -> deterministic FSM routing).
+CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff transient)
 
 run_case() { # name nranks -> sets $PREFIX
     local name="$1" n="$2"
