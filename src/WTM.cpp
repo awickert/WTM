@@ -47,6 +47,19 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   PetscMPIInt rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
+  // The per-cycle recharge is distributed across ranks except when FSM is on AND
+  // infiltration_on is set (then it stays on the serial rank-0 path, because the
+  // cell-crossing runoff it produces feeds FSM; see benchmark/DISTRIBUTED_ARP_DESIGN.md).
+  // Warn once so the user is not surprised that this configuration is slower than an
+  // infiltration_on 0 run at high rank counts. The groundwater solve itself still runs
+  // in parallel; only the recharge step is serial here.
+  if (rank == 0 && params.fsm_on && params.infiltration_on) {
+    std::cerr << "WARNING: infiltration_on is set with FSM on -- the per-cycle recharge runs on "
+                 "the serial (rank-0) path and is NOT parallel-accelerated. Expect slower per-cycle "
+                 "times at high MPI-rank counts than an equivalent infiltration_on 0 run. The "
+                 "groundwater solve is still parallel." << std::endl;
+  }
+
   if (params.run_type == "transient") {
     textfile << "Initialise transient" << std::endl;
     if (rank == 0)
