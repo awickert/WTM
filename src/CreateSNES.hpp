@@ -22,6 +22,14 @@ struct AppCtx {
   Vec porosity_vec        = nullptr;
   Vec starting_wtd        = nullptr;
 
+  // Distributed forcing fields for the recharge computation. Scattered from
+  // rank-0 arp at init (populate_DMDA_array_pack) so recharge can be computed over
+  // each rank's owned cells rather than serially on rank 0. See DISTRIBUTED_ARP_DESIGN.md.
+  Vec precip_vec          = nullptr;
+  Vec evap_vec            = nullptr;
+  Vec open_water_evap_vec = nullptr;
+  Vec runoff_ratio_vec    = nullptr;
+
   // Local ghost vectors for fields accessed at neighbor indices in FormFunctionLocal
   Vec topo_local   = nullptr;
   Vec fdepth_local = nullptr;
@@ -53,6 +61,10 @@ struct AppCtx {
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
+    VecDuplicate(x, &precip_vec);
+    VecDuplicate(x, &evap_vec);
+    VecDuplicate(x, &open_water_evap_vec);
+    VecDuplicate(x, &runoff_ratio_vec);
   }
 
   void make_local_vectors() {

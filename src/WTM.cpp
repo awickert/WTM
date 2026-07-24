@@ -347,6 +347,10 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.rech_vec);
   VecDestroy(&user_context.porosity_vec);
   VecDestroy(&user_context.starting_wtd);
+  VecDestroy(&user_context.precip_vec);
+  VecDestroy(&user_context.evap_vec);
+  VecDestroy(&user_context.open_water_evap_vec);
+  VecDestroy(&user_context.runoff_ratio_vec);
   VecDestroy(&user_context.topo_local);
   VecDestroy(&user_context.fdepth_local);
   VecDestroy(&user_context.ksat_local);

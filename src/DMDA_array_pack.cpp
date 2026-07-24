@@ -12,6 +12,13 @@ void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp) {
   user_context.full_grid_gather->scatterFromZero(arp.land_mask.data(), user_context.mask);
   user_context.full_grid_gather->scatterFromZero(arp.porosity.data(), user_context.porosity_vec);
 
+  // Distributed forcing fields for the (soon-to-be-distributed) recharge computation.
+  // Scattered from rank-0 arp so recharge need not be computed serially on rank 0.
+  user_context.full_grid_gather->scatterFromZero(arp.precip.data(), user_context.precip_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.evap.data(), user_context.evap_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.open_water_evap.data(), user_context.open_water_evap_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.runoff_ratio.data(), user_context.runoff_ratio_vec);
+
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** cellsize;
   DMDAVecGetArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
