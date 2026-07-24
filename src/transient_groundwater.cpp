@@ -47,39 +47,18 @@ static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat,
 
 // Depth-integrated transmissivity. Two forms are kept side by side:
 //
-//   * depthIntegratedTransmissivity      -- SMOOTH (C-inf) form; OUR version and
-//     the intended production choice. Differentiable everywhere, so it supports an
-//     analytic Jacobian (dTransmissivityInverseDwtd) for a future Newton+multigrid
-//     path. This is the one wired into the solve (residual and Jacobian).
-//   * depthIntegratedTransmissivityPiecewise -- the published Fan et al. (2013)
-//     S4/S6 form, held alongside as a faster alternative (an exp only for deep
-//     cells vs. this one's unconditional 2*exp + sqrt). Profiling found the smooth
-//     form's transcendentals to be the bulk of the per-core solve cost at -O3
-//     (~8%; benchmark/SOLVER_NOTES.md). Swap it into FormFunctionLocal's precompute
-//     if a piecewise fast path is ever wanted.
-//
-// Keeping both documents the trade-off and preserves the smooth form as the
-// production default while leaving the fast piecewise form one edit away.
+//   * depthIntegratedTransmissivity       -- the published Fan et al. (2013) S4/S6
+//     PIECEWISE form; the PRODUCTION choice, used by the Anderson residual. Cheap:
+//     an exp only for deep cells (wtd < -shallow); shallow and above-surface cells
+//     are a single multiply. Profiling showed it is ~20% faster per core than the
+//     smooth form below at identical iteration counts (~30% stacked with
+//     -snes_anderson_m 5); see benchmark/SOLVER_NOTES.md.
+//   * depthIntegratedTransmissivitySmooth -- a smooth (C-inf) blend of the same,
+//     differentiable everywhere so it supports the analytic Jacobian
+//     (dTransmissivityInverseDwtd) for a future Newton+multigrid path. Used by
+//     FormJacobianLocal so residual/Jacobian stay consistent there; NOT used by
+//     the Anderson production residual.
 double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, const double ksat) {
-  if (fdepth <= 0) return 0;
-  constexpr double shallow = 1.5;
-  constexpr double eps0    = 0.01;  // smooth clamping at WTD=0 boundary
-  constexpr double eps1    = 0.01;  // smooth blend at WTD=-shallow boundary
-
-  const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
-  const double u       = wtd_T + shallow;
-  const double sigma_1 = 1.0 / (1.0 + std::exp(u / eps1));
-
-  const double T_linear = ksat * (wtd_eff + shallow + fdepth);
-  const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
-
-  return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
-}
-
-// Published Fan et al. (2013) piecewise transmissivity (Eqs S4/S6). Held as the
-// fast alternative to the smooth form above -- see that comment. Not currently
-// called by the solve.
-double depthIntegratedTransmissivityPiecewise(const double wtd_T, const double fdepth, const double ksat) {
   constexpr double shallow = 1.5;
   // Global soil datasets include information for shallow soils.
   // if the water table is deeper than this, the permeability
@@ -100,6 +79,26 @@ double depthIntegratedTransmissivityPiecewise(const double wtd_T, const double f
   } else {                                                    // Equation S4 from the Fan paper
     return std::max(0.0, ksat * (wtd_T + shallow + fdepth));  // max because you can't have a negative transmissivity.
   }
+}
+
+// Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
+// piecewise production form above. Kept for a future Newton path; its analytic
+// derivative is dTransmissivityInverseDwtd, and FormJacobianLocal uses this
+// version. NOT used by the Anderson production residual.
+static double depthIntegratedTransmissivitySmooth(const double wtd_T, const double fdepth, const double ksat) {
+  if (fdepth <= 0) return 0;
+  constexpr double shallow = 1.5;
+  constexpr double eps0    = 0.01;  // smooth clamping at WTD=0 boundary
+  constexpr double eps1    = 0.01;  // smooth blend at WTD=-shallow boundary
+
+  const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
+  const double u       = wtd_T + shallow;
+  const double sigma_1 = 1.0 / (1.0 + std::exp(u / eps1));
+
+  const double T_linear = ksat * (wtd_eff + shallow + fdepth);
+  const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
+
+  return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
 }
 
 // Analytic derivative of (1/T) with respect to wtd_T, matching the smooth T above.
@@ -472,7 +471,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
    For land cells: differentiates
        f = (uxx + uyy) * dt/S + x - rech
    analytically through the smooth transmissivity T(x) and storativity S(x).
-   All smoothing constants must match those in depthIntegratedTransmissivity
+   All smoothing constants must match those in depthIntegratedTransmissivitySmooth
    and updateEffectiveStorativity.
 
    NOTE: neighbor arrays (fdepth, ksat, topo) are accessed via global DM
@@ -513,11 +512,11 @@ static PetscErrorCode FormJacobianLocal(
 
         // 1/T at centre and 4 neighbours; cap at 1e30 when T ≈ 0
         const auto T_inv = [](double T) { return T > 0.0 ? 1.0 / T : 1e30; };
-        const double Tinv_c = T_inv(depthIntegratedTransmissivity(wtd_c, my_fdepth[j][i],     my_ksat[j][i]));
-        const double Tinv_E = T_inv(depthIntegratedTransmissivity(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]));
-        const double Tinv_W = T_inv(depthIntegratedTransmissivity(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]));
-        const double Tinv_N = T_inv(depthIntegratedTransmissivity(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]));
-        const double Tinv_S = T_inv(depthIntegratedTransmissivity(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]));
+        const double Tinv_c = T_inv(depthIntegratedTransmissivitySmooth(wtd_c, my_fdepth[j][i],     my_ksat[j][i]));
+        const double Tinv_E = T_inv(depthIntegratedTransmissivitySmooth(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]));
+        const double Tinv_W = T_inv(depthIntegratedTransmissivitySmooth(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]));
+        const double Tinv_N = T_inv(depthIntegratedTransmissivitySmooth(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]));
+        const double Tinv_S = T_inv(depthIntegratedTransmissivitySmooth(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]));
 
         // d(1/T)/dwtd at centre and 4 neighbours (needed for full Jacobian only)
         const double dTinv_c = dTransmissivityInverseDwtd(wtd_c, my_fdepth[j][i],     my_ksat[j][i]);
