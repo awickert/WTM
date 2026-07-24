@@ -38,5 +38,16 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // to use Newton-Krylov with the analytic Jacobian and Picard preconditioner.
   SNESSetType(user_context.snes, SNESANDERSON);
 
+  // Default the Anderson window to 10 (PETSc default is 30). On this problem m=10
+  // converges in the same iteration count as m=30 but with less vector work per
+  // iteration (~10-15% faster); m=5 starts costing iterations at larger grids, so
+  // 10 is the safe margin (benchmark/SOLVER_NOTES.md). Set only if the user did
+  // not specify -snes_anderson_m, so a runtime override still wins.
+  PetscBool anderson_m_set = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_m", &anderson_m_set);
+  if (!anderson_m_set) {
+    PetscOptionsSetValue(nullptr, "-snes_anderson_m", "10");
+  }
+
   SNESSetFromOptions(user_context.snes);
 }
