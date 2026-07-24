@@ -259,96 +259,84 @@ than a single GW solve, so its amortized share is negligible.
 
 # 2026-07-24 — Full before/after/kcallaghan scaling & memory study (MSI)
 
-Measured with `benchmark/scaling/scaling_study.py` on MSI (8-rank srun session),
-synthetic `run_type test` grids at 1000²/2000²/4000², ranks 1/2/4/8, maxiter 5,
-reps 3 (min-wall). All builds run Anderson + `stol 1e-6` (what KCallaghan's
-scripts pass and the GMD v2.0.1 paper recommends). Three builds:
+Full sweep on MSI (Agate, Rocky 8): synthetic `run_type test` grids at
+1000²/2000²/4000²/**8000²**, ranks 1/2/4/8/**16/32**. All builds run Anderson +
+`stol 1e-6` (what KCallaghan's scripts pass and the GMD v2.0.1 paper recommends).
+Three builds:
 - **kcallaghan** = KCallaghan/master (v2.0.1). Single-process only: SEGVs at every
   n>1 (ghost bug), so run at n=1 as the baseline.
 - **before** = e5aab70 (ghost-fixed, PRE-flip; `arp` replicated on every rank).
 - **after** = the distributed-`arp` flip (this branch).
 
-## Raw results
-
-```
-build        grid   n  rc iters   wall_s     gw_s   mem GB total/max/min
-after        1000   1   0     8      5.4     3.00   0.94 / 0.94 / 0.94
-after        1000   2   0     8      3.8     2.00   0.97 / 0.56 / 0.42
-after        1000   4   0     8      3.1     1.36   1.09 / 0.38 / 0.24
-after        1000   8   0     8      2.7  [glitch] 1.32 / 0.29 / 0.15
-before       1000   1   0     8      5.1     2.90   0.94 / 0.94 / 0.94
-before       1000   8   0     8      3.0     0.87   2.21 / 0.29 / 0.27
-kcallaghan   1000   1   0     6      4.3     1.90   0.85 / 0.85 / 0.85
-after        2000   1   0    10     17.7    13.40   3.61 / 3.61 / 3.61
-after        2000   8   0    10      6.0     3.55   3.96 / 0.97 / 0.42
-before       2000   1   0    10     20.7    16.30   3.61 / 3.61 / 3.61
-before       2000   8   0    10      7.1     3.85   7.40 / 0.97 / 0.91
-kcallaghan   2000   1   0     8     11.8     8.30   3.22 / 3.22 / 3.22
-after        4000   1   0    15    101.6    90.00  14.23 / 14.23 / 14.23
-after        4000   2   0    15     68.4    60.89  13.99 /  8.06 / 5.94
-after        4000   4   0    15     32.3    25.26  14.22 /  5.15 / 3.01
-after        4000   8   0    15     25.8    20.81  14.45 /  3.68 / 1.53
-before       4000   1   0    15    108.5    95.90  14.23 / 14.23 / 14.23
-before       4000   8   0    15     29.9    24.12  28.05 /  3.68 / 3.48
-kcallaghan   4000   1   0    20     78.7    69.30  12.70 / 12.70 / 12.70
-```
-(Full table incl. all n in `benchmark/scaling/results.csv`. `[glitch]`: after
-1000²/n=8 `gw_s` printed 2026.00 — the GW parser caught a `2026-…` timestamp from
-interleaved MPI stderr; `wall_s`=2.7 is correct, wall-based analysis unaffected.)
+**Machine-readable data (publication): `benchmark/scaling/results_2026-07-24.csv`**
+— tidy long-format, all 52 runs, with raw wall/gw/memory and derived
+strong_speedup / parallel_efficiency / realized_speedup_vs_kcallaghan. (An earlier
+partial run to 4000²/8 ranks is superseded by this one. The GW-time parser glitch
+that printed `2026.00` under interleaved stderr is fixed — all `gw_s` here are valid.)
 
 ## Analysis
 
-**1. Strong scaling improves with problem size — the central thesis, confirmed.**
+**1. Strong scaling improves with problem size — thesis confirmed, and strongly.**
 `after` wall speedup vs its own n=1:
 
-| grid | n=2 | n=4 | n=8 | 8-core eff. |
-|------|-----|-----|-----|------|
-| 1000² (1M) | 1.42× | 1.78× | 2.03× | 25% |
-| 2000² (4M) | 1.52× | 2.05× | 2.94× | 37% |
-| 4000² (16M)| 1.48× | 3.15× | 3.93× | 49% |
+| grid | n=8 | n=16 | n=32 | best eff. |
+|------|-----|------|------|-----------|
+| 1000² (1M) | 2.76× | 2.92× | 2.28× | ~35% @ n8 (anti-scales by n32) |
+| 2000² (4M) | 2.72× | 3.58× | 3.69× | ~34% |
+| 4000² (16M)| 3.71× | 5.46× | 4.83× | ~46% @ n8 |
+| **8000² (64M)**| **6.88×** | **10.37×** | **11.07×** | **86% @ n8, 65% @ n16** |
 
-Efficiency climbs 25%→37%→49% as the grid grows. Production is 141M cells (~9×
-the 16M grid), so scaling extends well past 8 cores before saturating — the small
-grids are a *lower bound* on production. (n=2 points are noisy — 2 ranks contend
-on one socket; the n=1→n=8 trend is the reliable signal.)
+The knee tracks **cells-per-rank** (~1–2 M): small grids saturate/anti-scale early
+(too little work per rank → communication dominates), while 64M scales cleanly to
+**11× on 32 cores** and is still gaining at n=32. Production (141M) pushes the knee
+past 32 cores → this is a *lower bound*. (Odd single points — e.g. 4000²/n32 <
+n16 — are past-knee, expected.)
 
-**2. The new version is ~1.3× SLOWER per core — honest, and important.** At n=1
-(4000²): kcallaghan 78.7 s / 20 iters vs after 101.6 s / 15 iters. The new code
-takes *fewer* iterations but each is ~1.7× more expensive (the ghost-fix's local
-ghost-vector machinery + halo handling costs overhead that a single rank gets no
-benefit from). So the solver/correctness work did **not** speed up the serial
-solve — decomposition ratio `kcallaghan/before` = 0.72–0.83×. **The entire
-speedup is from parallelism, which kcallaghan cannot do.**
+**2. The new version is ~1.3–2.3× SLOWER per core — the key open problem.** At n=1,
+kcallaghan is *faster* than after, and the gap **grows with grid**: 8000² kcallaghan
+599 s / 39 iters vs after 1407 s / 44 iters → **2.35× slower per core** (13% more
+iterations, but each ~2.1× more expensive). Decomposition `kcallaghan/after` at n=1:
+0.51 / 0.63 / 0.70 / **0.43** (1000→8000). The ghost-fix's correctness machinery
+(local ghost vectors, halo handling) and the smooth-T/S FLOPs cost overhead a single
+rank gets nothing back for. **The parallel speedup is built on a per-core solve that
+is ~2× slower than kcallaghan's — fixing that roughly doubles the realized number.**
 
-**3. Realized speedup (after n=8 ÷ kcallaghan n=1), and it grows with size:**
-1000² 1.59× · 2000² 1.95× · **4000² 3.04×**. Extrapolates larger at production.
-At n=1 after is 0.77–0.79× (the per-core regression above); the win is entirely
-in using cores kcallaghan can't.
+**3. Realized speedup (after ÷ kcallaghan n=1), grows with size:** 8000² reaches
+**4.71× at n=32** (4.42× at n=16), vs 3.84× at 4000² and 2.34× at 2000². Rising with
+grid → larger at production. Note this is throttled by finding #2: strong scaling is
+11× but realized is only 4.7× *because* after starts 2.35× behind per-core.
 
-**4. The flip's memory payoff is decisive.** Total job memory:
+**4. The flip's memory payoff is decisive — and now demonstrated by OOM.** Total job
+memory (GB):
 
-| 4000² | n=1 | n=8 |
-|-------|-----|-----|
-| after  | 14.2 GB | **14.5 GB (flat)** |
-| before | 14.2 GB | **28.1 GB (grows)** |
+| grid | build | n=1 | n=8 | n=16 | n=32 |
+|------|-------|-----|-----|------|------|
+| 4000² | after  | 14.2 | 14.4 | 15.0 | 15.9 |
+| 4000² | before | 14.2 | 28.0 | 44.2 | **OOM (rc 255)** |
+| 8000² | after  | 56.7 | 56.3 | 57.5 | 58.4 |
+| 8000² | before | 56.7 | **OOM at n≥4** | — | — |
 
-`before` replicates `arp` on every rank, so total memory grows ~linearly with
-ranks; `after` holds the full grid once (rank 0) and stays flat. Non-root per-rank
-at n=8/4000²: after 1.53 GB vs before 3.48 GB. Extrapolated to 141M cells, `before`
-at n=8 needs ~250 GB (OOMs a 128 GB node past a few ranks) while `after` stays
-~125 GB — **the flip is what makes many-core runs possible at all.**
+`after` total memory is **flat** (full grid once on rank 0 + distributed subdomains);
+`before` grows ~linearly with ranks (replicated `arp`) and **actually OOMs** — at
+8000² it cannot use even 4 ranks. So at continental scale the replicated model is
+confined to n=1; the flip is what makes many-core runs *exist*. Non-root per-rank at
+8000²/n=32: after **1.55 GB**.
 
-**5. `after` also out-times `before` at multi-rank** (removing the per-solve
-gather + less memory traffic): 4000²/n=4 after 32.3 s vs before 43.5 s (1.35×);
-n=8 25.8 vs 29.9 (1.16×). So the flip is a modest speed win on top of the memory win.
+**5. `after` also out-times `before` at multi-rank** (no per-solve gather, less memory
+traffic), and it is `before` — not just kcallaghan — that OOMs, so the flip is both a
+speed and a capability win.
 
 ## Takeaway for the paper / Kerry
 
-The headline is **parallel capability + memory**, not a faster algorithm: v2.0.1 is
-single-process (O(n²) serial, per the paper); this work makes the solve run
-correctly across cores (≈3× on 8 cores at 16M cells, rising with size) and, via the
-flip, fit in node memory at continental scale where the replicated model OOMs. The
-**original goal — a genuinely faster per-core solve — remains open**: the new code
-is if anything ~1.3× slower per iteration-core, and the paper's O(n²) runtime-vs-cells
-(a well-conditioned implicit solve should be ~O(n)) is untouched. That is the next
-lever (preconditioning / better solver), separate from this parallelization+memory work.
+The headline is **parallel capability + memory fit**: v2.0.1 is single-process (O(n²)
+serial, per the paper); this work runs the solve correctly across cores — **11× on 32
+cores at 64M cells, rising with size** — and keeps memory flat where the replicated
+model OOMs past a couple of ranks. Realized end-to-end speedup vs the published
+single-process baseline is **~4.7× at 64M/32 cores and climbing with grid.**
+
+**The original goal — a faster per-core solve — is the biggest remaining lever, and
+finding #2 quantifies why:** the new code is ~2× slower per core than kcallaghan at
+scale, so the realized 4.7× is roughly half of the 11× the parallelism alone delivers.
+Closing that gap (preconditioning / a better linear solver; the paper's O(n²)
+runtime-vs-cells should be ~O(n)) would roughly double the total — and is independent
+of this parallelization+memory work.
