@@ -16,4 +16,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 // per solve. See benchmark/DISTRIBUTED_ARP_DESIGN.md (Phase 2f, lever #2).
 void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
 
+// Gather the distributed per-cycle runoff to rank-0 arp.runoff for the next FSM,
+// when runoff_ratio_on. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2c).
+void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
+
 }

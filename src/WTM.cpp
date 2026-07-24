@@ -97,17 +97,16 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
 // table from the distributed carrier (starting_wtd), writing rech_dist and (evap
 // mode 0) zeroing surface water in starting_wtd. This is the same computation the
 // serial rank-0 loop in update() does, but with no full-grid work and no arp -- so
-// the O(N) serial recharge is removed at scale. Used whenever the recharge produces
-// no cross-boundary runoff for FillSpillMerge (fsm off, or fsm on with runoff_ratio
-// off): it does not write arp.runoff, which FSM leaves at 0 and re-derives from wtd
-// itself. The caller (update()) gates this via distribute_recharge and, when fsm is
-// on, resyncs starting_wtd from post-FSM arp.wtd first. See DISTRIBUTED_ARP_DESIGN.md.
+// the O(N) serial recharge is removed at scale. It also writes the runoff
+// (runoff_ratio*rech) into the distributed runoff_dist carrier; the caller gathers that
+// to rank-0 arp.runoff for the next FSM when runoff_ratio_on (else it stays 0 and FSM's
+// own cleanup keeps arp.runoff at 0). The caller (update()) gates this via
+// distribute_recharge and, when fsm is on, resyncs starting_wtd from post-FSM arp.wtd
+// first. Used for fsm-off and for fsm-on with infiltration off. See DISTRIBUTED_ARP_DESIGN.md.
 //
 // Forcing is read into float locals so the arithmetic is bit-identical to the arp
 // (float) loop: the surface-water branch subtracts precip-open_water_evap in float;
-// the below-surface branch subtracts in double via the explicit cast -- exactly as
-// there. runoff is computed and subtracted (a no-op when runoff_ratio_on is 0) but
-// not persisted: with FSM off nothing downstream consumes it.
+// the below-surface branch subtracts in double via the explicit cast -- exactly as there.
 static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar **precip, **evap, **open_water_evap, **runoff_ratio;
@@ -147,9 +146,14 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
         }
       }
 
+      dmdapack.runoff_dist[j][i] = 0.0;
       if (dmdapack.rech_dist[j][i] > 0) {
-        // If there is positive recharge, some of it may run off; subtract that amount.
-        const double runoff = rratio_f * dmdapack.rech_dist[j][i];
+        // If there is positive recharge, some of it may run off; store the runoff (so
+        // the caller can gather it to rank-0 arp.runoff for the next FSM when
+        // runoff_ratio_on) and subtract it from the recharge. Matches the serial loop,
+        // which writes arp.runoff only where rech > 0 and leaves it at FSM's 0 elsewhere.
+        const double runoff        = rratio_f * dmdapack.rech_dist[j][i];
+        dmdapack.runoff_dist[j][i] = runoff;
         dmdapack.rech_dist[j][i] -= runoff;
       }
     }
@@ -195,16 +199,14 @@ void update(
   MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
 
   // Distribute the recharge (over each rank's owned cells) instead of the serial
-  // rank-0 loop whenever it is safe. The only cross-boundary output the serial
-  // recharge produces for FillSpillMerge is arp.runoff = runoff_ratio * rech, which
-  // is nonzero only when runoff_ratio_on -- so with FSM on we distribute only when
-  // runoff_ratio is off. "Cell-crossing runoff" (infiltration_on) is entirely
-  // FSM-internal (rank 0) and does not affect recharge correctness, but no fixture
-  // exercises infiltration_on, so we keep that case on the serial path until it has
-  // a test. fsm-off always distributes (no FSM consumer at all). See
-  // benchmark/DISTRIBUTED_ARP_DESIGN.md.
-  const bool distribute_recharge =
-      !params.fsm_on || (!params.runoff_ratio_on && !params.infiltration_on);
+  // rank-0 loop whenever it is safe. The one cross-boundary output the serial recharge
+  // produces for FillSpillMerge is arp.runoff = runoff_ratio * rech; when runoff_ratio_on
+  // the distributed recharge computes that too and gathers it to rank-0 arp.runoff before
+  // the next FSM (below). "Cell-crossing runoff" (infiltration_on) is entirely FSM-internal
+  // (rank 0) and does not affect recharge correctness, but no fixture exercises
+  // infiltration_on, so we keep that case on the serial path until it has a test. fsm-off
+  // always distributes (no FSM consumer at all). See benchmark/DISTRIBUTED_ARP_DESIGN.md.
+  const bool distribute_recharge = !params.fsm_on || !params.infiltration_on;
 
   if (params.run_type == "transient") {
     // UpdateTransientArrays (linear interpolation of the forcing fields from
@@ -399,6 +401,12 @@ void update(
   if (distribute_recharge) {
     distributed_recharge(params, user_context, dmdapack);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+    // When runoff_ratio_on and FSM is on, the recharge's runoff (runoff_ratio*rech)
+    // feeds the next FSM, which runs on rank 0 -- so gather the distributed runoff to
+    // rank-0 arp.runoff. Otherwise the runoff is 0 and arp.runoff stays at FSM's own 0,
+    // so no gather is needed (fsm-off has no FSM consumer at all).
+    if (params.fsm_on && params.runoff_ratio_on)
+      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack);
   }
 
   std::cerr << "t Set recharge time = " << recharge_timer.lap() << std::endl;
@@ -451,6 +459,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   user_context.full_grid_gather = nullptr;
   VecDestroy(&user_context.wtd_global);
   VecDestroy(&user_context.rech_source);
+  VecDestroy(&user_context.runoff_dist_vec);
 
   SNESDestroy(&user_context.snes);
   DMDestroy(&user_context.da);

@@ -315,6 +315,31 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
         arp.wtd(i, j) = full[j * params.ncells_x + i];
 }
 
+// Gather the distributed per-cycle runoff (runoff_dist = runoff_ratio*rech) to rank-0
+// arp.runoff, so the NEXT FillSpillMerge (rank 0) sees the recharge's runoff. Called only
+// when runoff_ratio_on; otherwise the runoff is 0 and arp.runoff stays at FSM's own 0.
+// Reuses the un-held wtd_global as the gather scratch (after gather_wtd_to_all has
+// finished with it -- the two run sequentially). See DISTRIBUTED_ARP_DESIGN.md (2c).
+void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** wg;
+  DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      wg[j][i] = dmdapack.runoff_dist[j][i];
+  DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
+
+  std::vector<double> full;
+  user_context.full_grid_gather->gatherToZero(user_context.wtd_global, full);
+
+  PetscMPIInt rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+  if (rank == 0)
+    for (int j = 0; j < params.ncells_y; j++)
+      for (int i = 0; i < params.ncells_x; i++)
+        arp.runoff(i, j) = full[j * params.ncells_x + i];
+}
+
 /* ------------------------------------------------------------------- */
 /*
    FormInitialGuess - Forms initial approximation.

@@ -6,6 +6,7 @@ struct DMDA_Array_Pack {
   PetscScalar** mask                = nullptr;
   PetscScalar** rech_vec            = nullptr;
   PetscScalar** rech_dist           = nullptr;  // per-cycle recharge, owned range (from arp.rech)
+  PetscScalar** runoff_dist         = nullptr;  // per-cycle runoff = runoff_ratio*rech, owned range (2c)
   PetscScalar** porosity_vec        = nullptr;
   PetscScalar** starting_wtd        = nullptr;
   const AppCtx* context             = nullptr;
@@ -22,6 +23,7 @@ struct DMDA_Array_Pack {
     DMDAVecGetArray(user.da, user.mask, &mask);
     DMDAVecGetArray(user.da, user.rech_vec, &rech_vec);
     DMDAVecGetArray(user.da, user.rech_source, &rech_dist);
+    DMDAVecGetArray(user.da, user.runoff_dist_vec, &runoff_dist);
     DMDAVecGetArray(user.da, user.porosity_vec, &porosity_vec);
     DMDAVecGetArray(user.da, user.starting_wtd, &starting_wtd);
   }
@@ -33,6 +35,7 @@ struct DMDA_Array_Pack {
     DMDAVecRestoreArray(context->da, context->mask, &mask);
     DMDAVecRestoreArray(context->da, context->rech_vec, &rech_vec);
     DMDAVecRestoreArray(context->da, context->rech_source, &rech_dist);
+    DMDAVecRestoreArray(context->da, context->runoff_dist_vec, &runoff_dist);
     DMDAVecRestoreArray(context->da, context->porosity_vec, &porosity_vec);
     DMDAVecRestoreArray(context->da, context->starting_wtd, &starting_wtd);
     context = nullptr;

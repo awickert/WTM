@@ -46,6 +46,11 @@ struct AppCtx {
   // so the solve loop reads recharge from DMDA-owned data rather than arp.rech.
   Vec rech_source = nullptr;
 
+  // Distributed per-cycle runoff (runoff_ratio * rech), computed alongside the
+  // distributed recharge and gathered to rank-0 arp.runoff for the next FillSpillMerge
+  // when runoff_ratio_on. Unused when runoff is off. See DISTRIBUTED_ARP_DESIGN.md (2c).
+  Vec runoff_dist_vec = nullptr;
+
   // Extract global vectors from DM; then duplicate for remaining
   // vectors that are the same types
   void make_global_vectors() {
@@ -61,6 +66,7 @@ struct AppCtx {
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
+    VecDuplicate(x, &runoff_dist_vec);
     VecDuplicate(x, &precip_vec);
     VecDuplicate(x, &evap_vec);
     VecDuplicate(x, &open_water_evap_vec);
