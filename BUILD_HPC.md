@@ -13,6 +13,18 @@ The golden rule up front:
 > sources (e.g. conda GDAL with system PETSc/MPI) causes link failures. Every
 > build problem we hit locally was a mixed-toolchain problem.
 
+## Even quicker start (after everything installed)
+
+```sh
+# srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
+srun -N 1 --ntasks-per-node=32 --mem=64gb -t 6:00:00 -p msilong --pty bash
+
+module load git
+module load petsc/3.24.5-gnu-rocky8
+module load gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3
+module load cmake/3.29.2-rocky8
+```
+
 ## Quickstart — MSI (verified module set, 2026-07)
 
 The exact modules that give a consistent toolchain on MSI (Agate, Rocky 8). See
