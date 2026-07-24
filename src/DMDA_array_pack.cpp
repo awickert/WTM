@@ -12,12 +12,8 @@ void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp) {
   user_context.full_grid_gather->scatterFromZero(arp.land_mask.data(), user_context.mask);
   user_context.full_grid_gather->scatterFromZero(arp.porosity.data(), user_context.porosity_vec);
 
-  // Distributed forcing fields for the (soon-to-be-distributed) recharge computation.
-  // Scattered from rank-0 arp so recharge need not be computed serially on rank 0.
-  user_context.full_grid_gather->scatterFromZero(arp.precip.data(), user_context.precip_vec);
-  user_context.full_grid_gather->scatterFromZero(arp.evap.data(), user_context.evap_vec);
-  user_context.full_grid_gather->scatterFromZero(arp.open_water_evap.data(), user_context.open_water_evap_vec);
-  user_context.full_grid_gather->scatterFromZero(arp.runoff_ratio.data(), user_context.runoff_ratio_vec);
+  // Distributed forcing fields for the (fsm-off) distributed recharge computation.
+  scatter_forcing_fields(user_context, arp);
 
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** cellsize;
@@ -28,6 +24,19 @@ void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp) {
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
+}
+
+// Scatter the per-cell recharge forcing fields (precip, evap, open_water_evap, runoff_ratio)
+// from rank-0 arp into their DMDA global vecs. Called once at init and, for transient fsm-off
+// runs, again each cycle after UpdateTransientArrays interpolates them (the distributed recharge
+// reads these vecs over the owned range). The vecs are NOT held by DMDA_Array_Pack, so scattering
+// into them directly is safe. All four forcing fields are float (arp f2d); scatterFromZero is
+// templated on the source type and converts float -> PetscScalar (double).
+void scatter_forcing_fields(AppCtx& user_context, ArrayPack& arp) {
+  user_context.full_grid_gather->scatterFromZero(arp.precip.data(), user_context.precip_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.evap.data(), user_context.evap_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.open_water_evap.data(), user_context.open_water_evap_vec);
+  user_context.full_grid_gather->scatterFromZero(arp.runoff_ratio.data(), user_context.runoff_ratio_vec);
 }
 
 // Populate the global topo/fdepth/ksat vecs from rank-0 arp and scatter to local ghost vectors.
