@@ -41,6 +41,12 @@ static PetscErrorCode FormInitialGuess(AppCtx*, DM, Vec);
 static PetscErrorCode FormFunctionLocal(DMDALocalInfo*, PetscScalar**, PetscScalar**, AppCtx*);
 static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat, AppCtx*);
 
+// Semi-implicit Picard path (experimental; PICARD_MATH.md). Global SNES callbacks
+// for SNESSetPicard: FormPicardRHS computes b(x), FormPicardOperator computes the
+// SPD operator A(x). Gated behind -wtm_picard; default Anderson path unaffected.
+static PetscErrorCode FormPicardRHS(SNES, Vec, Vec, void*);
+static PetscErrorCode FormPicardOperator(SNES, Vec, Mat, Mat, void*);
+
 //////////////////////
 // PUBLIC FUNCTIONS //
 //////////////////////
@@ -225,34 +231,52 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
-  // Set local function evaluation routine (always needed).
-  DMDASNESSetFunctionLocal(
-      user_context.da,
-      INSERT_VALUES,
-      (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
-      &user_context);
-
-  // Register analytic Jacobian only for Newton-Krylov.
-  // FormJacobianLocal accesses neighbor arrays from global (non-ghost) vectors,
-  // which is safe only within a single MPI process partition boundary.
-  // Registering it for Anderson causes PETSc to call it on divergence, triggering
-  // a segfault under multi-process MPI. Skip it for Anderson (Jacobian unused).
-  SNESType snes_type;
-  SNESGetType(user_context.snes, &snes_type);
-  if (std::string(snes_type) != std::string(SNESANDERSON)) {
-    DMDASNESSetJacobianLocal(
-        user_context.da,
-        (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
+  if (user_context.use_picard) {
+    // Semi-implicit Picard path (PICARD_MATH.md).
+    // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
+    // called with a NULL rhs), FormPicardOperator supplies the SPD A(x). A is its
+    // own preconditioner (GAMG). Inner solve defaults to CG+GAMG (CreateSNES).
+    SNESSetPicard(
+        user_context.snes,
+        user_context.picard_r,
+        FormPicardRHS,
+        user_context.picard_A,
+        user_context.picard_A,
+        FormPicardOperator,
         &user_context);
+
+    FormInitialGuess(&user_context, user_context.da, user_context.x);
+    SNESSolve(user_context.snes, nullptr, user_context.x);
+  } else {
+    // Set local function evaluation routine (always needed).
+    DMDASNESSetFunctionLocal(
+        user_context.da,
+        INSERT_VALUES,
+        (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
+        &user_context);
+
+    // Register analytic Jacobian only for Newton-Krylov.
+    // FormJacobianLocal accesses neighbor arrays from global (non-ghost) vectors,
+    // which is safe only within a single MPI process partition boundary.
+    // Registering it for Anderson causes PETSc to call it on divergence, triggering
+    // a segfault under multi-process MPI. Skip it for Anderson (Jacobian unused).
+    SNESType snes_type;
+    SNESGetType(user_context.snes, &snes_type);
+    if (std::string(snes_type) != std::string(SNESANDERSON)) {
+      DMDASNESSetJacobianLocal(
+          user_context.da,
+          (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
+          &user_context);
+    }
+
+    // Evaluate initial guess
+    FormInitialGuess(&user_context, user_context.da, user_context.x);
+
+    // set the RHS
+    FormRHS(&user_context, user_context.da, user_context.b);
+    // Solve nonlinear system
+    SNESSolve(user_context.snes, user_context.b, user_context.x);
   }
-
-  // Evaluate initial guess
-  FormInitialGuess(&user_context, user_context.da, user_context.x);
-
-  // set the RHS
-  FormRHS(&user_context, user_context.da, user_context.b);
-  // Solve nonlinear system
-  SNESSolve(user_context.snes, user_context.b, user_context.x);
 
   SNESGetIterationNumber(user_context.snes, &its);
   SNESGetConvergedReason(user_context.snes, &reason);
@@ -640,6 +664,194 @@ static PetscErrorCode FormJacobianLocal(
   PetscCall(DMDAVecRestoreArray(da, user_context->topo_vec, &my_topo));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  return 0;
+}
+
+/* ------------------------------------------------------------------- */
+/*
+   FormPicardRHS - right-hand side b(x) of the Picard system A(x) x = b(x)
+   (PICARD_MATH.md sec 4). The production residual divides the whole flux
+   divergence by the CENTRE storativity S_c; that makes the natural operator
+   nonsymmetric, so each row is scaled by S_c to symmetrize it (this leaves the
+   solution unchanged -- row scaling by a positive constant). The RHS carries the
+   same S_c factor: on land, b = S_c * (starting_wtd + topo + rech); on ocean,
+   b = 0 (Dirichlet h = 0). S_c depends on the current head, so b(x) genuinely
+   depends on x here (S is frozen at the outer iterate, PETSc's SNESFunctionFn).
+ */
+static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
+  (void)snes;
+  AppCtx* user_context = static_cast<AppCtx*>(ctx);
+  DM      da           = user_context->da;
+  PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask;
+
+  PetscCall(DMDAVecGetArray(da, b, &bb));
+  PetscCall(DMDAVecGetArray(da, x, &xx));  // owned range: S_c is a centre-cell quantity
+  PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscCall(DMDAVecGetArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
+  PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+
+  const auto [xs, ys, xm, ym] = get_corners(da);
+  for (auto j = ys; j < ys + ym; j++) {
+    for (auto i = xs; i < xs + xm; i++) {
+      if (my_mask[j][i] == 0) {
+        bb[j][i] = 0.0;  // Dirichlet ocean cell: h = 0
+      } else {
+        const double S_c =
+            updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
+        bb[j][i] = S_c * (my_starting_wtd[j][i] + my_topo[j][i] + my_rech[j][i]);
+      }
+    }
+  }
+
+  PetscCall(DMDAVecRestoreArray(da, b, &bb));
+  PetscCall(DMDAVecRestoreArray(da, x, &xx));
+  PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscCall(DMDAVecRestoreArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
+  PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  return 0;
+}
+
+/* ------------------------------------------------------------------- */
+/*
+   FormPicardOperator - the SPD operator A(x) of the Picard system A(x) x = b(x)
+   (PICARD_MATH.md sec 4). It is the production backward-Euler operator
+
+       (row c)   S_c*x_c + dt * sum_nbr e_{c,nbr} (x_c - x_nbr)
+
+   i.e. the CENTRE-storativity discretization of the Anderson residual, ROW-SCALED
+   by S_c so it is symmetric (the flux term dt*e is symmetric in the cell pair; the
+   1/S_c that would otherwise multiply it -- and break symmetry -- is cleared by
+   the scaling). The RHS carries the matching S_c factor (FormPicardRHS), so the
+   scaling cancels and the fixed point is exactly the Anderson one. e is the
+   harmonic mean of the PIECEWISE transmissivity. Diagonal = S_c + sum(dt*e) is
+   strictly dominant -> SPD -> CG-compatible.
+
+   Ocean (Dirichlet) rows/columns are eliminated symmetrically with
+   MatZeroRowsColumnsStencil after assembly; h_ocean = 0, so no RHS correction is
+   needed (x = b = NULL). This keeps each land cell's drain-to-ocean conductance in
+   its diagonal while removing the asymmetric off-diagonal (PICARD_MATH.md 4.4).
+
+   Only the harmonic-mean T needs neighbor values, so the iterate x is ghost-
+   scattered here and read with topo/fdepth/ksat from their *_local ghost vectors;
+   the centre-only S_c reads starting_wtd/porosity owned. A and P are the same
+   matrix (A preconditions itself via GAMG).
+ */
+static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* ctx) {
+  (void)snes;
+  (void)P;  // A is its own preconditioner
+  AppCtx* user_context = static_cast<AppCtx*>(ctx);
+  DM      da           = user_context->da;
+
+  // Ghost-scatter the current iterate so neighbor heads (for T) are valid under MPI.
+  Vec xloc;
+  PetscCall(DMGetLocalVector(da, &xloc));
+  PetscCall(DMGlobalToLocalBegin(da, x, INSERT_VALUES, xloc));
+  PetscCall(DMGlobalToLocalEnd(da, x, INSERT_VALUES, xloc));
+
+  PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_porosity, **my_starting_wtd, **my_mask, **cellsize_ew_sq,
+      **my_T;
+  PetscCall(DMDAVecGetArray(da, xloc, &xx));
+  PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
+  PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
+  PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));      // owned: centre S_c
+  PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));  // owned: centre S_c
+  PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
+
+  DMDALocalInfo info;
+  PetscCall(DMDAGetLocalInfo(da, &info));
+
+  // 1/T (piecewise production form) over the full ghost range so the neighbor
+  // harmonic means on the owned range are valid. Mirrors FormFunctionLocal.
+  for (auto j = info.gys; j < info.gys + info.gym; j++) {
+    for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
+      my_T[j][i] = 1.0 / depthIntegratedTransmissivity(xx[j][i] - my_topo[j][i], my_fdepth[j][i], my_ksat[j][i]);
+    }
+  }
+
+  const double dt   = user_context->deltat;
+  const double cns2 = user_context->cellsize_NS_squared;
+
+  for (auto j = info.ys; j < info.ys + info.ym; j++) {
+    for (auto i = info.xs; i < info.xs + info.xm; i++) {
+      const MatStencil row = {.k = 0, .j = j, .i = i, .c = 0};
+
+      if (my_mask[j][i] == 0) {
+        // Ocean: placeholder diagonal; MatZeroRowsColumnsStencil fixes it to identity.
+        const PetscScalar one = 1.0;
+        PetscCall(MatSetValuesStencil(A, 1, &row, 1, &row, &one, INSERT_VALUES));
+      } else {
+        const double cew2 = cellsize_ew_sq[j][i];
+
+        // Centre storativity, frozen at the current x (matches FormFunctionLocal).
+        const double S_c =
+            updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
+
+        // Harmonic-mean interface conductances: 2 / (1/T_c + 1/T_nbr).
+        const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
+        const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
+        const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
+        const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
+
+        // Row-scaled-by-S_c operator: off-diagonals are the (symmetric) flux terms
+        // dt*e/h^2; diagonal is S_c + sum of the fluxes. RHS carries the same S_c.
+        const double A_east   = -e_E * dt / cns2;
+        const double A_west   = -e_W * dt / cns2;
+        const double A_north  = -e_N * dt / cew2;
+        const double A_south  = -e_S * dt / cew2;
+        const double A_center = S_c - (A_east + A_west + A_north + A_south);
+
+        // 5-point stencil: east, west, north, south, centre.
+        const MatStencil cols[5] = {
+            {.k = 0, .j = j,     .i = i + 1, .c = 0},  // east
+            {.k = 0, .j = j,     .i = i - 1, .c = 0},  // west
+            {.k = 0, .j = j + 1, .i = i,     .c = 0},  // north
+            {.k = 0, .j = j - 1, .i = i,     .c = 0},  // south
+            {.k = 0, .j = j,     .i = i,     .c = 0},  // centre
+        };
+        const PetscScalar vals[5] = {
+            A_east,
+            A_west,
+            A_north,
+            A_south,
+            A_center,
+        };
+        PetscCall(MatSetValuesStencil(A, 1, &row, 5, cols, vals, INSERT_VALUES));
+      }
+    }
+  }
+
+  PetscCall(MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY));
+  PetscCall(MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY));
+
+  // Symmetric Dirichlet elimination on ocean cells (see doc comment above).
+  std::vector<MatStencil> ocean_rows;
+  for (auto j = info.ys; j < info.ys + info.ym; j++) {
+    for (auto i = info.xs; i < info.xs + info.xm; i++) {
+      if (my_mask[j][i] == 0) {
+        ocean_rows.push_back({.k = 0, .j = j, .i = i, .c = 0});
+      }
+    }
+  }
+  PetscCall(MatZeroRowsColumnsStencil(
+      A, static_cast<PetscInt>(ocean_rows.size()), ocean_rows.data(), 1.0, nullptr, nullptr));
+
+  PetscCall(DMDAVecRestoreArray(da, xloc, &xx));
+  PetscCall(DMDAVecRestoreArray(da, user_context->topo_local, &my_topo));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_local, &my_fdepth));
+  PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
+  PetscCall(DMRestoreLocalVector(da, &xloc));
   return 0;
 }
 

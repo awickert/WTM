@@ -36,6 +36,15 @@ struct AppCtx {
   Vec ksat_local   = nullptr;
   Vec T_local      = nullptr;  // scratch: 1/T, computed over ghost range each F eval
 
+  // --- Semi-implicit Picard path (gated behind -wtm_picard; default off) ---
+  // The row-scaled operator A(x) uses centre-cell storativity (so porosity and
+  // starting_wtd are read owned-only, no ghosts); only the harmonic-mean T needs
+  // neighbor heads, which come from ghost-scattering the iterate x each assembly.
+  // See PICARD_MATH.md.
+  bool use_picard = false;
+  Mat picard_A    = nullptr;  // assembled SPD operator A(x) (also the GAMG preconditioner)
+  Vec picard_r    = nullptr;  // residual work vector for SNESSetPicard
+
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
   // context; destroyed in finalise() before PetscFinalize.
