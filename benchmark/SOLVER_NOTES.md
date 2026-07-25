@@ -366,9 +366,76 @@ cores at 64M cells, rising with size** — and keeps memory flat where the repli
 model OOMs past a couple of ranks. Realized end-to-end speedup vs the published
 single-process baseline is **~4.7× at 64M/32 cores and climbing with grid.**
 
-**The original goal — a faster per-core solve — is the biggest remaining lever, and
-finding #2 quantifies why:** the new code is ~2× slower per core than kcallaghan at
-scale, so the realized 4.7× is roughly half of the 11× the parallelism alone delivers.
-Closing that gap (preconditioning / a better linear solver; the paper's O(n²)
-runtime-vs-cells should be ~O(n)) would roughly double the total — and is independent
-of this parallelization+memory work.
+**Per-core is now at parity — that lever is largely spent.** Finding #2's "~2× slower
+per core" was a build artifact (`-O0` + smooth T); the clean `-O3` study below shows
+`after` at parity with, and at 4000² *faster* than, kcallaghan (fewer iterations too).
+So the realized speedup is **not** throttled by a per-core deficit. A faster-converging
+solver was investigated as the next lever and is **not** a quick win: matrix-free
+Anderson is very cheap per iteration, and the built-in Newton+GAMG path is ~47× slower
+(2000², measured 2026-07-24); whether mesh-independent multigrid could ever pay hinges on
+the production per-solve iteration count, which is unknown (and the residual/Jacobian use
+different T forms — a latent Newton inconsistency to fix first). The remaining levers are
+*scaling* (more cores; DH+FSM for transient) and, at global scale, distributing the
+rank-0 `arp`.
+
+## Clean `-O3` study, all builds mpicxx/Release (2026-07-25) — DEFINITIVE
+
+The findings above were confounded by mixed build optimization (some builds `-O0`, some
+smooth-T). This is the apples-to-apples rerun: `after`, `before` (e5aab70, pre-flip), and
+`kcallaghan` (v2.0.1) all compiled identically with PETSc's `mpicxx` and
+`-DCMAKE_BUILD_TYPE=Release` (`-O3`), via `benchmark/scaling/run_benchmark.sh`. Grids
+1000²/2000²/4000² complete; 8000² is memory-bound in a 64 GB session (below).
+
+### Per-core (n=1): `after` ≥ kcallaghan at scale — the "regression" is dead
+
+| grid | `after` (iters / gw_s / wall_s) | kcallaghan (iters / gw_s / wall_s) |
+|------|---------------------------------|------------------------------------|
+| 1000² | 8 / 1.50 / 6.5  | 6 / 1.40 / 3.3 |
+| 2000² | 10 / 7.40 / 11.1 | 8 / 6.60 / 9.6 |
+| 4000² | 15 / 46.1 / 56.9 | 20 / 49.0 / 62.3 |
+
+At 4000² `after` is **faster** than kcallaghan in both wall (56.9 vs 62.3) and GW (46.1
+vs 49.0) and converges in **fewer** iterations (15 vs 20 — `m=10` beats the `m=30`
+default at size). At small grids `after`'s distributed fixed-overhead makes the *wall*
+slower while the *solve* stays comparable — fully amortized by 4000². Finding #2's "2×
+slower per core" is confirmed dead: it was the `-O0` + smooth-T build, not the code.
+
+### The flip's memory payoff — the headline (4000², min GB per rank / total GB)
+
+| n | `after` (min / total) | `before` (min / total) |
+|---|-----------------------|------------------------|
+| 1  | 9.11 / 9.11  | 14.23 / 14.23 |
+| 8  | 0.89 / 9.33  | 3.48 / 28.05 |
+| 16 | 0.48 / 9.92  | 2.74 / 44.18 |
+| 32 | **0.27 / 10.79** | **rc=9 (OOM — killed)** |
+
+`before` (replicated `arp`) grows ~linearly in total memory and **OOMs at n=32**;
+`after` (distributed) holds ~0.27 GB per non-root rank and ~10 GB total, flat. The flip
+is what makes many-core runs *exist* — pre-flip you cannot reach n=32 at 4000².
+
+### Strong scaling (`after` wall speedup vs its own n=1) — improves with grid size
+
+| grid | n=2 | n=4 | n=8 | n=16 | n=32 |
+|------|-----|-----|-----|------|------|
+| 1000² | 2.4× | 2.8× | 2.8× | 2.8× | 2.7× (saturated) |
+| 2000² | 1.4× | 1.9× | 2.4× | 2.8× | 2.5× |
+| 4000² | 2.0× | 2.4× | 2.9× | 3.9× | **4.45× (GW-only 5.3×)** |
+
+Realized end-to-end vs kcallaghan's only-usable config (its n=1): 4000²/n=32 ≈
+62.3/12.8 ≈ **4.9×**, rising with grid (8000² would exceed this). Small grids saturate by
+n≈4–8 (too little work per rank).
+
+### Piecewise-T win, cleanly isolated
+
+`before` (smooth T) vs `after` (piecewise T) at 4000² n=1, **same 15 iterations**: GW
+70.5 → 46.1 s = **~35% faster per iteration** from the transmissivity form alone (the
+`before`→`after` gap also carries the flip, but the solve-time delta is the T form).
+
+### 8000²: memory-bound in 64 GB (pending a bigger allocation)
+
+`after` and `before` both hold the full grid on rank 0 (~50 GB at 8000²), so in a 64 GB
+session `after` n=1 swaps (the run appeared to stall) and `before` OOMs at n>1
+(replicated). **Rank-0 `arp` (~50 GB) is `after`'s memory ceiling** — the flip freed the
+non-root ranks, not rank 0; distributing rank-0 `arp` is the lever for global scale. To
+capture the 8000² rows: `python3 scaling_study.py --grids 8000 --ranks 8 16 32 --builds after`
+on `--mem=128gb` (msilong cap). (Earlier pre-clean 8000² snapshots are in findings #3/#4.)
