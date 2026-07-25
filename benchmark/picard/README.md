@@ -27,7 +27,7 @@ tooling relative to the repo (`paths.py`); scratch output goes under `$WTM_WORK`
 | `timestep_robustness.py` | max stable Δt & steps-to-equilibrium | Anderson **diverges at Δt≥10 yr** (ceiling ~1 yr); Picard/BDF2 unconditionally stable → equilibrium in Δt=1000→**~50**, 10⁴→**~10**, 10⁵→**~5 steps** |
 | `equilibrium_accuracy.py` | is Picard's big-step equilibrium correct? | Picard Δt=1000 vs Δt=10⁵ agree to **2×10⁻³ m** (Δt-independent); Anderson Δt=1 converges to the same field but needs **~40,000 steps** |
 | `transient_accuracy.py` | transient path error vs Δt (Anderson Δt=1 = truth) | **first-order in Δt** (10× Δt → 10× error), **washes out toward equilibrium** — stability without free accuracy, but first-order-controllable |
-| `bdf2_order.py` | is the `-wtm_bdf2` path second-order? | self-convergence ratio → **4 (order 2)** for BDF2 vs → 2 (order 1) for backward Euler; BDF2 is 25–85× more accurate at equal Δt, gap widening as Δt shrinks |
+| `bdf2_order.py` | temporal order of the `-wtm_bdf2` path | **coarse Δt (250–2000 yr): order ~2** (BDF2 25–85× more accurate than BE); **fine Δt (10–100 yr): order degrades to ~1** — the C⁰ piecewise Fan T caps it as water tables cross the S4/S6 kinks (not a solver artifact). 0.1 mm error ≈ Δt 10 yr (mean) / 5–6 yr (max). Smooth-T reformulation would restore order 2 (physics-vs-order tradeoff). See BDF2_ADAPTIVE_DESIGN.md |
 | `adaptive_sweep.py` | `-wtm_dt_adaptive` across grids × cores × tol | step count invariant to core count (MPI-consistent controller) and ~grid-independent; step count drops and accuracy tracks the tolerance (128²: tol=0.1/1/10 m → 261/39/17 steps, err 0.14/2.0/7.1 m) |
 
 ## Run

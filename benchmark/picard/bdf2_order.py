@@ -7,6 +7,13 @@ halving time steps and measure the change between successive resolutions
 by 2^p: the ratio err(2dt)/err(dt) -> 2 for backward Euler (p=1) and -> 4 for
 BDF2 (p=2). Reference = the finest run; no external ground truth needed.
 
+MEASURED CAVEAT (2026-07-26): BDF2 here shows order ~2 only at COARSE dt
+(250-2000 yr). At fine dt (10-100 yr) the achieved order degrades to ~1 because
+WTM's transmissivity is piecewise (C0, Fan S4/S6) and water tables cross its
+kinks during drainage -- a non-smooth-RHS order reduction, confirmed NOT to be a
+solver-tolerance artifact. So BDF2 beats backward Euler by a constant factor at
+practical (sub-mm) accuracy, not by an order. See BDF2_ADAPTIVE_DESIGN.md sec 2.
+
 Prereq:  python3 make_equil.py
 Usage:   python3 bdf2_order.py
 """

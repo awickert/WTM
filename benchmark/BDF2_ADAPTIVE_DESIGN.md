@@ -110,6 +110,22 @@ $$
 So the transient deviations above become second-order: 10× Δt → **100×** error, i.e. for a
 fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bigger steps.
 
+> **MEASURED (2026-07-26) — order reduction on WTM's piecewise T.** The formal order-2 above
+> holds only where the coefficients are smooth. On WTM's **piecewise (C⁰) Fan S4/S6
+> transmissivity**, self-convergence on the 128² drainage fixture shows the *achieved*
+> temporal order is ~2 at coarse Δt (250–2000 yr, smooth-part truncation dominates) but
+> **degrades to ~1 at fine Δt** (10–100 yr: error ratio ~2 per Δt-doubling, order ≈ 1.05) —
+> the classic order reduction from a non-smooth RHS, as water tables cross the −1.5 m and 0 m
+> kinks during drainage. Verified *not* a solver-tolerance artifact (identical errors with
+> `-snes_rtol 1e-12`). Consequence: BDF2 still beats backward Euler by a solid **constant
+> factor** at equal Δt, but **not by an order** at practical (sub-mm) tolerances. For this
+> fixture at T=8000 yr, 0.1 mm error needs Δt ≈ 10 yr (mean) / 5–6 yr (max). A **smooth (C∞)
+> T/S reformulation** (`depthIntegratedTransmissivitySmooth` already exists) is the lever that
+> would restore order 2 — the same smoothness that would unlock higher *spatial* order — but
+> it changes the fixed point slightly (approximates the production piecewise Fan form), a
+> physics-vs-order tradeoff to weigh. TODO: quantify the smooth-T order recovery and its
+> fixed-point shift.
+
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:
 
