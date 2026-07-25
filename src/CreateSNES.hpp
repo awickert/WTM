@@ -45,6 +45,16 @@ struct AppCtx {
   Mat picard_A    = nullptr;  // assembled SPD operator A(x) (also the GAMG preconditioner)
   Vec picard_r    = nullptr;  // residual work vector for SNESSetPicard
 
+  // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
+  // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.
+  // vs backward Euler this doubles the diffusion coefficient (dt->2dt) and the storage
+  // diagonal (S_c->3S_c), and the RHS becomes S_c*(4h^n - h^{n-1} + 2*rech). Needs the
+  // previous-previous head h^{n-1} = starting_wtd_prev + topo (centre only, no ghosts);
+  // step 0 has no h^{n-1} so it bootstraps with backward Euler. See BDF2_ADAPTIVE_DESIGN.md.
+  bool use_bdf2          = false;
+  bool bdf2_have_history = false;  // false until the first step has produced an h^{n-1}
+  Vec  starting_wtd_prev = nullptr;  // h^{n-1} carrier (wtd), owned-range
+
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
   // context; destroyed in finalise() before PetscFinalize.

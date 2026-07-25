@@ -54,12 +54,23 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // allocate the SPD operator A(x) (also its own GAMG preconditioner) and a residual
   // work vector, and default the outer/inner solvers (below) unless the user overrode
   // them.
-  PetscBool picard_flag = PETSC_FALSE;
+  // BDF2 time integration (-wtm_bdf2) lives in the Picard operator/RHS, so it implies
+  // the Picard path. See BDF2_ADAPTIVE_DESIGN.md.
+  PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_picard", &picard_flag);
-  user_context.use_picard = (picard_flag == PETSC_TRUE);
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2", &bdf2_flag);
+  user_context.use_bdf2   = (bdf2_flag == PETSC_TRUE);
+  user_context.use_picard = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
+  if (user_context.use_bdf2 && picard_flag != PETSC_TRUE) {
+    PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
+  }
   if (user_context.use_picard) {
     DMCreateMatrix(user_context.da, &user_context.picard_A);
     VecDuplicate(user_context.x, &user_context.picard_r);
+    if (user_context.use_bdf2) {
+      VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
+      VecSet(user_context.starting_wtd_prev, 0.0);
+    }
 
     // Defect-correction Picard is a modified-Newton iteration whose "Jacobian" is
     // the frozen operator A(x): each outer step solves A(x_k) dx = -(A x_k - b) via

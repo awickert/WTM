@@ -288,6 +288,20 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     throw std::runtime_error("The SNES solver has not converged.");
   }
 
+  // BDF2: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
+  // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag,
+  // so BDF2 engages from the second step on (the first bootstraps with backward Euler).
+  // (fsm_off / Phase A: history is continuous; Phase B will reset the flag after FSM.)
+  if (user_context.use_bdf2) {
+    PetscScalar** my_starting_wtd_prev;
+    DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &my_starting_wtd_prev);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        my_starting_wtd_prev[j][i] = dmdapack.starting_wtd[j][i];
+    DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &my_starting_wtd_prev);
+    user_context.bdf2_have_history = true;
+  }
+
   // copy the result back into the distributed wtd carrier (starting_wtd), which
   // feeds the next solve in the maxiter loop and is assembled to arp.wtd once
   // per cycle by gather_wtd_to_all. Read topo/mask/porosity from DMDA arrays
@@ -684,6 +698,11 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   DM      da           = user_context->da;
   PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask;
 
+  // BDF2 (once an h^{n-1} exists) uses b = S_c*(4h^n - h^{n-1} + 2*rech); backward Euler
+  // otherwise b = S_c*(h^n + rech). h^{n-1} = starting_wtd_prev + topo (centre only).
+  const bool bdf2 = user_context->use_bdf2 && user_context->bdf2_have_history;
+  PetscScalar** my_starting_wtd_prev = nullptr;
+
   PetscCall(DMDAVecGetArray(da, b, &bb));
   PetscCall(DMDAVecGetArray(da, x, &xx));  // owned range: S_c is a centre-cell quantity
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
@@ -691,6 +710,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+  if (bdf2) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
 
   const auto [xs, ys, xm, ym] = get_corners(da);
   for (auto j = ys; j < ys + ym; j++) {
@@ -700,7 +720,13 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
       } else {
         const double S_c =
             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
-        bb[j][i] = S_c * (my_starting_wtd[j][i] + my_topo[j][i] + my_rech[j][i]);
+        const double h_n = my_starting_wtd[j][i] + my_topo[j][i];
+        if (bdf2) {
+          const double h_nm1 = my_starting_wtd_prev[j][i] + my_topo[j][i];
+          bb[j][i] = S_c * (4.0 * h_n - h_nm1 + 2.0 * my_rech[j][i]);
+        } else {
+          bb[j][i] = S_c * (h_n + my_rech[j][i]);
+        }
       }
     }
   }
@@ -712,6 +738,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  if (bdf2) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
   return 0;
 }
 
@@ -778,6 +805,12 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   const double dt   = user_context->deltat;
   const double cns2 = user_context->cellsize_NS_squared;
 
+  // BDF2 (once an h^{n-1} exists) doubles the diffusion coefficient (dt -> 2dt) and the
+  // storage diagonal (S_c -> 3*S_c); backward Euler otherwise. See BDF2_ADAPTIVE_DESIGN.md.
+  const bool   bdf2    = user_context->use_bdf2 && user_context->bdf2_have_history;
+  const double dt_diff = bdf2 ? 2.0 * dt : dt;
+  const double s_coeff = bdf2 ? 3.0 : 1.0;
+
   for (auto j = info.ys; j < info.ys + info.ym; j++) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
       const MatStencil row = {.k = 0, .j = j, .i = i, .c = 0};
@@ -800,12 +833,13 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
 
         // Row-scaled-by-S_c operator: off-diagonals are the (symmetric) flux terms
-        // dt*e/h^2; diagonal is S_c + sum of the fluxes. RHS carries the same S_c.
-        const double A_east   = -e_E * dt / cns2;
-        const double A_west   = -e_W * dt / cns2;
-        const double A_north  = -e_N * dt / cew2;
-        const double A_south  = -e_S * dt / cew2;
-        const double A_center = S_c - (A_east + A_west + A_north + A_south);
+        // dt_diff*e/h^2; diagonal is s_coeff*S_c + sum of the fluxes. RHS carries the
+        // matching S_c. (BE: dt_diff=dt, s_coeff=1; BDF2: dt_diff=2dt, s_coeff=3.)
+        const double A_east   = -e_E * dt_diff / cns2;
+        const double A_west   = -e_W * dt_diff / cns2;
+        const double A_north  = -e_N * dt_diff / cew2;
+        const double A_south  = -e_S * dt_diff / cew2;
+        const double A_center = s_coeff * S_c - (A_east + A_west + A_north + A_south);
 
         // 5-point stencil: east, west, north, south, centre.
         const MatStencil cols[5] = {

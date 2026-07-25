@@ -498,6 +498,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   // Picard path (nullptr / no-op when -wtm_picard was not set).
   MatDestroy(&user_context.picard_A);
   VecDestroy(&user_context.picard_r);
+  VecDestroy(&user_context.starting_wtd_prev);  // BDF2 history (nullptr / no-op otherwise)
 }
 
 int main(int argc, char** argv) {
