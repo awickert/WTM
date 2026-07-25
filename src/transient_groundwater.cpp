@@ -288,6 +288,37 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     throw std::runtime_error("The SNES solver has not converged.");
   }
 
+  // Adaptive dt (forward, no-reject): estimate the local error as the max deviation of the
+  // new head h^{n+1} from a LINEAR extrapolation of the history (h_pred = h^n + w(h^n -
+  // h^{n-1}), w = dt_n/dt_{n-1}); this deviation ~ O(dt^2). Set the NEXT step to hold it near
+  // dt_tol via dt_new = dt * clamp(safety*sqrt(tol/est), shrink, grow). Runs once history
+  // exists, and BEFORE starting_wtd_prev is overwritten below. See BDF2_ADAPTIVE_DESIGN.md.
+  if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
+    PetscScalar **swp, **topo_e;
+    DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &swp);
+    DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
+    const double omega = user_context.deltat / user_context.bdf2_prev_dt;
+    double local_max   = 0.0;
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        if (dmdapack.mask[j][i] != 0) {  // land only
+          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
+          const double h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
+          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
+          if (dev > local_max) local_max = dev;
+        }
+    DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &swp);
+    DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+
+    double est = 0.0;
+    MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+
+    const double safety = 0.9, grow = 1.5, shrink = 0.5;
+    double factor = (est > 0.0) ? safety * std::sqrt(user_context.dt_tol / est) : grow;  // est~O(dt^2)
+    factor        = std::min(grow, std::max(shrink, factor));
+    user_context.deltat *= factor;
+  }
+
   // BDF2: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag,
   // so BDF2 engages from the second step on (the first bootstraps with backward Euler).

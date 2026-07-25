@@ -54,14 +54,22 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // allocate the SPD operator A(x) (also its own GAMG preconditioner) and a residual
   // work vector, and default the outer/inner solvers (below) unless the user overrode
   // them.
-  // BDF2 time integration (-wtm_bdf2) lives in the Picard operator/RHS, so it implies
-  // the Picard path. See BDF2_ADAPTIVE_DESIGN.md.
-  PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE;
+  // Time-integration flags nest: -wtm_dt_adaptive implies BDF2 implies the Picard path
+  // (all live in the Picard operator/RHS). See BDF2_ADAPTIVE_DESIGN.md.
+  PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE, adaptive_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_picard", &picard_flag);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2", &bdf2_flag);
-  user_context.use_bdf2   = (bdf2_flag == PETSC_TRUE);
-  user_context.use_picard = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
-  if (user_context.use_bdf2 && picard_flag != PETSC_TRUE) {
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_adaptive", &adaptive_flag);
+  user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
+  user_context.use_bdf2        = (bdf2_flag == PETSC_TRUE) || user_context.use_dt_adaptive;
+  user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
+  if (user_context.use_dt_adaptive) {
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
+    PetscPrintf(
+        PETSC_COMM_WORLD,
+        "-wtm_dt_adaptive set: BDF2 + adaptive dt (tol=%g m); enabling the Picard solver path.\n",
+        user_context.dt_tol);
+  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   if (user_context.use_picard) {
@@ -80,16 +88,23 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // linear solve). A basic (full-step) line search gives the plain Picard update.
     // The inner solve is CG+GAMG on the SPD A. (PETSc SNES ex15 fd/mf_picard.)
     PetscBool ksp_set = PETSC_FALSE, pc_set = PETSC_FALSE, snes_set = PETSC_FALSE, ls_set = PETSC_FALSE,
-              atol_set = PETSC_FALSE;
+              atol_set = PETSC_FALSE, nsmooth_set = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-ksp_type", &ksp_set);
     PetscOptionsHasName(nullptr, nullptr, "-pc_type", &pc_set);
     PetscOptionsHasName(nullptr, nullptr, "-snes_type", &snes_set);
     PetscOptionsHasName(nullptr, nullptr, "-snes_linesearch_type", &ls_set);
     PetscOptionsHasName(nullptr, nullptr, "-snes_atol", &atol_set);
+    PetscOptionsHasName(nullptr, nullptr, "-pc_gamg_agg_nsmooths", &nsmooth_set);
     if (!snes_set) PetscOptionsSetValue(nullptr, "-snes_type", "newtonls");            // modified Newton = Picard
     if (!ls_set)   PetscOptionsSetValue(nullptr, "-snes_linesearch_type", "basic");    // full-step (plain Picard)
     if (!ksp_set)  PetscOptionsSetValue(nullptr, "-ksp_type", "cg");                   // SPD inner solve
     if (!pc_set)   PetscOptionsSetValue(nullptr, "-pc_type", "gamg");                  // algebraic multigrid
+    // Unsmoothed aggregation -> a reliably-SPD GAMG preconditioner. Smoothed aggregation
+    // (the default) can produce a slightly INDEFINITE preconditioner as the operator turns
+    // diffusion-dominated at large dt (BDF2 / adaptive), which makes CG bail with
+    // DIVERGED_INDEFINITE_PC. Unsmoothed fixes that at no measured cost here (same ~2 inner
+    // iterations on the elliptic operator). Overridable.
+    if (!nsmooth_set) PetscOptionsSetValue(nullptr, "-pc_gamg_agg_nsmooths", "0");
     // Absolute residual tolerance so an already-converged (near-equilibrium) step stops
     // instead of chasing a RELATIVE reduction on a machine-zero residual -> SNES max-its
     // -> spurious "not converged" throw. The mid-transient residual norm (~S*h*sqrt(N),

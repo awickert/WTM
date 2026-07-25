@@ -58,6 +58,15 @@ struct AppCtx {
                                      // fixed-step BDF2). Set to the initial deltat at init.
   Vec    starting_wtd_prev = nullptr;  // h^{n-1} carrier (wtd), owned-range
 
+  // --- Adaptive time stepping (gated behind -wtm_dt_adaptive; implies BDF2 -> Picard) ---
+  // Forward (no-reject) controller: after each step the local error is estimated from the
+  // deviation of the solution from a linear extrapolation of the history (~O(dt^2)), and the
+  // NEXT step size is set to hold that near dt_tol (metres). No accept/reject retry (which
+  // would double-count the per-step recharge/ocean accumulators); a too-large step is simply
+  // followed by a smaller one. See BDF2_ADAPTIVE_DESIGN.md.
+  bool   use_dt_adaptive = false;
+  double dt_tol          = 0.1;  // target max |h - linear-extrapolation| per step, metres
+
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
   // context; destroyed in finalise() before PetscFinalize.

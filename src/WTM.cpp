@@ -297,9 +297,30 @@ void update(
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
 
-  int iter_count = 0;
-  while (iter_count++ < params.maxiter) {
-    FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+  if (user_context.use_dt_adaptive) {
+    // Adaptive stepping covers the SAME cycle duration as the fixed loop would
+    // (maxiter * base deltat), but with variable, error-controlled sub-steps chosen by
+    // the controller in FanDarcyGroundwater::update (which mutates user_context.deltat to
+    // the next proposed size). Clamp each step to the time remaining in the cycle so we
+    // land exactly on the target. See benchmark/BDF2_ADAPTIVE_DESIGN.md.
+    const double cycle_duration = params.maxiter * params.deltat;
+    double       t              = 0.0;
+    int          nsteps         = 0;
+    while (t < cycle_duration * (1.0 - 1e-9) && nsteps < 1000000) {
+      const double remaining = cycle_duration - t;
+      if (user_context.deltat > remaining) user_context.deltat = remaining;
+      const double dt_taken = user_context.deltat;
+      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      t += dt_taken;
+      nsteps++;
+    }
+    PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps to cover %g s (fixed would be %d)\n",
+                nsteps, cycle_duration, params.maxiter);
+  } else {
+    int iter_count = 0;
+    while (iter_count++ < params.maxiter) {
+      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+    }
   }
   // Assemble the full wtd field once, now that the solve loop is done (the
   // intermediate solves only need each rank's owned cells).
