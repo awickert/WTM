@@ -23,6 +23,9 @@ module load git
 module load petsc/3.24.5-gnu-rocky8
 module load gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3
 module load cmake/3.29.2-rocky8
+
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate wtmtest
 ```
 
 ## Quickstart — MSI (verified module set, 2026-07)
