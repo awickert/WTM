@@ -145,9 +145,9 @@ A(h_k)\,h_{k+1} \;=\; b(h_k),\qquad k=0,1,2,\dots \ \text{until}\ \|h_{k+1}-h_k\
 $$
 
 Each iteration evaluates $T(h_k), S(h_k)$ (frozen), assembles $A(h_k)$, and does one
-**linear** solve. Because the frozen operator is a symmetric elliptic diffusion operator,
-$A(h_k)$ is **SPD** (§4.4) — the canonical multigrid problem, solved with **CG + algebraic
-multigrid (GAMG)** in $O(1)$ iterations independent of grid size.
+**linear** solve. The frozen operator is elliptic diffusion; after a diagonal row-scaling
+(§4.4) it is symmetric, hence **SPD** — the canonical multigrid problem, solved with **CG +
+algebraic multigrid (GAMG)** in $O(1)$ iterations independent of grid size.
 
 **Why mesh-independent.** The nonlinearity is a *local coefficient* ($S,T$ depend on the
 local head), not a change of differential order. So the **outer** Picard count depends on
@@ -166,46 +166,61 @@ manual, the two user callbacks are:
 | function (`SNESFunctionFn`) | the RHS $b(x)$ | `FormPicardRHS` |
 | matrix (`SNESJacobianFn`)   | the operator $A(x)$ | `FormPicardOperator` |
 
-PETSc forms the residual $A(x)x - b(x)$ internally and applies the outer accelerator
-(`-snes_type nrichardson` = plain Picard; `anderson`/`ngmres` = Anderson-accelerated
-Picard). The inner linear solve is `-ksp_type cg -pc_type gamg`.
+PETSc forms the residual $A(x)x - b(x)$ internally. Defect-correction Picard is a
+**modified Newton** iteration whose "Jacobian" is the *frozen operator* $A(x)$ (not the
+true Jacobian): each outer step solves $A(x_k)\,\delta = -(A x_k - b) $, i.e.
+$A(x_k)\,x_{k+1}=b(x_k)$. So the OUTER solver must be a Newton type (`-snes_type newtonls`
+with `-snes_linesearch_type basic` for the plain full-step update) — **not** `nrichardson`,
+which would only do $x\leftarrow x-\lambda F$ with no linear solve. The inner solve is
+`-ksp_type cg -pc_type gamg` (verified on PETSc SNES `ex15`, fd/mf_picard). Picard needs
+only $T(x)$, never $dT/dh$, so it uses the **production piecewise** $T$ directly (not the
+smooth $C^\infty$ blend the Newton Jacobian needed) and converges to the *same* fixed point
+as today's Anderson residual (confirmed to $\sim6\times10^{-8}$ on the golden `below_ground`
+case).
 
-The operator $A(x)$ **already existed** in the code as the SPD matrix `P` assembled in
-`FormJacobianLocal` ("Symmetric Picard preconditioner: freeze T, average S between
-neighbors"). Picard needs only $T(x)$, never $dT/dh$ — so it uses the **production
-piecewise** $T$ directly (not the smooth $C^\infty$ blend the Newton Jacobian needed),
-and converges to the *same* fixed point as today's Anderson residual.
+### 4.4 The SPD operator: centre-storativity with row-scaling
 
-### 4.4 The SPD operator, and the Dirichlet symmetry fix
-
-Off-diagonal (coupling to a **land** neighbor, E shown), with storativity averaged
-between the two cells:
+The production residual (§2) divides the **whole** flux divergence by the **centre**
+storativity $S_c$. Writing that per row gives the natural operator
 
 $$
-A_{i,j}^{E} = -\,e_E\,\frac{\Delta t}{\tfrac12\big(S_{i,j}+S_{i+1,j}\big)\,\Delta y^2},
+N_{i,j}^{E} = -\,\frac{\Delta t}{S_{i,j}}\,\frac{e_E}{\Delta y^2},
 \qquad
-A_{i,j}^{\text{center}} = 1 - \sum_{d\in\{E,W,N,S\}} A_{i,j}^{d}.
+N_{i,j}^{\text{center}} = 1 - \sum_{d} N_{i,j}^{d}.
 $$
 
-Symmetry of the off-diagonals: $e_E$ (harmonic mean) and $\tfrac12(S_c+S_E)$ are both
-symmetric in $(c,E)$, so $A^{E}_{c}=A^{W}_{E}$. With the diagonal strictly dominant
-(the $+1$ from the storage term), $A$ is **SPD** ⇒ CG-compatible.
+This is the correct discretization, but it is **nonsymmetric**: $N^{E}_{c}\propto 1/S_c$
+while $N^{W}_{E}\propto 1/S_E$, and $S_c\neq S_E$ where storativity varies. (An early
+version used a *face-averaged* $\tfrac12(S_c+S_{\rm nbr})$ to force symmetry — but that
+solves a **different** equation and converged to a fixed point off by up to ~15 m from
+Anderson. Correctness requires centre $S$.)
 
-**The one correctness refinement the CG solve forces.** Ocean cells are Dirichlet
-identity rows ($A_{oo}=1$, $A_{o,\cdot}=0$). A land cell adjacent to ocean would, naively,
-carry an off-diagonal $A_{L,o}\ne 0$ while the ocean row carries no return coupling
-$A_{o,L}=0$ — an **asymmetric** matrix, which breaks CG. The fix is standard **symmetric
-Dirichlet elimination**: for a land–ocean face,
+**Row-scaling fixes it.** Multiply each row $c$ by $S_c>0$ — which leaves the solution
+unchanged — and the $1/S_c$ that broke symmetry is cleared, exposing the symmetric flux
+term $\Delta t\,e$:
 
-- **keep** the conductance $e$ in the land cell's diagonal (the flux $e\,(h_L - h_o)$ still
-  drains the cell), and
-- **drop** the off-diagonal entry to the ocean cell, moving the known term $e\,h_o = e\cdot 0 = 0$
-  to the RHS (it contributes nothing since $h_o=0$).
+$$
+A_{i,j}^{E} = -\,\frac{\Delta t\,e_E}{\Delta y^2},
+\quad
+A_{i,j}^{\text{center}} = S_{i,j} - \sum_{d} A_{i,j}^{d},
+\qquad
+b_{i,j} = S_{i,j}\,\big(h^0_{i,j} + \text{rech}_{i,j}\big).
+$$
 
-This restores $A_{L,o}=A_{o,L}=0$ (SPD) *and* reproduces the exact flux the Anderson
-residual already applies (it drains land to the ocean with $h_o=0$). So the Picard solve
-converges to the same physical fixed point; the pre-existing `P` matrix, which kept the
-off-diagonal, was only ever a GMRES preconditioner where the asymmetry was harmless.
+Now $A^{E}_{c}=A^{W}_{E}=-\Delta t\,e_E/\Delta y^2$ (the harmonic mean $e_E$ is symmetric in
+the pair), and the diagonal $S_c+\sum \Delta t\,e/h^2$ is strictly dominant ⇒ $A$ is
+**SPD** ⇒ CG-compatible. The matching $S_c$ factor on the RHS (`FormPicardRHS`) cancels the
+scaling, so $A(x)x=b(x)$ has exactly the Anderson fixed point. $S_c$ depends on the head, so
+$b$ genuinely depends on $x$ (frozen at the outer iterate) — unlike the unscaled RHS.
+
+**The Dirichlet symmetry fix.** Ocean cells are identity rows ($A_{oo}=1$, $A_{o,\cdot}=0$).
+A land cell adjacent to ocean would carry an off-diagonal $A_{L,o}\neq0$ while the ocean row
+carries no return coupling ($A_{o,L}=0$) — asymmetric, breaking CG. Standard **symmetric
+Dirichlet elimination** (`MatZeroRowsColumnsStencil` on the ocean cells) zeros both the row
+and the column and sets a unit diagonal; since $h_o=0$ the land RHS needs no correction. This
+keeps each land cell's drain-to-ocean conductance in its diagonal (in $A^{\text{center}}$)
+while removing the asymmetric off-diagonal, reproducing the exact flux the Anderson residual
+applies (draining land to $h_o=0$).
 
 ---
 
@@ -214,12 +229,12 @@ off-diagonal, was only ever a GMRES preconditioner where the asymmetry was harml
 | math | code (`transient_groundwater.cpp`) |
 |---|---|
 | residual $F(h)=0$ (§2–3) | `FormFunctionLocal` (Anderson default path) |
-| $b(h)=h^0+\text{rech}$ | `FormPicardRHS` (new) |
-| $A(h)$, SPD, piecewise $T$, symmetric Dirichlet | `FormPicardOperator` (new) |
+| $b(h)=S_c\,(h^0+\text{rech})$, row-scaled (§4.4) | `FormPicardRHS` (new) |
+| $A(h)$ SPD, centre-$S$ row-scaled, piecewise $T$, symmetric Dirichlet | `FormPicardOperator` (new) |
 | $T(wtd)$ piecewise (§1.1) | `depthIntegratedTransmissivity` |
 | $S(h)$ | `updateEffectiveStorativity` |
 | harmonic-mean faces (§3) | `e_E,e_W,e_N,e_S` |
-| outer Picard + inner CG/GAMG (§4.2) | `SNESSetPicard` + `-snes_type nrichardson -ksp_type cg -pc_type gamg` |
+| outer Picard + inner CG/GAMG (§4.3) | `SNESSetPicard` + `-snes_type newtonls -snes_linesearch_type basic -ksp_type cg -pc_type gamg` |
 
 The default solver is unchanged (matrix-free Anderson); the Picard path is gated behind a
 runtime flag (`-wtm_picard`). See `PICARD_MG_DESIGN.md` for the experiment that decides
