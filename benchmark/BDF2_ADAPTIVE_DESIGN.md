@@ -207,10 +207,12 @@ This is the numerical content of WTM's existing equilibrium-vs-transient distinc
   so the refactor must define the timeline cleanly: is a step a maxiter iteration or a
   cycle? How do the per-cycle FSM and recharge updates interleave with a multi-step history?
   **This is the central design question and must be settled before coding BDF2.**
-- **Is the transient even integrator-limited?** WTM transients are driven by time-sliced
-  paleoclimate forcing; if the usable Δt is set by the *forcing cadence*, BDF2/adaptivity
-  buys little. **Check how transient runs are actually forced before investing** — this
-  gates the whole branch's value.
+- **Is a given transient integrator-limited or forcing-limited?** WTM transients are driven by
+  time-sliced paleoclimate forcing; where the usable Δt is set by the *forcing cadence*,
+  BDF2/adaptivity buys less. This is no longer a *gate* (per the scope decision we build the GW
+  capacity regardless — the daily step is a stability workaround, and the science of interest
+  is seasonal-to-millennial); it's a **per-study usage question** — the adaptive controller
+  should simply not step past the forcing cadence.
 - **Variable-step BDF2** must use the correct non-uniform coefficients, or it silently drops
   to first order; and large step-ratio jumps can dent stability — cap the growth ratio.
 - **Storativity/transmissivity nonlinearity in the time term.** S and T are frozen at the
@@ -224,9 +226,21 @@ This is the numerical content of WTM's existing equilibrium-vs-transient distinc
 
 ## 8. Phasing
 
-1. **Settle the timeline** (risk #1) + confirm transients aren't forcing-limited (risk #2).
-   If forcing-limited, stop here and record.
-2. **BDF2 fixed-step**, verify order 2 on the matched-time harness.
-3. **Adaptive Δt**, verify achieved error tracks tolerance.
-4. **PTC for equilibrium** (optional).
-5. Decide defaults per run type; keep backward-Euler fixed-step as the fallback.
+**Scope decision (Andy, 2026-07-25): improve the groundwater-modeling capacity first, then
+consider the coupling.** FSM frequency *varies* across studies, so we do **not** hard-couple
+the time-integration design to a fixed FSM cadence. Build and validate the GW time integrator
+as a standalone capability **with `fsm_off`** (exactly what `benchmark/picard/` already
+exercises), then layer FSM coupling on top as a later phase.
+
+*Phase A — GW time-stepping capacity (fsm_off):*
+1. Timeline is settled (§1.5); go straight to the integrator.
+2. **BDF2 fixed-step**, verify order 2 on the matched-time harness (`transient_accuracy.py`).
+3. **Adaptive Δt**, verify achieved path error tracks the tolerance.
+4. **PTC for equilibrium** — automate the big-step drive-to-steady-state.
+5. Decide per-run-type defaults; keep backward-Euler fixed-step as the fallback.
+
+*Phase B — FSM coupling (later, once A is solid):*
+6. Interleave the GW integrator with FSM for a range of FSM frequencies (it varies): how large
+   a GW step is safe/accurate between surface-routing events; carry BDF2 history across FSM
+   kicks (FSM only moves surface water, so sub-surface history is continuous); Strang-split if
+   the operator-split error dominates. Test `fsm_on`.
