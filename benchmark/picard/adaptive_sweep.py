@@ -59,8 +59,9 @@ def run(grid, n, tol, fixed=False):
     out = p.stdout + p.stderr
     steps = int(STEP_RE.search(out).group(1)) if STEP_RE.search(out) else (MAXITER if fixed else None)
     gw = max((float(x) for x in GW_RE.findall(out)), default=None)
-    ncyc = MAXITER if fixed else steps
-    tif = os.path.join(WORK, f"asw_{tag}_out_{(ncyc if ncyc else 0):09d}.tif")
+    # total_cycles is 1 for both paths (the maxiter/adaptive loop is inside one cycle), so the
+    # final field is saved at cycles_done = 1 -> out_000000001.tif (NOT the step count).
+    tif = os.path.join(WORK, f"asw_{tag}_out_000000001.tif")
     field = rasterio.open(tif).read(1) if os.path.exists(tif) else None
     return {"rc": p.returncode, "wall": wall, "gw": gw, "steps": steps, "field": field}
 
