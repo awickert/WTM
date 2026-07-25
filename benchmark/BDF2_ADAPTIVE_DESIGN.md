@@ -43,6 +43,50 @@ path accuracy.
 
 ---
 
+## 1.5 WTM's timeline (Kerry's production structure) — resolves the "what is a step" question
+
+Kerry's production cadence pins the structure down:
+
+    deltat = 1 day    maxiter = 7    total_cycles = 4    ->  run = 4 weeks,  FSM once per week
+
+- **A time step = `deltat` = 1 day** — one GW backward-Euler step. Each `maxiter`
+  iteration *advances one day* (arithmetic: 4 cycles x 7 x 1 day = 28 days; confirmed a
+  time sub-step, not a convergence re-solve).
+- **`maxiter` = daily GW sub-steps between FSM applications** (7 = one week).
+- **A cycle = the FSM interval = 1 week.**
+- **GW <-> FSM is operator splitting:** GW diffuses daily; FSM routes surface water weekly.
+
+Note the name `maxiter` is a fossil: it originates from the **equilibrium** solutions, where
+each pass genuinely *iterates* toward steady state. On a **transient** run the same loop
+*advances time* (one day per pass), so "iteration" is a misnomer there -- the root of much
+confusion about what a "step" is. The two regimes this note formalizes (PTC for equilibrium,
+BDF2+adaptive for transient) finally give that overloaded loop distinct meaning per run type.
+
+**Consequences for BDF2:** history `h^n, h^{n-1}` is uniform *within* a week (clean BDF2);
+the weekly FSM kick perturbs `h`, so the history is invalid across a cycle boundary ->
+**bootstrap one backward-Euler step at the first day of each week** (1 BE + 6 BDF2 / week).
+
+**But this also sharpens the payoff question.** At `deltat` = 1 day the backward-Euler
+temporal error is already small, so BDF2 buys little *at that step size*. The value hinges
+on **why the step is daily**:
+
+- If daily is an **Anderson-stability workaround** (Anderson diverges at large dt — we
+  measured a ceiling ~1 yr on the drainage test; the daily production step may be the same
+  phenomenon at production stiffness), then Picard's unconditional stability lets us take
+  **far fewer, bigger GW sub-steps per week** (perhaps 1 weekly step vs 7 daily), and BDF2
+  keeps those coarser steps accurate. *This is the transient win.*
+- If daily is **physically required** (a fast event the science needs resolved) or set by
+  the forcing, the step can't be coarsened and BDF2 mainly buys accuracy on the resolved
+  daily transient.
+
+Either way, **the GW<->FSM operator split is itself ~first-order at the weekly cadence**, a
+floor on overall transient accuracy: BDF2 on the daily sub-steps only helps down to that
+floor. Whether the daily-diffusion error or the weekly-splitting error dominates is the
+first thing to measure. (Strang splitting would lift the split to 2nd order if it becomes
+the bottleneck — a separate lever.)
+
+---
+
 ## 2. BDF2 — cheap second order
 
 Backward Euler (BDF1) approximates the time derivative with a straight line through two
