@@ -27,6 +27,7 @@ tooling relative to the repo (`paths.py`); scratch output goes under `$WTM_WORK`
 | `timestep_robustness.py` | max stable Δt & steps-to-equilibrium | Anderson **diverges at Δt≥10 yr** (ceiling ~1 yr); Picard unconditionally stable → equilibrium in Δt=1000→**50**, 10⁴→**10**, 10⁵→**4 steps** |
 | `equilibrium_accuracy.py` | is Picard's big-step equilibrium correct? | Picard Δt=1000 vs Δt=10⁵ agree to **2×10⁻³ m** (Δt-independent); Anderson Δt=1 converges to the same field but needs **~40,000 steps** |
 | `transient_accuracy.py` | transient path error vs Δt (Anderson Δt=1 = truth) | **first-order in Δt** (10× Δt → 10× error), **washes out toward equilibrium** — stability without free accuracy, but first-order-controllable |
+| `bdf2_order.py` | is the `-wtm_bdf2` path second-order? | self-convergence ratio → **4 (order 2)** for BDF2 vs → 2 (order 1) for backward Euler; BDF2 is 25–85× more accurate at equal Δt, gap widening as Δt shrinks |
 
 ## Run
 
@@ -36,7 +37,12 @@ python3 core_grid_sweep.py          # ~minutes; the 1024² Picard rows are the s
 python3 timestep_robustness.py
 python3 equilibrium_accuracy.py     # Anderson 40k-step ground truth is the slow part
 python3 transient_accuracy.py
+python3 bdf2_order.py               # verifies -wtm_bdf2 is 2nd order
 ```
+
+`-wtm_bdf2` (Phase A of `../BDF2_ADAPTIVE_DESIGN.md`) turns on second-order BDF2
+time integration on the Picard path (it implies `-wtm_picard`); default is
+backward Euler.
 
 ## Memory (measured, `-memory_view`, 1024²)
 
