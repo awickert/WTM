@@ -72,10 +72,19 @@ is grid-independent total work — versus Anderson's growing count.
   slowly near convergence, the GAMG hierarchy can be **lagged/reused** across outer
   iterations (`-snes_lag_preconditioner`, `-snes_lag_jacobian`).
 
-**The operator already exists.** `FormJacobianLocal` (`transient_groundwater.cpp`) already
-assembles a matrix `P` documented as *"Symmetric Picard preconditioner: freeze T, average S
-between neighbors"* — that **is** `A(x)`, SPD and GAMG-compatible. The prototype reuses it
-(switching its T from smooth to piecewise, per above).
+**The operator.** `FormJacobianLocal` already assembled a matrix `P` ("Symmetric Picard
+preconditioner: freeze T, average S between neighbors"). That was a starting point, but the
+face-averaged $S$ it used solves a *different* equation than the production residual (which
+divides by the **centre** $S$) — as a mere GMRES preconditioner the discrepancy was
+harmless, but for Picard-**as-solver** it converges to the wrong fixed point (off by ~15 m
+in testing). The implemented `FormPicardOperator` instead uses centre $S$ with a diagonal
+row-scaling that restores symmetry (SPD, CG-compatible) without changing the solution. See
+`PICARD_MATH.md` §4.4 for the derivation — that note is the authoritative math.
+
+> **Implementation status (2026-07-25):** built on branch `picard-mg` and validated on small
+> grids — Picard matches Anderson to ~6e-8 (golden `below_ground`), n=1 vs n=4 agree to
+> ~5e-11, inner CG+GAMG is flat (~4 its). The grid sweep below (the mesh-independence
+> kill-switch) is the remaining Phase-1 deliverable.
 
 ---
 
@@ -93,9 +102,10 @@ by the *same* Anderson machinery already in the code:
 4. **Inner solve:** `-ksp_type cg -pc_type gamg` (algebraic MG on the SPD `A`), or
    `-pc_type mg` (geometric MG on the DMDA — the LINEAR operator coarsens by Galerkin, so
    the FAS "level-aware residual" blocker does *not* apply here).
-5. **Outer acceleration:** `-snes_type nrichardson` = plain Picard; `-snes_type anderson`
-   (or `ngmres`) = **Anderson-accelerated Picard** — few outer iterations *and* the
-   mesh-independent inner solve. This reuses the existing `-snes_anderson_m` default.
+5. **Outer solver:** defect-correction Picard is a modified Newton (Jacobian = the frozen
+   `A(x)`), so the outer type is `-snes_type newtonls -snes_linesearch_type basic` (plain
+   full-step Picard) — **not** `nrichardson` (that does `x <- x - lambda*F`, no linear solve).
+   `-snes_type anderson`/`ngmres` can then *accelerate* the Picard fixed-point iteration.
 
 All runtime-selectable; keep matrix-free Anderson as the default and gate this behind flags
 (and a config/`CreateSNES` branch) so nothing changes for production until it's proven.
@@ -149,7 +159,8 @@ On the synthetic `run_type test` sweep (`benchmark/scaling`), at grids 1000² �
 ## 7. Phasing
 
 1. **Prototype (days, not weeks):** factor `FormPicardOperator` (piecewise T) + RHS, wire
-   `SNESSetPicard`, run the sweep with `-snes_type nrichardson -ksp_type cg -pc_type gamg`.
+   `SNESSetPicard`, run the sweep with `-wtm_picard` (defaults to `-snes_type newtonls
+   -snes_linesearch_type basic -ksp_type cg -pc_type gamg`).
    Answer measurement 5.1/5.2 — *is it mesh-independent?* If no, stop here.
 2. **Accelerate + tune:** `-snes_type anderson`, preconditioner lagging, geometric-vs-
    algebraic MG. Find the crossover grid vs matrix-free Anderson (5.3).
