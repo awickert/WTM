@@ -3,7 +3,15 @@
 **Date:** 2026-07-25
 **Branch:** `solver-optimization-2`
 **Status:** DESIGN / prototype sketch. For a bounded experiment, not a commitment.
+**Branch:** do this on a **new branch off `solver-optimization-2`** — it changes the core
+solver, so keep it isolated from the validated distributed-dataflow work.
 **Authors:** Andy Wickert + Claude
+
+**Prior art to draw on:** GRLP (Wickert, the gravel-river long-profile model) already
+prototypes a **Picard iteration for a nonlinear diffusion equation** — a close analogue of
+this problem. Look there first for the iteration structure, the under-relaxation/damping
+that tames a strong nonlinear diffusivity, and the convergence/stopping criteria; port the
+pattern rather than reinvent it.
 
 Sketch of a semi-implicit **Picard iteration** with a **multigrid** inner solve for the
 groundwater component — the one credible route to a *mesh-independent* solve, and the
@@ -104,6 +112,9 @@ On the synthetic `run_type test` sweep (`benchmark/scaling`), at grids 1000² �
    crossover is**: expected Anderson-wins at small grids, Picard-MG-wins at large.
 4. **Equilibrium fixed point matches** current Anderson to solver tolerance (it should —
    same piecewise-T fixed point; the golden refs should hold within tol, not bit-identical).
+5. **Per-rank memory footprint** (assembled `A` + MG hierarchy + CG vectors) vs matrix-free
+   Anderson — via `-memory_view`. Confirms the semi-implicit memory cost is DMDA-distributed
+   (falls with ranks), not a rank-0 burden (§6).
 
 ---
 
@@ -116,6 +127,17 @@ On the synthetic `run_type test` sweep (`benchmark/scaling`), at grids 1000² �
 - **Per-iteration cost.** Each outer step is a full MG solve (assemble + setup + cycles) vs
   Anderson's single cheap residual eval. Mesh-independence must beat that cheapness — a
   scale-dependent crossover, which is exactly what measurement (5.3) resolves.
+- **Memory cost vs matrix-free Anderson (Andy's constraint).** Assembling `A` + the GAMG
+  hierarchy (coarse operators ~1.5–2× the fine matrix) + CG work vectors is O(N) but with a
+  *larger constant* than matrix-free Anderson, which stores only ~`m` vectors and no matrix.
+  This is the classic semi-implicit memory cost, and on a single node — where rank-0 `arp`
+  is already ~50 GB at 8000² — it could be the binding constraint. **Mitigant, and the key
+  point:** the operator and its MG hierarchy are DMDA-**distributed** (each rank holds only
+  its subdomain's rows), *unlike* the rank-0 `arp`. So this memory spreads across ranks/nodes
+  and is relieved by the very memory-splitting lever we already want — multi-node +
+  distributing rank-0 `arp` (`DISTRIBUTED_ARP_DESIGN.md`). At single-node scale, budget the
+  added footprint; at multi-node scale it should be affordable. Measure the per-rank
+  matrix+hierarchy footprint alongside the timing in the prototype.
 - **Under MPI.** GAMG and geometric MG both parallelize, and the operator is DMDA-based, so
   this composes with the distributed solve — but re-confirm cross-rank consistency (the
   golden/mpi suites) since it's a new solve path.
