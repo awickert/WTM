@@ -431,11 +431,13 @@ n≈4–8 (too little work per rank).
 70.5 → 46.1 s = **~35% faster per iteration** from the transmissivity form alone (the
 `before`→`after` gap also carries the flip, but the solve-time delta is the T form).
 
-### 8000²: memory-bound in 64 GB (pending a bigger allocation)
+### 8000² (optional) — not needed for the story, but it exposes the rank-0 ceiling
 
-`after` and `before` both hold the full grid on rank 0 (~50 GB at 8000²), so in a 64 GB
-session `after` n=1 swaps (the run appeared to stall) and `before` OOMs at n>1
-(replicated). **Rank-0 `arp` (~50 GB) is `after`'s memory ceiling** — the flip freed the
-non-root ranks, not rank 0; distributing rank-0 `arp` is the lever for global scale. To
-capture the 8000² rows: `python3 scaling_study.py --grids 8000 --ranks 8 16 32 --builds after`
-on `--mem=128gb` (msilong cap). (Earlier pre-clean 8000² snapshots are in findings #3/#4.)
+The 1000²–4000² results above are the complete story; 8000² only restates it at a
+larger size. It is not run here because it is memory-bound: `after` and `before` both
+hold the full grid on rank 0 (~50 GB at 8000²), so in a 64 GB session `after` n=1 swaps
+and `before` OOMs at n>1 (replicated). **Rank-0 `arp` (~50 GB) is `after`'s memory
+ceiling** — the flip freed the non-root ranks, not rank 0; distributing rank-0 `arp` is
+the lever for global scale. If ever wanted:
+`python3 scaling_study.py --grids 8000 --ranks 8 16 32 --builds after` on `--mem=128gb`
+(msilong cap). (Earlier pre-clean 8000² snapshots are in findings #3/#4.)
