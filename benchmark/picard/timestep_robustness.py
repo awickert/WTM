@@ -2,13 +2,13 @@
 """Approach-to-equilibrium vs time step: Anderson vs semi-implicit Picard.
 
 Each cycle = one backward-Euler step of size dt (maxiter=1) on the 128^2
-pure-drainage fixture (make_equil128.py). Runs many cycles and reads the
+pure-drainage fixture (make_equil.py). Runs many cycles and reads the
 per-cycle abs water-table change from the textfile to find the step at which
 equilibrium is reached (mean |dwtd|/cell < TOL). Shows Anderson's stability
 ceiling (it diverges above ~1 yr) vs Picard's unconditional stability (reaches
 equilibrium in a handful of steps at large dt).
 
-Prereq:  python3 make_equil128.py
+Prereq:  python3 make_equil.py
 Usage:   python3 timestep_robustness.py [dt_yr ...]
 """
 import os, re, subprocess, sys

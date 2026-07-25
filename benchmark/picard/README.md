@@ -23,26 +23,29 @@ tooling relative to the repo (`paths.py`); scratch output goes under `$WTM_WORK`
 | script | question | key result |
 |---|---|---|
 | `core_grid_sweep.py` | Anderson vs Picard, grids 64²–1024², ranks 1–8 | inner CG+GAMG **flat ~3–5** all grids; Anderson outer iters **grow** (3→18); Picard ~8–20× slower per solve at these sizes (crossover > 1024²) but **strong-scales better** (1024²: 3.2× at n=8 vs Anderson ~1.3×) |
-| `make_equil128.py` | build the 128² pure-drainage fixture | 100 m mound draining to an ocean ring, zero forcing → clean monotonic relaxation (τ≈2×10⁴ yr) |
-| `timestep_robustness.py` | max stable Δt & steps-to-equilibrium | Anderson **diverges at Δt≥10 yr** (ceiling ~1 yr); Picard unconditionally stable → equilibrium in Δt=1000→**50**, 10⁴→**10**, 10⁵→**4 steps** |
+| `make_equil.py [grid]` | build the pure-drainage fixture at any grid (default 128²) | 100 m mound draining to an ocean ring, zero forcing → clean monotonic relaxation; cpd=grid/12.8 fixes the physical domain so the timescale (τ≈8×10⁴ yr) is grid-independent |
+| `timestep_robustness.py` | max stable Δt & steps-to-equilibrium | Anderson **diverges at Δt≥10 yr** (ceiling ~1 yr); Picard/BDF2 unconditionally stable → equilibrium in Δt=1000→**~50**, 10⁴→**~10**, 10⁵→**~5 steps** |
 | `equilibrium_accuracy.py` | is Picard's big-step equilibrium correct? | Picard Δt=1000 vs Δt=10⁵ agree to **2×10⁻³ m** (Δt-independent); Anderson Δt=1 converges to the same field but needs **~40,000 steps** |
 | `transient_accuracy.py` | transient path error vs Δt (Anderson Δt=1 = truth) | **first-order in Δt** (10× Δt → 10× error), **washes out toward equilibrium** — stability without free accuracy, but first-order-controllable |
 | `bdf2_order.py` | is the `-wtm_bdf2` path second-order? | self-convergence ratio → **4 (order 2)** for BDF2 vs → 2 (order 1) for backward Euler; BDF2 is 25–85× more accurate at equal Δt, gap widening as Δt shrinks |
+| `adaptive_sweep.py` | `-wtm_dt_adaptive` across grids × cores × tol | step count invariant to core count (MPI-consistent controller) and ~grid-independent; step count drops and accuracy tracks the tolerance (128²: tol=0.1/1/10 m → 261/39/17 steps, err 0.14/2.0/7.1 m) |
 
 ## Run
 
 ```bash
-python3 make_equil128.py            # once, for the timestep/accuracy scripts
+python3 make_equil.py               # once (128²), for the timestep/accuracy scripts
 python3 core_grid_sweep.py          # ~minutes; the 1024² Picard rows are the slow part
 python3 timestep_robustness.py
 python3 equilibrium_accuracy.py     # Anderson 40k-step ground truth is the slow part
 python3 transient_accuracy.py
 python3 bdf2_order.py               # verifies -wtm_bdf2 is 2nd order
+python3 adaptive_sweep.py           # -wtm_dt_adaptive across grids × cores × tol
 ```
 
-`-wtm_bdf2` (Phase A of `../BDF2_ADAPTIVE_DESIGN.md`) turns on second-order BDF2
-time integration on the Picard path (it implies `-wtm_picard`); default is
-backward Euler.
+Time-integration flags nest (Phase A of `../BDF2_ADAPTIVE_DESIGN.md`), all default off:
+`-wtm_bdf2` turns on second-order BDF2 (implies `-wtm_picard`); `-wtm_dt_adaptive`
+adds error-controlled variable Δt on top (implies `-wtm_bdf2`), with `-wtm_dt_tol
+<metres>` the target per-step deviation (default 0.1).
 
 ## Memory (measured, `-memory_view`, 1024²)
 

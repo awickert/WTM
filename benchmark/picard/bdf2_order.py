@@ -7,7 +7,7 @@ halving time steps and measure the change between successive resolutions
 by 2^p: the ratio err(2dt)/err(dt) -> 2 for backward Euler (p=1) and -> 4 for
 BDF2 (p=2). Reference = the finest run; no external ground truth needed.
 
-Prereq:  python3 make_equil128.py
+Prereq:  python3 make_equil.py
 Usage:   python3 bdf2_order.py
 """
 import os, subprocess

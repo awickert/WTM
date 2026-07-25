@@ -9,7 +9,7 @@ Picard-vs-Anderson correctness check. On the 128^2 pure-drainage fixture:
   - Anderson dt=1 yr, increasing cycles <- converges to the same field, slowly
 Compares final water-table rasters.
 
-Prereq:  python3 make_equil128.py
+Prereq:  python3 make_equil.py
 Usage:   python3 equilibrium_accuracy.py
 """
 import os, subprocess

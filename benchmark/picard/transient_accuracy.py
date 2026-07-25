@@ -9,7 +9,7 @@ Compares the water-table field at MATCHED physical times T:
 for T in {1000, 10000, 40000} yr. Deviation should scale ~O(dt) and shrink toward
 equilibrium (large T) -- stability without free accuracy, first-order-controllable.
 
-Prereq:  python3 make_equil128.py
+Prereq:  python3 make_equil.py
 Usage:   python3 transient_accuracy.py
 """
 import os, subprocess
