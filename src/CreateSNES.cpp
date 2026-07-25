@@ -70,6 +70,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     if (user_context.use_bdf2) {
       VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
       VecSet(user_context.starting_wtd_prev, 0.0);
+      user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
     }
 
     // Defect-correction Picard is a modified-Newton iteration whose "Jacobian" is

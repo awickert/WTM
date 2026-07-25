@@ -300,6 +300,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         my_starting_wtd_prev[j][i] = dmdapack.starting_wtd[j][i];
     DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &my_starting_wtd_prev);
     user_context.bdf2_have_history = true;
+    user_context.bdf2_prev_dt      = user_context.deltat;  // this step's Δt becomes Δt_{n-1} next
   }
 
   // copy the result back into the distributed wtd carrier (starting_wtd), which
@@ -698,9 +699,17 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   DM      da           = user_context->da;
   PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask;
 
-  // BDF2 (once an h^{n-1} exists) uses b = S_c*(4h^n - h^{n-1} + 2*rech); backward Euler
-  // otherwise b = S_c*(h^n + rech). h^{n-1} = starting_wtd_prev + topo (centre only).
+  // Variable-step BDF2 (once an h^{n-1} exists): b = S_c*(b_c*h^n - c_c*h^{n-1} + rech) with
+  // omega = dt_n/dt_{n-1}, b_c = 1+omega, c_c = omega^2/(1+omega) (b_c=2, c_c=1/2 when the
+  // step is constant -> uniform BDF2). Backward Euler otherwise: b = S_c*(h^n + rech).
+  // h^{n-1} = starting_wtd_prev + topo (centre only).
   const bool bdf2 = user_context->use_bdf2 && user_context->bdf2_have_history;
+  double b_c = 0.0, c_c = 0.0;
+  if (bdf2) {
+    const double omega = user_context->deltat / user_context->bdf2_prev_dt;
+    b_c                = 1.0 + omega;
+    c_c                = omega * omega / (1.0 + omega);
+  }
   PetscScalar** my_starting_wtd_prev = nullptr;
 
   PetscCall(DMDAVecGetArray(da, b, &bb));
@@ -723,7 +732,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
         const double h_n = my_starting_wtd[j][i] + my_topo[j][i];
         if (bdf2) {
           const double h_nm1 = my_starting_wtd_prev[j][i] + my_topo[j][i];
-          bb[j][i] = S_c * (4.0 * h_n - h_nm1 + 2.0 * my_rech[j][i]);
+          bb[j][i] = S_c * (b_c * h_n - c_c * h_nm1 + my_rech[j][i]);
         } else {
           bb[j][i] = S_c * (h_n + my_rech[j][i]);
         }
@@ -805,11 +814,16 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   const double dt   = user_context->deltat;
   const double cns2 = user_context->cellsize_NS_squared;
 
-  // BDF2 (once an h^{n-1} exists) doubles the diffusion coefficient (dt -> 2dt) and the
-  // storage diagonal (S_c -> 3*S_c); backward Euler otherwise. See BDF2_ADAPTIVE_DESIGN.md.
-  const bool   bdf2    = user_context->use_bdf2 && user_context->bdf2_have_history;
-  const double dt_diff = bdf2 ? 2.0 * dt : dt;
-  const double s_coeff = bdf2 ? 3.0 : 1.0;
+  // Variable-step BDF2 (once an h^{n-1} exists): a*h^{n+1} - b*h^n + c*h^{n-1} = dt*RHS,
+  // with omega = dt_n/dt_{n-1}, a = (1+2w)/(1+w) [here], b,c on the RHS. The diffusion term
+  // always carries the current dt; the storage diagonal carries a*S_c (a=3/2 when the step is
+  // constant, i.e. w=1 -> uniform BDF2). Backward Euler is a=1. See BDF2_ADAPTIVE_DESIGN.md.
+  const bool bdf2 = user_context->use_bdf2 && user_context->bdf2_have_history;
+  double a_coeff  = 1.0;  // coefficient of h^{n+1} on the S_c diagonal (BE)
+  if (bdf2) {
+    const double omega = dt / user_context->bdf2_prev_dt;
+    a_coeff            = (1.0 + 2.0 * omega) / (1.0 + omega);
+  }
 
   for (auto j = info.ys; j < info.ys + info.ym; j++) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
@@ -833,13 +847,13 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
 
         // Row-scaled-by-S_c operator: off-diagonals are the (symmetric) flux terms
-        // dt_diff*e/h^2; diagonal is s_coeff*S_c + sum of the fluxes. RHS carries the
-        // matching S_c. (BE: dt_diff=dt, s_coeff=1; BDF2: dt_diff=2dt, s_coeff=3.)
-        const double A_east   = -e_E * dt_diff / cns2;
-        const double A_west   = -e_W * dt_diff / cns2;
-        const double A_north  = -e_N * dt_diff / cew2;
-        const double A_south  = -e_S * dt_diff / cew2;
-        const double A_center = s_coeff * S_c - (A_east + A_west + A_north + A_south);
+        // dt*e/h^2; diagonal is a_coeff*S_c + sum of the fluxes. RHS carries the matching
+        // S_c. (BE: a_coeff=1; uniform BDF2: a_coeff=3/2.)
+        const double A_east   = -e_E * dt / cns2;
+        const double A_west   = -e_W * dt / cns2;
+        const double A_north  = -e_N * dt / cew2;
+        const double A_south  = -e_S * dt / cew2;
+        const double A_center = a_coeff * S_c - (A_east + A_west + A_north + A_south);
 
         // 5-point stencil: east, west, north, south, centre.
         const MatStencil cols[5] = {

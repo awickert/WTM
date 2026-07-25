@@ -51,9 +51,12 @@ struct AppCtx {
   // diagonal (S_c->3S_c), and the RHS becomes S_c*(4h^n - h^{n-1} + 2*rech). Needs the
   // previous-previous head h^{n-1} = starting_wtd_prev + topo (centre only, no ghosts);
   // step 0 has no h^{n-1} so it bootstraps with backward Euler. See BDF2_ADAPTIVE_DESIGN.md.
-  bool use_bdf2          = false;
-  bool bdf2_have_history = false;  // false until the first step has produced an h^{n-1}
-  Vec  starting_wtd_prev = nullptr;  // h^{n-1} carrier (wtd), owned-range
+  bool   use_bdf2          = false;
+  bool   bdf2_have_history = false;  // false until the first step has produced an h^{n-1}
+  double bdf2_prev_dt      = 0.0;    // Δt_{n-1}: previous step size, for the variable-step
+                                     // ratio ω = Δt_n/Δt_{n-1} (ω=1 when Δt is constant, i.e.
+                                     // fixed-step BDF2). Set to the initial deltat at init.
+  Vec    starting_wtd_prev = nullptr;  // h^{n-1} carrier (wtd), owned-range
 
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
