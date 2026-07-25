@@ -66,24 +66,33 @@ BDF2+adaptive for transient) finally give that overloaded loop distinct meaning 
 the weekly FSM kick perturbs `h`, so the history is invalid across a cycle boundary ->
 **bootstrap one backward-Euler step at the first day of each week** (1 BE + 6 BDF2 / week).
 
-**But this also sharpens the payoff question.** At `deltat` = 1 day the backward-Euler
-temporal error is already small, so BDF2 buys little *at that step size*. The value hinges
-on **why the step is daily**:
+**Why the step is daily (resolved with Andy):** it is a **stability workaround**, not a
+science requirement, for the common case — Anderson diverges at large dt (we measured a
+ceiling ~1 yr on the drainage test; the daily production step is the same phenomenon at
+production stiffness). The forcing is weekly and the *science of interest is changes from
+seasonal to 100s–1000s of years*, so a daily step over-resolves by 2–5 orders of magnitude
+purely to keep Anderson stable. The rare cases that genuinely need daily resolution can keep
+using Anderson. **So the transient win is real:** Picard's unconditional stability lets us
+step at the *timescale of interest* (weeks → years → decades) instead of daily — orders of
+magnitude fewer GW solves — and BDF2 keeps the coarser steps accurate.
 
-- If daily is an **Anderson-stability workaround** (Anderson diverges at large dt — we
-  measured a ceiling ~1 yr on the drainage test; the daily production step may be the same
-  phenomenon at production stiffness), then Picard's unconditional stability lets us take
-  **far fewer, bigger GW sub-steps per week** (perhaps 1 weekly step vs 7 daily), and BDF2
-  keeps those coarser steps accurate. *This is the transient win.*
-- If daily is **physically required** (a fast event the science needs resolved) or set by
-  the forcing, the step can't be coarsened and BDF2 mainly buys accuracy on the resolved
-  daily transient.
+**The new cap this exposes — FSM cadence.** A GW step cannot exceed the FSM (surface-water
+routing) interval without either sub-stepping GW inside it or coarsening FSM too. Today FSM
+is weekly, so the *immediate, safe* win is `maxiter` 7 → 1 (one weekly Picard GW step vs 7
+daily), ~7x fewer GW solves, FSM unchanged. Reaching the seasonal-to-millennial step sizes
+the science wants requires asking **how often FSM must actually run** — the next design
+question, and now the governing constraint on achievable step size.
 
-Either way, **the GW<->FSM operator split is itself ~first-order at the weekly cadence**, a
-floor on overall transient accuracy: BDF2 on the daily sub-steps only helps down to that
-floor. Whether the daily-diffusion error or the weekly-splitting error dominates is the
-first thing to measure. (Strang splitting would lift the split to 2nd order if it becomes
-the bottleneck — a separate lever.)
+**BDF2 interacts with the FSM cadence.** BDF2 needs >=2 consecutive GW steps between FSM
+kicks (for the `h^n, h^{n-1}` history); with `maxiter`=1 (one GW step per FSM cycle) there is
+no in-cycle history, so that regime is backward-Euler unless history is carried across the
+FSM boundary. That may be viable: FSM only moves **surface** water (wtd>0), so for the
+**sub-surface** groundwater (wtd<0, the bulk) the history is continuous across an FSM kick —
+BDF2 could apply there while surface cells bootstrap. Worth exploring, but adds complexity.
+
+**Accuracy floor:** the GW<->FSM operator split is itself ~first-order at the FSM cadence, so
+BDF2 on the GW steps only helps down to that floor; if the split dominates, Strang splitting
+(2nd order) is a separate lever. Measure which error dominates first.
 
 ---
 
