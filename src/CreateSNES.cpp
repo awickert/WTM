@@ -51,10 +51,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   // Semi-implicit Picard path (experimental; PICARD_MG_DESIGN.md / PICARD_MATH.md).
   // Gated behind -wtm_picard so the default Anderson path is untouched. When on,
-  // allocate the SPD operator A(x) (also its own GAMG preconditioner), a residual
-  // work vector, and ghosted local copies of porosity/starting_wtd (the operator
-  // averages S across neighbors, so it needs those fields with ghosts). Default the
-  // inner solve to CG+GAMG unless the user overrode it.
+  // allocate the SPD operator A(x) (also its own GAMG preconditioner) and a residual
+  // work vector, and default the outer/inner solvers (below) unless the user overrode
+  // them.
   PetscBool picard_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_picard", &picard_flag);
   user_context.use_picard = (picard_flag == PETSC_TRUE);
@@ -68,15 +67,24 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // (newtonls), NOT nrichardson (which would only do x <- x - lambda*F with no
     // linear solve). A basic (full-step) line search gives the plain Picard update.
     // The inner solve is CG+GAMG on the SPD A. (PETSc SNES ex15 fd/mf_picard.)
-    PetscBool ksp_set = PETSC_FALSE, pc_set = PETSC_FALSE, snes_set = PETSC_FALSE, ls_set = PETSC_FALSE;
+    PetscBool ksp_set = PETSC_FALSE, pc_set = PETSC_FALSE, snes_set = PETSC_FALSE, ls_set = PETSC_FALSE,
+              atol_set = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-ksp_type", &ksp_set);
     PetscOptionsHasName(nullptr, nullptr, "-pc_type", &pc_set);
     PetscOptionsHasName(nullptr, nullptr, "-snes_type", &snes_set);
     PetscOptionsHasName(nullptr, nullptr, "-snes_linesearch_type", &ls_set);
+    PetscOptionsHasName(nullptr, nullptr, "-snes_atol", &atol_set);
     if (!snes_set) PetscOptionsSetValue(nullptr, "-snes_type", "newtonls");            // modified Newton = Picard
     if (!ls_set)   PetscOptionsSetValue(nullptr, "-snes_linesearch_type", "basic");    // full-step (plain Picard)
     if (!ksp_set)  PetscOptionsSetValue(nullptr, "-ksp_type", "cg");                   // SPD inner solve
     if (!pc_set)   PetscOptionsSetValue(nullptr, "-pc_type", "gamg");                  // algebraic multigrid
+    // Absolute residual tolerance so an already-converged (near-equilibrium) step stops
+    // instead of chasing a RELATIVE reduction on a machine-zero residual -> SNES max-its
+    // -> spurious "not converged" throw. The mid-transient residual norm (~S*h*sqrt(N),
+    // 1e3 and up) is far above 1e-6, so this only fires at true equilibrium; it cannot
+    // stop a real transient early. PETSc's default snes_atol (1e-50) effectively disables
+    // this. Verified: default -> divergence after equilibrium; 1e-6 -> clean. Overridable.
+    if (!atol_set) PetscOptionsSetValue(nullptr, "-snes_atol", "1e-6");
   }
 
   SNESSetFromOptions(user_context.snes);
