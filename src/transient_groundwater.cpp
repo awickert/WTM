@@ -253,11 +253,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
+  // Smoothing widths are physics modeling options and apply on ALL solver paths (Anderson,
+  // Newton, Picard), so read them here -- before the solver branch -- rather than gating them
+  // behind use_picard. Storativity land-surface transition (sub-grid roughness); default 0.01 m,
+  // always on. (The ksat/transmissivity widths are read alongside just below.)
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
+
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
-    // Modeling option: smoothing width of the land-surface storativity transition (sub-grid
-    // roughness), settable via -wtm_storativity_surface_smoothing_width (default 0.01 m, always on).
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
     // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
     // called with a NULL rhs), FormPicardOperator supplies the SPD A(x). A is its
     // own preconditioner (GAMG). Inner solve defaults to CG+GAMG (CreateSNES).
