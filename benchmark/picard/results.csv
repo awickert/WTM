@@ -1,0 +1,102 @@
+experiment,solver,grid,ranks,dt_yr,tol_mm,T_yr,steps,gw_time_s,wall_s,outer_its,inner_its,steps_to_equil,converged,mean_err_mm,max_err_mm,err_ref,mem_peak_gb,timing_contended,run_date,notes
+core_sweep,bdf2,64,1,,,,,0.1,,2.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,64,2,,,,,0.1,,2.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,64,4,,,,,0.064,,2.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,64,8,,,,,0.052,,2.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,128,1,,,,,0.3,,1.9,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,128,2,,,,,0.2,,1.8,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,128,4,,,,,0.1,,1.8,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,128,8,,,,,0.1,,1.8,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,256,1,,,,,2.1,,3.5,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,256,2,,,,,1.058,,3.5,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,256,4,,,,,0.587,,3.5,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,256,8,,,,,0.429,,3.5,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,512,1,,,,,9.0,,4.7,2.8,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,512,2,,,,,3.88,,4.7,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,512,4,,,,,2.693,,4.7,2.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,512,8,,,,,2.256,,4.7,2.4,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,1024,1,,,,,91.5,,10.1,4.2,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,1024,2,,,,,42.078,,10.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,1024,4,,,,,31.04,,10.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,bdf2,1024,8,,,,,30.934,,10.1,3.0,,,,,,,yes,2026-07-26,run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness
+core_sweep,anderson,256,1,,,,,0.1,,4.5,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,256,2,,,,,0.087,,4.5,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,256,4,,,,,0.061,,4.5,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,256,8,,,,,0.055,,4.5,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,256,1,,,,,1.7,,3.6,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,256,2,,,,,0.8,,3.6,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,256,4,,,,,0.5,,3.6,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,256,8,,,,,0.422,,3.6,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,512,1,,,,,0.5,,4.7,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,512,2,,,,,0.407,,4.7,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,512,4,,,,,0.347,,4.7,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,512,8,,,,,0.318,,4.7,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,512,1,,,,,9.3,,5.2,2.8,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,512,2,,,,,5.24,,5.2,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,512,4,,,,,3.948,,5.2,2.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,512,8,,,,,3.961,,5.2,2.8,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,1024,1,,,,,5.4,,18,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,1024,2,,,,,4.306,,18,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,anderson,1024,4,,,,,4.27,,18,,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,1024,1,,,,,103.9,,,4.7,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,1024,2,,,,,44.86,,,3.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,1024,4,,,,,35.923,,,3.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+core_sweep,picard-be,1024,8,,,,,32.34,,,3.0,,,,,,,yes,2026-07-25,run_type test maxiter=10 best-of-3
+dt_robustness,bdf2,128,1,1,,,,,,,5,>399,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,bdf2,128,1,10,,,,,,,5,>399,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,bdf2,128,1,100,,,,,,,6,341,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,bdf2,128,1,1000,,,,,,,6,45,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,bdf2,128,1,10000,,,,,,,7,11,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,bdf2,128,1,100000,,,,,,,7,6,yes,,,,,no,2026-07-26,128^2 drainage; unconditionally stable
+dt_robustness,anderson,128,1,1,,,,,,,,,yes,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+dt_robustness,anderson,128,1,10,,,,,,,,,no,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+dt_robustness,anderson,128,1,100,,,,,,,,,no,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+dt_robustness,anderson,128,1,1000,,,,,,,,,no,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+dt_robustness,anderson,128,1,10000,,,,,,,,,no,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+dt_robustness,anderson,128,1,100000,,,,,,,,,no,,,,,no,2026-07-25,stability ceiling ~1 yr (diverges at dt>=10)
+order,backward-euler,128,1,2000,,8000,,,,,,,,4041.0000000000005,,dt=125yr,,no,2026-07-26,self-convergence; order ->1
+order,bdf2,128,1,2000,,8000,,,,,,,,714.7,,dt=125yr,,no,2026-07-26,"self-convergence; order ~2 coarse dt, ->1 fine dt (C0 Fan T)"
+order,backward-euler,128,1,1000,,8000,,,,,,,,1949.0,,dt=125yr,,no,2026-07-26,self-convergence; order ->1
+order,bdf2,128,1,1000,,8000,,,,,,,,77.8,,dt=125yr,,no,2026-07-26,"self-convergence; order ~2 coarse dt, ->1 fine dt (C0 Fan T)"
+order,backward-euler,128,1,500,,8000,,,,,,,,851.0,,dt=125yr,,no,2026-07-26,self-convergence; order ->1
+order,bdf2,128,1,500,,8000,,,,,,,,15.6,,dt=125yr,,no,2026-07-26,"self-convergence; order ~2 coarse dt, ->1 fine dt (C0 Fan T)"
+order,backward-euler,128,1,250,,8000,,,,,,,,287.0,,dt=125yr,,no,2026-07-26,self-convergence; order ->1
+order,bdf2,128,1,250,,8000,,,,,,,,3.4,,dt=125yr,,no,2026-07-26,"self-convergence; order ~2 coarse dt, ->1 fine dt (C0 Fan T)"
+error_vs_dt,bdf2,128,1,10,,8000,,,,,,,,0.104,0.247,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,20,,8000,,,,,,,,0.236,0.575,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,25,,8000,,,,,,,,0.289,0.713,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,40,,8000,,,,,,,,0.441,1.13,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,50,,8000,,,,,,,,0.549,1.4400000000000002,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,80,,8000,,,,,,,,0.933,2.6,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,100,,8000,,,,,,,,1.25,3.58,dt=5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,1,,8000,,,,,,,,0.0513,0.186,dt=0.5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,2,,8000,,,,,,,,0.102,0.305,dt=0.5yr,,no,2026-07-26,fixed-step BDF2
+error_vs_dt,bdf2,128,1,4,,8000,,,,,,,,0.175,0.47600000000000003,dt=0.5yr,,no,2026-07-26,fixed-step BDF2
+adaptive_sweep,adaptive-bdf2,64,1,,1000.0,,39,0.4,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,64,2,,1000.0,,39,,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,64,4,,1000.0,,39,0.307,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,64,8,,1000.0,,39,0.329,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,128,1,,1000.0,,39,2.0,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,128,2,,1000.0,,39,1.322,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,128,4,,1000.0,,39,0.925,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,128,8,,1000.0,,39,1.0,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,256,1,,1000.0,,38,10.4,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,256,2,,1000.0,,38,9.147,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,256,4,,1000.0,,38,3.749,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,256,8,,1000.0,,38,3.5,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,512,1,,1000.0,,40,71.3,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,512,2,,1000.0,,40,43.978,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,512,4,,1000.0,,40,34.372,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,512,8,,1000.0,,40,28.352,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,1024,1,,1000.0,,41,363.7,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,1024,2,,1000.0,,41,274.686,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,1024,4,,1000.0,,41,258.522,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,1024,8,,1000.0,,41,239.822,,,,,,,,,,yes,2026-07-26,tol=1.0 m per-step; step count invariant to ranks + ~grid-independent
+adaptive_sweep,adaptive-bdf2,64,1,,10000.0,,17,,,,,,,,,,,yes,2026-07-26,tol=10 m per-step (n=1)
+adaptive_sweep,adaptive-bdf2,128,1,,10000.0,,17,,,,,,,,,,,yes,2026-07-26,tol=10 m per-step (n=1)
+adaptive_sweep,adaptive-bdf2,256,1,,10000.0,,17,,,,,,,,,,,yes,2026-07-26,tol=10 m per-step (n=1)
+adaptive_sweep,adaptive-bdf2,512,1,,10000.0,,17,,,,,,,,,,,yes,2026-07-26,tol=10 m per-step (n=1)
+adaptive_sweep,adaptive-bdf2,1024,1,,10000.0,,17,,,,,,,,,,,yes,2026-07-26,tol=10 m per-step (n=1)
+memory,anderson,1024,1,,,,,,,,,,,,,,0.722,no,2026-07-25,peak process RSS
+memory,picard-be,1024,1,,,,,,,,,,,,,,0.891,no,2026-07-25,+170 MB for A + GAMG hierarchy
+memory,picard-be,1024,8,,,,,,,,,,,,,,1.674,no,2026-07-25,total across 8 ranks; 0.335 max/proc
