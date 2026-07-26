@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the Picard/BDF2/adaptive results CAPTURED during development (2026-07-25/26)
 into a single queryable CSV. Timing columns (gw_time_s, wall_s) from runs marked
-timing_contended=yes overlapped other processes and should be RE-RUN clean via the
+slowed_by_concurrent_processes=yes overlapped other processes and should be RE-RUN clean via the
 benchmark/picard harnesses; iteration counts, step counts, and errors are
 timing-insensitive and reliable regardless. Long/tidy format: one row per measurement,
 empty cell = not-applicable for that experiment.
@@ -10,7 +10,7 @@ import csv, os
 
 COLS = ["experiment", "solver", "grid", "ranks", "dt_yr", "tol_mm", "T_yr", "steps",
         "gw_time_s", "wall_s", "outer_its", "inner_its", "steps_to_equil", "converged",
-        "mean_err_mm", "max_err_mm", "err_ref", "mem_peak_gb", "timing_contended",
+        "mean_err_mm", "max_err_mm", "err_ref", "mem_peak_gb", "slowed_by_concurrent_processes",
         "run_date", "notes"]
 
 rows = []
@@ -26,7 +26,7 @@ bdf2_sweep = {  # grid: {n: (gw_s, outer, inner)}
 for g, d in bdf2_sweep.items():
     for n,(gw,o,i) in d.items():
         add(experiment="core_sweep", solver="bdf2", grid=g, ranks=n, gw_time_s=gw,
-            outer_its=o, inner_its=i, timing_contended="yes", run_date="2026-07-26",
+            outer_its=o, inner_its=i, slowed_by_concurrent_processes="yes", run_date="2026-07-26",
             notes="run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness")
 
 # ---------- core+grid sweep: Anderson vs Picard-BE (n=1 comparison points) ----------
@@ -43,27 +43,27 @@ for g,ss in cmp_sweep.items():
         for n,(gw,o,i) in dd.items():
             add(experiment="core_sweep", solver=sv, grid=g, ranks=n, gw_time_s=gw,
                 outer_its=("" if o is None else o), inner_its=("" if i is None else i),
-                timing_contended="yes", run_date="2026-07-25",
+                slowed_by_concurrent_processes="yes", run_date="2026-07-25",
                 notes="run_type test maxiter=10 best-of-3")
 
 # ---------- dt robustness (128^2 drainage, maxiter=1): steps to equilibrium ----------
 for dt,conv,seq,inn,fc in [(1,"yes",">399",5,""),(10,"yes",">399",5,""),(100,"yes","341",6,""),
                            (1000,"yes","45",6,""),(10000,"yes","11",7,""),(100000,"yes","6",7,"")]:
     add(experiment="dt_robustness", solver="bdf2", grid=128, ranks=1, dt_yr=dt,
-        steps_to_equil=seq, inner_its=inn, converged=conv, timing_contended="no",
+        steps_to_equil=seq, inner_its=inn, converged=conv, slowed_by_concurrent_processes="no",
         run_date="2026-07-26", notes="128^2 drainage; unconditionally stable")
 for dt,conv in [(1,"yes"),(10,"no"),(100,"no"),(1000,"no"),(10000,"no"),(100000,"no")]:
     add(experiment="dt_robustness", solver="anderson", grid=128, ranks=1, dt_yr=dt,
-        converged=conv, timing_contended="no", run_date="2026-07-25",
+        converged=conv, slowed_by_concurrent_processes="no", run_date="2026-07-25",
         notes="stability ceiling ~1 yr (diverges at dt>=10)")
 
 # ---------- temporal order: self-convergence vs dt=125yr ref, T=8000yr, mean err ----------
 for dt,be,bd in [(2000,4.041,0.7147),(1000,1.949,0.0778),(500,0.851,0.0156),(250,0.287,0.0034)]:
     add(experiment="order", solver="backward-euler", grid=128, ranks=1, dt_yr=dt, T_yr=8000,
-        mean_err_mm=be*1000, err_ref="dt=125yr", timing_contended="no", run_date="2026-07-26",
+        mean_err_mm=be*1000, err_ref="dt=125yr", slowed_by_concurrent_processes="no", run_date="2026-07-26",
         notes="self-convergence; order ->1")
     add(experiment="order", solver="bdf2", grid=128, ranks=1, dt_yr=dt, T_yr=8000,
-        mean_err_mm=bd*1000, err_ref="dt=125yr", timing_contended="no", run_date="2026-07-26",
+        mean_err_mm=bd*1000, err_ref="dt=125yr", slowed_by_concurrent_processes="no", run_date="2026-07-26",
         notes="self-convergence; order ~2 coarse dt, ->1 fine dt (C0 Fan T)")
 
 # ---------- error vs dt (BDF2, 128^2, T=8000yr) ----------
@@ -74,7 +74,7 @@ for dt,mx,mn,ref in [(10,2.47e-4,1.04e-4,"dt=5yr"),(20,5.75e-4,2.36e-4,"dt=5yr")
                      (1,1.86e-4,5.13e-5,"dt=0.5yr"),(2,3.05e-4,1.02e-4,"dt=0.5yr"),
                      (4,4.76e-4,1.75e-4,"dt=0.5yr")]:
     add(experiment="error_vs_dt", solver="bdf2", grid=128, ranks=1, dt_yr=dt, T_yr=8000,
-        mean_err_mm=mn*1000, max_err_mm=mx*1000, err_ref=ref, timing_contended="no",
+        mean_err_mm=mn*1000, max_err_mm=mx*1000, err_ref=ref, slowed_by_concurrent_processes="no",
         run_date="2026-07-26", notes="fixed-step BDF2")
 
 # ---------- adaptive sweep (equil drainage, tol per-step deviation): steps + gw_time ----------
@@ -87,19 +87,19 @@ adapt = {  # grid: {n: (steps, gw_s)} at tol=1.0 mm... note tol here is 1.0 m = 
 for g,d in adapt.items():
     for n,(st,gw) in d.items():
         add(experiment="adaptive_sweep", solver="adaptive-bdf2", grid=g, ranks=n, tol_mm=1000.0,
-            steps=st, gw_time_s=gw, timing_contended="yes", run_date="2026-07-26",
+            steps=st, gw_time_s=gw, slowed_by_concurrent_processes="yes", run_date="2026-07-26",
             notes="tol=1.0 m per-step; step count invariant to ranks + ~grid-independent")
 for g,st in [(64,17),(128,17),(256,17),(512,17),(1024,17)]:
     add(experiment="adaptive_sweep", solver="adaptive-bdf2", grid=g, ranks=1, tol_mm=10000.0,
-        steps=st, timing_contended="yes", run_date="2026-07-26", notes="tol=10 m per-step (n=1)")
+        steps=st, slowed_by_concurrent_processes="yes", run_date="2026-07-26", notes="tol=10 m per-step (n=1)")
 
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
-    timing_contended="no", run_date="2026-07-25", notes="peak process RSS")
+    slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")
 add(experiment="memory", solver="picard-be", grid=1024, ranks=1, mem_peak_gb=0.891,
-    timing_contended="no", run_date="2026-07-25", notes="+170 MB for A + GAMG hierarchy")
+    slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="+170 MB for A + GAMG hierarchy")
 add(experiment="memory", solver="picard-be", grid=1024, ranks=8, mem_peak_gb=1.674,
-    timing_contended="no", run_date="2026-07-25", notes="total across 8 ranks; 0.335 max/proc")
+    slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="total across 8 ranks; 0.335 max/proc")
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.csv")
 with open(out, "w", newline="") as f:

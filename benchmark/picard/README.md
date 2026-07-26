@@ -55,11 +55,11 @@ are not-applicable. Columns: `experiment` (core_sweep / dt_robustness / order / 
 / adaptive_sweep / memory), `solver` (anderson / picard-be / bdf2 / adaptive-bdf2 /
 backward-euler), `grid`, `ranks`, `dt_yr`, `tol_mm`, `T_yr`, `steps`, `gw_time_s`, `wall_s`,
 `outer_its`, `inner_its`, `steps_to_equil`, `converged`, `mean_err_mm`, `max_err_mm`,
-`err_ref`, `mem_peak_gb`, `timing_contended`, `run_date`, `notes`.
+`err_ref`, `mem_peak_gb`, `slowed_by_concurrent_processes`, `run_date`, `notes`.
 
-**Caveat — `timing_contended`:** these runs were captured during development and many
+**Caveat — `slowed_by_concurrent_processes`:** these runs were captured during development and many
 overlapped other processes, so their **timing columns (`gw_time_s`, `wall_s`) are unreliable
-where `timing_contended=yes`** and should be **re-run clean** on an idle machine. Everything
+where `slowed_by_concurrent_processes=yes`** and should be **re-run clean** on an idle machine. Everything
 timing-*insensitive* — iteration counts, step counts, steps-to-equilibrium, and errors — is
 reliable regardless. TODO: have the harnesses append directly to this CSV so a clean re-run
 regenerates the timing columns.
