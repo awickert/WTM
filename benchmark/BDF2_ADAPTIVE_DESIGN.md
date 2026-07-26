@@ -30,13 +30,15 @@
   the controller stays available behind `-wtm_dt_adaptive` for later work.
 - **Bottom line:** for transient accuracy, use BDF2-on-V at a fixed, generous Δt (see §1–§3
   for the measured order and the max-Δt-for-a-target-error table). The smoothing knobs
-  (`-wtm_ksat_smoothing_width`, `-wtm_storativity_smoothing_width`) remain as physical sub-grid
-  options but are *not* the accuracy lever.
+  (`-wtm_ksat_soilbottom_smoothing_width`, `-wtm_ksat_surface_smoothing_width`,
+  `-wtm_storativity_surface_smoothing_width`) remain as physical sub-grid options but are *not*
+  the accuracy lever.
 
 *(Findings and order-verification narrative below are kept verbatim as the record of how this
-was established. Note: the smoothing flags were later renamed — the narrative's
-`-wtm_smooth_T` / `-wtm_smooth_eps` are now the single `-wtm_ksat_smoothing_width` (width 0 =
-off), and `-wtm_storativity_eps` is now `-wtm_storativity_smoothing_width`.)*
+was established. Note: the smoothing flags were later renamed to a `{quantity}_{location}` scheme.
+The narrative's `-wtm_smooth_T` / `-wtm_smooth_eps` (transmissivity, both boundaries) are now the
+per-boundary `-wtm_ksat_soilbottom_smoothing_width` (−1.5 m) and `-wtm_ksat_surface_smoothing_width`
+(0 m), each width 0 = off; `-wtm_storativity_eps` is now `-wtm_storativity_surface_smoothing_width`.)*
 
 ---
 
