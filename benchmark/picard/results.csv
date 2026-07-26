@@ -113,6 +113,9 @@ order_vs_storativity_smoothing,bdf2,128,1,10,,8000,,,,,,,,4.6585,,dt=5yr,,no,202
 order_const_storativity,bdf2-constS,128,1,10,,8000,,,,,,,,0.00682,,dt=5yr,,no,2026-07-26,S==porosity; order->~2 (ratio->4); 15x more accurate; cause = BE secant S
 order_const_storativity,bdf2-constS,128,1,20,,8000,,,,,,,,0.04265,,dt=5yr,,no,2026-07-26,S==porosity; order->~2 (ratio->4); 15x more accurate; cause = BE secant S
 order_const_storativity,bdf2-constS,128,1,40,,8000,,,,,,,,0.1716,,dt=5yr,,no,2026-07-26,S==porosity; order->~2 (ratio->4); 15x more accurate; cause = BE secant S
+order_bdf2_on_V,bdf2-on-V,128,1,10,,8000,,,,,,,,0.00458,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
+order_bdf2_on_V,bdf2-on-V,128,1,20,,8000,,,,,,,,0.03473,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
+order_bdf2_on_V,bdf2-on-V,128,1,40,,8000,,,,,,,,0.15129,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
 memory,anderson,1024,1,,,,,,,,,,,,,,0.722,no,2026-07-25,peak process RSS
 memory,picard-be,1024,1,,,,,,,,,,,,,,0.891,no,2026-07-25,+170 MB for A + GAMG hierarchy
 memory,picard-be,1024,8,,,,,,,,,,,,,,1.674,no,2026-07-25,total across 8 ranks; 0.335 max/proc

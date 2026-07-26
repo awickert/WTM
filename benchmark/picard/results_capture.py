@@ -137,6 +137,14 @@ for dt, err_mm in [(10,0.00682),(20,0.04265),(40,0.17160)]:
         T_yr=8000, mean_err_mm=err_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
         run_date="2026-07-26", notes="S==porosity; order->~2 (ratio->4); 15x more accurate; cause = BE secant S")
 
+# ---------- BDF2-on-V: genuine 2nd order with the REAL nonlinear storativity ----------
+# The fix (tangent dV/dh diagonal + BDF2 on the volume). Order ~2 (ratio->4); equilibrium matches
+# secant scheme to 6e-8 m (physics-preserving); ~23x more accurate than secant BDF2 at dt=10.
+for dt, err_mm in [(10,0.00458),(20,0.03473),(40,0.15129)]:
+    add(experiment="order_bdf2_on_V", solver="bdf2-on-V", grid=128, ranks=1, dt_yr=dt,
+        T_yr=8000, mean_err_mm=err_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26", notes="genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")

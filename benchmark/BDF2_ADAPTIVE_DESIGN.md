@@ -141,10 +141,22 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > (unlike smoothing, which cost 13 mm at 10 cm), and equilibrium is unchanged
 > (`Vⁿ⁺¹=Vⁿ=Vⁿ⁻¹`). A targeted operator/RHS change to the storage term.
 >
-> **Updated takeaway:** genuine 2nd order *is* achievable on WTM via `BDF2-on-V` (no physics
-> compromise) — so the transient-accuracy path is real. Whether it also rehabilitates the
-> adaptive controller (its step-explosion may be downstream of the order-1) is an open follow-up.
-> The stability win (step at ~10 yr not daily) stands independently.
+> **IMPLEMENTED + VALIDATED (`-wtm_bdf2_on_V`, 31e802c).** The operator diagonal carries the
+> tangent `dV/dh`, the RHS the volume history `b·V(hⁿ)−c·V(hⁿ⁻¹)` plus a Picard-linearization
+> consistency term; SPD structure and ocean Dirichlet unchanged. Measured with the **real
+> nonlinear storativity**: self-convergence order **~2** (0.0046 / 0.0347 / 0.151 mm at
+> Δt=10/20/40, ratio→4), equilibrium matches the secant scheme to **6×10⁻⁸ m** (physics-
+> preserving), and **~23× more accurate than secant BDF2 at Δt=10**. So WTM now has a genuine
+> 2nd-order transient scheme, gated/default-off. (Recharge enters as a volume `~Sy·rech`,
+> exercised only when `rech≠0`; the order test is zero-forcing, so verify recharge before
+> production use.)
+>
+> **Practical verdict:** the 2nd-order advantage is real but largest at *fine* Δt, where both
+> schemes are already far below any meaningful threshold (0.005 vs 0.1 mm at Δt=10). At the
+> ~10 yr FSM cadence the secant BDF2 is already ~0.1 mm-accurate, so `BDF2-on-V` is **formal
+> completeness, not a practical necessity** — turn it on only if a study needs sub-0.01 mm
+> transient paths. The stability win (step ~10 yr not daily) stands independently, and whether
+> the restored order also rehabilitates the adaptive controller is an open follow-up.
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:
