@@ -87,6 +87,12 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
   }
 }
 
+// Smoothing width (metres) for the smooth transmissivity below. Default 0.01 (the original
+// tight band). Settable via -wtm_smooth_eps for the smooth-T experiment: widening it removes
+// the effective kink at the -1.5/0 m thresholds (candidate fix for BDF2 order + adaptivity) at
+// the cost of shifting the fixed point further from the piecewise Fan form.
+static double g_smooth_eps = 0.01;
+
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
 // piecewise production form above. Kept for a future Newton path; its analytic
 // derivative is dTransmissivityInverseDwtd, and FormJacobianLocal uses this
@@ -94,8 +100,8 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
 static double depthIntegratedTransmissivitySmooth(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0;
   constexpr double shallow = 1.5;
-  constexpr double eps0    = 0.01;  // smooth clamping at WTD=0 boundary
-  constexpr double eps1    = 0.01;  // smooth blend at WTD=-shallow boundary
+  const double eps0        = g_smooth_eps;  // smooth clamping at WTD=0 boundary
+  const double eps1        = g_smooth_eps;  // smooth blend at WTD=-shallow boundary
 
   const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
   const double u       = wtd_T + shallow;
@@ -834,11 +840,17 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   DMDALocalInfo info;
   PetscCall(DMDAGetLocalInfo(da, &info));
 
-  // 1/T (piecewise production form) over the full ghost range so the neighbor
-  // harmonic means on the owned range are valid. Mirrors FormFunctionLocal.
+  // 1/T over the full ghost range so the neighbor harmonic means on the owned range are valid
+  // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; -wtm_smooth_T
+  // swaps in the smooth (C-inf) form to test whether removing the coefficient kinks restores
+  // BDF2's temporal order and well-behaved adaptive stepping.
+  const bool smooth_T = user_context->use_smooth_T;
+  if (smooth_T) PetscOptionsGetReal(nullptr, nullptr, "-wtm_smooth_eps", &g_smooth_eps, nullptr);
   for (auto j = info.gys; j < info.gys + info.gym; j++) {
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
-      my_T[j][i] = 1.0 / depthIntegratedTransmissivity(xx[j][i] - my_topo[j][i], my_fdepth[j][i], my_ksat[j][i]);
+      const double wtd_T = xx[j][i] - my_topo[j][i];
+      my_T[j][i] = 1.0 / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
+                                   : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
     }
   }
 

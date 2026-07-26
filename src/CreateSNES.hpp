@@ -67,6 +67,14 @@ struct AppCtx {
   bool   use_dt_adaptive = false;
   double dt_tol          = 0.1;  // target max |h - linear-extrapolation| per step, metres
 
+  // Experiment (-wtm_smooth_T): use the smooth (C-inf) transmissivity in the Picard operator
+  // instead of the production piecewise (C0) Fan S4/S6 form. The C0 kinks (water tables crossing
+  // -1.5 m / 0 m) cap BDF2's temporal order at ~1 and defeat the adaptive controller (it chases a
+  // per-step deviation that can't shrink at a kink). This flag tests whether the smooth form
+  // restores order 2 and well-behaved adaptivity -- at the cost of shifting the fixed point
+  // (it approximates the piecewise Fan form). See BDF2_ADAPTIVE_DESIGN.md.
+  bool use_smooth_T = false;
+
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
   // context; destroyed in finalise() before PetscFinalize.
