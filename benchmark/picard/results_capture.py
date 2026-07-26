@@ -160,7 +160,21 @@ for dt, err_mm in [(1,0.01283),(2,0.02433),(5,0.08191),(10,0.4401),(100,59.26)]:
 for dt, err_mm in [(1,0.002217),(2,0.009315),(5,0.06069),(10,0.2435),(100,25.18)]:
     add(experiment="order_bdf2_on_V_ic", solver="bdf2-on-V-smoothIC", grid=128, ranks=1, dt_yr=dt, T_yr=1000,
         mean_err_mm=err_mm, err_ref="dt=0.25yr", slowed_by_concurrent_processes="no",
-        run_date="2026-07-26", notes="SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time")
+        run_date="2026-07-26", notes="SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below")
+
+# ---------- BDF2-on-V order WITH recharge: drops to 1st order (source-limited) ----------
+# Same deep smooth IC, only recharge differs. P=0 -> order ~2; P=0.01 m/yr -> order ~1. Diagnosed
+# (BDF2_RECHARGE_ORDER.md): the recharge SOURCE is integrated at 1st order -- NOT scaling (mass
+# conserved to 6 sig figs across dt), NOT kinks (smoothing them doesn't help). Repro: recharge_order.py
+for dt, err_mm in [(1,1.948),(2,4.173),(5,10.17),(10,20.0),(100,182.6)]:
+    add(experiment="order_bdf2_on_V_recharge", solver="bdf2-on-V", grid=128, ranks=1, dt_yr=dt, T_yr=1000,
+        mean_err_mm=err_mm, err_ref="dt=0.25yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-27", notes="recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime")
+# vs plain backward Euler with the same recharge: BDF2-on-V is constant ~2x better, both order 1.
+for dt, err_mm in [(1,4.016),(10,40.34),(100,384.8)]:
+    add(experiment="order_bdf2_on_V_recharge", solver="backward-euler", grid=128, ranks=1, dt_yr=dt, T_yr=1000,
+        mean_err_mm=err_mm, err_ref="dt=0.25yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-27", notes="recharge P=0.01 m/yr; order ~1; BDF2-on-V is ~2x better but same order")
 
 # ---------- adaptive re-test: does order-2 or interface-smoothing fix the over-refinement? ----------
 # NO. BDF2-on-V and 10cm-smoothed-both-interfaces give the SAME step count as the secant (~52k at

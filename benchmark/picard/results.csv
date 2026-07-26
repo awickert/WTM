@@ -121,11 +121,19 @@ order_bdf2_on_V_ic,bdf2-on-V,128,1,2,,1000,,,,,,,,0.02433,,dt=0.25yr,,no,2026-07
 order_bdf2_on_V_ic,bdf2-on-V,128,1,5,,1000,,,,,,,,0.08191,,dt=0.25yr,,no,2026-07-26,COLD start (singular IC); order ~2 coarse -> ~1 fine (O(dt) startup artifact)
 order_bdf2_on_V_ic,bdf2-on-V,128,1,10,,1000,,,,,,,,0.4401,,dt=0.25yr,,no,2026-07-26,COLD start (singular IC); order ~2 coarse -> ~1 fine (O(dt) startup artifact)
 order_bdf2_on_V_ic,bdf2-on-V,128,1,100,,1000,,,,,,,,59.26,,dt=0.25yr,,no,2026-07-26,COLD start (singular IC); order ~2 coarse -> ~1 fine (O(dt) startup artifact)
-order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,1,,1000,,,,,,,,0.002217,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time
-order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,2,,1000,,,,,,,,0.009315,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time
-order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,5,,1000,,,,,,,,0.06069,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time
-order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,10,,1000,,,,,,,,0.2435,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time
-order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,100,,1000,,,,,,,,25.18,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time
+order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,1,,1000,,,,,,,,0.002217,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below
+order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,2,,1000,,,,,,,,0.009315,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below
+order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,5,,1000,,,,,,,,0.06069,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below
+order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,10,,1000,,,,,,,,0.2435,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below
+order_bdf2_on_V_ic,bdf2-on-V-smoothIC,128,1,100,,1000,,,,,,,,25.18,,dt=0.25yr,,no,2026-07-26,SMOOTH start (resolved IC); order ~2 -- but for the HOMOGENEOUS problem only (zero forcing); see recharge rows below
+order_bdf2_on_V_recharge,bdf2-on-V,128,1,1,,1000,,,,,,,,1.948,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime
+order_bdf2_on_V_recharge,bdf2-on-V,128,1,2,,1000,,,,,,,,4.173,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime
+order_bdf2_on_V_recharge,bdf2-on-V,128,1,5,,1000,,,,,,,,10.17,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime
+order_bdf2_on_V_recharge,bdf2-on-V,128,1,10,,1000,,,,,,,,20.0,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime
+order_bdf2_on_V_recharge,bdf2-on-V,128,1,100,,1000,,,,,,,,182.6,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1 (source integrated 1st-order); production regime
+order_bdf2_on_V_recharge,backward-euler,128,1,1,,1000,,,,,,,,4.016,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1; BDF2-on-V is ~2x better but same order
+order_bdf2_on_V_recharge,backward-euler,128,1,10,,1000,,,,,,,,40.34,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1; BDF2-on-V is ~2x better but same order
+order_bdf2_on_V_recharge,backward-euler,128,1,100,,1000,,,,,,,,384.8,,dt=0.25yr,,no,2026-07-27,recharge P=0.01 m/yr; order ~1; BDF2-on-V is ~2x better but same order
 adaptive_retest,adaptive-bdf2-on-V,128,1,,100,8000,523,,,,,,,87.8,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
 adaptive_retest,adaptive-bdf2-on-V,128,1,,10,8000,5224,,,,,,,13.18,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
 adaptive_retest,adaptive-bdf2-on-V,128,1,,1,8000,51942,,,,,,,0.0145,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
