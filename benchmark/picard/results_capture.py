@@ -108,6 +108,16 @@ for tol_m, st, wall, me, mx in [(1e-4,518972,3718.1,1.0775,2.4577),(3e-4,172522,
         slowed_by_concurrent_processes="maybe", run_date="2026-07-26",
         notes="adaptive loses to fixed-1yr; step explosion + non-monotonic err at tight tol (C0-T kinks)")
 
+# ---------- order vs transmissivity smoothing width (128^2 drainage, T=8000yr) ----------
+# NEGATIVE: smoothing the C0 Fan T does NOT restore BDF2's order (stays ~0.9 for eps up to 1.0 m,
+# 10x past the ~0.1 m physical limit); only the physics shifts. err vs dt=5yr ref; err10 in mm.
+for eps_m, order, err10_mm, shift_mm in [(0.01,0.91,0.1037,0.007),(0.1,0.91,0.1036,0.067),
+                                         (0.5,0.90,0.1036,0.322),(1.0,0.90,0.1035,0.560)]:
+    add(experiment="order_vs_smoothing", solver="bdf2-smoothT", grid=128, ranks=1, dt_yr=10,
+        T_yr=8000, mean_err_mm=err10_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26",
+        notes=f"smooth_eps={eps_m} m; order(20->40)={order}; physics-shift vs piecewise={shift_mm} mm")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")

@@ -110,21 +110,28 @@ $$
 So the transient deviations above become second-order: 10× Δt → **100×** error, i.e. for a
 fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bigger steps.
 
-> **MEASURED (2026-07-26) — order reduction on WTM's piecewise T.** The formal order-2 above
-> holds only where the coefficients are smooth. On WTM's **piecewise (C⁰) Fan S4/S6
-> transmissivity**, self-convergence on the 128² drainage fixture shows the *achieved*
-> temporal order is ~2 at coarse Δt (250–2000 yr, smooth-part truncation dominates) but
-> **degrades to ~1 at fine Δt** (10–100 yr: error ratio ~2 per Δt-doubling, order ≈ 1.05) —
-> the classic order reduction from a non-smooth RHS, as water tables cross the −1.5 m and 0 m
-> kinks during drainage. Verified *not* a solver-tolerance artifact (identical errors with
-> `-snes_rtol 1e-12`). Consequence: BDF2 still beats backward Euler by a solid **constant
-> factor** at equal Δt, but **not by an order** at practical (sub-mm) tolerances. For this
-> fixture at T=8000 yr, 0.1 mm error needs Δt ≈ 10 yr (mean) / 5–6 yr (max). A **smooth (C∞)
-> T/S reformulation** (`depthIntegratedTransmissivitySmooth` already exists) is the lever that
-> would restore order 2 — the same smoothness that would unlock higher *spatial* order — but
-> it changes the fixed point slightly (approximates the production piecewise Fan form), a
-> physics-vs-order tradeoff to weigh. TODO: quantify the smooth-T order recovery and its
-> fixed-point shift.
+> **MEASURED (2026-07-26) — achieved order is ~1, and it is NOT the transmissivity.**
+> Self-convergence on the 128² drainage fixture: the *achieved* temporal order is ~2 at coarse
+> Δt (250–2000 yr) but **degrades to ~1 at fine Δt** (10–100 yr, order ≈ 1.05) — verified *not*
+> a solver-tolerance artifact (identical with `-snes_rtol 1e-12`). Consequence: **BDF2 beats
+> backward Euler by a constant factor at equal Δt, but not by an *order*** at practical (sub-mm)
+> tolerances (0.1 mm needs Δt ≈ 10 yr mean / 5–6 yr max here).
+>
+> **Hypothesis TESTED and DISPROVEN:** I attributed this to the piecewise (C⁰) Fan
+> transmissivity kinks. Swapping in the smooth (C∞) `T` (`-wtm_smooth_T`) and *widening* its
+> smoothing band (`-wtm_smooth_eps` = 0.01 → 1.0 m, 10× past the ~0.1 m physical limit) leaves
+> the order at ~0.9 and the errors unchanged — **only the physics shifts**. So transmissivity
+> smoothing is a dead end for the order.
+>
+> **Leading remaining suspect (UNTESTED):** the effective storativity — the *coefficient of the
+> time derivative* — is a backward-Euler **secant** `(V(hⁿ⁺¹)−V(hⁿ))/Δh` with a sharp surface
+> corner in `V`. A BE-specific secant is only 1st-order as BDF2's time-derivative coefficient,
+> and I did *not* smooth/BDF2-adjust it. Next test: widen the storativity smoothing (analogous
+> to `-wtm_smooth_eps`), and/or apply BDF2 to the stored volume `V` directly
+> `((3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/2Δt = flux)` rather than `S_eff·BDF2(h)`. If that also fails, the cause
+> is elsewhere (e.g. the early near-surface transient dominating). **Practical takeaway holds
+> regardless: fixed-step BDF2 at the FSM cadence is the recommendation; adaptive Δt does not
+> pay off** (`results.csv`, `adaptive_vs_fixed`).
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:
