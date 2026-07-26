@@ -256,8 +256,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // Smoothing widths are physics modeling options and apply on ALL solver paths (Anderson,
   // Newton, Picard), so read them here -- before the solver branch -- rather than gating them
   // behind use_picard. Storativity land-surface transition (sub-grid roughness); default 0.01 m,
-  // always on. (The ksat/transmissivity widths are read alongside just below.)
+  // always on. The two ksat/transmissivity widths default to 0 (=> exact piecewise Fan T); any
+  // positive width rounds that boundary in every path that evaluates T (residual and operator).
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
@@ -528,11 +531,16 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
 
+  // Use the smooth (C-inf) T when a ksat smoothing width is set (universal across solver paths);
+  // otherwise the exact piecewise (C0) Fan form (production). Widths are read once in update().
+  const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   // Compute 1/T over the full ghost range so neighbor lookups in the owned-range loop below are valid.
-#pragma omp parallel for default(none) shared(info, my_T, x, my_topo, my_fdepth, my_ksat) collapse(2)
+#pragma omp parallel for default(none) shared(info, my_T, x, my_topo, my_fdepth, my_ksat, smooth_T) collapse(2)
   for (auto j = info->gys; j < info->gys + info->gym; j++) {
     for (auto i = info->gxs; i < info->gxs + info->gxm; i++) {
-      my_T[j][i] = 1. / depthIntegratedTransmissivity(x[j][i] - my_topo[j][i], my_fdepth[j][i], my_ksat[j][i]);
+      const double wtd_T = x[j][i] - my_topo[j][i];
+      my_T[j][i] = 1. / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
+                                  : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
     }
   }
 
@@ -878,10 +886,8 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   // 1/T over the full ghost range so the neighbor harmonic means on the owned range are valid
   // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; a positive
   // -wtm_ksat_soilbottom_smoothing_width (-1.5 m) and/or -wtm_ksat_surface_smoothing_width (0 m)
-  // swaps in the smooth (C-inf) form, rounding that boundary. Each width is its own switch: both
-  // 0 (default) => piecewise, >0 => smooth with that band.
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
+  // swaps in the smooth (C-inf) form, rounding that boundary. Both 0 (default) => piecewise. The
+  // widths are read once per cycle in update() (universal across solver paths).
   const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   for (auto j = info.gys; j < info.gys + info.gym; j++) {
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
