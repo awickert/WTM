@@ -145,6 +145,23 @@ for dt, err_mm in [(10,0.00458),(20,0.03473),(40,0.15129)]:
         T_yr=8000, mean_err_mm=err_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
         run_date="2026-07-26", notes="genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m")
 
+# ---------- BDF2-on-V order across 1-100 yr: TRUE 2nd order (cold-start artifact identified) ----------
+# Real time error vs a fine dt=0.25yr reference at matched physical time (T=1000yr window), mean|err|
+# over land. COLD start (all cells at surface, discontinuous ocean-ring flux = t=0 singularity) shows
+# order crossing over ~2->~1 at fine dt: an O(dt) STARTUP error, not the scheme. Ruled out solver tol
+# (1e-6 vs 1e-10), the C0 T kinks (smoothing 100x = no change), and float32 (output is float64).
+# Repro: benchmark/picard/bdf2_on_v_order.py
+for dt, err_mm in [(1,0.01283),(2,0.02433),(5,0.08191),(10,0.4401),(100,59.26)]:
+    add(experiment="order_bdf2_on_V_ic", solver="bdf2-on-V", grid=128, ranks=1, dt_yr=dt, T_yr=1000,
+        mean_err_mm=err_mm, err_ref="dt=0.25yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26", notes="COLD start (singular IC); order ~2 coarse -> ~1 fine (O(dt) startup artifact)")
+# SMOOTH start (supplied_wt from the resolved dt=0.25 field at T=1000): no t=0 singularity -> CLEAN
+# order ~2 across the whole 1-100 yr range. BDF2-on-V is genuinely 2nd order in time.
+for dt, err_mm in [(1,0.002217),(2,0.009315),(5,0.06069),(10,0.2435),(100,25.18)]:
+    add(experiment="order_bdf2_on_V_ic", solver="bdf2-on-V-smoothIC", grid=128, ranks=1, dt_yr=dt, T_yr=1000,
+        mean_err_mm=err_mm, err_ref="dt=0.25yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26", notes="SMOOTH start (resolved IC); clean order ~2 everywhere -> true 2nd order in time")
+
 # ---------- adaptive re-test: does order-2 or interface-smoothing fix the over-refinement? ----------
 # NO. BDF2-on-V and 10cm-smoothed-both-interfaces give the SAME step count as the secant (~52k at
 # tol=1mm). Order-2 fixed the error (monotonic; 0.0145 mm) but not the count; smoothing did neither.
