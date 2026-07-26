@@ -2,9 +2,12 @@
 
 **Date:** 2026-07-26
 **Branch:** `bdf2-adaptive-dt`
-**Status:** DIAGNOSED (D1–D4 run 2026-07-26). Cause = the recharge *source's* temporal
-integration is 1st-order (NOT scaling, NOT kinks). Exact code line unresolved by static analysis
-(needs a manufactured-solution test). Fix routes in §8; Richardson is the safe default.
+**Status (2026-07-27): SOLVED.** Root cause = the recharge **source is evaluated explicitly at hⁿ**;
+BDF2 needs it at tⁿ⁺¹. Evaluating `add_recharge` at the iterate (implicit) **restores clean order 2**
+under recharge (§12: 2.07/2.05/2.00/2.01, 6–40× smaller error). Proof-of-concept reverted over a vec
+double-checkout (P=0 regression); clean implementation is the only remaining step. Richardson (§10)
+is a poor fallback (not cleanly order 2 here). Full trail: §1 problem, D1–D6 + re-derivation
+eliminations, §11 mechanism, §12 fix.
 **Companion:** `BDF2_ADAPTIVE_DESIGN.md` (the transient-accuracy work this extends).
 
 ## 1. The problem (airtight)
@@ -141,3 +144,104 @@ gain; both are **order 1** (flat ratio). So the BDF2 storage treatment does help
      an analytic h(t), add the matching source, measure order) or dump the per-step applied source
      vs the BDF2-consistent value. Higher payoff (clean 2nd order at 1× cost), needs the dig.
 - **Do NOT** reach for coefficient smoothing here — D3 shows it doesn't help and shifts the physics.
+
+## 9. Instrumentation (2026-07-27)
+
+**D5 — source isolation (diffusion off): the source term ALONE is exact.** With ksat set to 1e-8
+(diffusion ~off) and uniform recharge, a constant source gives a linear-in-t solution, which BDF2
+integrates exactly. Measured: dt=1 vs dt=100 land fields agree to **0.065 mm mean** (vs 183 mm in
+the coupled case); max 56 mm on a few near-ocean cells where residual flux remains. ⇒ **the source
+term is not the bug; the 1st order lives in the source↔diffusion COUPLING** within the BDF2 step
+(most likely the row-scaled SPD operator/RHS balance — the recharge vs implicit-diffusion vs storage
+scaling). Pinning the exact line needs a **code-level manufactured-solution test** (impose an
+analytic h(t) with both diffusion and a matching source; measure order; it also gives a TRUE 2nd-order
+reference, which the black-box tests lack).
+
+**Richardson-in-time backup — helps 10–30×, order not yet cleanly confirmed.** On the recharge runs,
+`2·h(Δt/2) − h(Δt)` cuts the error 10.5× (Δt 2→1) and 31× (10→5). But its *order* can't be measured
+against the dt=0.25 reference, because **that reference is itself 1st-order under recharge** — the
+extrapolant is more accurate than the yardstick, so the comparison floors at the reference's own
+~0.4–0.6 mm error. A clean order check needs a Richardson-extrapolated (or code-MMS) reference.
+
+**D6 — nonlinear-solve convergence: NOT the cause.** Tightening the Picard/SNES solve 6 orders of
+magnitude (`-snes_atol/rtol 1e-12 -snes_stol 1e-14 -snes_max_it 500`) leaves the recharge order and
+errors bit-for-bit unchanged (1.95 / 4.17 / 10.2 / 20 / 183 mm, order ~1). The outer solve is fully
+converged; lagged implicit terms are not the cause.
+
+**Re-derivation of the code (operator + RHS): the discretization is textbook order-2.** Reading
+`FormPicardOperator` (diagonal `a·Sy`, off-diagonals `−e·Δt/h²`) and `FormPicardRHS` (`a·Sy·x −
+a·V(wⁿ⁺¹) + b·V(wⁿ) − c·V(wⁿ⁻¹) + Sy·rech`), `A·x = b` collapses at the fixed point to
+`(3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/2 = Δt·DIFF(hⁿ⁺¹) + Sy·rech` with `Sy·rech = Δt·P` — exactly BDF2 of
+`dV/dt = DIFF + P`. So the discrete scheme is order-2 *by construction*; the order-1 is not in the
+written stencil.
+
+### Eliminations so far (all by experiment or derivation)
+scaling (D1) · kinks (D3) · source-in-isolation (D5) · solver convergence (D6) · the discretization
+itself (re-derivation). Remaining suspect: the **BE-bootstrap → BDF2-on-V transition** (first step
+uses BE + the *secant* storativity, then switches to the tangent-V form) interacting with the
+recharge source — UNVERIFIED. Definitive next step: a **consistency-residual / manufactured-solution
+test** (plug 3 consecutive fine-reference states into the discrete equation; check the residual is
+O(Δt²) not O(Δt)) — a real build; needs intermediate reference saves + a python flux stencil.
+
+**Status:** root cause narrowed (discretization is order-2; suspect = bootstrap↔recharge), not fully
+pinned. **Accuracy deliverable: Richardson-in-time** (validation in §10).
+
+## 10. Accuracy fix: Richardson-in-time — does NOT cleanly restore order 2
+
+Validated against a 2nd-order reference (`2·h[0.25]−h[0.5]`): `2·h(Δt/2)−h(Δt)` helps 2–10× but the
+**extrapolant order is only ~0.9–1.6, not 2**. So the recharge error is *not* a clean O(Δt) with a
+simple asymptotic expansion (the shallow-cell `add_recharge` nonlinearity makes it irregular), and
+Richardson is an unreliable backup here. This pushes us to fix the source, not paper over it.
+
+## 11. Root cause (2026-07-27): explicit recharge on shallow cells
+
+Correcting §9: the BE bootstrap is NOT a viable suspect either — a single backward-Euler start has
+O(Δt²) *local* error, contributing only O(Δt²) globally; it cannot produce order 1. The written
+discretization is order-2. So the order-1 must come from an input to it that is only 1st-order.
+
+**Mechanism:** in `FormPicardRHS` the recharge is `Sy·rech` with `rech = add_recharge(rech_dist,
+starting_wtd = hⁿ, …)` — evaluated at the OLD water table hⁿ (explicit). BDF2 wants the source at
+tⁿ⁺¹. For DEEP cells `add_recharge` is wtd-independent (`rech/porosity`), so explicit vs implicit
+is identical → exact (this is why D5, all-deep, was exact). For SHALLOW near-ocean cells it is
+wtd-*dependent* (the `GW_space`/surface-cap branches), so evaluating at hⁿ is a lagged, 1st-order
+source. That zone (`GW_space = −wtd·porosity < P·Δt`, i.e. `wtd > −P·Δt/porosity`) *grows with Δt*.
+Those shallow cells produce the 862 mm tail (D2); the error then diffuses into the deep interior
+(D2's 73%). Fits every diagnostic: D1 (mass ok — it's timing not amount), D2 (shallow→deep),
+D3 (kink smoothing irrelevant), D5 (deep-only exact), D6 (convergence irrelevant).
+
+**Fix under test:** evaluate `add_recharge` at the iterate (→ hⁿ⁺¹, implicit) in `FormPicardRHS`.
+Result in §12.
+
+## 12. Implicit-recharge fix — PROVEN (root cause confirmed)
+
+**Making the recharge implicit restores clean order 2.** Proof-of-concept: in `FormPicardRHS`
+(bdf2_on_V branch), replace the precomputed `Sy·my_rech` (`my_rech = add_recharge(rech_dist, hⁿ)`)
+with `Sy·add_recharge(rech_raw, w_k, poro)` evaluated at the iterate `w_k → hⁿ⁺¹`. Same deep smooth
+IC, vs Δt=0.25 ref:
+
+| Δt (yr) | 1 | 2 | 5 | 10 | 100 | order |
+|---|---|---|---|---|---|---|
+| explicit (old) | 1.95 | 4.17 | 10.2 | 20 | 183 mm | ~1 |
+| **implicit (fix)** | **0.0029** | **0.012** | **0.080** | **0.32** | **33 mm** | **~2.0** (2.07/2.05/2.00/2.01) |
+
+Root cause **confirmed**: the recharge source was evaluated at `hⁿ` (explicit); BDF2 needs it at
+`tⁿ⁺¹`. Physically sound too — the end-of-step water table sets the recharge partitioning. ~6–40×
+smaller error AND 2nd order. This is strictly better than Richardson (§10), at 1× cost.
+
+**Implementation caveat (why it is NOT yet committed):** the proof-of-concept read
+`user_context->rech_source` inside `FormPicardRHS`, but `DMDA_Array_Pack` already holds that vec's
+array checked out for the whole `update()` — a **double `DMDAVecGetArray` on the same Vec** returns
+stale/duplicate data, which broke the P=0 (no-recharge) case (a no-op became a 0.03 mm floor). So
+the experimental edit was **reverted**; the solver is unchanged.
+
+**Clean implementation (well-scoped follow-up):** get the raw per-step recharge into
+`FormPicardRHS` *without* re-checking-out `rech_source` — e.g. (a) pass the `rech_dist` array
+pointer through `AppCtx`/a callback field, (b) keep a dedicated copy vec written at update() line
+252, or (c) move the implicit `add_recharge` evaluation into a place that already owns the array.
+Then apply the same change to the BE / secant-BDF2 branches for consistency, and re-verify P=0 is a
+no-op + golden unaffected (the change is inside the `-wtm_bdf2_on_V` RHS branch; Anderson production
+is untouched).
+
+**Status: ROOT CAUSE FOUND + FIX PROVEN.** BDF2-on-V's 1st-order-under-recharge is the explicit
+recharge source; evaluating it implicitly (at hⁿ⁺¹) restores true 2nd order. Remaining work is the
+clean (double-checkout-free) implementation, then commit. Richardson (§10) is a poor fallback here.
