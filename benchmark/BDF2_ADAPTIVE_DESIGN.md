@@ -22,8 +22,13 @@
     isolated the storativity as the culprit.
 - **Fix — BDF2-on-V:** apply the 3-level BDF2 difference to the *volume* `V(h)` directly
   (`(3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/(2Δt) = flux`), Picard-linearized with the **tangent** `dV/dh`
-  (`specificYield`) as the operator diagonal. Physics-preserving (no fixed-point shift),
-  **genuine order ~2**, ~23× more accurate than the secant BDF2 at Δt=10 yr.
+  (`specificYield`) as the operator diagonal. Physics-preserving (no fixed-point shift).
+  **TRUE 2nd order in time — measured order ≈ 2.0 across the full Δt = 1–100 yr range** once the
+  startup transient is smooth (§2 addendum, 2026-07-26). An earlier test showed order → 1 at fine
+  Δt; that was a **cold-start O(Δt) artifact** from the fixture's singular initial condition (all
+  cells begin at the surface with a discontinuous ocean-ring flux), *not* the scheme — ruled out
+  solver tolerance, the coefficient kinks, and float32 output; a smooth (resolved) start restores
+  clean order 2 everywhere.
 - **Adaptive Δt — shelved (kept in code, default off).** The forward per-step estimator
   over-refines: one fast near-ocean cell pins the step, so at matched accuracy it ran ~2×
   *more* steps than a well-chosen uniform Δt. The uniform BDF2-on-V step is the recommendation;
@@ -204,6 +209,29 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > numbers suggest). **Conclusion: fixed-step BDF2 at the FSM cadence is the recommendation; adaptive
 > would need a fundamentally different error estimator and likely still wouldn't beat uniform on a
 > problem this smooth/dissipative.**
+
+> **TRUE 2ND ORDER — RESOLVED (2026-07-26): BDF2-on-V is 2nd order across the full 1–100 yr Δt
+> range; the earlier fine-Δt "order → 1" was a COLD-START ARTIFACT, not the scheme.** The order
+> tests above start every land cell exactly at the surface (wtd = 0) with a discontinuous head jump
+> to the ocean ring — a t = 0 parabolic singularity that injects an **O(Δt) startup error**. That
+> term dominates the tiny O(Δt²) truncation once Δt ≲ 5 yr, which is exactly the observed crossover
+> (order ~2 coarse, ~1 fine). Ruled out in turn, each by experiment: solver tolerance (identical at
+> `-snes_atol` 1e-6 vs 1e-10), the C0 transmissivity kinks (smoothing them 100× changes nothing —
+> re-confirmed now on BDF2-on-V), and float32 output (the field is float64). **Decisive test:** rerun
+> the convergence study from a SMOOTH resolved state (`supplied_wt`, the Δt = 0.25 yr field at
+> T = 1000 yr) so there is no t = 0 singularity. Order is then **clean ~2 everywhere** (further
+> 1000 yr window, vs Δt = 0.25 ref, mean |err| over land):
+>
+> | Δt (yr) | 1 | 2 | 5 | 10 | 100 |
+> |---|---|---|---|---|---|
+> | mean \|err\| | 0.0022 mm | 0.0093 mm | 0.061 mm | 0.24 mm | 25 mm |
+> | order        | — | 2.07 | 2.05 | 2.00 | 2.01 |
+>
+> (Cold start, same fixture/ref: 0.013 / 0.024 / 0.082 / 0.44 / 59 mm, order 0.9 → 1.3 → 2.4 → 2.1 —
+> the startup term inflates fine Δt.) **Practical read:** production transients that *continue from a
+> spun-up equilibrium* start smooth → genuine order 2 (~0.002 mm at 1 yr, 0.24 mm at 10 yr, 25 mm at
+> 100 yr). A cold flat start pays a one-time O(Δt) startup penalty that caps fine-Δt convergence at
+> ~order 1, but only at sub-0.02 mm error. Reproduce: `benchmark/picard/bdf2_on_v_order.py`.
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:
