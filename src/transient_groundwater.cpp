@@ -124,15 +124,16 @@ static double depthIntegratedTransmissivitySmooth(const double wtd_T, const doub
 }
 
 // Analytic derivative of (1/T) with respect to wtd_T for the Newton-Krylov Jacobian
-// (FormJacobianLocal): the derivative of the SMOOTH T, used as a differentiable inexact-Newton
-// approximation of the residual's PIECEWISE T. eps here is a FIXED Jacobian regularization
-// (0.01 m) -- deliberately independent of the -wtm_ksat_*_smoothing_width operator knobs, which
-// apply only to the separate Picard operator (which carries no analytic Jacobian).
+// (FormJacobianLocal): the derivative of the SMOOTH T. When a ksat smoothing width is set the
+// residual (FormFunctionLocal) uses the smooth T with that width, so track it here to stay the
+// exact derivative; when a width is 0 the residual uses the piecewise T, and we fall back to a
+// fixed 0.01 m regularization so the Jacobian stays differentiable (a standard inexact-Newton
+// approximation) and never divides by zero.
 static double dTransmissivityInverseDwtd(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0.0;
   constexpr double shallow = 1.5;
-  constexpr double eps0    = 0.01;
-  constexpr double eps1    = 0.01;
+  const double eps0 = (g_ksat_surface_smoothing_width  > 0.0) ? g_ksat_surface_smoothing_width  : 0.01;
+  const double eps1 = (g_ksat_soilbottom_smoothing_width > 0.0) ? g_ksat_soilbottom_smoothing_width : 0.01;
 
   const double sq0      = std::sqrt(wtd_T * wtd_T + eps0 * eps0);
   const double wtd_eff  = (wtd_T - sq0) * 0.5;
