@@ -128,15 +128,23 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > errors grow 8–45×, while distorting the physics badly (13 mm shift already at 10 cm). So the
 > order-1 is **not from coefficient non-smoothness — neither T nor S.** (Two hypotheses refuted.)
 >
-> **What remains, and the decisive test.** The smoothing tests only addressed the *corner* in `V`.
-> They do NOT test whether the effective storativity being a **2-level backward-Euler secant**
-> `(V(hⁿ⁺¹)−V(hⁿ))/Δh` — sitting on BDF2's 3-level time derivative — is the culprit; only a
-> **BDF2-on-`V` reformulation** `((3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/2Δt = flux)` would. The clean discriminator is
-> a **constant-storativity run** (`S ≡ porosity`): if order stays ~1, storativity is ruled out and
-> the cause is in the BDF2 time-integration structure itself; if it jumps to ~2, the fix is
-> BDF2-on-`V`. **Practical takeaway holds regardless (the cause hunt is now theoretical):
-> fixed-step BDF2 at the FSM cadence is the recommendation; adaptive Δt does not pay off**
-> (`results.csv`). The stability win (step at ~10 yr not daily) stands.
+> **CAUSE FOUND (constant-storativity test):** with `S ≡ porosity` (`-wtm_const_storativity`),
+> **BDF2 recovers order ~2** (error ratio → 4: 0.0068 / 0.0427 / 0.172 mm at Δt=10/20/40) and is
+> 15× more accurate than the effective-`S` case. So the order-1 was the **2-level backward-Euler
+> *secant* effective storativity** `(V(hⁿ⁺¹)−V(hⁿ))/Δh` sitting on BDF2's 3-level time
+> derivative — *not* coefficient smoothness (smoothing T or S changed nothing; removing the
+> secant fixes it).
+>
+> **The fix is `BDF2-on-V`** — apply the 3-level BDF2 difference to the stored *volume*:
+> `(3Vⁿ⁺¹ − 4Vⁿ + Vⁿ⁻¹)/(2Δt) = flux`, instead of `S_eff·BDF2(h)`. Crucially this is
+> **physics-preserving**: `V` is the true stored-water function, so **no fixed-point shift**
+> (unlike smoothing, which cost 13 mm at 10 cm), and equilibrium is unchanged
+> (`Vⁿ⁺¹=Vⁿ=Vⁿ⁻¹`). A targeted operator/RHS change to the storage term.
+>
+> **Updated takeaway:** genuine 2nd order *is* achievable on WTM via `BDF2-on-V` (no physics
+> compromise) — so the transient-accuracy path is real. Whether it also rehabilitates the
+> adaptive controller (its step-explosion may be downstream of the order-1) is an open follow-up.
+> The stability win (step at ~10 yr not daily) stands independently.
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:

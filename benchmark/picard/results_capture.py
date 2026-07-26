@@ -128,6 +128,15 @@ for eps_m, order, err10_mm, shift_mm in [(0.01,0.91,0.1037,0.000),(0.1,0.69,0.80
         run_date="2026-07-26",
         notes=f"storativity_eps={eps_m} m (T piecewise); order(20->40)={order}; physics-shift={shift_mm} mm")
 
+# ---------- constant-storativity test: BDF2 order recovers (CAUSE FOUND) ----------
+# With S==porosity (no secant/corner/h-dependence), BDF2 order -> ~2 (error ratio ->4) and is
+# 15x more accurate: the order-1 was the 2-level backward-Euler SECANT storativity, not
+# coefficient smoothness. Fix = BDF2-on-V (physics-preserving). err vs dt=5yr ref (mm).
+for dt, err_mm in [(10,0.00682),(20,0.04265),(40,0.17160)]:
+    add(experiment="order_const_storativity", solver="bdf2-constS", grid=128, ranks=1, dt_yr=dt,
+        T_yr=8000, mean_err_mm=err_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26", notes="S==porosity; order->~2 (ratio->4); 15x more accurate; cause = BE secant S")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")
