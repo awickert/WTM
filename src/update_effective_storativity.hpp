@@ -6,11 +6,6 @@
 // ~10 cm (surface roughness, esp. with large cells). See BDF2_ADAPTIVE_DESIGN.md.
 extern double g_storativity_eps;
 
-// Experiment (-wtm_const_storativity): force S == porosity (constant), removing the secant, the
-// surface corner, and all head-dependence at once. The decisive discriminator for whether the
-// BDF2 order-1 comes from the storativity treatment or the time-integration structure.
-extern bool g_const_storativity;
-
 double updateEffectiveStorativity(const double my_original_wtd, const double my_wtd_T, const double my_porosity);
 
 // Stored water per unit area V(wtd) (smooth C-inf), and its derivative dV/dwtd = the TANGENT

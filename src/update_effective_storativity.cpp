@@ -5,20 +5,16 @@
 // Smoothing width of the surface transition; default 1 cm, overridable via -wtm_storativity_eps
 // (see the header / BDF2_ADAPTIVE_DESIGN.md).
 double g_storativity_eps = 0.01;
-bool   g_const_storativity = false;
 
 // Stored water per unit area V(wtd). Smooth (C-inf) blend: slope ~1 above the surface (surface
-// water), ~porosity below (specific yield), over a g_storativity_eps transition. Constant-S
-// experiment: V = porosity*wtd (linear).
+// water), ~porosity below (specific yield), over a g_storativity_eps transition.
 double storedVolume(const double wtd, const double porosity) {
-  if (g_const_storativity) return porosity * wtd;
   const double eps = g_storativity_eps;
   return 0.5 * (wtd * (1.0 + porosity) + std::sqrt(wtd * wtd + eps * eps) * (1.0 - porosity));
 }
 
 // Tangent specific yield dV/dwtd (the head-consistent coefficient for BDF2-on-V).
 double specificYield(const double wtd, const double porosity) {
-  if (g_const_storativity) return porosity;
   const double eps = g_storativity_eps;
   return 0.5 * ((1.0 + porosity) + wtd * (1.0 - porosity) / std::sqrt(wtd * wtd + eps * eps));
 }
@@ -27,7 +23,6 @@ double specificYield(const double wtd, const double porosity) {
 // backward-Euler construction; exact volume change for BE). Near-equal wtds fall back to the
 // tangent dV/dwtd to avoid 0/0.
 double updateEffectiveStorativity(const double my_original_wtd, const double my_new_wtd, const double my_porosity) {
-  if (g_const_storativity) return my_porosity;
   const double dwtd = my_new_wtd - my_original_wtd;
   if (std::abs(dwtd) > 1e-10) {
     return (storedVolume(my_new_wtd, my_porosity) - storedVolume(my_original_wtd, my_porosity)) / dwtd;
