@@ -141,3 +141,5 @@ justified by memory alone with compute as a bonus. It is a **research-grade, mul
 best **co-scoped with Richard Barnes** (RichDEM / parallel priority-flood author and FSM
 co-author). Recommended precursor: **bound the boundary-graph size against real global DEM
 tiles** — that de-risks the one assumption the whole plan rests on, before the full build.
+Concrete input on hand: **GEBCO 30″ global DEM, `/home/awickert/Dropbox/GIS/gebco_08.nc`** (the
+full 933,120,000-cell grid) — tile it and count spill points / cross-tile depressions vs `N`.
