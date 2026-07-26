@@ -6,6 +6,40 @@
 **Authors:** Andy Wickert + Claude
 **Companions:** `PICARD_MG_DESIGN.md`, `PICARD_MATH.md` (the implicit solver this builds on).
 
+---
+
+## TL;DR
+
+- **Goal:** cheap 2nd-order-in-time accuracy for *transient* WTM runs (equilibrium is already
+  Δt-independent after the Picard work, so it only wants the biggest stable step).
+- **BDF2 alone did not deliver order 2** — the measured temporal order was **~1**. We chased
+  this to ground:
+  - *Not* the C0 transmissivity kinks at −1.5 m / 0 m (smoothing T — **disproven**).
+  - *Not* the storativity surface corner at 0 m (smoothing V — **disproven**).
+  - **Cause: the backward-Euler *secant* effective storativity** — a 2-level construction
+    `S_eff = (V(hⁿ⁺¹)−V(hⁿ))/Δh` sitting under BDF2's 3-level time derivative. The
+    mismatch drops the achieved order to 1. Forcing constant S restored order 2, which
+    isolated the storativity as the culprit.
+- **Fix — BDF2-on-V:** apply the 3-level BDF2 difference to the *volume* `V(h)` directly
+  (`(3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/(2Δt) = flux`), Picard-linearized with the **tangent** `dV/dh`
+  (`specificYield`) as the operator diagonal. Physics-preserving (no fixed-point shift),
+  **genuine order ~2**, ~23× more accurate than the secant BDF2 at Δt=10 yr.
+- **Adaptive Δt — shelved (kept in code, default off).** The forward per-step estimator
+  over-refines: one fast near-ocean cell pins the step, so at matched accuracy it ran ~2×
+  *more* steps than a well-chosen uniform Δt. The uniform BDF2-on-V step is the recommendation;
+  the controller stays available behind `-wtm_dt_adaptive` for later work.
+- **Bottom line:** for transient accuracy, use BDF2-on-V at a fixed, generous Δt (see §1–§3
+  for the measured order and the max-Δt-for-a-target-error table). The smoothing knobs
+  (`-wtm_ksat_smoothing_width`, `-wtm_storativity_smoothing_width`) remain as physical sub-grid
+  options but are *not* the accuracy lever.
+
+*(Findings and order-verification narrative below are kept verbatim as the record of how this
+was established. Note: the smoothing flags were later renamed — the narrative's
+`-wtm_smooth_T` / `-wtm_smooth_eps` are now the single `-wtm_ksat_smoothing_width` (width 0 =
+off), and `-wtm_storativity_eps` is now `-wtm_storativity_smoothing_width`.)*
+
+---
+
 Semi-implicit Picard made the backward-Euler step **unconditionally stable**, which
 already reframes WTM's two run types:
 
