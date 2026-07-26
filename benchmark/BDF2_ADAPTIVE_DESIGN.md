@@ -23,12 +23,15 @@
 - **Fix — BDF2-on-V:** apply the 3-level BDF2 difference to the *volume* `V(h)` directly
   (`(3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/(2Δt) = flux`), Picard-linearized with the **tangent** `dV/dh`
   (`specificYield`) as the operator diagonal. Physics-preserving (no fixed-point shift).
-  **TRUE 2nd order in time — measured order ≈ 2.0 across the full Δt = 1–100 yr range** once the
-  startup transient is smooth (§2 addendum, 2026-07-26). An earlier test showed order → 1 at fine
-  Δt; that was a **cold-start O(Δt) artifact** from the fixture's singular initial condition (all
-  cells begin at the surface with a discontinuous ocean-ring flux), *not* the scheme — ruled out
-  solver tolerance, the coefficient kinks, and float32 output; a smooth (resolved) start restores
-  clean order 2 everywhere.
+  **2nd order in time for the HOMOGENEOUS (relaxation/drainage) problem — order ≈ 2.0 across
+  Δt = 1–100 yr** once the startup transient is smooth (§2 addendum). (An earlier apparent fine-Δt
+  order→1 was a cold-start O(Δt) artifact from the fixture's singular IC, not the scheme — ruled
+  out solver tolerance, coefficient kinks, and float32 output; a smooth resolved start restores
+  clean order 2.) **BUT with recharge active — i.e. every production run — it drops to 1st order:**
+  the recharge *source* is integrated at only 1st order (diagnosed 2026-07-27 — not scaling, not
+  kinks; see `BDF2_RECHARGE_ORDER.md`). Still ~2× more accurate than backward Euler at the same
+  step and unconditionally stable, but not 2nd-order in production. Restoring 2nd order needs a
+  source fix (being instrumented) or Richardson-in-time.
 - **Adaptive Δt — shelved (kept in code, default off).** The forward per-step estimator
   over-refines: one fast near-ocean cell pins the step, so at matched accuracy it ran ~2×
   *more* steps than a well-chosen uniform Δt. The uniform BDF2-on-V step is the recommendation;
@@ -232,6 +235,11 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > spun-up equilibrium* start smooth → genuine order 2 (~0.002 mm at 1 yr, 0.24 mm at 10 yr, 25 mm at
 > 100 yr). A cold flat start pays a one-time O(Δt) startup penalty that caps fine-Δt convergence at
 > ~order 1, but only at sub-0.02 mm error. Reproduce: `benchmark/picard/bdf2_on_v_order.py`.
+>
+> **IMPORTANT scope (2026-07-27):** the order-2 result above is for the **homogeneous** (zero-forcing)
+> problem. With **recharge** active the order drops to **1** — the recharge *source* is integrated at
+> 1st order (not scaling, not kinks; diagnosed in `BDF2_RECHARGE_ORDER.md`). So production runs
+> (recharge always on) are 1st-order in time, ~2× better than backward Euler but not 2nd order.
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:
