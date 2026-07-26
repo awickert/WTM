@@ -93,6 +93,21 @@ for g,st in [(64,17),(128,17),(256,17),(512,17),(1024,17)]:
     add(experiment="adaptive_sweep", solver="adaptive-bdf2", grid=g, ranks=1, tol_mm=10000.0,
         steps=st, slowed_by_concurrent_processes="yes", run_date="2026-07-26", notes="tol=10 m per-step (n=1)")
 
+# ---------- adaptive vs fixed dt=1yr at matched accuracy (128^2 drainage, T=8000yr) ----------
+# NEGATIVE RESULT: adaptive does NOT beat fixed-1yr here; error is non-monotonic in tol (U-shape,
+# min at tol=1e-3), and tight tol explodes the step count -- the controller chases a per-step
+# deviation that cannot shrink at the C0 Fan-T threshold kinks. err vs dt=0.5yr reference (mm).
+add(experiment="adaptive_vs_fixed", solver="bdf2", grid=128, ranks=1, dt_yr=1, T_yr=8000,
+    steps=8000, wall_s=135.3, mean_err_mm=0.0513, max_err_mm=0.1862, err_ref="dt=0.5yr",
+    slowed_by_concurrent_processes="maybe", run_date="2026-07-26", notes="fixed dt=1yr baseline")
+for tol_m, st, wall, me, mx in [(1e-4,518972,3718.1,1.0775,2.4577),(3e-4,172522,1273.2,0.7196,1.6563),
+                                (1e-3,51819,573.5,0.0590,0.1926),(3e-3,17242,229.2,1.5918,3.7669),
+                                (1e-2,5160,75.2,15.1160,35.2344)]:
+    add(experiment="adaptive_vs_fixed", solver="adaptive-bdf2", grid=128, ranks=1, tol_mm=tol_m*1000,
+        T_yr=8000, steps=st, wall_s=wall, mean_err_mm=me, max_err_mm=mx, err_ref="dt=0.5yr",
+        slowed_by_concurrent_processes="maybe", run_date="2026-07-26",
+        notes="adaptive loses to fixed-1yr; step explosion + non-monotonic err at tight tol (C0-T kinks)")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")
