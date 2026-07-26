@@ -4,8 +4,8 @@
 **Branch:** `bdf2-adaptive-dt`
 **Status (2026-07-27): SOLVED.** Root cause = the recharge **source is evaluated explicitly at hⁿ**;
 BDF2 needs it at tⁿ⁺¹. Evaluating `add_recharge` at the iterate (implicit) **restores clean order 2**
-under recharge (§12: 2.07/2.05/2.00/2.01, 6–40× smaller error). Proof-of-concept reverted over a vec
-double-checkout (P=0 regression); clean implementation is the only remaining step. Richardson (§10)
+under recharge (§12: 2.07/2.05/2.00/2.01, 6–40× smaller error). Proof-of-concept reverted over a
+P=0 no-op regression (cause unpinned — see §12); clean implementation is the only remaining step. Richardson (§10)
 is a poor fallback (not cleanly order 2 here). Full trail: §1 problem, D1–D6 + re-derivation
 eliminations, §11 mechanism, §12 fix.
 **Companion:** `BDF2_ADAPTIVE_DESIGN.md` (the transient-accuracy work this extends).
@@ -229,18 +229,22 @@ Root cause **confirmed**: the recharge source was evaluated at `hⁿ` (explicit)
 smaller error AND 2nd order. This is strictly better than Richardson (§10), at 1× cost.
 
 **Implementation caveat (why it is NOT yet committed):** the proof-of-concept read
-`user_context->rech_source` inside `FormPicardRHS`, but `DMDA_Array_Pack` already holds that vec's
-array checked out for the whole `update()` — a **double `DMDAVecGetArray` on the same Vec** returns
-stale/duplicate data, which broke the P=0 (no-recharge) case (a no-op became a 0.03 mm floor). So
-the experimental edit was **reverted**; the solver is unchanged.
+`user_context->rech_source` inside `FormPicardRHS` and re-ran `add_recharge` at the iterate. It
+broke the P=0 (no-recharge) case — which should be an exact no-op, since `add_recharge(0,·)=0` — so
+`my_rech_raw` was evidently NOT the zero it should be for P=0. **The exact cause is unpinned:** my
+first guess (a double `DMDAVecGetArray` on `rech_source`) is probably wrong, because the existing
+code already double-checks-out `rech_vec` (held by both `DMDA_Array_Pack` and `FormPicardRHS`) with
+no ill effect. So it is more likely a *population/timing* issue — `rech_source`/`rech_dist` not
+being the reliably-zeroed raw recharge at the point `FormPicardRHS` runs. The experimental edit was
+**reverted**; the solver is unchanged.
 
-**Clean implementation (well-scoped follow-up):** get the raw per-step recharge into
-`FormPicardRHS` *without* re-checking-out `rech_source` — e.g. (a) pass the `rech_dist` array
-pointer through `AppCtx`/a callback field, (b) keep a dedicated copy vec written at update() line
-252, or (c) move the implicit `add_recharge` evaluation into a place that already owns the array.
-Then apply the same change to the BE / secant-BDF2 branches for consistency, and re-verify P=0 is a
-no-op + golden unaffected (the change is inside the `-wtm_bdf2_on_V` RHS branch; Anderson production
-is untouched).
+**Clean implementation (well-scoped follow-up):** first pin why `rech_source` is non-zero at P=0
+(instrument its value in `FormPicardRHS`); then obtain the raw per-step recharge reliably — e.g.
+(a) pass the `rech_dist` array through `AppCtx`, (b) a dedicated copy vec written at update() line
+252, or (c) evaluate the implicit `add_recharge` where the array is already owned. Apply the same
+change to the BE / secant-BDF2 branches for consistency, and re-verify **P=0 is an exact no-op** and
+golden is unaffected (the change is inside the `-wtm_bdf2_on_V` RHS branch; Anderson production is
+untouched).
 
 **Status: ROOT CAUSE FOUND + FIX PROVEN.** BDF2-on-V's 1st-order-under-recharge is the explicit
 recharge source; evaluating it implicitly (at hⁿ⁺¹) restores true 2nd order. Remaining work is the
