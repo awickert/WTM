@@ -107,6 +107,9 @@ order_vs_smoothing,bdf2-smoothT,128,1,10,,8000,,,,,,,,0.1037,,dt=5yr,,no,2026-07
 order_vs_smoothing,bdf2-smoothT,128,1,10,,8000,,,,,,,,0.1036,,dt=5yr,,no,2026-07-26,smooth_eps=0.1 m; order(20->40)=0.91; physics-shift vs piecewise=0.067 mm
 order_vs_smoothing,bdf2-smoothT,128,1,10,,8000,,,,,,,,0.1036,,dt=5yr,,no,2026-07-26,smooth_eps=0.5 m; order(20->40)=0.9; physics-shift vs piecewise=0.322 mm
 order_vs_smoothing,bdf2-smoothT,128,1,10,,8000,,,,,,,,0.1035,,dt=5yr,,no,2026-07-26,smooth_eps=1.0 m; order(20->40)=0.9; physics-shift vs piecewise=0.56 mm
+order_vs_storativity_smoothing,bdf2,128,1,10,,8000,,,,,,,,0.1037,,dt=5yr,,no,2026-07-26,storativity_eps=0.01 m (T piecewise); order(20->40)=0.91; physics-shift=0.0 mm
+order_vs_storativity_smoothing,bdf2,128,1,10,,8000,,,,,,,,0.8088,,dt=5yr,,no,2026-07-26,storativity_eps=0.1 m (T piecewise); order(20->40)=0.69; physics-shift=13.335 mm
+order_vs_storativity_smoothing,bdf2,128,1,10,,8000,,,,,,,,4.6585,,dt=5yr,,no,2026-07-26,storativity_eps=1.0 m (T piecewise); order(20->40)=0.85; physics-shift=148.52 mm
 memory,anderson,1024,1,,,,,,,,,,,,,,0.722,no,2026-07-25,peak process RSS
 memory,picard-be,1024,1,,,,,,,,,,,,,,0.891,no,2026-07-25,+170 MB for A + GAMG hierarchy
 memory,picard-be,1024,8,,,,,,,,,,,,,,1.674,no,2026-07-25,total across 8 ranks; 0.335 max/proc

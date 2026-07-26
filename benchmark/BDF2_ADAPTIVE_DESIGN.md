@@ -123,15 +123,20 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > the order at ~0.9 and the errors unchanged — **only the physics shifts**. So transmissivity
 > smoothing is a dead end for the order.
 >
-> **Leading remaining suspect (UNTESTED):** the effective storativity — the *coefficient of the
-> time derivative* — is a backward-Euler **secant** `(V(hⁿ⁺¹)−V(hⁿ))/Δh` with a sharp surface
-> corner in `V`. A BE-specific secant is only 1st-order as BDF2's time-derivative coefficient,
-> and I did *not* smooth/BDF2-adjust it. Next test: widen the storativity smoothing (analogous
-> to `-wtm_smooth_eps`), and/or apply BDF2 to the stored volume `V` directly
-> `((3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/2Δt = flux)` rather than `S_eff·BDF2(h)`. If that also fails, the cause
-> is elsewhere (e.g. the early near-surface transient dominating). **Practical takeaway holds
-> regardless: fixed-step BDF2 at the FSM cadence is the recommendation; adaptive Δt does not
-> pay off** (`results.csv`, `adaptive_vs_fixed`).
+> **Storativity smoothing ALSO DISPROVEN.** Widening the storativity surface-transition
+> (`-wtm_storativity_eps` 0.01 → 1.0 m) does not restore order either — order dips to ~0.7 and
+> errors grow 8–45×, while distorting the physics badly (13 mm shift already at 10 cm). So the
+> order-1 is **not from coefficient non-smoothness — neither T nor S.** (Two hypotheses refuted.)
+>
+> **What remains, and the decisive test.** The smoothing tests only addressed the *corner* in `V`.
+> They do NOT test whether the effective storativity being a **2-level backward-Euler secant**
+> `(V(hⁿ⁺¹)−V(hⁿ))/Δh` — sitting on BDF2's 3-level time derivative — is the culprit; only a
+> **BDF2-on-`V` reformulation** `((3Vⁿ⁺¹−4Vⁿ+Vⁿ⁻¹)/2Δt = flux)` would. The clean discriminator is
+> a **constant-storativity run** (`S ≡ porosity`): if order stays ~1, storativity is ruled out and
+> the cause is in the BDF2 time-integration structure itself; if it jumps to ~2, the fix is
+> BDF2-on-`V`. **Practical takeaway holds regardless (the cause hunt is now theoretical):
+> fixed-step BDF2 at the FSM cadence is the recommendation; adaptive Δt does not pay off**
+> (`results.csv`). The stability win (step at ~10 yr not daily) stands.
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:

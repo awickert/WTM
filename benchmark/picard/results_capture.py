@@ -118,6 +118,16 @@ for eps_m, order, err10_mm, shift_mm in [(0.01,0.91,0.1037,0.007),(0.1,0.91,0.10
         run_date="2026-07-26",
         notes=f"smooth_eps={eps_m} m; order(20->40)={order}; physics-shift vs piecewise={shift_mm} mm")
 
+# ---------- order vs STORATIVITY smoothing width (128^2 drainage, T=8000yr) ----------
+# NEGATIVE: widening the storativity surface-transition does NOT restore order (dips to ~0.7),
+# errors grow, physics shift is large (13 mm at 10 cm). So neither T nor S smoothing is the fix.
+for eps_m, order, err10_mm, shift_mm in [(0.01,0.91,0.1037,0.000),(0.1,0.69,0.8088,13.335),
+                                         (1.0,0.85,4.6585,148.520)]:
+    add(experiment="order_vs_storativity_smoothing", solver="bdf2", grid=128, ranks=1, dt_yr=10,
+        T_yr=8000, mean_err_mm=err10_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
+        run_date="2026-07-26",
+        notes=f"storativity_eps={eps_m} m (T piecewise); order(20->40)={order}; physics-shift={shift_mm} mm")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")

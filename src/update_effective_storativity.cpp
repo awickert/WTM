@@ -1,8 +1,14 @@
+#include "update_effective_storativity.hpp"
+
 #include <cmath>
+
+// Smoothing width of the surface transition; default 1 cm, overridable via -wtm_storativity_eps
+// (see the header / BDF2_ADAPTIVE_DESIGN.md).
+double g_storativity_eps = 0.01;
 
 // Smooth, C∞ effective storativity for a WTD step from my_original_wtd to my_new_wtd.
 double updateEffectiveStorativity(const double my_original_wtd, const double my_new_wtd, const double my_porosity) {
-  constexpr double eps = 0.01;  // 1 cm smooth transition at the land surface (sub-grid roughness)
+  const double eps = g_storativity_eps;  // smooth transition at the land surface (sub-grid roughness)
 
   const auto V = [&](double w) {
     return (w * (1.0 + my_porosity) + std::sqrt(w * w + eps * eps) * (1.0 - my_porosity)) * 0.5;
