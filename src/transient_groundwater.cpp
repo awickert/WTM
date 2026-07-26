@@ -87,12 +87,18 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
   }
 }
 
-// Conductivity smoothing width (metres), set via -wtm_ksat_smoothing_width. Default 0 => use the
-// exact piecewise (C0) Fan transmissivity (production). Any positive value => the smooth (C-inf)
-// form below, rounding the C0 kinks at the -1.5 m (conductivity profile constant->exp-decay) and
-// 0 m (land surface) thresholds over this band, at the cost of shifting the fixed point further
-// from the piecewise Fan form. The width itself is the on/off switch (>0 = on).
-static double g_ksat_smoothing_width = 0.0;
+// Conductivity smoothing widths (metres) for the two kinks in the piecewise (C0) Fan
+// transmissivity, each independent and each defaulting to 0 => sharp at that boundary:
+//   * g_ksat_soilbottom_smoothing_width (-wtm_ksat_soilbottom_smoothing_width): the -1.5 m
+//     soil-bottom transition, where conductivity switches from constant (shallow soil) to
+//     exponential decay with depth.
+//   * g_ksat_surface_smoothing_width (-wtm_ksat_surface_smoothing_width): the 0 m land-surface
+//     clamp, where the water table reaches the surface and transmissivity is capped.
+// The Picard operator uses the exact piecewise Fan T when both are 0 (production); if either is
+// positive it uses the smooth (C-inf) form below with the respective bands (a positive width
+// shifts the fixed point further from the piecewise Fan form).
+static double g_ksat_soilbottom_smoothing_width = 0.0;  // eps1: -1.5 m conductivity transition
+static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface clamp
 
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
 // piecewise production form above. Kept for a future Newton path; its analytic
@@ -101,12 +107,14 @@ static double g_ksat_smoothing_width = 0.0;
 static double depthIntegratedTransmissivitySmooth(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0;
   constexpr double shallow = 1.5;
-  const double eps0        = g_ksat_smoothing_width;  // smooth clamping at WTD=0 boundary
-  const double eps1        = g_ksat_smoothing_width;  // smooth blend at WTD=-shallow boundary
+  const double eps0        = g_ksat_surface_smoothing_width;     // smooth clamping at WTD=0 boundary
+  const double eps1        = g_ksat_soilbottom_smoothing_width;  // smooth blend at WTD=-shallow boundary
 
   const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
   const double u       = wtd_T + shallow;
-  const double sigma_1 = 1.0 / (1.0 + std::exp(u / eps1));
+  // eps1 == 0 => the sigmoid degrades to a step (sharp -1.5 m switch); eps0 == 0 is naturally sharp
+  // (sqrt(wtd^2) = |wtd| in wtd_eff), so either boundary can be sharp independently.
+  const double sigma_1 = (eps1 > 0.0) ? 1.0 / (1.0 + std::exp(u / eps1)) : (u < 0.0 ? 1.0 : 0.0);
 
   const double T_linear = ksat * (wtd_eff + shallow + fdepth);
   const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
@@ -859,10 +867,12 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
 
   // 1/T over the full ghost range so the neighbor harmonic means on the owned range are valid
   // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; a positive
-  // -wtm_ksat_smoothing_width swaps in the smooth (C-inf) form, rounding the coefficient kinks.
-  // The width itself is the switch: 0 (default) => piecewise, >0 => smooth with that band.
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_smoothing_width", &g_ksat_smoothing_width, nullptr);
-  const bool smooth_T = (g_ksat_smoothing_width > 0.0);
+  // -wtm_ksat_soilbottom_smoothing_width (-1.5 m) and/or -wtm_ksat_surface_smoothing_width (0 m)
+  // swaps in the smooth (C-inf) form, rounding that boundary. Each width is its own switch: both
+  // 0 (default) => piecewise, >0 => smooth with that band.
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
+  const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   for (auto j = info.gys; j < info.gys + info.gym; j++) {
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
       const double wtd_T = xx[j][i] - my_topo[j][i];

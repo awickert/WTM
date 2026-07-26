@@ -67,14 +67,14 @@ struct AppCtx {
   bool   use_dt_adaptive = false;
   double dt_tol          = 0.1;  // target max |h - linear-extrapolation| per step, metres
 
-  // Modeling option -wtm_ksat_smoothing_width (metres, default 0): round the C0 kinks in the
-  // depth-integrated transmissivity where water tables cross -1.5 m (the conductivity profile's
-  // constant->exponential-decay transition) and 0 m (the land surface). Width 0 keeps the exact
-  // production piecewise (C0) Fan S4/S6 form; any positive width uses the smooth (C-inf) form in
-  // the Picard operator with that band. Physically a sub-grid conductivity smoothing. Read
-  // directly from the options DB in FormPicardOperator (no AppCtx flag). Note: smoothing does
-  // NOT by itself restore BDF2 order 2 -- the order-1 cause was the storativity treatment; see
-  // BDF2_ADAPTIVE_DESIGN.md.
+  // Modeling options (metres, default 0): round the two C0 kinks in the depth-integrated
+  // transmissivity, each independently -- -wtm_ksat_soilbottom_smoothing_width at -1.5 m (the
+  // conductivity profile's constant->exponential-decay transition) and -wtm_ksat_surface_smoothing_width
+  // at 0 m (the land surface). Both 0 keeps the exact production piecewise (C0) Fan S4/S6 form; a
+  // positive width uses the smooth (C-inf) form in the Picard operator at that boundary. Physically
+  // a sub-grid conductivity smoothing. Read directly from the options DB in FormPicardOperator (no
+  // AppCtx flag). Note: smoothing does NOT by itself restore BDF2 order 2 -- the order-1 cause was
+  // the storativity treatment; see BDF2_ADAPTIVE_DESIGN.md.
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
