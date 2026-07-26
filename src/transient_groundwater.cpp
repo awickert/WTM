@@ -60,10 +60,11 @@ static PetscErrorCode FormPicardOperator(SNES, Vec, Mat, Mat, void*);
 //     smooth form below at identical iteration counts (~30% stacked with
 //     -snes_anderson_m 5); see benchmark/SOLVER_NOTES.md.
 //   * depthIntegratedTransmissivitySmooth -- a smooth (C-inf) blend of the same,
-//     differentiable everywhere so it supports the analytic Jacobian
-//     (dTransmissivityInverseDwtd) for a future Newton+multigrid path. Used by
-//     FormJacobianLocal so residual/Jacobian stay consistent there; NOT used by
-//     the Anderson production residual.
+//     differentiable everywhere. Its analytic derivative (dTransmissivityInverseDwtd) is the
+//     Newton-Krylov Jacobian's T term (FormJacobianLocal) -- a differentiable, INEXACT-Newton
+//     approximation of the residual, since the Newton residual (FormFunctionLocal) itself uses
+//     the PIECEWISE T. Also used by the Picard operator when a -wtm_ksat_*_smoothing_width is
+//     set. NOT used by the Anderson production residual.
 double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, const double ksat) {
   constexpr double shallow = 1.5;
   // Global soil datasets include information for shallow soils.
@@ -122,7 +123,11 @@ static double depthIntegratedTransmissivitySmooth(const double wtd_T, const doub
   return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
 }
 
-// Analytic derivative of (1/T) with respect to wtd_T, matching the smooth T above.
+// Analytic derivative of (1/T) with respect to wtd_T for the Newton-Krylov Jacobian
+// (FormJacobianLocal): the derivative of the SMOOTH T, used as a differentiable inexact-Newton
+// approximation of the residual's PIECEWISE T. eps here is a FIXED Jacobian regularization
+// (0.01 m) -- deliberately independent of the -wtm_ksat_*_smoothing_width operator knobs, which
+// apply only to the separate Picard operator (which carries no analytic Jacobian).
 static double dTransmissivityInverseDwtd(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0.0;
   constexpr double shallow = 1.5;
@@ -148,11 +153,13 @@ static double dTransmissivityInverseDwtd(const double wtd_T, const double fdepth
   return -dT / (T * T);
 }
 
-// Analytic derivative of S_eff with respect to my_new_wtd, matching the smooth S formula.
-// Uses the same V(w) = [w(1+p) + sqrt(w²+eps²)(1-p)] / 2 construction.
+// Analytic derivative of S_eff with respect to my_new_wtd: the EXACT derivative of
+// updateEffectiveStorativity, so it must use the same storativity smoothing width (not a
+// hardcoded constant) to stay the true Jacobian for any -wtm_storativity_surface_smoothing_width.
+// Uses the same V(w) = [w(1+p) + sqrt(w²+eps²)(1-p)] / 2 construction as storedVolume/specificYield.
 static double dEffectiveStorativityDnew(
     const double my_original_wtd, const double my_new_wtd, const double my_porosity) {
-  constexpr double eps = 0.01;
+  const double eps = g_storativity_surface_smoothing_width;
   const double dwtd    = my_new_wtd - my_original_wtd;
 
   const auto V = [&](double w) {
