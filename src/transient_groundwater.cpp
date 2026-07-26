@@ -249,8 +249,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
     // Modeling option: smoothing width of the land-surface storativity transition (sub-grid
-    // roughness), settable via -wtm_storativity_smoothing_width (default 0.01 m, always on).
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_smoothing_width", &g_storativity_smoothing_width, nullptr);
+    // roughness), settable via -wtm_storativity_surface_smoothing_width (default 0.01 m, always on).
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
     // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
     // called with a NULL rhs), FormPicardOperator supplies the SPD A(x). A is its
     // own preconditioner (GAMG). Inner solve defaults to CG+GAMG (CreateSNES).

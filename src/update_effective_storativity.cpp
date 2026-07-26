@@ -3,19 +3,19 @@
 #include <cmath>
 
 // Smoothing width of the surface transition; default 1 cm, overridable via
-// -wtm_storativity_smoothing_width (see the header / BDF2_ADAPTIVE_DESIGN.md).
-double g_storativity_smoothing_width = 0.01;
+// -wtm_storativity_surface_smoothing_width (see the header / BDF2_ADAPTIVE_DESIGN.md).
+double g_storativity_surface_smoothing_width = 0.01;
 
 // Stored water per unit area V(wtd). Smooth (C-inf) blend: slope ~1 above the surface (surface
-// water), ~porosity below (specific yield), over a g_storativity_smoothing_width transition.
+// water), ~porosity below (specific yield), over a g_storativity_surface_smoothing_width transition.
 double storedVolume(const double wtd, const double porosity) {
-  const double eps = g_storativity_smoothing_width;
+  const double eps = g_storativity_surface_smoothing_width;
   return 0.5 * (wtd * (1.0 + porosity) + std::sqrt(wtd * wtd + eps * eps) * (1.0 - porosity));
 }
 
 // Tangent specific yield dV/dwtd (the head-consistent coefficient for BDF2-on-V).
 double specificYield(const double wtd, const double porosity) {
-  const double eps = g_storativity_smoothing_width;
+  const double eps = g_storativity_surface_smoothing_width;
   return 0.5 * ((1.0 + porosity) + wtd * (1.0 - porosity) / std::sqrt(wtd * wtd + eps * eps));
 }
 

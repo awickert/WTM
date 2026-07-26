@@ -3,8 +3,8 @@
 // Smoothing width (metres) of the specific-yield -> surface-water transition at the land surface
 // in the effective-storativity V(w). Default 0.01 m (1 cm); represents sub-grid land-surface
 // roughness, physically defensible up to ~10 cm (esp. with large cells). Always on (no piecewise
-// V form is wired); settable via -wtm_storativity_smoothing_width.
-extern double g_storativity_smoothing_width;
+// V form is wired); settable via -wtm_storativity_surface_smoothing_width.
+extern double g_storativity_surface_smoothing_width;
 
 double updateEffectiveStorativity(const double my_original_wtd, const double my_wtd_T, const double my_porosity);
 
