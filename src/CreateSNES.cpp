@@ -66,9 +66,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
   user_context.use_bdf2        = (bdf2_flag == PETSC_TRUE) || user_context.use_dt_adaptive || user_context.use_bdf2_on_V;
   user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
-  PetscBool smooth_T_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_smooth_T", &smooth_T_flag);
-  user_context.use_smooth_T = (smooth_T_flag == PETSC_TRUE);  // experiment: smooth T in the Picard operator
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
     PetscPrintf(

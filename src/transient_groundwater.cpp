@@ -87,11 +87,12 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
   }
 }
 
-// Smoothing width (metres) for the smooth transmissivity below. Default 0.01 (the original
-// tight band). Settable via -wtm_smooth_eps for the smooth-T experiment: widening it removes
-// the effective kink at the -1.5/0 m thresholds (candidate fix for BDF2 order + adaptivity) at
-// the cost of shifting the fixed point further from the piecewise Fan form.
-static double g_smooth_eps = 0.01;
+// Conductivity smoothing width (metres), set via -wtm_ksat_smoothing_width. Default 0 => use the
+// exact piecewise (C0) Fan transmissivity (production). Any positive value => the smooth (C-inf)
+// form below, rounding the C0 kinks at the -1.5 m (conductivity profile constant->exp-decay) and
+// 0 m (land surface) thresholds over this band, at the cost of shifting the fixed point further
+// from the piecewise Fan form. The width itself is the on/off switch (>0 = on).
+static double g_ksat_smoothing_width = 0.0;
 
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
 // piecewise production form above. Kept for a future Newton path; its analytic
@@ -100,8 +101,8 @@ static double g_smooth_eps = 0.01;
 static double depthIntegratedTransmissivitySmooth(const double wtd_T, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0;
   constexpr double shallow = 1.5;
-  const double eps0        = g_smooth_eps;  // smooth clamping at WTD=0 boundary
-  const double eps1        = g_smooth_eps;  // smooth blend at WTD=-shallow boundary
+  const double eps0        = g_ksat_smoothing_width;  // smooth clamping at WTD=0 boundary
+  const double eps1        = g_ksat_smoothing_width;  // smooth blend at WTD=-shallow boundary
 
   const double wtd_eff = (wtd_T - std::sqrt(wtd_T * wtd_T + eps0 * eps0)) * 0.5;
   const double u       = wtd_T + shallow;
@@ -239,8 +240,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
-    // Modeling option (BDF2-order diagnosis): widen the storativity surface-transition smoothing.
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_eps", &g_storativity_eps, nullptr);
+    // Modeling option: smoothing width of the land-surface storativity transition (sub-grid
+    // roughness), settable via -wtm_storativity_smoothing_width (default 0.01 m, always on).
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_smoothing_width", &g_storativity_smoothing_width, nullptr);
     // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
     // called with a NULL rhs), FormPicardOperator supplies the SPD A(x). A is its
     // own preconditioner (GAMG). Inner solve defaults to CG+GAMG (CreateSNES).
@@ -856,11 +858,11 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAGetLocalInfo(da, &info));
 
   // 1/T over the full ghost range so the neighbor harmonic means on the owned range are valid
-  // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; -wtm_smooth_T
-  // swaps in the smooth (C-inf) form to test whether removing the coefficient kinks restores
-  // BDF2's temporal order and well-behaved adaptive stepping.
-  const bool smooth_T = user_context->use_smooth_T;
-  if (smooth_T) PetscOptionsGetReal(nullptr, nullptr, "-wtm_smooth_eps", &g_smooth_eps, nullptr);
+  // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; a positive
+  // -wtm_ksat_smoothing_width swaps in the smooth (C-inf) form, rounding the coefficient kinks.
+  // The width itself is the switch: 0 (default) => piecewise, >0 => smooth with that band.
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_smoothing_width", &g_ksat_smoothing_width, nullptr);
+  const bool smooth_T = (g_ksat_smoothing_width > 0.0);
   for (auto j = info.gys; j < info.gys + info.gym; j++) {
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
       const double wtd_T = xx[j][i] - my_topo[j][i];

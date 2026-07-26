@@ -67,13 +67,14 @@ struct AppCtx {
   bool   use_dt_adaptive = false;
   double dt_tol          = 0.1;  // target max |h - linear-extrapolation| per step, metres
 
-  // Experiment (-wtm_smooth_T): use the smooth (C-inf) transmissivity in the Picard operator
-  // instead of the production piecewise (C0) Fan S4/S6 form. The C0 kinks (water tables crossing
-  // -1.5 m / 0 m) cap BDF2's temporal order at ~1 and defeat the adaptive controller (it chases a
-  // per-step deviation that can't shrink at a kink). This flag tests whether the smooth form
-  // restores order 2 and well-behaved adaptivity -- at the cost of shifting the fixed point
-  // (it approximates the piecewise Fan form). See BDF2_ADAPTIVE_DESIGN.md.
-  bool use_smooth_T = false;
+  // Modeling option -wtm_ksat_smoothing_width (metres, default 0): round the C0 kinks in the
+  // depth-integrated transmissivity where water tables cross -1.5 m (the conductivity profile's
+  // constant->exponential-decay transition) and 0 m (the land surface). Width 0 keeps the exact
+  // production piecewise (C0) Fan S4/S6 form; any positive width uses the smooth (C-inf) form in
+  // the Picard operator with that band. Physically a sub-grid conductivity smoothing. Read
+  // directly from the options DB in FormPicardOperator (no AppCtx flag). Note: smoothing does
+  // NOT by itself restore BDF2 order 2 -- the order-1 cause was the storativity treatment; see
+  // BDF2_ADAPTIVE_DESIGN.md.
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
