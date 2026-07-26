@@ -75,6 +75,13 @@ struct AppCtx {
   // (it approximates the piecewise Fan form). See BDF2_ADAPTIVE_DESIGN.md.
   bool use_smooth_T = false;
 
+  // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
+  // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
+  // TANGENT dV/dh on the operator diagonal -- instead of the 2-level backward-Euler secant
+  // storativity, which caps the achieved order at 1. Restores genuine 2nd order, physics-preserving
+  // (no fixed-point shift). See BDF2_ADAPTIVE_DESIGN.md.
+  bool use_bdf2_on_V = false;
+
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the
   // context; destroyed in finalise() before PetscFinalize.

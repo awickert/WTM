@@ -12,3 +12,10 @@ extern double g_storativity_eps;
 extern bool g_const_storativity;
 
 double updateEffectiveStorativity(const double my_original_wtd, const double my_wtd_T, const double my_porosity);
+
+// Stored water per unit area V(wtd) (smooth C-inf), and its derivative dV/dwtd = the TANGENT
+// specific yield. updateEffectiveStorativity is the SECANT of V (a 2-level backward-Euler
+// construction); these expose V and its tangent for the BDF2-on-V storage discretization, which
+// applies the 3-level BDF2 difference to V directly and uses the tangent as the operator diagonal.
+double storedVolume(const double wtd, const double porosity);
+double specificYield(const double wtd, const double porosity);

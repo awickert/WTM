@@ -746,10 +746,12 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   // omega = dt_n/dt_{n-1}, b_c = 1+omega, c_c = omega^2/(1+omega) (b_c=2, c_c=1/2 when the
   // step is constant -> uniform BDF2). Backward Euler otherwise: b = S_c*(h^n + rech).
   // h^{n-1} = starting_wtd_prev + topo (centre only).
-  const bool bdf2 = user_context->use_bdf2 && user_context->bdf2_have_history;
-  double b_c = 0.0, c_c = 0.0;
+  const bool bdf2      = user_context->use_bdf2 && user_context->bdf2_have_history;
+  const bool bdf2_on_V = bdf2 && user_context->use_bdf2_on_V;
+  double a_c = 1.0, b_c = 0.0, c_c = 0.0;
   if (bdf2) {
     const double omega = user_context->deltat / user_context->bdf2_prev_dt;
+    a_c                = (1.0 + 2.0 * omega) / (1.0 + omega);
     b_c                = 1.0 + omega;
     c_c                = omega * omega / (1.0 + omega);
   }
@@ -769,6 +771,17 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
     for (auto i = xs; i < xs + xm; i++) {
       if (my_mask[j][i] == 0) {
         bb[j][i] = 0.0;  // Dirichlet ocean cell: h = 0
+      } else if (bdf2_on_V) {
+        // BDF2-on-V: storage = a*V(w) - b*V(w^n) + c*V(w^{n-1}), Picard-linearized about x_k so
+        // the diagonal a*Sy(w_k) (in the operator) cancels a*Sy(w_k)*x_k here, leaving a*V(w_k) at
+        // the fixed point. Recharge added as a volume (~Sy*rech; rech=0 in the order test).
+        const double poro  = my_porosity[j][i];
+        const double w_k   = xx[j][i] - my_topo[j][i];
+        const double Sy    = specificYield(w_k, poro);
+        bb[j][i] = a_c * Sy * xx[j][i] - a_c * storedVolume(w_k, poro)
+                 + b_c * storedVolume(my_starting_wtd[j][i], poro)
+                 - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
+                 + Sy * my_rech[j][i];
       } else {
         const double S_c =
             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
@@ -868,11 +881,15 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   // always carries the current dt; the storage diagonal carries a*S_c (a=3/2 when the step is
   // constant, i.e. w=1 -> uniform BDF2). Backward Euler is a=1. See BDF2_ADAPTIVE_DESIGN.md.
   const bool bdf2 = user_context->use_bdf2 && user_context->bdf2_have_history;
-  double a_coeff  = 1.0;  // coefficient of h^{n+1} on the S_c diagonal (BE)
+  double a_coeff  = 1.0;  // coefficient of h^{n+1} on the storativity diagonal (BE)
   if (bdf2) {
     const double omega = dt / user_context->bdf2_prev_dt;
     a_coeff            = (1.0 + 2.0 * omega) / (1.0 + omega);
   }
+  // BDF2-on-V: use the TANGENT dV/dh on the diagonal (BDF2 applied to the volume), instead of the
+  // backward-Euler secant storativity that caps the order at 1. Only once history exists (a BDF2
+  // step); the BE bootstrap step keeps the secant. See BDF2_ADAPTIVE_DESIGN.md.
+  const bool bdf2_on_V = bdf2 && user_context->use_bdf2_on_V;
 
   for (auto j = info.ys; j < info.ys + info.ym; j++) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
@@ -885,9 +902,12 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
       } else {
         const double cew2 = cellsize_ew_sq[j][i];
 
-        // Centre storativity, frozen at the current x (matches FormFunctionLocal).
+        // Storativity diagonal coefficient, frozen at the current x. BDF2-on-V uses the tangent
+        // dV/dh (specificYield); otherwise the backward-Euler secant (matches FormFunctionLocal).
+        const double w_k = xx[j][i] - my_topo[j][i];
         const double S_c =
-            updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
+            bdf2_on_V ? specificYield(w_k, my_porosity[j][i])
+                      : updateEffectiveStorativity(my_starting_wtd[j][i], w_k, my_porosity[j][i]);
 
         // Harmonic-mean interface conductances: 2 / (1/T_c + 1/T_nbr).
         const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
