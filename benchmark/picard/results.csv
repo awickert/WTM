@@ -116,6 +116,12 @@ order_const_storativity,bdf2-constS,128,1,40,,8000,,,,,,,,0.1716,,dt=5yr,,no,202
 order_bdf2_on_V,bdf2-on-V,128,1,10,,8000,,,,,,,,0.00458,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
 order_bdf2_on_V,bdf2-on-V,128,1,20,,8000,,,,,,,,0.03473,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
 order_bdf2_on_V,bdf2-on-V,128,1,40,,8000,,,,,,,,0.15129,,dt=5yr,,no,2026-07-26,genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m
+adaptive_retest,adaptive-bdf2-on-V,128,1,,100,8000,523,,,,,,,87.8,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
+adaptive_retest,adaptive-bdf2-on-V,128,1,,10,8000,5224,,,,,,,13.18,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
+adaptive_retest,adaptive-bdf2-on-V,128,1,,1,8000,51942,,,,,,,0.0145,,dt=0.5yr,,yes,2026-07-26,order-2 fixes error monotonicity but NOT step count (same ~52k as secant)
+adaptive_retest,adaptive-smoothed-10cm,128,1,,100,8000,535,,,,,,,116.16,,dt=0.5yr,,yes,2026-07-26,10cm smoothing both interfaces: step count UNCHANGED (~52k); err vs unsmoothed ref incl physics shift
+adaptive_retest,adaptive-smoothed-10cm,128,1,,10,8000,5214,,,,,,,18.9,,dt=0.5yr,,yes,2026-07-26,10cm smoothing both interfaces: step count UNCHANGED (~52k); err vs unsmoothed ref incl physics shift
+adaptive_retest,adaptive-smoothed-10cm,128,1,,1,8000,51998,,,,,,,11.92,,dt=0.5yr,,yes,2026-07-26,10cm smoothing both interfaces: step count UNCHANGED (~52k); err vs unsmoothed ref incl physics shift
 memory,anderson,1024,1,,,,,,,,,,,,,,0.722,no,2026-07-25,peak process RSS
 memory,picard-be,1024,1,,,,,,,,,,,,,,0.891,no,2026-07-25,+170 MB for A + GAMG hierarchy
 memory,picard-be,1024,8,,,,,,,,,,,,,,1.674,no,2026-07-25,total across 8 ranks; 0.335 max/proc

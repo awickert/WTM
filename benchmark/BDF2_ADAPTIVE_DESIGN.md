@@ -155,8 +155,19 @@ fixed path tolerance you take a Δt that is `~1/√tol` larger — far fewer, bi
 > schemes are already far below any meaningful threshold (0.005 vs 0.1 mm at Δt=10). At the
 > ~10 yr FSM cadence the secant BDF2 is already ~0.1 mm-accurate, so `BDF2-on-V` is **formal
 > completeness, not a practical necessity** — turn it on only if a study needs sub-0.01 mm
-> transient paths. The stability win (step ~10 yr not daily) stands independently, and whether
-> the restored order also rehabilitates the adaptive controller is an open follow-up.
+> transient paths. The stability win (step ~10 yr not daily) stands independently.
+
+> **ADAPTIVE CONTROLLER — RESOLVED (does not pay off).** Re-tested with the order fixed:
+> BDF2-on-V gives the **same step count** as the secant (~52k at tol=1 mm) — it fixed the error's
+> non-monotonic U-shape (an order-2 payoff) but **not** the over-refinement. Smoothing **both**
+> coefficient interfaces (T at −1.5 m & 0 and storativity at 0, over 10 cm) *also* leaves the step
+> count unchanged (~52k). So the over-refinement is **neither the time-order nor the coefficient
+> kinks** — it is the controller's **max-over-cells, per-step linear-extrapolation estimator**: one
+> fast (near-ocean) cell pins Δt small for the whole domain. At accuracy matched to fixed-1yr
+> (~0.05 mm) adaptive needs ~2× the steps of uniform (a modest loss, not the 60× the tight-tol
+> numbers suggest). **Conclusion: fixed-step BDF2 at the FSM cadence is the recommendation; adaptive
+> would need a fundamentally different error estimator and likely still wouldn't beat uniform on a
+> problem this smooth/dissipative.**
 
 **It composes with the Picard solve** — each step is the *same* SPD elliptic Picard problem
 (`PICARD_MATH.md`), with only:

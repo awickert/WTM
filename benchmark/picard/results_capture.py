@@ -145,6 +145,19 @@ for dt, err_mm in [(10,0.00458),(20,0.03473),(40,0.15129)]:
         T_yr=8000, mean_err_mm=err_mm, err_ref="dt=5yr", slowed_by_concurrent_processes="no",
         run_date="2026-07-26", notes="genuine 2nd order (real storativity); order->~2; eq matches secant 6e-8 m")
 
+# ---------- adaptive re-test: does order-2 or interface-smoothing fix the over-refinement? ----------
+# NO. BDF2-on-V and 10cm-smoothed-both-interfaces give the SAME step count as the secant (~52k at
+# tol=1mm). Order-2 fixed the error (monotonic; 0.0145 mm) but not the count; smoothing did neither.
+# Over-refinement is the controller's max-over-cells linear-extrapolation estimator, not order/kinks.
+for tol_mm, steps, err in [(100,523,87.80),(10,5224,13.18),(1,51942,0.0145)]:
+    add(experiment="adaptive_retest", solver="adaptive-bdf2-on-V", grid=128, ranks=1, tol_mm=tol_mm,
+        T_yr=8000, steps=steps, mean_err_mm=err, err_ref="dt=0.5yr", slowed_by_concurrent_processes="yes",
+        run_date="2026-07-26", notes="order-2 fixes error monotonicity but NOT step count (same ~52k as secant)")
+for tol_mm, steps, err in [(100,535,116.16),(10,5214,18.90),(1,51998,11.92)]:
+    add(experiment="adaptive_retest", solver="adaptive-smoothed-10cm", grid=128, ranks=1, tol_mm=tol_mm,
+        T_yr=8000, steps=steps, mean_err_mm=err, err_ref="dt=0.5yr", slowed_by_concurrent_processes="yes",
+        run_date="2026-07-26", notes="10cm smoothing both interfaces: step count UNCHANGED (~52k); err vs unsmoothed ref incl physics shift")
+
 # ---------- memory (1024^2, -memory_view, peak process RSS) ----------
 add(experiment="memory", solver="anderson", grid=1024, ranks=1, mem_peak_gb=0.722,
     slowed_by_concurrent_processes="no", run_date="2026-07-25", notes="peak process RSS")
