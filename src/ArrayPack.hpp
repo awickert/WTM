@@ -77,6 +77,11 @@ struct ArrayPack {
   // total_loss_to_ocean, which FillSpillMerge accumulates on the full replicated grid on every
   // rank (already global, so it must NOT be reduced).
   double total_loss_to_ocean_gw = 0;
+  // Water removed by the sub-surface surface-water sink (-wtm_surface_sink), summed over owned
+  // cells and substeps as a per-rank partial (reduced to a global total in PrintValues, like
+  // total_loss_to_ocean_gw). For the no-FSM case the removed water is discarded, so this scalar is
+  // what closes the water budget: d(wtd_sum) = added_recharge - loss_to_ocean - surface_removed.
+  double total_surface_removed = 0;
 
   void check() const;
 };

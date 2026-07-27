@@ -312,6 +312,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
+  // Whether the sink was actually applied THIS solve (it lives only in the BDF2-on-V branch, which
+  // needs an established history -- the BE bootstrap step has no sink). Captured before the solve,
+  // since the copy-back below sets bdf2_have_history for the NEXT step. Used to account the removed
+  // water in the same step it was removed.
+  const bool sink_active_this_step = g_surface_sink && user_context.use_bdf2 &&
+                                     user_context.bdf2_have_history && user_context.use_bdf2_on_V;
+
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
     // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
@@ -430,6 +437,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         else
           arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * dmdapack.porosity_vec[j][i];
         dmdapack.starting_wtd[j][i] = 0.;
+      } else if (sink_active_this_step) {
+        // Account the water the implicit sink removed this substep, dt*Q(w^{n+1}), evaluated at the
+        // just-computed new head. Q is already a water rate (m/s), so dt*Q is a water depth; times
+        // cell_area gives the removed volume. Loop is serial (no pragma), so the += is race-free.
+        arp.total_surface_removed +=
+            user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i]) * arp.cell_area[j];
       }
     }
   }

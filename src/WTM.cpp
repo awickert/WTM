@@ -100,7 +100,7 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   // Print column headings to textfile to match data that will be printed after each time step.
   textfile << "Cycles_done Total_wtd_change Change_in_GW_only Change_in_SW_only absolute_value_total_wtd_change "
               "abs_change_in_GW abs_change_in_SW change_in_infiltration total_recharge_added total_loss_to_ocean "
-              "sum_of_water_tables "
+              "sum_of_water_tables total_surface_removed "
            << std::endl;
   textfile.close();
 }
