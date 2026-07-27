@@ -363,7 +363,7 @@ above the surface as a smooth mound, clean dir):
 | standard (free boundary) | 2.1 | 4.5 | 10.5 | 20.9 | 165 mm | ~1.0 |
 | **extended soil** | **0.0019** | 0.0081 | 0.054 | 0.22 | 71.8 mm | **2.07 / 2.07 / 2.00** |
 
-~3000× smaller error at Δt=1. Skeptic-checked: fresh dir, field verified above the surface (mode
+~1100× smaller error at Δt=1 (2.1 → 0.0019 mm). Skeptic-checked: fresh dir, field verified above the surface (mode
 engaged), golden byte-clean (flag default off), ~no-op (0.01 mm) below the surface, order-2 reproduced
 after the POC was reverted (extended-soil is POC-independent since `add_recharge` is wtd-independent
 in this mode). This also settles the **ceiling**: 2nd order IS achievable for the recharge problem.
