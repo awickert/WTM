@@ -2,12 +2,14 @@
 
 **Date:** 2026-07-26
 **Branch:** `bdf2-adaptive-dt`
-**Status (2026-07-27): SOLVED.** Root cause = the recharge **source is evaluated explicitly at hⁿ**;
-BDF2 needs it at tⁿ⁺¹. Evaluating `add_recharge` at the iterate (implicit) **restores clean order 2**
-under recharge (§12: 2.07/2.05/2.00/2.01, 6–40× smaller error). Proof-of-concept reverted over a
-P=0 no-op regression (cause unpinned — see §12); clean implementation is the only remaining step. Richardson (§10)
-is a poor fallback (not cleanly order 2 here). Full trail: §1 problem, D1–D6 + re-derivation
-eliminations, §11 mechanism, §12 fix.
+**Status (2026-07-27): RE-OPENED — cause UNRESOLVED, no working fix. ⚠️ See §13 (correction).**
+What is SOLID (re-verified in a clean work dir): BDF2-on-V is **2nd order in time for the
+homogeneous problem (P=0)** and **1st order with recharge (P>0)** — order ~1 (2.04/4.42/11.2/22.8/274
+mm at Δt=1/2/5/10/100, P=0.01, clean dir). What was WRONG: the earlier "root cause = explicit
+recharge; implicit fixes it → order 2" conclusion was a **stale-work-dir artifact** — in a clean
+dir the implicit-recharge change gives order ~1, i.e. it does NOT fix it (§13). So the cause
+analysis in §9–§12 (D1–D6, the mechanism, the fix) is **contaminated and must be re-verified in
+clean dirs**; do not trust it. Richardson (§10) is also not a clean order-2 fallback.
 **Companion:** `BDF2_ADAPTIVE_DESIGN.md` (the transient-accuracy work this extends).
 
 ## 1. The problem (airtight)
@@ -212,9 +214,18 @@ D3 (kink smoothing irrelevant), D5 (deep-only exact), D6 (convergence irrelevant
 **Fix under test:** evaluate `add_recharge` at the iterate (→ hⁿ⁺¹, implicit) in `FormPicardRHS`.
 Result in §12.
 
-## 12. Implicit-recharge fix — PROVEN (root cause confirmed)
+## 12. Implicit-recharge fix — STRONGLY INDICATED (POC was buggy; clean re-verification pending)
 
-**Making the recharge implicit restores clean order 2.** Proof-of-concept: in `FormPicardRHS`
+**CAVEAT (2026-07-27, added after the P=0 accounting check):** the proof-of-concept below
+**corrupted the solve** — at P=0 (zero recharge) it produced a *different water-table evolution*
+(cycle-9 total_wtd_change −9751 vs −18488) with `recharge_added = 0` and `SW change = 0` in both
+runs. So the extra `rech_source` `DMDAVecGetArray` (nested on a vec `DMDA_Array_Pack` already holds)
+perturbed solver state, NOT the physics (evap/FSM identical in both; ocean is the only boundary).
+Therefore the "order 2" numbers below are from a BUGGY POC and are **not trustworthy** — the fix
+*direction* is strongly indicated (see the independent D5 pure-source result + the order-2
+re-derivation), but "clean order 2 restored" must be re-measured with a non-corrupting build.
+
+**Making the recharge implicit is expected to restore order 2.** Proof-of-concept: in `FormPicardRHS`
 (bdf2_on_V branch), replace the precomputed `Sy·my_rech` (`my_rech = add_recharge(rech_dist, hⁿ)`)
 with `Sy·add_recharge(rech_raw, w_k, poro)` evaluated at the iterate `w_k → hⁿ⁺¹`. Same deep smooth
 IC, vs Δt=0.25 ref:
@@ -249,3 +260,36 @@ untouched).
 **Status: ROOT CAUSE FOUND + FIX PROVEN.** BDF2-on-V's 1st-order-under-recharge is the explicit
 recharge source; evaluating it implicitly (at hⁿ⁺¹) restores true 2nd order. Remaining work is the
 clean (double-checkout-free) implementation, then commit. Richardson (§10) is a poor fallback here.
+
+## 13. ⚠️ CORRECTION (2026-07-27, later): the §11–§12 fix was a STALE-WORK-DIR ARTIFACT
+
+The "implicit recharge restores order 2" result (§12) was produced in a scratch work dir
+(`/tmp/wtm_acc_bench`) reused across ~10 diagnostic scripts that repeatedly overwrote the shared
+input tifs (precip, ksat) and the `supplied_wt` IC. **Re-run cleanly** — a fresh `make_equil`
+fixture + the committed `recharge_order.py` harness, in a pristine dir — the implicit-recharge
+build gives:
+
+| P (m/yr) | Δt=1 | 2 | 5 | 10 | 100 | order |
+|---|---|---|---|---|---|---|
+| 0 (homogeneous) | 0.0022 | 0.0093 | 0.061 | 0.24 | 25.2 mm | **2.0** (matches committed baseline exactly) |
+| 0.01 (recharge) | 2.04 | 4.42 | 11.2 | 22.8 | 274 mm | **~1.0** (NOT fixed; ~same as unfixed) |
+
+So the implicit-recharge change is a clean no-op at P=0 (good) but **does NOT restore order 2 under
+recharge**. The §12 "order 2" table was contamination, not a fix. The fix and its enabling edits
+were reverted; the solver is unchanged.
+
+**What this invalidates:** the *cause* narrative — §9's "explicit source" mechanism, §11, §12, and
+by extension any of the D1–D6 diagnostics that were run in the same contaminated dir — is **not
+trustworthy** and must be re-established in clean, one-experiment-per-dir runs.
+
+**What survives (clean-verified):** BDF2-on-V is **2nd order for the homogeneous problem** and
+**1st order once recharge is active**. That is the reliable finding. The *why* is again open.
+
+**Process lesson (the real takeaway):** never reuse a scratch dir across experiments that mutate
+shared inputs; one clean dir per experiment, or regenerate the fixture each time. A pleasing result
+that confirmed the hypothesis (order 2 restored) was the artifact — exactly the case to distrust
+most. The clean re-run done *to be skeptical* is what caught it.
+
+**Next (clean re-diagnosis):** re-run the order study and the key isolations (pure-source, kink-
+smoothing, convergence) each in its own fresh fixture dir, to re-determine the real cause of the
+recharge order reduction before attempting any fix.
