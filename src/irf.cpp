@@ -1,6 +1,7 @@
 #include "ArrayPack.hpp"
 #include "fill_spill_merge.hpp"
 #include "parameters.hpp"
+#include "update_effective_storativity.hpp"  // storedVolume, for the exact stored-water budget
 
 #include <richdem/common/Array2D.hpp>
 
@@ -490,6 +491,7 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   double wtd_mid_change       = 0.0;
   double GW_wtd_change        = 0.0;
   double wtd_sum              = 0.0;
+  double stored_volume        = 0.0;  // exact Sum storedVolume(wtd)*cell_area -- the physical stored water
 
   for (int y = 0; y < params.ncells_y; y++) {
     for (int x = 0; x < params.ncells_x; x++) {
@@ -505,13 +507,32 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
       } else {
         wtd_sum += arp.wtd(x, y) * arp.porosity(x, y) * arp.cell_area[y];
       }
+      stored_volume += storedVolume(arp.wtd(x, y), arp.porosity(x, y)) * arp.cell_area[y];
     }
   }
+
+  // Capture the initial stored volume once, so d(stored_volume) can drive the budget-closing check.
+  if (!params.have_stored_volume_initial) {
+    params.stored_volume_initial      = stored_volume;
+    params.have_stored_volume_initial = true;
+  }
+
+  // Two ocean-loss measures, kept SEPARATE on purpose (see benchmark/WATER_BUDGET.md):
+  //   * PHYSICAL   -- global_ocean_outflow: the direct Darcy flux across land->ocean faces.
+  //   * BUDGET-CLOSING -- inferred by difference so the books balance exactly by construction:
+  //       ocean_loss_closing = recharge_in - surface_removed - d(stored_volume).
+  // Their difference is the conservation residual: ~0 confirms the physical flux is conservative;
+  // a nonzero value is the discretisation-consistency gap (BDF2 startup term + the specific-yield
+  // recharge definition), NOT a leak. See the math in WATER_BUDGET.md.
+  const double d_stored            = stored_volume - params.stored_volume_initial;
+  const double ocean_loss_closing  = global_added_recharge - global_surface_removed - d_stored;
+  const double budget_residual     = ocean_loss_closing - global_ocean_outflow;
 
   textfile << params.cycles_done << " " << total_wtd_change << " " << GW_wtd_change << " " << wtd_mid_change << " "
            << abs_total_wtd_change << " " << abs_GW_wtd_change << " " << abs_wtd_mid_change << " "
            << params.infiltration_change << " " << global_added_recharge << " " << global_loss_to_ocean << " "
-           << wtd_sum << " " << global_surface_removed << " " << global_ocean_outflow << " " << std::endl;
+           << wtd_sum << " " << global_surface_removed << " " << global_ocean_outflow << " "
+           << stored_volume << " " << ocean_loss_closing << " " << budget_residual << " " << std::endl;
 
   textfile.close();
 }

@@ -46,6 +46,10 @@ struct Parameters {
   double cellsize_n_s_metres = std::numeric_limits<double>::signaling_NaN();
   int32_t cycles_done        = 0;
   double infiltration_change = 0.;
+  // Exact stored water volume at t=0, captured on the first PrintValues call, so the budget-closing
+  // diagnostic can report the change in stored volume (see benchmark/WATER_BUDGET.md).
+  double stored_volume_initial      = 0.;
+  bool   have_stored_volume_initial = false;
 
   // Set for convenience within the code
   int32_t ncells_x = -1;
