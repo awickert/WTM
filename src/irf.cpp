@@ -468,10 +468,14 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   double global_gw_loss_to_ocean = 0.0;
   double global_surface_removed = 0.0;
   double global_ocean_outflow = 0.0;
+  double global_storage_change = 0.0;
+  double global_solver_recharge = 0.0;
   MPI_Allreduce(&arp.total_added_recharge, &global_added_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_loss_to_ocean_gw, &global_gw_loss_to_ocean, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_surface_removed, &global_surface_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_ocean_outflow_gw, &global_ocean_outflow, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_storage_change, &global_storage_change, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_solver_recharge, &global_solver_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
   int mpi_rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -528,11 +532,20 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   const double ocean_loss_closing  = global_added_recharge - global_surface_removed - d_stored;
   const double budget_residual     = ocean_loss_closing - global_ocean_outflow;
 
+  // EXACT (machine-zero) budget residual from the solver's accumulated discrete terms (Picard path):
+  // storage_change = solver_recharge - ocean_outflow - surface_removed holds to the SNES tolerance,
+  // so this residual is ~0 (unlike the physical budget_residual, which carries the BDF2-startup gap).
+  // Its departure from 0, once the numerics are exact, is a clean measure of any UNaccounted vertical
+  // flux (e.g. evap_mode-0 surface discard / the water handed to FSM). See benchmark/WATER_BUDGET.md.
+  const double exact_budget_residual =
+      global_solver_recharge - global_storage_change - global_ocean_outflow - global_surface_removed;
+
   textfile << params.cycles_done << " " << total_wtd_change << " " << GW_wtd_change << " " << wtd_mid_change << " "
            << abs_total_wtd_change << " " << abs_GW_wtd_change << " " << abs_wtd_mid_change << " "
            << params.infiltration_change << " " << global_added_recharge << " " << global_loss_to_ocean << " "
            << wtd_sum << " " << global_surface_removed << " " << global_ocean_outflow << " "
-           << stored_volume << " " << ocean_loss_closing << " " << budget_residual << " " << std::endl;
+           << stored_volume << " " << ocean_loss_closing << " " << budget_residual << " "
+           << exact_budget_residual << " " << std::endl;
 
   textfile.close();
 }

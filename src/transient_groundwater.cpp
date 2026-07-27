@@ -319,6 +319,57 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMRestoreLocalVector(da, &xloc);
 }
 
+// Accumulate the solver's EXACT per-step discrete storage and specific-yield recharge over owned
+// LAND cells, so the water budget closes to the SNES tolerance rather than the ~1% of the physical
+// snapshot (whose gap is the BDF2-startup term, not a leak). The per-cell discrete balance the solve
+// satisfies is  storage(w^{n+1},w^n,w^{n-1}) + dt*lateral_flux + dt*Q_sink = recharge_term, so summed
+// over land cells (interior lateral fluxes cancel; the land->ocean flux is total_ocean_outflow):
+//   total_storage_change = total_solver_recharge - total_ocean_outflow - total_surface_removed
+// to SNES tolerance. The storage/recharge forms mirror FormPicardRHS exactly across its paths
+// (BDF2-on-V uses V and specific yield; the secant paths use the effective storativity and heads).
+// Called after the solve, BEFORE the BDF2 history overwrites w^{n-1}. Picard path only (the exact
+// residual is not defined for the matrix-free Anderson default). See benchmark/WATER_BUDGET.md.
+static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack) {
+  const bool bdf2      = user_context.use_bdf2 && user_context.bdf2_have_history;
+  const bool bdf2_on_V = bdf2 && user_context.use_bdf2_on_V;
+  double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // backward-Euler weights (recharge form S_c*(h^{n+1}-h^n))
+  if (bdf2) {
+    const double omega = user_context.deltat / user_context.bdf2_prev_dt;
+    a_c                = (1.0 + 2.0 * omega) / (1.0 + omega);
+    b_c                = 1.0 + omega;
+    c_c                = omega * omega / (1.0 + omega);
+  }
+
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar **my_topo, **my_prev = nullptr;
+  DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
+  if (user_context.use_bdf2) DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &my_prev);
+  for (int j = ys; j < ys + ym; j++) {
+    for (int i = xs; i < xs + xm; i++) {
+      if (dmdapack.mask[j][i] == 0) continue;  // ocean: Dirichlet, no storage/recharge (flux counted separately)
+      const double poro = dmdapack.porosity_vec[j][i];
+      const double w1   = dmdapack.x[j][i] - my_topo[j][i];  // w^{n+1}
+      const double w0   = dmdapack.starting_wtd[j][i];       // w^n (not yet overwritten by the copy-back)
+      const double wm1  = my_prev ? my_prev[j][i] : 0.0;     // w^{n-1} (unused when c_c==0)
+      const double rech = dmdapack.rech_vec[j][i];
+      double storage, recharge;
+      if (bdf2_on_V) {
+        storage  = a_c * storedVolume(w1, poro) - b_c * storedVolume(w0, poro) + c_c * storedVolume(wm1, poro);
+        recharge = specificYield(w1, poro) * rech;
+      } else {
+        const double S_c = updateEffectiveStorativity(w0, w1, poro);  // secant storativity (matches the RHS)
+        const double h1 = dmdapack.x[j][i], h0 = w0 + my_topo[j][i], hm1 = wm1 + my_topo[j][i];
+        storage  = S_c * (a_c * h1 - b_c * h0 + c_c * hm1);
+        recharge = S_c * rech;
+      }
+      arp.total_storage_change  += storage * arp.cell_area[j];
+      arp.total_solver_recharge += recharge * arp.cell_area[j];
+    }
+  }
+  DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
+  if (my_prev) DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &my_prev);
+}
+
 int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
@@ -468,6 +519,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     factor        = std::min(grow, std::max(shrink, factor));
     user_context.deltat *= factor;
   }
+
+  // Exact budget-closing accounting (Picard path): the solver's discrete storage + recharge terms,
+  // read while starting_wtd still holds w^n and starting_wtd_prev still holds w^{n-1} (both below
+  // overwrite these). Together with total_ocean_outflow and total_surface_removed the budget then
+  // closes to the SNES tolerance. See benchmark/WATER_BUDGET.md.
+  if (user_context.use_picard) accumulate_budget_terms(user_context, arp, dmdapack);
 
   // BDF2: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag,

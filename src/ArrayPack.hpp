@@ -88,6 +88,13 @@ struct ArrayPack {
   // total_loss_to_ocean_gw). For the no-FSM case the removed water is discarded, so this scalar is
   // what closes the water budget: d(wtd_sum) = added_recharge - loss_to_ocean - surface_removed.
   double total_surface_removed = 0;
+  // EXACT budget-closing accumulators (Picard/BDF2 path): the solver's per-step discrete storage
+  // change and specific-yield recharge, summed over owned land cells (per-rank partials). The
+  // discrete balance guarantees total_storage_change = total_solver_recharge - total_ocean_outflow
+  // - total_surface_removed to the SNES tolerance, so the budget closes to ~machine zero (vs the
+  // ~1% of the physical snapshot). See benchmark/WATER_BUDGET.md.
+  double total_storage_change  = 0;
+  double total_solver_recharge = 0;
 
   void check() const;
 };

@@ -50,7 +50,8 @@ The reported quantities fall in two groups, kept separate on purpose:
 | `total_surface_removed` | 12 | **physical** | sub-surface sink removal, `Sum \Delta t\, Q(w^{n+1})\, A` |
 | `stored_volume` | 14 | **physical** | exact stored water, `Sum storedVolume(w)\cdot A` |
 | `ocean_loss_closing` | 15 | **budget-closing** | ocean loss *inferred by difference*: `recharge − sink − \Delta(stored\_volume)` |
-| `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow` |
+| `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow` (physical-snapshot closure; carries the BDF2 gap) |
+| `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance (Picard path) |
 
 - The **physical** quantities are what science uses: how much water entered, where and how fast it
   left through the coast (a real Darcy flux, per-cell-mappable), how much the sink removed, how much
@@ -100,11 +101,31 @@ the boundary terms.
 plain porosity factor near the surface, `S_y r` and `r` differ slightly there — a second `O` (small)
 consistency term.
 
-**Making it exact (optional).** Accumulate the solver's *exact per-step discrete* terms instead of the
-physical snapshots: the storage term `\sum (a_c V^{n+1}-b_c V^{n}+c_c V^{n-1})A` (which telescopes to
-the endpoints above automatically) and the solver recharge `\sum S_y r\,A`. Then the residual falls to
-the SNES convergence tolerance. We deliberately report the **physical** quantities plus the residual
-instead, so the numbers mean what a scientist expects and the residual openly shows the numerical gap.
+**Making it exact.** `exact_budget_residual` (column 17) does exactly this: it accumulates the
+solver's *exact per-step discrete* terms — the storage term `\sum (a_c V^{n+1}-b_c V^{n}+c_c
+V^{n-1})A` (which telescopes to the endpoints above automatically) and the solver recharge `\sum S_y
+r\,A` — over owned land cells (Picard/BDF2 path). By the discrete balance, `storage_change =
+solver_recharge − ocean_outflow − surface_removed` to the SNES tolerance, so this residual is ~0
+regardless of cold-start transients. We report it *alongside* the physical quantities (not instead),
+so the headline numbers mean what a scientist expects while the exact residual proves conservation.
+
+## 4a. What the exact residual then uncovered: N–S flux on a lat-lon grid
+
+Driving the numerics to machine zero turned the budget into a probe, and it found a real property:
+`exact_budget_residual` is machine-zero (≈`10^{-11}` relative) on a **constant-area** grid, but on a
+latitude-varying grid it is a small, constant **per-step** term that scales with the meridional area
+gradient (≈0.25% on a coarse 12.8°-span test grid; it shrinks by ~`500\times` when the latitude span
+and cell size shrink `10\times`, and is negligible on fine grids).
+
+Cause: the flux across a **north–south** face between rows `j` and `j{+}1` uses each cell's *own* area
+(`cell\_area[j]` vs `cell\_area[j{+}1]`), which differ because cells shrink poleward. So
+`flux(c\!\to\!n)\,A_c \neq flux(n\!\to\!c)\,A_n` and the pair does **not** cancel in volume; **east–west**
+faces (same latitude, equal area) cancel exactly. The discretisation is thus volume-conservative to
+`O(\text{area gradient})`, not exactly, on a varying grid. This is a genuine (small) non-conservation
+surfaced *by* the exact budget check — not an accounting error (the check closes to machine zero where
+the grid area is constant). Whether to make the meridional flux face-area-symmetric (true conservation
+on all grids, but a change to the core operator that rebaselines results) is a separate decision; for
+now the check *measures* it.
 
 ## 5. Verification
 
@@ -118,7 +139,8 @@ instead, so the numbers mean what a scientist expects and the residual openly sh
 ## 6. Reported columns (textfile)
 
 `... total_recharge_added(9) total_loss_to_ocean(10) sum_of_water_tables(11) total_surface_removed(12)
-total_ocean_outflow(13) stored_volume(14) ocean_loss_closing(15) budget_residual(16)`
+total_ocean_outflow(13) stored_volume(14) ocean_loss_closing(15) budget_residual(16)
+exact_budget_residual(17)`
 
 `sum_of_water_tables` (11) is the legacy stored-water proxy (`Sum w\cdot\phi\cdot A` below the surface,
 `Sum w\cdot A` above); `stored_volume` (14) is the exact `Sum storedVolume(w)\cdot A` used for the
