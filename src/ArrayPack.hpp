@@ -77,6 +77,12 @@ struct ArrayPack {
   // total_loss_to_ocean, which FillSpillMerge accumulates on the full replicated grid on every
   // rank (already global, so it must NOT be reduced).
   double total_loss_to_ocean_gw = 0;
+  // Water leaving through land->ocean faces (the Darcy interface flux), summed over owned cells and
+  // substeps as a per-rank partial (reduced to a global total in PrintValues). Ocean cells are
+  // Dirichlet h=0, so the crossing flux is absorbed at the boundary and does NOT show up as
+  // ocean-cell content -- total_loss_to_ocean_gw (which counts that content) therefore misses it.
+  // This term is what makes the budget close: recharge = d(storage) + ocean_outflow + surface_removed.
+  double total_ocean_outflow_gw = 0;
   // Water removed by the sub-surface surface-water sink (-wtm_surface_sink), summed over owned
   // cells and substeps as a per-rank partial (reduced to a global total in PrintValues, like
   // total_loss_to_ocean_gw). For the no-FSM case the removed water is discarded, so this scalar is

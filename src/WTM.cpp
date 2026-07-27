@@ -100,7 +100,7 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   // Print column headings to textfile to match data that will be printed after each time step.
   textfile << "Cycles_done Total_wtd_change Change_in_GW_only Change_in_SW_only absolute_value_total_wtd_change "
               "abs_change_in_GW abs_change_in_SW change_in_infiltration total_recharge_added total_loss_to_ocean "
-              "sum_of_water_tables total_surface_removed "
+              "sum_of_water_tables total_surface_removed total_ocean_outflow "
            << std::endl;
   textfile.close();
 }
@@ -515,6 +515,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.fdepth_local);
   VecDestroy(&user_context.ksat_local);
   VecDestroy(&user_context.T_local);
+  VecDestroy(&user_context.mask_local);
 
   // Picard path (nullptr / no-op when -wtm_picard was not set).
   MatDestroy(&user_context.picard_A);
@@ -558,6 +559,12 @@ int main(int argc, char** argv) {
   // BEFORE DMDA_Array_Pack holds them, then scatter topo/fdepth/ksat to their local ghost vectors.
   populate_DMDA_array_pack(user_context, arp);
   scatter_static_fields(user_context, arp);
+
+  // Ghost-scatter the (static) mask once, so ocean-outflow accounting can identify land->ocean faces
+  // at rank boundaries. Done before the pack holds the mask global. Assumes the mask is static within
+  // a run (true for equilibrium; a transient coastline change would need a re-scatter).
+  DMGlobalToLocalBegin(user_context.da, user_context.mask, INSERT_VALUES, user_context.mask_local);
+  DMGlobalToLocalEnd(user_context.da, user_context.mask, INSERT_VALUES, user_context.mask_local);
 
   DMDA_Array_Pack dmdapack(user_context);  // holds the now-populated vecs; must come after the above
 

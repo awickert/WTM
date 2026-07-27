@@ -466,9 +466,11 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   double global_added_recharge = 0.0;
   double global_gw_loss_to_ocean = 0.0;
   double global_surface_removed = 0.0;
+  double global_ocean_outflow = 0.0;
   MPI_Allreduce(&arp.total_added_recharge, &global_added_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_loss_to_ocean_gw, &global_gw_loss_to_ocean, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_surface_removed, &global_surface_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_ocean_outflow_gw, &global_ocean_outflow, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
   int mpi_rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
@@ -509,7 +511,7 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   textfile << params.cycles_done << " " << total_wtd_change << " " << GW_wtd_change << " " << wtd_mid_change << " "
            << abs_total_wtd_change << " " << abs_GW_wtd_change << " " << abs_wtd_mid_change << " "
            << params.infiltration_change << " " << global_added_recharge << " " << global_loss_to_ocean << " "
-           << wtd_sum << " " << global_surface_removed << " " << std::endl;
+           << wtd_sum << " " << global_surface_removed << " " << global_ocean_outflow << " " << std::endl;
 
   textfile.close();
 }

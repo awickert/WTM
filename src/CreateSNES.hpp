@@ -35,6 +35,8 @@ struct AppCtx {
   Vec fdepth_local = nullptr;
   Vec ksat_local   = nullptr;
   Vec T_local      = nullptr;  // scratch: 1/T, computed over ghost range each F eval
+  Vec mask_local   = nullptr;  // ghost mask, so ocean-outflow accounting can find land->ocean faces
+                               // at rank boundaries. Scattered once at init (static within a run).
 
   // --- Semi-implicit Picard path (gated behind -wtm_picard; default off) ---
   // The row-scaled operator A(x) uses centre-cell storativity (so porosity and
@@ -125,6 +127,7 @@ struct AppCtx {
     DMCreateLocalVector(da, &fdepth_local);
     DMCreateLocalVector(da, &ksat_local);
     DMCreateLocalVector(da, &T_local);
+    DMCreateLocalVector(da, &mask_local);
   }
 };
 

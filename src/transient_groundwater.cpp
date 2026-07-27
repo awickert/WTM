@@ -257,6 +257,68 @@ void set_starting_values(
   }
 }
 
+// Accumulate the water leaving through land->ocean faces this solve into arp.total_ocean_outflow_gw
+// (a per-rank owned-cell partial; PrintValues reduces the partials to a global total). Ocean cells
+// are Dirichlet h=0, so the crossing water is absorbed at the boundary and never appears as
+// ocean-cell content -- the correct measure is the Darcy interface flux. It uses the SAME
+// harmonic-mean conductance e = 2/(1/T_c + 1/T_nbr) the Picard operator assembles (mirroring its T
+// construction), evaluated at the converged head, so the discrete budget closes exactly:
+// recharge = d(storage) + ocean_outflow + surface_removed. Per land->ocean face the outflow volume
+// is e * dt/(cell size)^2 * (h_land - 0) * cell_area, matching the operator's flux term (depth) times
+// the cell area (volume). Needs ghost heads (x) and the ghost mask (mask_local); mirrors
+// FormPicardOperator's ghost setup.
+static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
+  DM  da = user_context.da;
+  Vec xloc;
+  DMGetLocalVector(da, &xloc);
+  DMGlobalToLocalBegin(da, user_context.x, INSERT_VALUES, xloc);
+  DMGlobalToLocalEnd(da, user_context.x, INSERT_VALUES, xloc);
+
+  PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_mask, **cellsize_ew_sq, **my_T;
+  DMDAVecGetArray(da, xloc, &xx);
+  DMDAVecGetArray(da, user_context.topo_local, &my_topo);
+  DMDAVecGetArray(da, user_context.fdepth_local, &my_fdepth);
+  DMDAVecGetArray(da, user_context.ksat_local, &my_ksat);
+  DMDAVecGetArray(da, user_context.mask_local, &my_mask);
+  DMDAVecGetArray(da, user_context.cellsize_EW_squared, &cellsize_ew_sq);
+  DMDAVecGetArray(da, user_context.T_local, &my_T);
+
+  DMDALocalInfo info;
+  DMDAGetLocalInfo(da, &info);
+  const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
+  for (auto j = info.gys; j < info.gys + info.gym; j++)
+    for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
+      const double wtd_T = xx[j][i] - my_topo[j][i];
+      my_T[j][i] = 1.0 / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
+                                   : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
+    }
+
+  const double dt   = user_context.deltat;
+  const double cns2 = user_context.cellsize_NS_squared;
+  for (auto j = info.ys; j < info.ys + info.ym; j++) {
+    for (auto i = info.xs; i < info.xs + info.xm; i++) {
+      if (my_mask[j][i] == 0) continue;  // only LAND cells drain to ocean
+      const double h_c  = xx[j][i];
+      const double cew2 = cellsize_ew_sq[j][i];
+      const double A    = arp.cell_area[j];
+      // East/West faces use cellsize_NS_squared, North/South use cellsize_EW_squared (as the operator).
+      if (my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j][i + 1]) * dt / cns2 * h_c * A;
+      if (my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j][i - 1]) * dt / cns2 * h_c * A;
+      if (my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j + 1][i]) * dt / cew2 * h_c * A;
+      if (my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j - 1][i]) * dt / cew2 * h_c * A;
+    }
+  }
+
+  DMDAVecRestoreArray(da, xloc, &xx);
+  DMDAVecRestoreArray(da, user_context.topo_local, &my_topo);
+  DMDAVecRestoreArray(da, user_context.fdepth_local, &my_fdepth);
+  DMDAVecRestoreArray(da, user_context.ksat_local, &my_ksat);
+  DMDAVecRestoreArray(da, user_context.mask_local, &my_mask);
+  DMDAVecRestoreArray(da, user_context.cellsize_EW_squared, &cellsize_ew_sq);
+  DMDAVecRestoreArray(da, user_context.T_local, &my_T);
+  DMRestoreLocalVector(da, &xloc);
+}
+
 int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
@@ -447,6 +509,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
+
+  // Account the water that left through land->ocean faces this solve (Darcy interface flux at the
+  // converged head), the term that closes the water budget against the Dirichlet ocean boundary.
+  accumulate_ocean_outflow(user_context, arp);
 
   // The full wtd field is assembled once per cycle, after the maxiter loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
