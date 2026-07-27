@@ -101,6 +101,42 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
 static double g_ksat_soilbottom_smoothing_width = 0.0;  // eps1: -1.5 m conductivity transition
 static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface clamp
 
+// --- Sub-surface surface-water sink (-wtm_surface_sink; WIP prototype) ---------------------------
+// A smooth, compact-support removal in a band just BELOW the land surface that holds the water
+// table strictly sub-surface (wtd < 0) while shunting the removed water on (to FSM, or discarded).
+// Because no cell crosses wtd = 0, the model never engages the storativity jump / T-clamp free
+// boundary, so BDF2-on-V stays 2nd order (the "no-crossing" regime) WITHOUT needing extended soil,
+// and no above-surface water exists for open-water evaporation to act on. The ramp also crudely
+// emulates near-surface evapotranspiration drawdown. Removal rate Q(wtd) = Qmax * g_w(wtd), with
+// g_w a C2 quintic smoothstep rising 0 -> 1 across wtd in [-w, 0] (0 below the band, saturating at
+// Qmax by the surface). Qmax must exceed the peak recharge rate to guarantee no breach.
+// See benchmark/SURFACE_SINK_DESIGN.md sec 11.
+static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
+static bool             g_surface_sink       = false;
+static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
+static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
+
+// Compact-support C2 quintic smoothstep ramp: 0 for wtd <= -w, smoothly rising to 1 at wtd = 0
+// (p(u) = u^3(6u^2 - 15u + 10), p'(0)=p'(1)=0). Argument is wtd = h - topo (centre cell).
+static double surfaceSinkRamp(const double wtd) {
+  const double w = g_surface_sink_width;
+  if (wtd <= -w) return 0.0;
+  if (wtd >= 0.0) return 1.0;
+  const double u = (wtd + w) / w;  // in (0,1)
+  return u * u * u * (u * (6.0 * u - 15.0) + 10.0);
+}
+// d(ramp)/d(wtd) = p'(u)/w, with p'(u) = 30 u^2 (1-u)^2.
+static double surfaceSinkRampTangent(const double wtd) {
+  const double w = g_surface_sink_width;
+  if (wtd <= -w || wtd >= 0.0) return 0.0;
+  const double u = (wtd + w) / w;
+  return 30.0 * u * u * (1.0 - u) * (1.0 - u) / w;
+}
+static double surfaceSink(const double wtd) { return g_surface_sink_qmax * surfaceSinkRamp(wtd); }
+static double surfaceSinkTangent(const double wtd) {
+  return g_surface_sink_qmax * surfaceSinkRampTangent(wtd);
+}
+
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
 // piecewise production form above. Kept for a future Newton path; its analytic
 // derivative is dTransmissivityInverseDwtd, and FormJacobianLocal uses this
@@ -265,6 +301,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscBool extsoil = PETSC_FALSE;  // [WIP] -wtm_extended_soil: aquifer continues above surface (smooth GW step)
   PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
   g_extended_soil = (extsoil == PETSC_TRUE);
+
+  // Sub-surface sink [WIP]: Qmax supplied in m/yr (intuitive), stored as m/s. Requires
+  // -wtm_bdf2_on_V (implemented only in the Picard RHS/operator). See SURFACE_SINK_DESIGN.md sec 11.
+  PetscBool sink = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_surface_sink", &sink);
+  g_surface_sink         = (sink == PETSC_TRUE);
+  double sink_qmax_yr    = 0.0;
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_qmax", &sink_qmax_yr, nullptr);
+  g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
@@ -810,6 +856,13 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
                  + b_c * storedVolume(my_starting_wtd[j][i], poro)
                  - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
                  + Sy * my_rech[j][i];
+        if (g_surface_sink) {
+          // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k exactly like the
+          // storage term: tangent dt*Q'(w_k) goes on the operator diagonal, so the RHS carries
+          // dt*Q'(w_k)*x_k - dt*Q(w_k); at the fixed point the LHS balance gains +dt*Q(w^{n+1}).
+          const double dt = user_context->deltat;
+          bb[j][i] += dt * surfaceSinkTangent(w_k) * xx[j][i] - dt * surfaceSink(w_k);
+        }
       } else {
         const double S_c =
             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
@@ -950,7 +1003,10 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double A_west   = -e_W * dt / cns2;
         const double A_north  = -e_N * dt / cew2;
         const double A_south  = -e_S * dt / cew2;
-        const double A_center = a_coeff * S_c - (A_east + A_west + A_north + A_south);
+        // Sub-surface sink tangent dt*Q'(w_k) on the diagonal (>= 0, so SPD-preserving); the RHS
+        // carries the matching correction. Only in the BDF2-on-V path (where the RHS sink lives).
+        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k) : 0.0;
+        const double A_center = a_coeff * S_c + sink_diag - (A_east + A_west + A_north + A_south);
 
         // 5-point stencil: east, west, north, south, centre.
         const MatStencil cols[5] = {
