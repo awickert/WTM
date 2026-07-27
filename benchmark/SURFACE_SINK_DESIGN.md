@@ -202,10 +202,84 @@ the model **default** (Andy's intent) is a separate, wide-blast-radius step (it 
 tests and requires truncation always active) — to be done deliberately, with diffs shown, after the
 prototype confirms the order-2-with-removal result below.
 
-## 10. Status / next
+> **Note on the smoother (Andy, 2026-07-27):** the square-root / conic form is *not* an external
+> convention — it was introduced by this project's own recent transmissivity-smoothing work, so the
+> choice of `S` is genuinely open. Softplus (§3) is used above for the derivation; the
+> **compact-support** variant in §11 is now the leading candidate, for the reasons there.
+
+## 11. Leading candidate: a *sub-surface* compact-support ramp (keep `wtd ≤ 0` always)
+
+**The thought (Andy, 2026-07-27) — and why it simplifies the whole task.** Instead of letting the
+water table rise *above* the surface and removing the overshoot, place a **compact-support
+piecewise-polynomial ramp** in a thin band *below* the surface, `wtd \in [-w, 0]`, that removes water
+ever faster as the table approaches the surface. Sized so its maximum removal outpaces the recharge
+influx, it **holds the water table strictly below the surface** while the removed water flows on to
+fill the FillSpillMerge reservoirs — *real* water, correctly routed.
+
+```math
+Q(wtd) = \lambda\,\phi\,g_w(wtd), \qquad
+g_w(s) =
+\begin{cases}
+0, & s \le -w \\[2pt]
+p\!\big((s+w)/w\big), & -w < s < 0 \quad (p:\text{ } C^2\text{ ramp, } p(0)=0,\ p(1)=1,\ p'(0)=p'(1)=0) \\[2pt]
+1, & s \ge 0
+\end{cases}
+```
+
+with, e.g., the quintic smoothstep `p(u)=u^3(6u^2-15u+10)` (`C^2`, compact). Equilibrium sits at some
+`wtd = -\delta' \in (-w, 0)` where `\lambda\phi\,g_w(-\delta') = R` — **strictly below the surface**.
+
+**Three consequences, in order of importance:**
+
+1. **It may remove the need for extended-soil entirely — the real simplification.** The order-1
+   disease was *crossing* `wtd=0` (the storativity jump `\phi\to1`, the `T`-clamp, the corner). If the
+   ramp keeps every cell *below* the surface, the model **never touches that free boundary** — it lives
+   permanently in the smooth sub-surface regime where storativity `=\phi` and `T` is the ordinary Fan
+   form. That is exactly the **Exp A ("no cell crosses → order 2")** regime of
+   `benchmark/picard/recharge_free_boundary.py`, achieved *natively*. So this single mechanism could
+   replace {extended-soil operator + above-surface sink + overshoot bookkeeping} with just {a
+   sub-surface ET-like sink}, and still be 2nd order because the ramp is smooth (`C^2`) and the
+   solution never develops a corner.
+
+2. **It eliminates the evaporation caveat (§8) outright — not mitigates it, removes it.** With
+   `wtd \le 0` always, there is **no above-surface water in the groundwater field**, so there is *no
+   numerical layer for open-water evaporation to spuriously act on*. The `wtd>0` recharge/evap branch
+   is simply never entered by the stabiliser. The physical surface water is exactly the accumulated
+   sink flux handed to FSM.
+
+3. **It unintentionally emulates a near-surface soil-water / evapotranspiration profile (Andy).** A
+   removal that grows as the water table nears the surface is, physically, what near-surface
+   **evaporation and transpiration** do — roots and capillary rise draw down water most strongly where
+   the table is shallow. So the numerical stabiliser doubles as a crude ET parameterisation; `w` maps
+   naturally to an effective rooting/extinction depth and could later be tied to real ET data. A
+   "spoof" of physics that happens to point the right way.
+
+**Open questions to settle in the prototype (held honestly):**
+
+- **Sizing / guarantee.** Keeping `wtd<0` requires `\max Q = \lambda\phi \ge R_{\max}` *within a
+  substep's influx* — an extreme storm into low porosity could still punch through the band. Do we
+  size `\lambda` for the worst case, adapt it, or keep a hard clamp / extended-soil as a **backstop**
+  for the rare breach? (A breach is graceful — it just reverts locally to the §2–§9 above-surface
+  behaviour — but we should know when it happens.)
+- **Double-counting ET.** If `evap_mode`/FSM already account for evaporation, a sub-surface ET-sink
+  that *also* removes near-surface water risks double-counting real ET. The sink's removal must be
+  reconciled with (or replace part of) the existing evap term, not stack on top of it.
+- **Mass balance & routing.** Verify the removed flux is conserved into FSM at the right cell, time,
+  and cadence (the §6 accumulator), and that shunting it below-surface-directly (vs letting it pond
+  first) gives the intended reservoir filling.
+- **`w` and `p`.** Band width and ramp shape: numerically `w` a few `\delta` keeps the equilibrium
+  comfortably inside the band; physically `w` = effective ET extinction depth. These two readings may
+  or may not want the same value — worth checking whether one `w` serves both.
+
+## 12. Status / next
 
 - **Analysis:** order-2 recovery, overshoot `\delta = R/\lambda\phi`, SPD Jacobian — done (this note).
-- **Next (prototype):** add `Q` and `\partial Q/\partial h` to the residual + Picard operator; measure
-  order *with active removal* and the realised `\delta` on the fixture (the one claim held skeptically:
-  that a single global `(\lambda,\varepsilon)` behaves across the `R/\phi` range and cell sizes).
-- **Then:** the FSM-input accumulator (§6) and the evaporation guard (§8); finally, the default flip.
+- **Leading design (§11):** sub-surface compact-support ramp keeping `wtd\le0`; likely obviates
+  extended-soil, kills the evaporation caveat, and doubles as a crude ET profile. **Prototype this
+  variant first.**
+- **Prototype:** add `Q` and `\partial Q/\partial h` to the residual + Picard operator; measure (i)
+  order *with active removal*, (ii) that `wtd` stays `<0` across the `R/\phi` range and cell sizes,
+  (iii) mass conservation of the removed flux into FSM. Held skeptically: whether one global
+  `(\lambda, w)` behaves across the domain, and how breaches (if any) present.
+- **Then:** the FSM-input accumulator (§6), the ET reconciliation (§11), and — deliberately, diffs
+  shown — the default flip.
