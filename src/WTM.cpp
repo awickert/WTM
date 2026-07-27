@@ -501,6 +501,9 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.x);
   VecDestroy(&user_context.b);
   VecDestroy(&user_context.cellsize_EW_squared);
+  VecDestroy(&user_context.geom_ew_vec);
+  VecDestroy(&user_context.geom_n_vec);
+  VecDestroy(&user_context.geom_s_vec);
   VecDestroy(&user_context.fdepth_vec);
   VecDestroy(&user_context.ksat_vec);
   VecDestroy(&user_context.mask);

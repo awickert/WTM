@@ -62,6 +62,10 @@ struct ArrayPack {
 
   dvec cell_area;
   dvec cellsize_e_w_metres;
+  // Per-row conservative-FV flux geometry factors (L_wall/d_centre); see GRID_CONVENTION.md.
+  dvec geom_ew;  // E-W face: cellsize_n_s / cellsize_e_w[j]
+  dvec geom_n;   // N face:   cellsize_e_w[N edge] / cellsize_n_s
+  dvec geom_s;   // S face:   cellsize_e_w[S edge] / cellsize_n_s
 
   // labels and flow directions:
 

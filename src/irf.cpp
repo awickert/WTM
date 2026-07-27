@@ -275,6 +275,16 @@ void cell_size_area(Parameters& params, ArrayPack& arp) {
   arp.cellsize_e_w_metres.resize(params.ncells_y);
   // cell area (metres squared)
   arp.cell_area.resize(params.ncells_y);
+  // Conservative finite-volume flux conductance geometry (see benchmark/GRID_CONVENTION.md).
+  // For a face flux G = T * L_wall / d_centre, the per-row geometric factor L_wall/d_centre is:
+  //   geom_ew = cellsize_n_s / cellsize_e_w[j]        (E-W face: N-S wall, E-W centre distance)
+  //   geom_n  = cellsize_e_w[N face] / cellsize_n_s   (N face: E-W wall at the northern edge)
+  //   geom_s  = cellsize_e_w[S face] / cellsize_n_s   (S face: E-W wall at the southern edge)
+  // The N/S factors use the FACE (cell-edge) E-W length so a shared face gives equal-and-opposite
+  // volume fluxes -> exact conservation. cell_area = cellsize_n_s^2 / geom_ew.
+  arp.geom_ew.resize(params.ncells_y);
+  arp.geom_n.resize(params.ncells_y);
+  arp.geom_s.resize(params.ncells_y);
 
   // used to calculate cell latitude in radians.
   // southern edge of the domain in degrees, plus the number of cells up from this
@@ -305,6 +315,12 @@ void cell_size_area(Parameters& params, ArrayPack& arp) {
     if (arp.cell_area[j] < 0) {
       throw std::runtime_error("Cell with a negative area was found!");
     }
+
+    // Conservative FV flux geometry (L_wall / d_centre per face; see GRID_CONVENTION.md). The N/S
+    // factors use the cell-EDGE (face) E-W lengths so adjacent cells share the face value exactly.
+    arp.geom_ew[j] = params.cellsize_n_s_metres / arp.cellsize_e_w_metres[j];
+    arp.geom_n[j]  = cellsize_e_w_metres_N / params.cellsize_n_s_metres;
+    arp.geom_s[j]  = cellsize_e_w_metres_S / params.cellsize_n_s_metres;
   }
 }
 

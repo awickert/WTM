@@ -274,13 +274,15 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMGlobalToLocalBegin(da, user_context.x, INSERT_VALUES, xloc);
   DMGlobalToLocalEnd(da, user_context.x, INSERT_VALUES, xloc);
 
-  PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_mask, **cellsize_ew_sq, **my_T;
+  PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_mask, **my_T, **gew, **gn, **gs;
   DMDAVecGetArray(da, xloc, &xx);
   DMDAVecGetArray(da, user_context.topo_local, &my_topo);
   DMDAVecGetArray(da, user_context.fdepth_local, &my_fdepth);
   DMDAVecGetArray(da, user_context.ksat_local, &my_ksat);
   DMDAVecGetArray(da, user_context.mask_local, &my_mask);
-  DMDAVecGetArray(da, user_context.cellsize_EW_squared, &cellsize_ew_sq);
+  DMDAVecGetArray(da, user_context.geom_ew_vec, &gew);
+  DMDAVecGetArray(da, user_context.geom_n_vec, &gn);
+  DMDAVecGetArray(da, user_context.geom_s_vec, &gs);
   DMDAVecGetArray(da, user_context.T_local, &my_T);
 
   DMDALocalInfo info;
@@ -293,19 +295,17 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
                                    : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
     }
 
-  const double dt   = user_context.deltat;
-  const double cns2 = user_context.cellsize_NS_squared;
+  const double dt = user_context.deltat;
   for (auto j = info.ys; j < info.ys + info.ym; j++) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
       if (my_mask[j][i] == 0) continue;  // only LAND cells drain to ocean
-      const double h_c  = xx[j][i];
-      const double cew2 = cellsize_ew_sq[j][i];
-      const double A    = arp.cell_area[j];
-      // East/West faces use cellsize_NS_squared, North/South use cellsize_EW_squared (as the operator).
-      if (my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j][i + 1]) * dt / cns2 * h_c * A;
-      if (my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j][i - 1]) * dt / cns2 * h_c * A;
-      if (my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j + 1][i]) * dt / cew2 * h_c * A;
-      if (my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += 2.0 / (my_T[j][i] + my_T[j - 1][i]) * dt / cew2 * h_c * A;
+      const double h_c = xx[j][i];
+      // Volume flux through each land->ocean face = dt * G * h_c, with the SAME face conductance
+      // G = e * (L_wall/d_centre) the operator assembles (E-W uses geom_ew, N/S the face geom_n/s).
+      if (my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i + 1]) * gew[j][i] * h_c;
+      if (my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
+      if (my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
+      if (my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
     }
   }
 
@@ -314,7 +314,9 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMDAVecRestoreArray(da, user_context.fdepth_local, &my_fdepth);
   DMDAVecRestoreArray(da, user_context.ksat_local, &my_ksat);
   DMDAVecRestoreArray(da, user_context.mask_local, &my_mask);
-  DMDAVecRestoreArray(da, user_context.cellsize_EW_squared, &cellsize_ew_sq);
+  DMDAVecRestoreArray(da, user_context.geom_ew_vec, &gew);
+  DMDAVecRestoreArray(da, user_context.geom_n_vec, &gn);
+  DMDAVecRestoreArray(da, user_context.geom_s_vec, &gs);
   DMDAVecRestoreArray(da, user_context.T_local, &my_T);
   DMRestoreLocalVector(da, &xloc);
 }
@@ -957,7 +959,8 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   (void)snes;
   AppCtx* user_context = static_cast<AppCtx*>(ctx);
   DM      da           = user_context->da;
-  PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask;
+  PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask, **gew;
+  const double  cns2 = user_context->cellsize_NS_squared;  // cell area A_j = cns2 / geom_ew (volume form)
 
   // Variable-step BDF2 (once an h^{n-1} exists): b = S_c*(b_c*h^n - c_c*h^{n-1} + rech) with
   // omega = dt_n/dt_{n-1}, b_c = 1+omega, c_c = omega^2/(1+omega) (b_c=2, c_c=1/2 when the
@@ -981,6 +984,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // for the cell area A_j
   if (bdf2) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
 
   const auto [xs, ys, xm, ym] = get_corners(da);
@@ -991,30 +995,32 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
       } else if (bdf2_on_V) {
         // BDF2-on-V: storage = a*V(w) - b*V(w^n) + c*V(w^{n-1}), Picard-linearized about x_k so
         // the diagonal a*Sy(w_k) (in the operator) cancels a*Sy(w_k)*x_k here, leaving a*V(w_k) at
-        // the fixed point. Recharge added as a volume (~Sy*rech; rech=0 in the order test).
+        // the fixed point. Volume form: the whole storage+recharge+sink RHS scales by the cell area
+        // A_j (matching the operator's a*Sy*A_j diagonal and dt*G face conductances).
         const double poro  = my_porosity[j][i];
         const double w_k   = xx[j][i] - my_topo[j][i];
         const double Sy    = specificYield(w_k, poro);
-        bb[j][i] = a_c * Sy * xx[j][i] - a_c * storedVolume(w_k, poro)
-                 + b_c * storedVolume(my_starting_wtd[j][i], poro)
-                 - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
-                 + Sy * my_rech[j][i];
+        const double A_j   = cns2 / gew[j][i];
+        bb[j][i] = A_j * (a_c * Sy * xx[j][i] - a_c * storedVolume(w_k, poro)
+                        + b_c * storedVolume(my_starting_wtd[j][i], poro)
+                        - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
+                        + Sy * my_rech[j][i]);
         if (g_surface_sink) {
-          // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k exactly like the
-          // storage term: tangent dt*Q'(w_k) goes on the operator diagonal, so the RHS carries
-          // dt*Q'(w_k)*x_k - dt*Q(w_k); at the fixed point the LHS balance gains +dt*Q(w^{n+1}).
+          // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k like the storage
+          // term; scaled by A_j to match the operator's dt*Q'(w_k)*A_j diagonal (volume form).
           const double dt = user_context->deltat;
-          bb[j][i] += dt * surfaceSinkTangent(w_k) * xx[j][i] - dt * surfaceSink(w_k);
+          bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k) * xx[j][i] - dt * surfaceSink(w_k));
         }
       } else {
         const double S_c =
             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
         const double h_n = my_starting_wtd[j][i] + my_topo[j][i];
+        const double A_j = cns2 / gew[j][i];  // volume form: scale the storage/recharge by the cell area
         if (bdf2) {
           const double h_nm1 = my_starting_wtd_prev[j][i] + my_topo[j][i];
-          bb[j][i] = S_c * (b_c * h_n - c_c * h_nm1 + my_rech[j][i]);
+          bb[j][i] = A_j * S_c * (b_c * h_n - c_c * h_nm1 + my_rech[j][i]);
         } else {
-          bb[j][i] = S_c * (h_n + my_rech[j][i]);
+          bb[j][i] = A_j * S_c * (h_n + my_rech[j][i]);
         }
       }
     }
@@ -1027,6 +1033,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
   if (bdf2) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
   return 0;
 }
@@ -1069,7 +1076,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMGlobalToLocalEnd(da, x, INSERT_VALUES, xloc));
 
   PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_porosity, **my_starting_wtd, **my_mask, **cellsize_ew_sq,
-      **my_T;
+      **my_T, **gew, **gn, **gs;
   PetscCall(DMDAVecGetArray(da, xloc, &xx));
   PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
@@ -1078,6 +1085,9 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));  // owned: centre S_c
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // conservative-FV flux geometry
+  PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
 
   DMDALocalInfo info;
@@ -1124,7 +1134,13 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const PetscScalar one = 1.0;
         PetscCall(MatSetValuesStencil(A, 1, &row, 1, &row, &one, INSERT_VALUES));
       } else {
-        const double cew2 = cellsize_ew_sq[j][i];
+        // Conservative FINITE-VOLUME (volume-form) assembly: each row is the cell's VOLUME balance,
+        // so off-diagonals are the shared face conductances dt*G (G = e * L_wall/d_centre) -- exactly
+        // symmetric across every face and mass-conservative -- and the storage/sink diagonal carries
+        // the cell area A_j. See benchmark/GRID_CONVENTION.md. (Was head-form, which divided the E-W
+        // flux by cellsize_n_s^2 and the N-S flux by cellsize_e_w^2 -- the two swapped, off by
+        // cos^2(lat), and non-conservative across N-S faces.)
+        const double A_j = cns2 / gew[j][i];  // cell area = cellsize_n_s^2 / (cellsize_n_s/cellsize_e_w)
 
         // Storativity diagonal coefficient, frozen at the current x. BDF2-on-V uses the tangent
         // dV/dh (specificYield); otherwise the backward-Euler secant (matches FormFunctionLocal).
@@ -1133,23 +1149,22 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
             bdf2_on_V ? specificYield(w_k, my_porosity[j][i])
                       : updateEffectiveStorativity(my_starting_wtd[j][i], w_k, my_porosity[j][i]);
 
-        // Harmonic-mean interface conductances: 2 / (1/T_c + 1/T_nbr).
+        // Harmonic-mean interface transmissivities: 2 / (1/T_c + 1/T_nbr).
         const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
         const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
         const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
         const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
 
-        // Row-scaled-by-S_c operator: off-diagonals are the (symmetric) flux terms
-        // dt*e/h^2; diagonal is a_coeff*S_c + sum of the fluxes. RHS carries the matching
-        // S_c. (BE: a_coeff=1; uniform BDF2: a_coeff=3/2.)
-        const double A_east   = -e_E * dt / cns2;
-        const double A_west   = -e_W * dt / cns2;
-        const double A_north  = -e_N * dt / cew2;
-        const double A_south  = -e_S * dt / cew2;
-        // Sub-surface sink tangent dt*Q'(w_k) on the diagonal (>= 0, so SPD-preserving); the RHS
-        // carries the matching correction. Only in the BDF2-on-V path (where the RHS sink lives).
-        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k) : 0.0;
-        const double A_center = a_coeff * S_c + sink_diag - (A_east + A_west + A_north + A_south);
+        // Face conductances G = e * (L_wall/d_centre): E-W uses geom_ew (per row); N/S use the
+        // FACE-centred geom_n/geom_s, so G_N(j) = G_S(j+1) exactly (shared face) -> conservative.
+        const double A_east   = -dt * e_E * gew[j][i];
+        const double A_west   = -dt * e_W * gew[j][i];
+        const double A_north  = -dt * e_N * gn[j][i];
+        const double A_south  = -dt * e_S * gs[j][i];
+        // Storage and sub-surface sink now scale with the cell area A_j (volume form). The sink
+        // tangent dt*Q'(w_k)*A_j is >= 0, so the diagonal stays dominant -> SPD-preserving.
+        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k) * A_j : 0.0;
+        const double A_center = a_coeff * S_c * A_j + sink_diag - (A_east + A_west + A_north + A_south);
 
         // 5-point stencil: east, west, north, south, centre.
         const MatStencil cols[5] = {
@@ -1194,6 +1209,9 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
   PetscCall(DMRestoreLocalVector(da, &xloc));
   return 0;

@@ -14,6 +14,11 @@ struct AppCtx {
   Vec x                   = nullptr;  // Solution vector
   Vec b                   = nullptr;  // RHS vector
   Vec cellsize_EW_squared = nullptr;
+  // Conservative-FV per-row flux geometry factors (owned range; see GRID_CONVENTION.md).
+  // cell area A_j = cellsize_NS_squared / geom_ew. E-W conductance = e * geom_ew; N/S = e * geom_{n,s}.
+  Vec geom_ew_vec         = nullptr;
+  Vec geom_n_vec          = nullptr;
+  Vec geom_s_vec          = nullptr;
   Vec fdepth_vec          = nullptr;
   Vec ksat_vec            = nullptr;
   Vec mask                = nullptr;
@@ -106,6 +111,9 @@ struct AppCtx {
     DMCreateGlobalVector(da, &x);
     VecDuplicate(x, &b);
     VecDuplicate(x, &cellsize_EW_squared);
+    VecDuplicate(x, &geom_ew_vec);
+    VecDuplicate(x, &geom_n_vec);
+    VecDuplicate(x, &geom_s_vec);
     VecDuplicate(x, &fdepth_vec);
     VecDuplicate(x, &ksat_vec);
     VecDuplicate(x, &mask);

@@ -16,14 +16,24 @@ void populate_DMDA_array_pack(AppCtx& user_context, ArrayPack& arp) {
   scatter_forcing_fields(user_context, arp);
 
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
-  PetscScalar** cellsize;
+  PetscScalar **cellsize, **gew, **gn, **gs;
   DMDAVecGetArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
+  DMDAVecGetArray(user_context.da, user_context.geom_ew_vec, &gew);
+  DMDAVecGetArray(user_context.da, user_context.geom_n_vec, &gn);
+  DMDAVecGetArray(user_context.da, user_context.geom_s_vec, &gs);
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
       cellsize[j][i] = arp.cellsize_e_w_metres[j] * arp.cellsize_e_w_metres[j];
+      // Per-row conservative-FV flux geometry (see GRID_CONVENTION.md). Broadcast across i.
+      gew[j][i] = arp.geom_ew[j];
+      gn[j][i]  = arp.geom_n[j];
+      gs[j][i]  = arp.geom_s[j];
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.cellsize_EW_squared, &cellsize);
+  DMDAVecRestoreArray(user_context.da, user_context.geom_ew_vec, &gew);
+  DMDAVecRestoreArray(user_context.da, user_context.geom_n_vec, &gn);
+  DMDAVecRestoreArray(user_context.da, user_context.geom_s_vec, &gs);
 }
 
 // Scatter the per-cell recharge forcing fields (precip, evap, open_water_evap, runoff_ratio)
