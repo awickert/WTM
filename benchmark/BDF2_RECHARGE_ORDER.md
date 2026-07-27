@@ -2,7 +2,17 @@
 
 **Date:** 2026-07-26
 **Branch:** `bdf2-adaptive-dt`
-**Status (2026-07-27): RE-OPENED — cause UNRESOLVED, no working fix. ⚠️ See §13 (correction).**
+**Status (2026-07-27): RESOLVED (GW-step) — cause + fix found, clean-verified. See §15.** BDF2-on-V
+is 2nd order for the homogeneous problem but 1st order under recharge because recharge pushes water
+tables across the land surface (wtd=0) — a **moving free boundary** (storativity jumps porosity→1,
+T clamps) that gives h(t) a temporal kink and drags the whole domain (even deep subsurface, order
+~1.15) to 1st order. NOT evap-mode-specific, NOT a smoothable coefficient kink. FIX (Andy's idea,
+gated `-wtm_extended_soil`, default off): continue the aquifer above the surface so the GW step is
+smooth → **order 2 restored** (2.07/2.07/2.00, ~3000× smaller error at Δt=1; golden clean; ~no-op
+below surface). Production half — truncate the mound to real topography at the FSM handoff — not yet
+done. ⚠️ §13 records an earlier stale-work-dir wrong turn (an "implicit recharge" fix that was a
+contamination artifact); the §9–§12 cause analysis from that dir is superseded by the clean §14–§15.
+--- earlier (now-superseded) status kept for the trail ---
 What is SOLID (re-verified in a clean work dir): BDF2-on-V is **2nd order in time for the
 homogeneous problem (P=0)** and **1st order with recharge (P>0)** — order ~1 (2.04/4.42/11.2/22.8/274
 mm at Δt=1/2/5/10/100, P=0.01, clean dir). What was WRONG: the earlier "root cause = explicit
@@ -293,3 +303,80 @@ most. The clean re-run done *to be skeptical* is what caught it.
 **Next (clean re-diagnosis):** re-run the order study and the key isolations (pure-source, kink-
 smoothing, convergence) each in its own fresh fixture dir, to re-determine the real cause of the
 recharge order reduction before attempting any fix.
+
+## 14. Clean re-diagnosis (2026-07-27) — the cause is the SURFACE handling
+
+**Deep-everywhere + diffusion + recharge (fresh dir, field verified deep throughout: IC [-100, -100.0],
+after recharge [-99.9, -88.0]).** BDF2-on-V order WITH recharge when NO cell reaches the surface:
+
+| Δt (yr) | 1 | 2 | 5 | 10 | 100 | order |
+|---|---|---|---|---|---|---|
+| deep-only | 0.006 | 0.010 | 0.034 | 0.12 | 11.8 mm | 1.83 → **1.99** (coarse) |
+
+vs the shallow-present case (order ~1 everywhere, 274 mm at Δt=100). So **when nothing touches the
+surface, BDF2-on-V + recharge is 2nd order** (at the coarse Δt that matters; the fine-Δt dip is the
+same reference-floor artifact as the homogeneous case, errors ~0.006 mm below the dt=0.25 ref's
+resolution). ⇒ the order reduction is the **surface/shallow-cell handling done explicitly at hⁿ**,
+NOT the recharge↔diffusion coupling in general.
+
+Which surface op: the T-clamp is already implicit (T evaluated at hⁿ⁺¹); the partitioning-implicit
+POC (§12) did not help; so the suspect is the **`evap_mode 0` explicit surface-water removal** (and
+possibly the recharge-amount computation), done in the hⁿ preprocessing step outside the Picard
+solve. Since production runs **FSM** (surface water conserved/routed between GW cycles, no removal
+within a GW step), the order loss may be **specific to the harsh `evap_mode 0`** and absent in
+production. Testing `evap_mode 0` vs `1` (no removal, FSM-within-step proxy) next.
+
+**`evap_mode 0` vs `1` (clean dir) — NOT evap-specific.** Same shallow-present recharge; only the
+surface treatment differs:
+- `evap_mode 0` (remove surface water): wtd clamped at 0; order ~1 (2.04/4.42/11.2/22.8/274 mm).
+- `evap_mode 1` (owe=0, no removal → water piles up to +8.15 m): order ~1 and **2× worse**
+  (5.86/13.1/31.2/60.7/537 mm).
+
+So it is **not** the removal — *both* surface treatments lose the order; accumulation is worse. What
+they share is the water table **crossing the surface (wtd → 0)**, where T (the clamp) and V (the
+porosity→1 storativity transition) are C0-kinked. **The cause is the wtd=0 coefficient kinks, crossed
+when recharge pushes cells up to the surface** (drainage, which is order 2, moves cells *down away*
+from the surface and rarely lingers there). **Consequence:** this is NOT fixed by switching off
+`evap_mode 0` — FSM production hits the same kinks wherever the water table reaches the surface (wet
+regions/depressions). Scope limiter: deep/dry cells stay 2nd order. Next: clean re-test of whether
+smoothing the wtd=0 kinks restores the order (D3 was contaminated).
+
+## 15. RESOLVED — it is a FREE BOUNDARY, and extended-soil fixes it
+
+**Smoothing the wtd=0 kinks does NOT help (clean re-test).** Recharge order with all three surface
+kinks smoothed 0.5 m: still ~1 (1.23/1.07/0.97/0.88) and errors *larger*. So it is not a *smoothable
+coefficient* kink (§14's interim wording); it is an **obstacle / moving free boundary**. When
+recharge pushes a water table across the surface, the exact `h(t) = min(rising trajectory, surface)`
+has a **temporal kink** at the crossing instant — BDF2 assumes C² in time, so a temporal kink caps
+the order. And it diffuses: `recharge_order_by_depth.py` shows even deep subsurface cells (wtd < −10 m)
+are order ~1.15 (errors shrink with depth, order does not) — so the free boundary spoils the whole
+domain, not just the discarded surface water.
+
+**Fix — extended soil (Andy's idea), gated `-wtm_extended_soil`, VALIDATED (GW-step).** Treat the
+aquifer as continuing infinitely above the surface: storativity = porosity everywhere (no jump to 1),
+transmissivity continues past wtd=0 (no clamp), recharge always partitions as rech/porosity. This
+removes the free boundary → the GW step is smooth → **clean order 2** (`evap_mode 1`, cells rise
+above the surface as a smooth mound, clean dir):
+
+| Δt (yr) | 1 | 2 | 5 | 10 | 100 | order |
+|---|---|---|---|---|---|---|
+| standard (free boundary) | 2.1 | 4.5 | 10.5 | 20.9 | 165 mm | ~1.0 |
+| **extended soil** | **0.0019** | 0.0081 | 0.054 | 0.22 | 71.8 mm | **2.07 / 2.07 / 2.00** |
+
+~3000× smaller error at Δt=1. Skeptic-checked: fresh dir, field verified above the surface (mode
+engaged), golden byte-clean (flag default off), ~no-op (0.01 mm) below the surface, order-2 reproduced
+after the POC was reverted (extended-soil is POC-independent since `add_recharge` is wtd-independent
+in this mode). This also settles the **ceiling**: 2nd order IS achievable for the recharge problem.
+
+**Why it is physically safe (Andy):** the fictional above-surface mound flows *downslope*, the same
+direction real surface water and FSM route it — it only misroutes if it grows tall enough to reverse
+a gradient across a divide, which needs a lot of water. Two things bound that below any practical
+concern: (a) FSM truncates the mound to real topography once per FSM cycle (weekly), so it never
+builds; (b) extended T *grows* above the surface, so a tall mound has high transmissivity and drains
+fast (self-limiting). The +23 m mound in the test is an artifact of GW-only for 1000 yr with no FSM
+truncation. Degrades gracefully and locally, not globally. Also a model **simplification** — deletes
+the surface special-casing from the GW step.
+
+**Remaining (production half):** the FSM-side truncation — at the FSM handoff, move water above the
+real surface topography to depressions / off-map. Not yet implemented or validated. Until then,
+`-wtm_extended_soil` is a WIP flag proving the GW-step order-2 half.
