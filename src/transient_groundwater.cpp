@@ -709,15 +709,17 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
  */
 static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, PetscScalar** f, AppCtx* user_context) {
   DM da = user_context->da;
-  PetscScalar **cellsize_ew_sq, **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_rech, **my_T, **my_starting_wtd,
-      **my_porosity;
+  PetscScalar **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_rech, **my_T, **my_starting_wtd, **my_porosity, **gew,
+      **gn, **gs;
 
   /*
     Compute function over the locally owned part of the grid.
     topo/fdepth/ksat/T use local ghost vectors so neighbor accesses [j][i±1] are valid under MPI.
   */
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
-  PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // conservative-FV flux geometry
+  PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
   PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
@@ -740,7 +742,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   }
 
 #pragma omp parallel for default(none)                                                                              \
-    shared(info, cellsize_ew_sq, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f) \
+    shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f) \
         collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
@@ -751,24 +753,29 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // non-singular. Anderson is unaffected: x starts at 0 and stays at 0.
         f[j][i] = x[j][i];
       } else {
-        double this_x          = x[j][i];
-        double this_T          = my_T[j][i];
-        const PetscScalar ux_E = (x[j][i + 1] - this_x);
-        const PetscScalar ux_W = (this_x - x[j][i - 1]);
-        const PetscScalar uy_N = (x[j + 1][i] - this_x);
-        const PetscScalar uy_S = (this_x - x[j - 1][i]);
-        const PetscScalar e_E  = 2. / (this_T + my_T[j][i + 1]);  //harmonic means
-        const PetscScalar e_W  = 2. / (this_T + my_T[j][i - 1]);
-        const PetscScalar e_N  = 2. / (this_T + my_T[j + 1][i]);
-        const PetscScalar e_S  = 2. / (this_T + my_T[j - 1][i]);
+        // Conservative finite-volume flux, HEAD form. The volume balance is
+        //   A_j*S*(h - my_rech) + dt*(net outflow) = 0; we divide by A_j*S so the residual stays in
+        // head units (O(metres)) -- the matrix-free Anderson solver diverges (DIVERGED_DTOL) on the
+        // area-scaled volume-form residual, and, having no matrix, gains nothing from it: the root
+        // (hence the solution and its conservation) is IDENTICAL. Face conductances G =
+        // e*(L_wall/d_centre): E-W uses geom_ew, N/S the FACE-centred geom_n/geom_s, so shared-face
+        // fluxes cancel (mass conserving) and the E-W/N-S cell sizes are no longer swapped. The
+        // Picard OPERATOR keeps the volume form (it needs the exact symmetry). See GRID_CONVENTION.md.
+        const double this_x = x[j][i];
+        const double this_T = my_T[j][i];
+        const double e_E    = 2. / (this_T + my_T[j][i + 1]);  // harmonic-mean interface transmissivities
+        const double e_W    = 2. / (this_T + my_T[j][i - 1]);
+        const double e_N    = 2. / (this_T + my_T[j + 1][i]);
+        const double e_S    = 2. / (this_T + my_T[j - 1][i]);
 
-        const PetscScalar uxx = (e_W * ux_W - e_E * ux_E) / user_context->cellsize_NS_squared;
-        const PetscScalar uyy = (e_S * uy_S - e_N * uy_N) / cellsize_ew_sq[j][i];
+        // Net outflow volume-rate = sum of face conductances * (h_c - h_nbr).
+        const double net_outflow = e_E * gew[j][i] * (this_x - x[j][i + 1]) + e_W * gew[j][i] * (this_x - x[j][i - 1])
+                                 + e_N * gn[j][i] * (this_x - x[j + 1][i]) + e_S * gs[j][i] * (this_x - x[j - 1][i]);
 
-        double my_storativity =
-            updateEffectiveStorativity(my_starting_wtd[j][i], this_x - my_topo[j][i], my_porosity[j][i]);
+        const double A_j = user_context->cellsize_NS_squared / gew[j][i];  // cell area
+        const double S   = updateEffectiveStorativity(my_starting_wtd[j][i], this_x - my_topo[j][i], my_porosity[j][i]);
 
-        f[j][i] = (uxx + uyy) * user_context->deltat / my_storativity + this_x - my_rech[j][i];
+        f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S);
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
       }
@@ -776,7 +783,9 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   }
 
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
-  PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_local, &my_fdepth));
   PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecRestoreArray(da, user_context->topo_local, &my_topo));
