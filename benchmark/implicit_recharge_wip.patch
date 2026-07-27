@@ -1,0 +1,51 @@
+diff --git a/src/CreateSNES.hpp b/src/CreateSNES.hpp
+index 1bbdcb2..b0b9ed9 100644
+--- a/src/CreateSNES.hpp
++++ b/src/CreateSNES.hpp
+@@ -93,6 +93,14 @@ struct AppCtx {
+   // so the solve loop reads recharge from DMDA-owned data rather than arp.rech.
+   Vec rech_source = nullptr;
+ 
++  // [WIP: partial implicit-recharge machinery] Borrowed pointer to the raw per-step recharge array
++  // (dmdapack.rech_dist, already checked out for the whole update()), lent to FormPicardRHS during
++  // SNESSolve so BDF2-on-V can evaluate add_recharge at the iterate h^{n+1}. NOT separately checked
++  // out (that corrupts the solve). Set before SNESSolve, cleared to nullptr after. NOTE: on its own
++  // this did NOT restore order 2 (add_recharge partitioning alone is not the whole explicit part;
++  // rech amount + surface/evap handling are still preprocessed at h^n). See BDF2_RECHARGE_ORDER.md.
++  PetscScalar** rech_dist_raw = nullptr;
++
+   // Distributed per-cycle runoff (runoff_ratio * rech), computed alongside the
+   // distributed recharge and gathered to rank-0 arp.runoff for the next FillSpillMerge
+   // when runoff_ratio_on. Unused when runoff is off. See DISTRIBUTED_ARP_DESIGN.md (2c).
+diff --git a/src/transient_groundwater.cpp b/src/transient_groundwater.cpp
+index 3ac8c56..7888d9b 100644
+--- a/src/transient_groundwater.cpp
++++ b/src/transient_groundwater.cpp
+@@ -265,6 +265,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
+ 
+   if (user_context.use_picard) {
+     // Semi-implicit Picard path (PICARD_MATH.md).
++    // [WIP] Lend FormPicardRHS the raw per-step recharge array (already checked out by dmdapack) so
++    // it can evaluate add_recharge at the iterate for BDF2-on-V -- a borrowed pointer, not a second
++    // DMDAVecGetArray on rech_source. Cleared after the solve. See BDF2_RECHARGE_ORDER.md.
++    user_context.rech_dist_raw = dmdapack.rech_dist;
+     // PETSc solves A(x) x = b(x); FormPicardRHS supplies b(x) (so SNESSolve is
+     // called with a NULL rhs), FormPicardOperator supplies the SPD A(x). A is its
+     // own preconditioner (GAMG). Inner solve defaults to CG+GAMG (CreateSNES).
+@@ -279,6 +283,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
+ 
+     FormInitialGuess(&user_context, user_context.da, user_context.x);
+     SNESSolve(user_context.snes, nullptr, user_context.x);
++    user_context.rech_dist_raw = nullptr;  // [WIP] dmdapack's array is freed at end of update()
+   } else {
+     // Set local function evaluation routine (always needed).
+     DMDASNESSetFunctionLocal(
+@@ -806,7 +811,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
+         bb[j][i] = a_c * Sy * xx[j][i] - a_c * storedVolume(w_k, poro)
+                  + b_c * storedVolume(my_starting_wtd[j][i], poro)
+                  - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
+-                 + Sy * my_rech[j][i];
++                 + Sy * add_recharge(user_context->rech_dist_raw[j][i], w_k, poro);  // [WIP] implicit partitioning
+       } else {
+         const double S_c =
+             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
