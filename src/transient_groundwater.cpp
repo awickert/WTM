@@ -695,6 +695,13 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
 }
 
 /* ------------------------------------------------------------------- */
+// GRID INDEX CONVENTION (see benchmark/GRID_CONVENTION.md) -- fixed once for the whole file:
+//   i = column = EAST-WEST (longitude); spacing cellsize_e_w_metres[j], SHRINKS poleward.
+//   j = row    = NORTH-SOUTH (latitude); spacing cellsize_n_s_metres, CONSTANT.
+// Arrays are field[j][i]. NOTE the WTM paper (Callaghan et al. 2025, App. B) uses the OPPOSITE
+// letters (paper x = S-N, y = W-E), so paper-Delta_x = cellsize_n_s and paper-Delta_y =
+// cellsize_e_w. Divide the E-W (i +/- 1) flux by cellsize_e_w^2 and the N-S (j +/- 1) flux by
+// cellsize_n_s^2 (with the face-centred E-W wall length) -- NOT the reverse.
 /*
    FormFunctionLocal - Evaluates nonlinear function, F(x).
  */
