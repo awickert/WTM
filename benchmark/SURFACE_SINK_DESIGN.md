@@ -254,6 +254,16 @@ with, e.g., the quintic smoothstep `p(u)=u^3(6u^2-15u+10)` (`C^2`, compact). Equ
    naturally to an effective rooting/extinction depth and could later be tied to real ET data. A
    "spoof" of physics that happens to point the right way.
 
+4. **It removes extended-soil's one residual physical risk: wrong-direction flow (Andy).** Extended
+   soil lets water stand *above* the surface, and that fictional above-surface head participates in
+   the lateral GW flow (`T` continues past `wtd=0`). The extended-soil note bounded — but could not
+   zero — the chance that a tall enough mound reverses a gradient **across a topographic divide** and
+   misroutes water (see `BDF2_RECHARGE_ORDER.md`, "Why it is physically safe"). With the sub-surface
+   ramp there is *no* above-surface head anywhere, so `h \le z` at every cell and lateral flow only
+   ever follows *real* sub-surface gradients — cross-divide misrouting is **impossible by
+   construction**, not merely improbable. (Extended-soil was not a bad idea — it proved order 2 is
+   reachable and pinned the cause to the free boundary; the ramp keeps that win and drops this risk.)
+
 **Open questions to settle in the prototype (held honestly):**
 
 - **Sizing / guarantee.** Keeping `wtd<0` requires `\max Q = \lambda\phi \ge R_{\max}` *within a
