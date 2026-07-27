@@ -380,3 +380,8 @@ the surface special-casing from the GW step.
 **Remaining (production half):** the FSM-side truncation — at the FSM handoff, move water above the
 real surface topography to depressions / off-map. Not yet implemented or validated. Until then,
 `-wtm_extended_soil` is a WIP flag proving the GW-step order-2 half.
+
+**Reproduce the whole story** with `benchmark/picard/recharge_free_boundary.py` — one
+self-documenting script that walks A (no-crossing → order 2) → B/C (crossing, evap 0 & 1 → order 1)
+→ D (surface-kink smoothing → no help) → E (extended soil → order 2 restored), each a controlled A/B
+on the same deep smooth IC in a private fixture dir.
