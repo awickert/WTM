@@ -281,15 +281,51 @@ with, e.g., the quintic smoothstep `p(u)=u^3(6u^2-15u+10)` (`C^2`, compact). Equ
   comfortably inside the band; physically `w` = effective ET extinction depth. These two readings may
   or may not want the same value — worth checking whether one `w` serves both.
 
-## 12. Status / next
+## 12. Deeper design questions (2026-07-27, Andy)
 
-- **Analysis:** order-2 recovery, overshoot `\delta = R/\lambda\phi`, SPD Jacobian — done (this note).
-- **Leading design (§11):** sub-surface compact-support ramp keeping `wtd\le0`; likely obviates
-  extended-soil, kills the evaporation caveat, and doubles as a crude ET profile. **Prototype this
-  variant first.**
-- **Prototype:** add `Q` and `\partial Q/\partial h` to the residual + Picard operator; measure (i)
-  order *with active removal*, (ii) that `wtd` stays `<0` across the `R/\phi` range and cell sizes,
-  (iii) mass conservation of the removed flux into FSM. Held skeptically: whether one global
-  `(\lambda, w)` behaves across the domain, and how breaches (if any) present.
-- **Then:** the FSM-input accumulator (§6), the ET reconciliation (§11), and — deliberately, diffs
-  shown — the default flip.
+### 12.1 Should the smoothing length scale with soil-layer storativity? (Yes — via the volume axis)
+The water table moves `\Delta wtd \approx (\text{net flux})\,\Delta t / \phi` per step: a
+low-storativity soil swings the table *further* per unit water. For the ramp to stay resolved (a
+bounded `Q'`, a smooth solution space) and to prevent a one-step jump across the band (a breach), the
+band width must exceed that displacement — so **`w` should scale inversely with `\phi`**. The clean
+way to get this automatically is to **define the ramp on the stored-water (volume) axis** `V=\phi\,wtd`
+rather than the geometric `wtd` axis: the band is then a fixed *water amount* (`\phi`-independent) and
+in depth-space widens as `1/\phi` exactly where it must. The smoothing "length" becomes *how much
+drainable water above threshold triggers removal*, not a geometric depth — keeping the solution space
+smooth uniformly across soils. (Tension: the ET-depth reading of §11.3 wants a *geometric* rooting
+depth, `\phi`-independent; the numerical-stabiliser reading and the ET reading may want different `w`
+— use the larger, or separate the two roles.)
+
+### 12.2 Negative water balance (evaporation > precipitation)
+Where net recharge is negative (arid), the water table is deep and the sink — active only in the
+near-surface band `[-w,0]` — is **dormant** (`Q=0` for `wtd<-w`). The existing (negative) recharge term
+does the drying; the sink neither helps nor hinders. So "hope the water table stays low" holds *by
+construction*: in dry areas it does, and the sink stays off. The sink is strictly a near-surface
+*excess* remover — nothing to remove where water is scarce. (Edge case for the forcing run: a discharge
+zone / oasis fed by lateral flow can hold a shallow table under a negative *local* balance; there the
+sink would act — likely correct, as ET would too.)
+
+### 12.3 Lakes: the sink must not drain what FSM fills (the hard one)
+FSM fills depressions into **lakes** — persistent standing water (`wtd>0`) that is the physically
+correct state. A naive sub-surface sink removes `wtd>0` water, so it would **drain those lakes next
+cycle** — unacceptable. Resolution (Andy's "same overall water-flow framework"): the sink's reference
+elevation must be the **water-routing surface** `\max(\text{land surface},\ \text{lake level})`, not
+blindly the land topography. Then in a lake cell the sink removes only water *above* the lake level
+(which FSM would spill anyway) and the lake persists. Equivalently, sink and FSM **partition** the
+domain — the sink prevents transient ponding on *draining* terrain, FSM maintains storage in
+*depressions* — making the sink↔FSM coupling a consistency (near-fixed-point) requirement: removed
+water → FSM → lake → *not* re-removed. **Consequence for the mass-conservation task (§6):** the
+FSM-side handoff of removed water is entangled with this and cannot be finalised until it is resolved;
+the *no-FSM* scalar accounting is independent and can proceed now.
+
+## 13. Status / next
+
+- **Analysis + prototype:** order-2 recovery, `\delta=R/\lambda\phi`, SPD Jacobian, and the working
+  `-wtm_surface_sink` prototype (Picard/BDF2-on-V; order ~2 with `wtd<0` at every `\Delta t`, golden
+  byte-clean) — **done**.
+- **Mass conservation (§6), in progress:** per-cell accumulator of the removed flux. *No-FSM* scalar
+  accounting is ready to build; the *FSM* handoff waits on §12.3 (lakes).
+- **Open (§12):** storativity-scaled / volume-axis smoothing (§12.1); negative-balance dormancy
+  confirmed (§12.2); the sink↔FSM/lake partition (§12.3, the hard one).
+- **Then:** breach robustness (size / adapt / backstop), ET reconciliation, the Anderson-path term,
+  and — deliberately, diffs shown — the default flip.
