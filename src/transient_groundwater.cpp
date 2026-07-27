@@ -78,12 +78,12 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
     return 0;
   } else if (wtd_T < -shallow) {  // Equation S6 from the Fan paper
     return std::max(0.0, fdepth * ksat * std::exp((wtd_T + shallow) / fdepth));
-  } else if (wtd_T > 0) {
+  } else if (wtd_T > 0 && !g_extended_soil) {
     // If wtd_T is greater than 0, max out rate of groundwater movement
     // as though wtd_T were 0. The surface water will get to move in
-    // FillSpillMerge.
+    // FillSpillMerge. (Extended-soil skips this clamp: the S4 form continues past the surface.)
     return std::max(0.0, ksat * (0 + shallow + fdepth));
-  } else {                                                    // Equation S4 from the Fan paper
+  } else {                                                    // Equation S4 from the Fan paper (extended: also wtd>0)
     return std::max(0.0, ksat * (wtd_T + shallow + fdepth));  // max because you can't have a negative transmissivity.
   }
 }
@@ -262,6 +262,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
+  PetscBool extsoil = PETSC_FALSE;  // [WIP] -wtm_extended_soil: aquifer continues above surface (smooth GW step)
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
+  g_extended_soil = (extsoil == PETSC_TRUE);
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).

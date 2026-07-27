@@ -2,10 +2,16 @@
 
 #include "ArrayPack.hpp"
 
+extern bool g_extended_soil;  // [WIP] aquifer continues above surface; see update_effective_storativity.hpp
+
 // Determine how much recharge to add to each cell based on porosity,
 // water table depth, and available P-ET.
 // Note that we assume that porosity does not change with depth:
 inline double add_recharge(const double my_rech, double my_wtd, const double my_porosity) {
+  // Extended-soil: aquifer everywhere -> recharge always fills pore space (rech/porosity), no
+  // surface-water branch (keeps the GW step smooth across wtd=0). Only for my_rech>0 (no evap).
+  if (g_extended_soil) return (my_rech > 0.0) ? my_rech / my_porosity : 0.0;
+
   double recharge_to_add = 0.;
 
   if (my_wtd >= 0) {  // all the recharge will occur above the land surface; don't worry about porosity.

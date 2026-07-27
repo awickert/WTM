@@ -6,6 +6,14 @@
 // V form is wired); settable via -wtm_storativity_surface_smoothing_width.
 extern double g_storativity_surface_smoothing_width;
 
+// [WIP experiment -wtm_extended_soil] Treat the aquifer as continuing infinitely ABOVE the land
+// surface: storativity = porosity everywhere (no jump to 1 for surface water), transmissivity
+// continues past wtd=0 (no clamp), recharge always partitions as rech/porosity. This removes the
+// wtd=0 FREE BOUNDARY from the GW time-stepping so the solve stays smooth (2nd order); the real
+// surface is truncated later at the FSM handoff (excess -> depressions/off-map). See
+// BDF2_RECHARGE_ORDER.md. Default off; when off, all functions use the standard surface physics.
+extern bool g_extended_soil;
+
 double updateEffectiveStorativity(const double my_original_wtd, const double my_wtd_T, const double my_porosity);
 
 // Stored water per unit area V(wtd) (smooth C-inf), and its derivative dV/dwtd = the TANGENT
