@@ -559,11 +559,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * dmdapack.porosity_vec[j][i];
         dmdapack.starting_wtd[j][i] = 0.;
       } else if (sink_active_this_step) {
-        // Account the water the implicit sink removed this substep, dt*Q(w^{n+1}), evaluated at the
-        // just-computed new head. Q is already a water rate (m/s), so dt*Q is a water depth; times
-        // cell_area gives the removed volume. Loop is serial (no pragma), so the += is race-free.
-        arp.total_surface_removed +=
-            user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i]) * arp.cell_area[j];
+        // The implicit sink removed dt*Q(w^{n+1}) of water this substep, evaluated at the just-computed
+        // new head. Q is a rate (m/s), so dt*Q is a water depth. Serial loop (no pragma) -> += race-free.
+        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i]);
+        // Scalar budget accounting (volume = depth*area): closes the water balance (WATER_BUDGET.md).
+        arp.total_surface_removed += removed_depth * arp.cell_area[j];
+        // Per-cell accumulator (depth): summed over the cycle's sub-steps and handed to FSM as this
+        // cycle's exfiltration input (taper 1). Same units as arp.runoff (metres of surface water).
+        dmdapack.sink_removed_dist[j][i] += removed_depth;
       }
     }
   }

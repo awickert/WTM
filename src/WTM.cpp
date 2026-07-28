@@ -298,6 +298,16 @@ void update(
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
 
+  // Reset the per-cycle sink-removal accumulator (taper 1): it sums the implicit sink's removed depth
+  // over this cycle's sub-steps, then is gathered into arp.runoff for FSM below. Zeroing here (owned
+  // cells) makes each cycle start fresh; a harmless no-op when the sink is off (it stays 0).
+  {
+    const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        dmdapack.sink_removed_dist[j][i] = 0.0;
+  }
+
   if (user_context.use_dt_adaptive) {
     // Adaptive stepping covers the SAME cycle duration as the fixed loop would
     // (maxiter * base deltat), but with variable, error-controlled sub-steps chosen by
