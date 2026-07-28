@@ -462,6 +462,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_evap_taper = (evap_taper == PETSC_TRUE);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
+  // Taper 2 IS the ET->open-water evaporation transition; it only makes sense with the open-water
+  // rate in play (evap_mode 1). evap_mode 0 (remove-all-surface-water) has no owe to transition to.
+  if (g_evap_taper && !params.evap_mode)
+    throw std::runtime_error("-wtm_evap_taper requires evap_mode 1 (it smooths the ET->open-water transition)");
 
   // Whether the sink was actually applied THIS solve (it lives only in the BDF2-on-V branch, which
   // needs an established history -- the BE bootstrap step has no sink). Captured before the solve,
@@ -691,6 +695,11 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // decide whether to gather the sink accumulator into arp.runoff for FSM without reaching into the
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
 bool surface_sink_on() { return g_surface_sink; }
+
+// Whether the demand-identity evaporation taper is on (taper 2). Lets the explicit-recharge sites
+// (irf.cpp, WTM.cpp) drop their hard ET<->owe switch and feed just precip, because the smooth
+// implicit E_eff now carries that ET->open-water transition. Set in update() from -wtm_evap_taper.
+bool evap_taper_on() { return g_evap_taper; }
 
 // Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
 // ADDING to it, so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled

@@ -23,6 +23,10 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // Whether the implicit sub-surface sink is configured this run (taper 1).
 bool surface_sink_on();
 
+// Whether the demand-identity evaporation taper is on (taper 2). The explicit-recharge sites feed
+// just precip when this is set -- the smooth implicit E_eff carries the ET->open-water transition.
+bool evap_taper_on();
+
 // Add this cycle's implicit-sink removal (sink_removed_dist) into rank-0 arp.runoff so FSM routes
 // it -- the order-preserving replacement for FSM's hard wtd>0->runoff handoff. See SURFACE_SINK_DESIGN.md.
 void gather_sink_removed_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
