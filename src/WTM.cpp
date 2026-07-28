@@ -101,7 +101,7 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   textfile << "Cycles_done Total_wtd_change Change_in_GW_only Change_in_SW_only absolute_value_total_wtd_change "
               "abs_change_in_GW abs_change_in_SW change_in_infiltration total_recharge_added total_loss_to_ocean "
               "sum_of_water_tables total_surface_removed total_ocean_outflow "
-              "stored_volume ocean_loss_closing budget_residual exact_budget_residual "
+              "stored_volume ocean_loss_closing budget_residual exact_budget_residual total_evap_removed "
            << std::endl;
   textfile.close();
 }

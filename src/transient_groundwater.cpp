@@ -469,6 +469,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // water in the same step it was removed.
   const bool sink_active_this_step = g_surface_sink && user_context.use_bdf2 &&
                                      user_context.bdf2_have_history && user_context.use_bdf2_on_V;
+  // Same gating for taper 2 (evaporation): the implicit E_eff term lives only in the BDF2-on-V branch.
+  const bool evap_active_this_step = g_evap_taper && user_context.use_bdf2 &&
+                                     user_context.bdf2_have_history && user_context.use_bdf2_on_V;
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
@@ -584,7 +587,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // per cycle by gather_wtd_to_all. Read topo/mask/porosity from DMDA arrays
   // (topo_vec is re-scattered each cycle in transient) so arp is not needed here.
   PetscScalar** my_topo;
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
+  if (evap_active_this_step) {
+    DMDAVecGetArray(user_context.da, user_context.evap_vec, &my_evap);
+    DMDAVecGetArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
+  }
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
       dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - my_topo[j][i];
@@ -594,19 +602,30 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         else
           arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * dmdapack.porosity_vec[j][i];
         dmdapack.starting_wtd[j][i] = 0.;
-      } else if (sink_active_this_step) {
-        // The implicit sink removed dt*Q(w^{n+1}) of water this substep, evaluated at the just-computed
-        // new head. Q is a rate (m/s), so dt*Q is a water depth. Serial loop (no pragma) -> += race-free.
+        continue;
+      }
+      // Land cells: the sink and the evaporation taper can both be active; account each in the same
+      // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
+      if (sink_active_this_step) {
+        // Sink removed dt*Q(w^{n+1}) (Q is m/s -> dt*Q is a depth). To FSM (stays in domain).
         const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i]);
-        // Scalar budget accounting (volume = depth*area): closes the water balance (WATER_BUDGET.md).
-        arp.total_surface_removed += removed_depth * arp.cell_area[j];
-        // Per-cell accumulator (depth): summed over the cycle's sub-steps and handed to FSM as this
-        // cycle's exfiltration input (taper 1). Same units as arp.runoff (metres of surface water).
-        dmdapack.sink_removed_dist[j][i] += removed_depth;
+        arp.total_surface_removed += removed_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
+        dmdapack.sink_removed_dist[j][i] += removed_depth;              // per-cycle FSM input (taper 1)
+      }
+      if (evap_active_this_step) {
+        // Taper 2 removed dt*E_eff(w^{n+1}) to the ATMOSPHERE (leaves the domain) -> its own budget
+        // channel, kept separate from the sink's exfiltration-to-FSM (different destination).
+        const double evap_depth =
+            user_context.deltat * evapTaper(dmdapack.starting_wtd[j][i], my_evap[j][i], my_owe[j][i]);
+        arp.total_evap_removed += evap_depth * arp.cell_area[j];
       }
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
+  if (evap_active_this_step) {
+    DMDAVecRestoreArray(user_context.da, user_context.evap_vec, &my_evap);
+    DMDAVecRestoreArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
+  }
 
   // Account the water that left through land->ocean faces this solve (Darcy interface flux at the
   // converged head), the term that closes the water budget against the Dirichlet ocean boundary.

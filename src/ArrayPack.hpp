@@ -92,6 +92,12 @@ struct ArrayPack {
   // total_loss_to_ocean_gw). For the no-FSM case the removed water is discarded, so this scalar is
   // what closes the water budget: d(wtd_sum) = added_recharge - loss_to_ocean - surface_removed.
   double total_surface_removed = 0;
+  // Water evaporated by the implicit demand-identity taper (-wtm_evap_taper, taper 2), summed over
+  // owned cells and substeps (per-rank partial, reduced in PrintValues). This water leaves to the
+  // ATMOSPHERE (unlike the sink's exfiltration to FSM), so it is a separate budget-loss channel:
+  // total_storage_change = total_solver_recharge - total_ocean_outflow - total_surface_removed
+  // - total_evap_removed. See benchmark/SURFACE_SINK_DESIGN.md sec 14.
+  double total_evap_removed = 0;
   // EXACT budget-closing accumulators (Picard/BDF2 path): the solver's per-step discrete storage
   // change and specific-yield recharge, summed over owned land cells (per-rank partials). The
   // discrete balance guarantees total_storage_change = total_solver_recharge - total_ocean_outflow
