@@ -329,3 +329,86 @@ the *no-FSM* scalar accounting is independent and can proceed now.
   confirmed (§12.2); the sink↔FSM/lake partition (§12.3, the hard one).
 - **Then:** breach robustness (size / adapt / backstop), ET reconciliation, the Anderson-path term,
   and — deliberately, diffs shown — the default flip.
+
+## 14. Leading design (2026-07-28, Andy): smooth the surface transition with open-water evap
+
+The sub-surface sink (§11) was a *numerical* smooth removal near the surface. The better framing —
+and the one that dissolves the wtd=0 free boundary **at the source** rather than working around it —
+is to make the model's own surface-water transition smooth, using a quantity we already compute.
+
+**The problem restated.** WTM's recharge branch is a hard switch at wtd=0: sub-surface cells use
+`precip − evap`; surface-water cells use `precip − open_water_evap`. On the fsm_test fixture
+(`precip=0.1, open_water_evap=0.2, evap=0` m/yr) this makes the net water balance jump from **+0.1**
+(below, gains → rises) to **−0.1** (above, loses → falls), pinning the water table on the wtd=0
+knife-edge with a *negative feedback*. Three discontinuities coincide there — the evap-regime sign
+flip (the driver), exfiltration→FSM routing, and the storativity jump — and every free-boundary
+symptom this note chases (BDF2 order loss; the FSM MPI-nondeterminism, where ~1e-13 parallel-solve
+noise flips a basin between draining and a lake; per-step chatter) is that one knife-edge.
+
+**The fix.** Ramp the open-water evaporation in *smoothly* with proximity to the surface instead of
+switching it at wtd=0, and treat it **implicitly**:
+
+```math
+E_{\text{ow,eff}}(wtd) = open\_water\_evap \times \mathrm{weight}(wtd), \qquad
+\mathrm{weight}: 0 \to 1 \text{ across } [-w,\,0^+].
+```
+
+Because open_water_evap is a removal that grows with surface-water presence, a smooth ramp gives
+*continuous* negative feedback: as the table rises, evaporative removal rises to meet it → a damped
+approach to a stable equilibrium instead of a chattering threshold. Two things make it work:
+(1) **implicit** treatment (in the solve, like the §11 sink) so the balance is found *within* the
+step — a smooth-but-explicit removal can still overshoot; (2) the **damping strength is free, from
+data** — open_water_evap sets how hard the feedback pushes back, so the only new parameter is the
+transition depth `w`.
+
+**Exfiltration is DESIRED and stays (Andy).** The goal is not to keep water below ground — it is to
+let exfiltration happen *smoothly* and be *smoothly taken up* into the array that feeds FSM (rivers,
+wetlands, discharge zones, lakes — not just lakes; WTM already does this handoff). So the near-surface
+removal is two smooth, implicit channels, both ramped by wtd across `[-w, 0^+]`:
+- **open_water_evap → atmosphere** (leaves the system): the *damping* that stabilises and prevents
+  oscillation;
+- **exfiltration → the FSM-input array** (stays in the domain): the surface water we *want*, now
+  produced smoothly rather than at a threshold.
+
+This unifies the numerical sink into the model's own physics-flavoured terms: the "sink" becomes
+{smooth exfiltration-to-FSM + smooth open-water-evap damping}.
+
+**Honest framing (important — do not oversell).** This is a *physically-motivated numerical
+regularisation*, not a rigorous evapotranspiration scheme. `open_water_evap` is a **Penman open-water**
+rate (Appendix D of the WTM paper) that **ignores transpiration** — usually the dominant near-surface
+water loss over vegetated land. So the smoothing *borrows* the open-water-evap magnitude to damp the
+transition and "emulates a bit of reality" (evaporation does rise near the surface), but it is a
+parameterisation that helps the numerics, in the same honest category as extended-soil (§ `BDF2_
+RECHARGE_ORDER.md`) and the numerical sink (§11). Document/describe it as such. A genuinely physical
+near-surface loss (adding transpiration / an ET-with-extinction-depth scheme) is a separate, larger
+modelling question this does not address and should not pretend to.
+
+**Open questions (2026-07-28, to think through):**
+- The **local exfiltration** currently accumulated into the FSM-input grid (via the sink/handoff):
+  how much does the added open-water-evap damping *reduce* it, and does that reduction land where it
+  matters — is it **general ground** (broad diffuse exfiltration) or **lakeshores** (the wet/dry
+  margin) that dominates the FSM input, and which is more sensitive to the damping?
+- `w` (transition depth): a parameter, not free — but here motivated by numerics, not a rooting
+  depth. Pick/justify it, and check the equilibrium shift it induces.
+
+### 14a. Two tapers, layered — evaporation gets its OWN, deeper (2026-07-28, Andy)
+
+The evaporation damping should NOT reuse the exfiltration taper (the one-sided sink ramp → reservoir
+array → FSM that we wrote). Give it its own, for three reasons that compose cleanly:
+
+1. **Different destination → different accounting.** Exfiltration → reservoir array → FSM (stays in
+   the domain); evaporation → atmosphere (leaves the system). Two budget channels; one shared taper
+   would blur the mass bookkeeping.
+2. **Different onset depth → the layering that makes damping work.** Exfiltration is surface-keyed and
+   one-sided (excess only). The evap taper must reach DEEPER — to an extinction depth `d_ext` below the
+   surface — so it engages *on the approach*, before the table reaches the exfiltration band. That
+   pre-emptive push-back is what turns the wtd=0 knife-edge into a damped, stable approach; if evap only
+   ramped up *with* exfiltration (same band), the damping would be too late.
+3. **Different shape/symmetry.** Exfiltration ≈ smoothed `(wtd)_+` (one-sided threshold); evaporation ≈
+   monotonic decay through the surface. Not the same curve.
+
+**They compose without extra logic:** the deeper evap taper ramps up first and removes its share to the
+atmosphere, lowering the table before it reaches the exfiltration band — so the reservoir intake is
+*automatically* the post-evap remainder `≈ max(0, supply − open_water_evap)`. Evap band ⊇ exfiltration
+band. Parameters: exfiltration width (≈0, surface-keyed, existing) + evap `d_ext` (deeper, NEW knob —
+motivated by capillary/extinction-depth but a numerical parameter here, esp. with no transpiration).
