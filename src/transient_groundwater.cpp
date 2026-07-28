@@ -116,6 +116,16 @@ static bool             g_surface_sink       = false;
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
 
+// Taper 2 -- demand-identity evaporation: the atmospheric loss transitions SMOOTHLY from the
+// land-surface ET grid (deep) to the open-water rate owe (at/above the surface), as a logistic in
+// wtd, treated IMPLICITLY in the solver (like the sink). Replaces the hard wtd>0 ? owe : ET recharge
+// switch that sat on the wtd=0 knife-edge. E_eff(wtd) = ET + (owe-ET)*sigma((wtd - wtd_c)/s), a
+// removal rate. Accessibility/extinction-depth (the max(0,P-ET) clamp) is deferred -> awickert/WTM#4.
+// See SURFACE_SINK_DESIGN.md sec 14. ET/owe are per-cell (m/yr); the helpers return m/s.
+static bool             g_evap_taper         = false;
+static double           g_evap_taper_wtdc    = 0.05;  // wtd_c: half-rate depth [m] (small +, pond->exposed)
+static double           g_evap_taper_s       = 0.1;   // s: transition width [m]
+
 // Compact-support C2 quintic smoothstep ramp: 0 for wtd <= -w, smoothly rising to 1 at wtd = 0
 // (p(u) = u^3(6u^2 - 15u + 10), p'(0)=p'(1)=0). Argument is wtd = h - topo (centre cell).
 static double surfaceSinkRamp(const double wtd) {
@@ -135,6 +145,24 @@ static double surfaceSinkRampTangent(const double wtd) {
 static double surfaceSink(const double wtd) { return g_surface_sink_qmax * surfaceSinkRamp(wtd); }
 static double surfaceSinkTangent(const double wtd) {
   return g_surface_sink_qmax * surfaceSinkRampTangent(wtd);
+}
+
+// Taper 2 helpers. sigma is the logistic 1/(1+e^{-u}); u = (wtd - wtd_c)/s. E_eff(wtd) transitions
+// ET -> owe as the table rises. Returns m/s (ET/owe supplied in m/yr). The tangent dE/dwtd is
+// (owe-ET)*sigma*(1-sigma)/s; CLAMPED to >= 0 so it only ever strengthens the SPD storage diagonal
+// (when ET > owe the raw tangent is negative). The clamp is applied identically in the operator and
+// the RHS, so the Picard fixed point -- storage + dt*E_eff(w^{n+1}) = recharge -- is unchanged; only
+// the linearization softens (a fixed-point step on that term). See SURFACE_SINK_DESIGN.md sec 14.
+static double evapTaperSigma(const double wtd) {
+  return 1.0 / (1.0 + std::exp(-(wtd - g_evap_taper_wtdc) / g_evap_taper_s));
+}
+static double evapTaper(const double wtd, const double et_yr, const double owe_yr) {
+  return (et_yr + (owe_yr - et_yr) * evapTaperSigma(wtd)) / SECONDS_IN_A_YEAR;
+}
+static double evapTaperTangent(const double wtd, const double et_yr, const double owe_yr) {
+  const double sig = evapTaperSigma(wtd);
+  const double raw = (owe_yr - et_yr) * sig * (1.0 - sig) / g_evap_taper_s / SECONDS_IN_A_YEAR;
+  return raw > 0.0 ? raw : 0.0;  // SPD-preserving clamp; see note above
 }
 
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
@@ -426,6 +454,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_qmax", &sink_qmax_yr, nullptr);
   g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
+
+  // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Off by default (default path and
+  // golden unchanged). wtd_c and s are transition-shape knobs (metres). See SURFACE_SINK_DESIGN.md 14.
+  PetscBool evap_taper = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_evap_taper", &evap_taper);
+  g_evap_taper = (evap_taper == PETSC_TRUE);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
 
   // Whether the sink was actually applied THIS solve (it lives only in the BDF2-on-V branch, which
   // needs an established history -- the BE bootstrap step has no sink). Captured before the solve,
@@ -1004,6 +1040,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   AppCtx* user_context = static_cast<AppCtx*>(ctx);
   DM      da           = user_context->da;
   PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask, **gew;
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr;  // taper 2: per-cell ET and open-water evap (m/yr)
   const double  cns2 = user_context->cellsize_NS_squared;  // cell area A_j = cns2 / geom_ew (volume form)
 
   // Variable-step BDF2 (once an h^{n-1} exists): b = S_c*(b_c*h^n - c_c*h^{n-1} + rech) with
@@ -1030,6 +1067,10 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // for the cell area A_j
   if (bdf2) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
 
   const auto [xs, ys, xm, ym] = get_corners(da);
   for (auto j = ys; j < ys + ym; j++) {
@@ -1055,6 +1096,13 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           const double dt = user_context->deltat;
           bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k) * xx[j][i] - dt * surfaceSink(w_k));
         }
+        if (g_evap_taper) {
+          // Taper 2: implicit demand-identity evaporation dt*E_eff(w^{n+1}) (ET -> owe), Picard-
+          // linearized about w_k with the SPD-clamped tangent (matches the operator's evap diagonal).
+          const double dt = user_context->deltat;
+          bb[j][i] += A_j * (dt * evapTaperTangent(w_k, my_evap[j][i], my_owe[j][i]) * xx[j][i]
+                             - dt * evapTaper(w_k, my_evap[j][i], my_owe[j][i]));
+        }
       } else {
         const double S_c =
             updateEffectiveStorativity(my_starting_wtd[j][i], xx[j][i] - my_topo[j][i], my_porosity[j][i]);
@@ -1078,6 +1126,10 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
   if (bdf2) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
   return 0;
 }
@@ -1121,6 +1173,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
 
   PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_porosity, **my_starting_wtd, **my_mask, **cellsize_ew_sq,
       **my_T, **gew, **gn, **gs;
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr;  // taper 2: per-cell ET and open-water evap (m/yr)
   PetscCall(DMDAVecGetArray(da, xloc, &xx));
   PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
@@ -1133,6 +1186,10 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
 
   DMDALocalInfo info;
   PetscCall(DMDAGetLocalInfo(da, &info));
@@ -1208,7 +1265,11 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         // Storage and sub-surface sink now scale with the cell area A_j (volume form). The sink
         // tangent dt*Q'(w_k)*A_j is >= 0, so the diagonal stays dominant -> SPD-preserving.
         const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k) * A_j : 0.0;
-        const double A_center = a_coeff * S_c * A_j + sink_diag - (A_east + A_west + A_north + A_south);
+        // Taper 2 evaporation diagonal: dt*E_eff'(w_k)*A_j, SPD-clamped >= 0 (matches the RHS term).
+        const double evap_diag =
+            (g_evap_taper && bdf2_on_V) ? dt * evapTaperTangent(w_k, my_evap[j][i], my_owe[j][i]) * A_j : 0.0;
+        const double A_center =
+            a_coeff * S_c * A_j + sink_diag + evap_diag - (A_east + A_west + A_north + A_south);
 
         // 5-point stencil: east, west, north, south, centre.
         const MatStencil cols[5] = {
@@ -1257,6 +1318,10 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
   PetscCall(DMRestoreLocalVector(da, &xloc));
   return 0;
 }
