@@ -39,7 +39,9 @@ std::tuple<PetscInt, PetscInt, PetscInt, PetscInt> get_corners(const DM da) {
 static PetscErrorCode FormRHS(AppCtx*, DM, Vec);
 static PetscErrorCode FormInitialGuess(AppCtx*, DM, Vec);
 static PetscErrorCode FormFunctionLocal(DMDALocalInfo*, PetscScalar**, PetscScalar**, AppCtx*);
-static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat, AppCtx*);
+// Retained but no longer dispatched (the Newton-Krylov path is disabled in update()); kept so a
+// Newton solver can be rebuilt. [[maybe_unused]] silences the now-uncalled-function warning.
+[[maybe_unused]] static PetscErrorCode FormJacobianLocal(DMDALocalInfo*, PetscScalar**, Mat, Mat, AppCtx*);
 
 // Semi-implicit Picard path (experimental; PICARD_MATH.md). Global SNES callbacks
 // for SNESSetPicard: FormPicardRHS computes b(x), FormPicardOperator computes the
@@ -496,18 +498,21 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
         &user_context);
 
-    // Register analytic Jacobian only for Newton-Krylov.
-    // FormJacobianLocal accesses neighbor arrays from global (non-ghost) vectors,
-    // which is safe only within a single MPI process partition boundary.
-    // Registering it for Anderson causes PETSc to call it on divergence, triggering
-    // a segfault under multi-process MPI. Skip it for Anderson (Jacobian unused).
+    // The Newton-Krylov path (analytic FormJacobianLocal) is DISABLED. It is unused -- the default
+    // solver is Anderson, and the order-2 production path is -wtm_picard (semi-implicit) which drives
+    // newtonls via SNESSetPicard and never reaches here. Its analytic Jacobian is also unmaintained:
+    // it omits the sub-surface-sink and evaporation-taper tangents, so it would diverge. Refuse it
+    // explicitly rather than run a stale, wrong-Jacobian solve. FormJacobianLocal is intentionally
+    // RETAINED in-source below so a Newton solver can be rebuilt later (add the missing tangents,
+    // then re-register here). Anderson (snes_type == SNESANDERSON) is matrix-free and skips this.
     SNESType snes_type;
     SNESGetType(user_context.snes, &snes_type);
     if (std::string(snes_type) != std::string(SNESANDERSON)) {
-      DMDASNESSetJacobianLocal(
-          user_context.da,
-          (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
-          &user_context);
+      throw std::runtime_error(
+          std::string("The Newton-Krylov solver (-snes_type ") + snes_type +
+          ") is disabled: its analytic Jacobian is unmaintained (missing the sink/evap-taper tangents) "
+          "and would diverge. Use the default Anderson solver, or -wtm_picard for the semi-implicit "
+          "(BDF2-on-V) path.");
     }
 
     // Evaluate initial guess
