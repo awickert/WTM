@@ -412,3 +412,39 @@ atmosphere, lowering the table before it reaches the exfiltration band — so th
 *automatically* the post-evap remainder `≈ max(0, supply − open_water_evap)`. Evap band ⊇ exfiltration
 band. Parameters: exfiltration width (≈0, surface-keyed, existing) + evap `d_ext` (deeper, NEW knob —
 motivated by capillary/extinction-depth but a numerical parameter here, esp. with no transpiration).
+
+### 14b. Both directions, and the above-surface limb organizes wetlands (2026-07-28, Andy)
+
+The sigmoid closes the test from BOTH sides of wtd=0, and its above-surface shape carries genuine
+physics:
+
+- **Monotonic → single-valued → deterministic.** The taper is monotone in wtd, so a rising table and a
+  falling lake reach the SAME equilibrium `wtd*` for the same supply — no hysteresis, no bistability,
+  no path-dependence. That single-valuedness is what removes the rank-dependent flip (fsm_evap1: supply
+  `precip=0.1 < owe=0.2` → the interior settles at the `wtd*<0` where the taper = 0.1, i.e. its
+  midpoint; no lake, no exfiltration, no FSM routing → deterministic).
+- **A filter for what can stand above the surface.** Near the surface the taper removes up to `owe` to
+  the atmosphere *before* water reaches the exfiltration ramp, so only genuine excess `supply − owe`
+  passes to the reservoir/FSM — only water that CAN be sustained above ground. `supply ≤ owe` never
+  produces spurious standing water.
+- **Falls smoothly too.** As a body shrinks and its surface drops through and below ground
+  (`wtd: + → 0 → −`), the sigmoid walks evaporation back down smoothly — no down-chatter. So the
+  knife-edge is smoothed from both directions, which is why it resolves the oscillation, not just the rise.
+
+**The above-surface limb is real microclimate physics, and it organizes wetlands (Andy).** Emergent
+water above the surface does NOT have a single evaporation capacity: **small ponds among roughness
+elements sit in a sheltered ~100% local-humidity microclimate → LOW evaporation** (water is retained);
+only as a body grows **large and wind strips that protection does evaporation speed toward `owe`**. So
+the sigmoid's upper limb should *ramp up with standing-water extent* (sheltered → exposed), not
+saturate at `owe` right at the surface. The full curve is then: `~0` (deep, below any capillary reach)
+→ rising through the near-surface → a **low "wetland" shoulder** (small sheltered ponds, evap
+suppressed, water persists) → rising to `owe` (large wind-exposed open water). Tuning the sigmoid's
+above-surface center/steepness therefore *tunes the wetland regime* — the model gains a stable,
+emergent WETLAND state (persistent shallow standing water with suppressed evaporation) between dry
+ground and open lakes. A shrinking lake settles into a persistent pond rather than fully drying.
+
+This partly redeems the physicality: the above-surface (microclimate/roughness) limb is genuine, even
+though the below-surface capillary tail is still parameterized and **transpiration remains absent**.
+**Longer term (Andy): swap the sigmoid for real ecohydrology** — the *form* is right (smooth, monotone,
+wetland shoulder + open-water saturation); a real scheme (transpiration, microclimate, roughness) can
+later supply the values without changing the numerical machinery.
