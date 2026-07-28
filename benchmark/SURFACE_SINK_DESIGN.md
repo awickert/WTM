@@ -494,3 +494,34 @@ blended, or a `C^2` spline) if calibration against real behavior demands it — 
 when the *mechanics* call for it, not pre-emptively. Standing honesty: the above-surface limb is the
 genuine microclimate piece; the below-surface tail is parameterized (no transpiration); both are
 placeholders a future ecohydrology scheme can replace without touching this machinery.
+
+### 14d. Validation plan — after §14 is implemented (2026-07-28, Andy)
+
+Two studies, degenerate → realistic. The point is not just "does it run" but "is the lake/no-lake
+transition now SMOOTH and DETERMINISTIC where the hard model bifurcates."
+
+**Study A — the triggering example (fsm_test: flat plateau, FSM on, evap_mode 1).** This is the case
+whose rank-dependent drain-vs-lake flip started all this (§ finding_grid_flux_swap #2). With the evap
+taper in place:
+1. **Split it into multiple realizations across the threshold** — sweep the evaporation rate (`owe`)
+   through the critical value `owe ≈ supply` (`= precip` here). Below → a **stable lake**; above → **no
+   surface water** (or a small wetland pond). Show the surface-water volume vs `owe` is now a
+   **continuous** curve through the transition, not a jump.
+2. **Try to break it at the threshold** — push `owe` right up to the critical value (the marginal case,
+   equilibrium `wtd* ≈ 0`) and run n = 1, 2, 4, 6, 8. The hard model rank-flips here; the smooth taper
+   should stay **cross-rank deterministic** (single-valued equilibrium, no bifurcation) *even at the
+   knife-edge*. Acceptance: fsm_evap1 returns to tight (≪ cm) cross-rank agreement across the whole
+   sweep, including at `owe = supply`.
+
+**Study B — a single gently sloping central depression (pond + shoreline).** A realistic bowl so water
+collects into a pond with a genuine **shoreline** (the wet/dry margin where the table crosses the
+surface). Study:
+- Is the **shoreline** a smooth gradient (table transitioning continuously above→below surface) rather
+  than a sharp step, and **cross-rank deterministic** (its position doesn't flip with rank count)?
+- Does the **wetland fringe** appear — a ring of shallow, low-evap standing water (the §14b shoulder)
+  between open pond and dry slope?
+- Does the **pond extent** respond *smoothly* to the supply/`owe` balance (shoreline migrates, doesn't
+  jump), and settle to a stable equilibrium (no chatter)?
+
+Together: Study A proves determinism at the threshold; Study B proves physically-sensible pond/shoreline/
+wetland behavior on real topography (not the degenerate flat plateau).
