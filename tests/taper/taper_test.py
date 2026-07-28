@@ -6,12 +6,16 @@ taper 1) plus the demand-identity evaporation taper (-wtm_evap_taper, taper 2) -
 DEFAULT solver, i.e. the production path whose hard wtd=0 switch used to make FillSpillMerge lake
 formation flip with the MPI rank count near the evaporation threshold.
 
-Study A -- the flat plateau (the triggering case). Sweep the open-water evaporation rate `owe`
-through the critical value owe = precip. The smooth taper must give:
+Study A -- the triggering case (plateau with an off-centre depression). Sweep the open-water
+evaporation rate `owe` through the critical value owe = precip. The smooth taper must give:
   (1) CROSS-RANK DETERMINISM -- n=1 and n=N produce the same equilibrium at every owe, INCLUDING at
-      the knife-edge owe = precip (the hard model rank-flips here); and
+      the knife-edge owe = precip (the hard model is rank-sensitive here); and
   (2) A SMOOTH, SINGLE-VALUED RESPONSE -- the summed water table varies monotonically with owe (no
       jump / bifurcation through the threshold).
+
+Study B -- a gently-sloping central depression. Water collects into a pond with a real shoreline;
+check that the pond forms and that its extent and shoreline are cross-rank deterministic (the whole
+water-table field is identical on 1 vs N ranks -- a shoreline flip would move it by metres).
 
 Run as:  taper_test.py <wtm.x> [nrank ...]        (default ranks: 4)
 Exits non-zero if any assertion fails.
@@ -92,7 +96,7 @@ TAPER_FLAGS = ["-wtm_surface_sink", "-wtm_surface_sink_qmax", "1.0",
 
 
 def _run(wtm, d, tag, n):
-    """Run wtm on n ranks; return the final-cycle summed water table (col 11 of the text file)."""
+    """Run wtm on n ranks (leaves outputs in d); return the final-cycle summed water table (col 11)."""
     txt = os.path.join(d, f"{tag}_n{n}.txt")
     cfg = os.path.join(d, f"cfg_{tag}_n{n}")
     with open(cfg, "w") as f:
@@ -104,6 +108,13 @@ def _run(wtm, d, tag, n):
     if not rows:
         raise RuntimeError(f"{tag} n={n}: no output rows (solver failed?)")
     return float(rows[-1][10])  # sum_of_water_tables
+
+
+def _final_wtd(d, tag, n):
+    """Read the last saved water-table raster for a run (the full spatial field)."""
+    tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_n{n}_") and f.endswith(".tif"))
+    with rasterio.open(os.path.join(d, tifs[-1])) as s:
+        return s.read(1)
 
 
 def study_a(wtm, ranks):
@@ -138,6 +149,37 @@ def study_a(wtm, ranks):
     return fails
 
 
+def study_b(wtm, ranks):
+    # A gently-sloping central depression (a smooth bowl, 100 m rim -> 92 m centre) with a supply
+    # surplus (owe < precip), so water collects into a pond with a real SHORELINE (the wet/dry margin
+    # where the table crosses the surface). Checks that the pond forms and that its extent + shoreline
+    # are CROSS-RANK DETERMINISTIC (the full water-table field is identical whether run on 1 or N ranks
+    # -- a routing/shoreline flip would move it by metres, not the ~1e-10 m of FP-reduction noise).
+    print("Study B -- gently-sloping central depression (pond + shoreline)")
+    yy, xx = np.mgrid[0:NY, 0:NX]
+    r2 = ((xx - (NX - 1) / 2.0) ** 2 + (yy - (NY - 1) / 2.0) ** 2) / ((NX / 2.0) ** 2)
+    topo = (100.0 - 8.0 * np.exp(-r2)).astype(np.float32)
+    fails = 0
+    with tempfile.TemporaryDirectory(prefix="taperB_") as d:
+        write_fixture(d, 0.05, topo)                      # owe = 0.05 < precip = 0.1 -> pond fills
+        _run(wtm, d, "B", 1)
+        w1 = _final_wtd(d, "B", 1)
+        pond_cells = int((w1 > 0).sum())
+        pond_ok = pond_cells > 0
+        print(f"  pond forms: {pond_cells} cells with standing water, max depth {w1.max():.2f} m  "
+              f"{'OK' if pond_ok else 'FAIL (no pond formed)'}")
+        fails += not pond_ok
+        for n in ranks:
+            _run(wtm, d, "B", n)
+            wn = _final_wtd(d, "B", n)
+            md = float(np.abs(w1 - wn).max())
+            ok = md < 1e-6
+            print(f"  n={n}: max|wtd(n1) - wtd(n{n})| = {md:.2e} m  "
+                  f"{'OK' if ok else 'FAIL (shoreline/pond flips with rank count)'}")
+            fails += not ok
+    return fails
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: taper_test.py <wtm.x> [nrank ...]", file=sys.stderr)
@@ -148,6 +190,8 @@ def main():
         print(f"ERROR: WTM binary not executable: {wtm}", file=sys.stderr)
         return 1
     fails = study_a(wtm, ranks)
+    print()
+    fails += study_b(wtm, ranks)
     print()
     if fails:
         print(f"TAPER TESTS FAILED ({fails} assertion(s))", file=sys.stderr)
