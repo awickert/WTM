@@ -129,8 +129,11 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
   DMDAVecGetArray(user_context.da, user_context.open_water_evap_vec, &open_water_evap);
   DMDAVecGetArray(user_context.da, user_context.runoff_ratio_vec, &runoff_ratio);
 
+  // Taper 2: when the smooth ET->open-water transition is on, evaporation is the implicit E_eff in
+  // the solve, so the explicit recharge here is just the precip source (runoff still partitions it).
+  const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
 #pragma omp parallel for default(none) \
-    shared(params, dmdapack, precip, evap, open_water_evap, runoff_ratio, xs, ys, xm, ym) collapse(2)
+    shared(params, dmdapack, precip, evap, open_water_evap, runoff_ratio, xs, ys, xm, ym, evap_taper) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
       // The DMDA vecs hold double(float) values scattered from the (float) arp
@@ -141,7 +144,10 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
       const float owe_f    = static_cast<float>(open_water_evap[j][i]);
       const float rratio_f = static_cast<float>(runoff_ratio[j][i]);
 
-      if (params.evap_mode) {
+      if (evap_taper) {
+        // Evaporation is the implicit ET->owe taper; feed just the precip source (requires evap_mode 1).
+        dmdapack.rech_dist[j][i] = precip_f / seconds_in_a_year * params.deltat;
+      } else if (params.evap_mode) {
         // Evap mode 1: use the computed open-water evaporation rate.
         if (dmdapack.starting_wtd[j][i] > 0) {  // surface water present
           dmdapack.rech_dist[j][i] = (precip_f - owe_f) / seconds_in_a_year * params.deltat;
@@ -399,9 +405,13 @@ void update(
     // Evap mode 1: Use the computed open-water evaporation rate
     if (params.evap_mode) {
       std::cout << "p updating the recharge field" << std::endl;
-#pragma omp parallel for default(none) shared(arp, params)
+      // Taper 2: evaporation is the implicit ET->open-water transition, so feed just the precip source.
+      const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+#pragma omp parallel for default(none) shared(arp, params, evap_taper)
       for (unsigned int i = 0; i < arp.topo.size(); i++) {
-        if (arp.wtd(i) > 0) {  // if there is surface water present
+        if (evap_taper) {
+          arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
+        } else if (arp.wtd(i) > 0) {  // if there is surface water present
           arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
         } else {  // water table is below the surface
           // Recharge is always positive.
