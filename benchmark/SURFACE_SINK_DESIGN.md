@@ -448,3 +448,49 @@ though the below-surface capillary tail is still parameterized and **transpirati
 **Longer term (Andy): swap the sigmoid for real ecohydrology** — the *form* is right (smooth, monotone,
 wetland shoulder + open-water saturation); a real scheme (transpiration, microclimate, roughness) can
 later supply the values without changing the numerical machinery.
+
+### 14c. Functional form: a single symmetric logistic (2026-07-28)
+
+Guiding principle (Andy): *machinery introduced for convenience stays simple and honest; where we
+model actual mechanics, we follow reality.* The evaporation taper is convenience machinery (a
+numerical regularization), so use the simplest form that has the required properties, and do not
+dress it up as more than it is.
+
+**The form** — a single symmetric logistic:
+
+```math
+E(wtd) = owe \cdot \sigma\!\Big(\tfrac{wtd - wtd_c}{s}\Big), \qquad \sigma(u) = \tfrac{1}{1+e^{-u}},
+\qquad \frac{dE}{dwtd} = \frac{owe}{s}\,\sigma(1-\sigma) \ge 0 .
+```
+
+Monotone, `C^\infty`, saturating at `owe` above and `~0` deep below; `dE/dwtd \ge 0` everywhere (adds to
+the storage diagonal like the sink tangent → SPD-preserving; its positivity IS the stabilizing negative
+feedback, and single-valued → deterministic).
+
+**Parameters (each physical, only two are new):**
+- `owe` = `open_water_evap` — the saturated (large, wind-exposed) rate, from data. Not a new knob.
+- `wtd_c` = half-rate depth — where a pond becomes wind-exposed (a small POSITIVE value, ~cm–decimeter
+  of standing water); the wetland↔open-water pivot.
+- `s` = transition width — sets both the small→large-pond sharpness above AND the below-surface reach
+  (effective extinction depth `d_ext ≈ wtd_c − 3s`, where `E` fades to ~0).
+
+```
+ E
+owe┤                          ______________   open water (wind-stripped) → owe
+   │                       __/
+   │                     _/  ← wtd_c : pond becomes exposed  (E = owe/2)
+   │                  __/
+   │             __--‾   ← wetland shoulder: small sheltered ponds, low E, water RETAINED
+   │      __--‾‾
+  0┤__--‾‾__________________________________________________  wtd
+   └──────┬─────────┬──────────┬────────────────────────►
+        ~ -d_ext   0 (surface)  +standing water
+     deep: E≈0    damping tail   wetland → open water
+```
+
+**Start symmetric.** One width `s` ties the below-surface reach to the above-surface wetland width. That
+is deliberately the simple choice; only split into an ASYMMETRIC form (independent `s_below`, `s_above`,
+blended, or a `C^2` spline) if calibration against real behavior demands it — i.e. add asymmetry only
+when the *mechanics* call for it, not pre-emptively. Standing honesty: the above-surface limb is the
+genuine microclimate piece; the below-surface tail is parameterized (no transpiration); both are
+placeholders a future ecohydrology scheme can replace without touching this machinery.
