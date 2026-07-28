@@ -20,4 +20,11 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
 // when runoff_ratio_on. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2c).
 void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
 
+// Whether the implicit sub-surface sink is configured this run (taper 1).
+bool surface_sink_on();
+
+// Add this cycle's implicit-sink removal (sink_removed_dist) into rank-0 arp.runoff so FSM routes
+// it -- the order-preserving replacement for FSM's hard wtd>0->runoff handoff. See SURFACE_SINK_DESIGN.md.
+void gather_sink_removed_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);
+
 }

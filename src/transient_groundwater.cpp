@@ -632,6 +632,38 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
         arp.runoff(i, j) = full[j * params.ncells_x + i];
 }
 
+// Whether the implicit sub-surface sink is configured this run (taper 1). Lets the cycle loop
+// decide whether to gather the sink accumulator into arp.runoff for FSM without reaching into the
+// file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
+bool surface_sink_on() { return g_surface_sink; }
+
+// Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
+// ADDING to it, so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled
+// out of the solve (taper 1). Because the sink holds wtd<=0, FSM's own wtd>0->runoff handoff never
+// fires -- this is its smooth, order-preserving replacement. It composes with the runoff_ratio
+// channel (gather_runoff_to_zero OVERWRITES arp.runoff a cycle earlier, for the *next* FSM; this ADDS
+// after that FSM has consumed the prior value). Reuses wtd_global as scratch, after gather_wtd_to_all
+// has finished with it (the two run sequentially). See SURFACE_SINK_DESIGN.md sec 14 (taper 1).
+void gather_sink_removed_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** wg;
+  DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      wg[j][i] = dmdapack.sink_removed_dist[j][i];
+  DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &wg);
+
+  std::vector<double> full;
+  user_context.full_grid_gather->gatherToZero(user_context.wtd_global, full);
+
+  PetscMPIInt rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+  if (rank == 0)
+    for (int j = 0; j < params.ncells_y; j++)
+      for (int i = 0; i < params.ncells_x; i++)
+        arp.runoff(i, j) += full[j * params.ncells_x + i];
+}
+
 /* ------------------------------------------------------------------- */
 /*
    FormInitialGuess - Forms initial approximation.
