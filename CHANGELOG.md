@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Work since v2.0.1. Several new capabilities are **experimental and off by default**
 (gated behind `-wtm_*` runtime options); the default solve path is unchanged in behavior
-except where noted under _Changed_, and the regression suites (golden, MPI-consistency,
-mass-balance) pass.
+except where noted under _Changed_, and the full regression suite (`tests/run_all.sh`: DMDA
+unit tests, ghost-cell, MPI-consistency, mass-balance, FillSpillMerge-consistency, golden,
+and taper) passes.
 
 ### Added
 
@@ -33,8 +34,8 @@ mass-balance) pass.
   both the Picard/BDF2-on-V and the Anderson default paths.
 - **Demand-identity evaporation taper** (`-wtm_evap_taper`, requires `evap_mode 1`): replaces the
   hard switch at the surface between land-surface evapotranspiration and open-water evaporation with a
-  single smooth, implicit transition. Restores cross-rank determinism of FillSpillMerge lake formation
-  at the evaporation threshold. See `benchmark/SURFACE_SINK_DESIGN.md`.
+  single smooth, implicit transition. Makes FillSpillMerge lake formation cross-rank deterministic at
+  the evaporation threshold, where the hard switch is rank-sensitive. See `benchmark/SURFACE_SINK_DESIGN.md`.
 
 #### Scaling and memory
 - **Distributed data model** for single-node, many-core runs. The full grid is no longer replicated
@@ -61,7 +62,7 @@ mass-balance) pass.
 - **Conservative finite-volume flux discretization.** Corrects a longitude/latitude grid-spacing swap
   (the east–west and north–south fluxes had each been divided by the _other_ direction's spacing) and
   restores exact flux conservation across shared cell faces. This is a discretization-correctness fix;
-  its effect on results is **relatively minor** — a small change in the summed water-table depths.
+  its numerical effect on results is quantified in `benchmark/REVIEW_NOTES_since_v2.0.1.md`.
   Golden references were regenerated. See `benchmark/GRID_CONVENTION.md`.
 - **Recharge computation distributed across ranks** (previously serial on rank 0) where FillSpillMerge
   coupling permits; a warning is emitted for the configuration that must stay on the serial path
