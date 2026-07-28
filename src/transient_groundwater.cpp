@@ -464,11 +464,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // needs an established history -- the BE bootstrap step has no sink). Captured before the solve,
   // since the copy-back below sets bdf2_have_history for the NEXT step. Used to account the removed
   // water in the same step it was removed.
-  const bool sink_active_this_step = g_surface_sink && user_context.use_bdf2 &&
-                                     user_context.bdf2_have_history && user_context.use_bdf2_on_V;
-  // Same gating for taper 2 (evaporation): the implicit E_eff term lives only in the BDF2-on-V branch.
-  const bool evap_active_this_step = g_evap_taper && user_context.use_bdf2 &&
-                                     user_context.bdf2_have_history && user_context.use_bdf2_on_V;
+  // Where the removals actually act, so we account exactly what the solve removed:
+  //  * matrix-free path (Anderson/Newton, !use_picard): FormFunctionLocal applies them EVERY solve.
+  //  * Picard path: only in the BDF2-on-V branch, once a history exists (the BE bootstrap has none).
+  const bool matrix_free   = !user_context.use_picard;
+  const bool picard_bdf2_V = user_context.use_bdf2 && user_context.bdf2_have_history && user_context.use_bdf2_on_V;
+  const bool sink_active_this_step = g_surface_sink && (matrix_free || picard_bdf2_V);
+  const bool evap_active_this_step = g_evap_taper && (matrix_free || picard_bdf2_V);
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
@@ -835,6 +837,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr;  // taper 2: per-cell ET and open-water evap (m/yr)
+  if (g_evap_taper) {
+    PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
 
   // Use the smooth (C-inf) T when a ksat smoothing width is set (universal across solver paths);
   // otherwise the exact piecewise (C0) Fan form (production). Widths are read once in update().
@@ -849,9 +856,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
     }
   }
 
-#pragma omp parallel for default(none)                                                                              \
-    shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f) \
-        collapse(2)
+  const bool sink_on  = g_surface_sink;  // hoisted for the omp default(none) clause below
+  const bool taper_on = g_evap_taper;
+#pragma omp parallel for default(none)                                                                                \
+    shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
+           my_evap, my_owe, sink_on, taper_on) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       if (my_mask[j][i] == 0) {
@@ -881,9 +890,18 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
                                  + e_N * gn[j][i] * (this_x - x[j + 1][i]) + e_S * gs[j][i] * (this_x - x[j - 1][i]);
 
         const double A_j = user_context->cellsize_NS_squared / gew[j][i];  // cell area
-        const double S   = updateEffectiveStorativity(my_starting_wtd[j][i], this_x - my_topo[j][i], my_porosity[j][i]);
+        const double w_c = this_x - my_topo[j][i];                         // centre-cell wtd
+        const double S   = updateEffectiveStorativity(my_starting_wtd[j][i], w_c, my_porosity[j][i]);
 
-        f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S);
+        // Sub-surface sink (taper 1) and demand-identity evaporation (taper 2), as head-form removals
+        // dt*Q/S: evaluated at the current iterate, so implicit at the Anderson root. Matrix-free ->
+        // no tangent needed (unlike the Picard operator). Off unless their flags are set.
+        double removal = 0.0;  // m/s
+        if (sink_on) removal += surfaceSink(w_c);
+        if (taper_on) removal += evapTaper(w_c, my_evap[j][i], my_owe[j][i]);
+
+        f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S)
+                  + user_context->deltat * removal / S;
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
       }
@@ -901,6 +919,10 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
+  }
 
   PetscLogFlops(info->xm * info->ym * (72.0));
   return 0;
