@@ -525,3 +525,52 @@ surface). Study:
 
 Together: Study A proves determinism at the threshold; Study B proves physically-sensible pond/shoreline/
 wetland behavior on real topography (not the degenerate flat plateau).
+
+### 14e. The right framing: one evaporation term, made smooth (2026-07-28, Andy)
+
+The clean way to think about taper 2 — and the way to describe it in code, commits, and docs — is:
+
+> **It is just a smooth transition, whereas the other one was a sharp discontinuity.**
+
+There is **one** evaporation term: the loss transitions from the land-surface evapotranspiration grid
+`ET` (when the water table is deep / the surface is dry) to the open-water rate `owe` (when water stands
+at or above the surface). The model *already* implements this transition — but as a **hard switch** in
+the explicit, pre-solve recharge:
+
+```
+wtd < 0 :  recharge = precip - ET          (land-surface ET)
+wtd > 0 :  recharge = precip - owe         (open-water evaporation)
+```
+
+That switch is a discontinuity sitting exactly on the `wtd = 0` free boundary — one of the three that
+coincide there (§14) and the source of the chatter / rank-dependent flip. **Taper 2 re-implements the
+very same ET→open-water transition, but continuously and implicitly:**
+
+```
+E_eff(wtd) = ET + (owe - ET) * sigma((wtd - wtd_c)/s),     recharge = precip - E_eff(wtd)
+```
+
+evaluated on the *solved* head (like the sink), so the balance is found within the step.
+
+**Consequences of this framing (they change how we build, not the mechanism):**
+
+1. **It is a replacement, not an addition.** `E_eff` does not add a new loss on top of the existing one —
+   it *is* the existing ET→owe transition, made smooth. So completing taper 2 means **removing the hard
+   `ET`/`owe` switch from the explicit recharge** (feed just the `precip` source there), because `E_eff`
+   now carries the evaporation. The apparent "double-count" for `ET != 0` is not a bug to patch — it is
+   simply an *incomplete replacement*: the smooth term was added before the sharp one it supersedes was
+   removed. Frame the edit as **finishing the replacement**, not as de-duplicating.
+
+2. **Roles separate cleanly, which settles the runoff question.** The explicit recharge is the **precip
+   source** (which `runoff_ratio` partitions); evaporation is the **separate, smooth ET→open-water
+   transition**. So `runoff = runoff_ratio * precip` falls out naturally — runoff is a split of the
+   source, not of a post-evaporation remainder. (This differs from today's "runoff off net `precip-ET`";
+   it applies only when the taper is enabled, and is documented as such.)
+
+3. **What stays deferred.** Deep, the transition tends to `ET`; if `ET > precip` the net recharge goes
+   negative and `E_eff` would draw a deep table down. Preventing that is the **accessibility /
+   extinction-depth clamp = taper 3 (issue #4)** — the one genuinely separate piece. Taper 2 is correct
+   for `ET <= precip`; arid `ET > precip` wants taper 3 (guard against over-removal in the meantime).
+
+Everything is behind `-wtm_evap_taper` (off by default), so no default/production behavior changes; the
+above applies only to runs that opt into the smooth transition.
