@@ -50,8 +50,9 @@ mass-balance) pass.
 
 #### Testing and tooling
 - Regression suites: **golden** (expected-results, transient + evap-mode coverage), **MPI-consistency**
-  (n = 1 vs n = N), **mass-balance**, **ghost-cell**, and DMDA gather/scatter **unit tests**; synthetic
-  terrain generators (spectral / Fourier-mode and fractal).
+  (n = 1 vs n = N), **mass-balance**, **ghost-cell**, **taper** (surface-transition cross-rank
+  determinism + smoothness — the `SURFACE_SINK_DESIGN` §14d experiment sequence), and DMDA
+  gather/scatter **unit tests**; synthetic terrain generators (spectral / Fourier-mode and fractal).
 - **`BUILD_HPC.md`** cluster build guide (MSI worked example), single-node scaling/memory study drivers,
   a solve profiler, publication figure and dataset generators, and design notes.
 
