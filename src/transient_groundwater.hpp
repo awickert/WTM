@@ -27,6 +27,10 @@ bool surface_sink_on();
 // just precip when this is set -- the smooth implicit E_eff carries the ET->open-water transition.
 bool evap_taper_on();
 
+// Read the -wtm_evap_taper options (+ wtd_c, s) and enforce evap_mode 1. Call early (before the
+// initial recharge) so every explicit-recharge site sees a consistent flag. Idempotent.
+void read_evap_taper_options(const Parameters& params);
+
 // Add this cycle's implicit-sink removal (sink_removed_dist) into rank-0 arp.runoff so FSM routes
 // it -- the order-preserving replacement for FSM's hard wtd>0->runoff handoff. See SURFACE_SINK_DESIGN.md.
 void gather_sink_removed_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack);

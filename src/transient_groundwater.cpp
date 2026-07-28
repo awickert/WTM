@@ -455,17 +455,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
-  // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Off by default (default path and
-  // golden unchanged). wtd_c and s are transition-shape knobs (metres). See SURFACE_SINK_DESIGN.md 14.
-  PetscBool evap_taper = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_evap_taper", &evap_taper);
-  g_evap_taper = (evap_taper == PETSC_TRUE);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
-  // Taper 2 IS the ET->open-water evaporation transition; it only makes sense with the open-water
-  // rate in play (evap_mode 1). evap_mode 0 (remove-all-surface-water) has no owe to transition to.
-  if (g_evap_taper && !params.evap_mode)
-    throw std::runtime_error("-wtm_evap_taper requires evap_mode 1 (it smooths the ET->open-water transition)");
+  // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Read here AND early in
+  // WTM.cpp::initialise() (before the initial recharge) via the same call, so the explicit-recharge
+  // sites -- including irf.cpp's initial pass -- all see a consistent flag. See SURFACE_SINK_DESIGN.md 14.
+  read_evap_taper_options(params);
 
   // Whether the sink was actually applied THIS solve (it lives only in the BDF2-on-V branch, which
   // needs an established history -- the BE bootstrap step has no sink). Captured before the solve,
@@ -698,8 +691,24 @@ bool surface_sink_on() { return g_surface_sink; }
 
 // Whether the demand-identity evaporation taper is on (taper 2). Lets the explicit-recharge sites
 // (irf.cpp, WTM.cpp) drop their hard ET<->owe switch and feed just precip, because the smooth
-// implicit E_eff now carries that ET->open-water transition. Set in update() from -wtm_evap_taper.
+// implicit E_eff now carries that ET->open-water transition. Set by read_evap_taper_options().
 bool evap_taper_on() { return g_evap_taper; }
+
+// Read the taper-2 options (-wtm_evap_taper, wtd_c, s) into the file-static flags and enforce the
+// evap_mode-1 requirement. Called BOTH early in WTM.cpp::initialise() (so irf.cpp's initial recharge
+// sees the flag) AND in update() (so a standalone solve still parses it). Idempotent -- it just
+// re-reads the same PETSc options -- so the double call is harmless.
+void read_evap_taper_options(const Parameters& params) {
+  PetscBool evap_taper = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_evap_taper", &evap_taper);
+  g_evap_taper = (evap_taper == PETSC_TRUE);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
+  // Taper 2 IS the ET->open-water evaporation transition; it only makes sense with the open-water
+  // rate in play (evap_mode 1). evap_mode 0 (remove-all-surface-water) has no owe to transition to.
+  if (g_evap_taper && !params.evap_mode)
+    throw std::runtime_error("-wtm_evap_taper requires evap_mode 1 (it smooths the ET->open-water transition)");
+}
 
 // Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
 // ADDING to it, so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled

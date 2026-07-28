@@ -11,6 +11,13 @@
 namespace rd = richdem;
 namespace dh = richdem::dephier;
 
+// Taper 2 accessor (defined in transient_groundwater.cpp): whether the smooth ET->open-water
+// evaporation transition is on, so the initial recharge below feeds just precip. Forward-declared
+// to avoid pulling the solver header (and its PETSc deps) into irf.cpp.
+namespace FanDarcyGroundwater {
+bool evap_taper_on();
+}
+
 constexpr double UNDEF             = -1.0e7;
 constexpr double seconds_in_a_year = 31536000.;
 
@@ -376,9 +383,14 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
   // Evap mode 1: Use the computed open-water evaporation rate
   if (params.evap_mode) {
     std::cout << "p updating the recharge field" << std::endl;
-#pragma omp parallel for default(none) shared(arp, params)
+    // Taper 2: evaporation is the implicit ET->open-water transition, so feed just the precip source
+    // (matches the per-cycle path). read_evap_taper_options() ran in initialise() before this.
+    const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+#pragma omp parallel for default(none) shared(arp, params, evap_taper)
     for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (arp.wtd(i) > 0) {  // if there is surface water present
+      if (evap_taper) {
+        arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
+      } else if (arp.wtd(i) > 0) {  // if there is surface water present
         arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
       } else {  // water table is below the surface
         // Recharge is always positive.

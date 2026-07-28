@@ -47,6 +47,10 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   PetscMPIInt rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
+  // Taper 2: read -wtm_evap_taper now, BEFORE the initial recharge (InitialiseBoth below), so its
+  // explicit recharge sees the same flag as the per-cycle path. update() re-reads it (idempotent).
+  FanDarcyGroundwater::read_evap_taper_options(params);
+
   // The per-cycle recharge is distributed across ranks except when FSM is on AND
   // infiltration_on is set (then it stays on the serial rank-0 path, because the
   // cell-crossing runoff it produces feeds FSM; see benchmark/DISTRIBUTED_ARP_DESIGN.md).
