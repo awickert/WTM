@@ -105,6 +105,14 @@ struct AppCtx {
   // when runoff_ratio_on. Unused when runoff is off. See DISTRIBUTED_ARP_DESIGN.md (2c).
   Vec runoff_dist_vec = nullptr;
 
+  // Distributed per-cycle water removed by the implicit sub-surface sink (taper 1):
+  // depth (m) accumulated per owned cell across the cycle's sub-steps, gathered to
+  // rank-0 arp.runoff so this cycle's FillSpillMerge routes it. This is the smooth,
+  // order-preserving replacement for FSM's hard wtd>0 -> runoff handoff: the sink holds
+  // wtd<=0 in the solve, so the exfiltrated water leaves *here* instead. Zero (a no-op
+  // gather) when the sink is off. See SURFACE_SINK_DESIGN.md and issue #4.
+  Vec sink_removed_dist_vec = nullptr;
+
   // Extract global vectors from DM; then duplicate for remaining
   // vectors that are the same types
   void make_global_vectors() {
@@ -124,6 +132,7 @@ struct AppCtx {
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
     VecDuplicate(x, &runoff_dist_vec);
+    VecDuplicate(x, &sink_removed_dist_vec);
     VecDuplicate(x, &precip_vec);
     VecDuplicate(x, &evap_vec);
     VecDuplicate(x, &open_water_evap_vec);

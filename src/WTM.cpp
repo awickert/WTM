@@ -495,6 +495,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.wtd_global);
   VecDestroy(&user_context.rech_source);
   VecDestroy(&user_context.runoff_dist_vec);
+  VecDestroy(&user_context.sink_removed_dist_vec);
 
   SNESDestroy(&user_context.snes);
   DMDestroy(&user_context.da);
