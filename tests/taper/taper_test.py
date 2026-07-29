@@ -180,6 +180,79 @@ def study_b(wtm, ranks):
     return fails
 
 
+def _arid_fixture(d, ksat=1e-9):
+    """Flat plateau where ET (0.5 m/yr) > precip (0.2 m/yr): the ARID regime in which taper 2 alone has
+    no equilibrium. Tiny ksat -> negligible lateral flow -> each interior cell is ~an isolated vertical
+    ET/recharge balance, so the taper-3 clamp shows cleanly at ~ -d_ext (lateral drainage to the ocean
+    ring would otherwise mask it)."""
+    os.makedirs(d, exist_ok=True)
+    mask = np.ones((NY, NX), dtype=np.float32)
+    mask[0, :] = mask[-1, :] = mask[:, 0] = mask[:, -1] = 0
+    fields = {
+        f"{REGION}_{TIME}_topography.tif":             (np.full((NY, NX), 100.0), "float32"),
+        f"{REGION}_{TIME}_slope.tif":                  (np.zeros((NY, NX)), "float32"),
+        f"{REGION}_{TIME}_mask.tif":                   (mask, "float32"),
+        f"{REGION}_{TIME}_precipitation.tif":          (np.full((NY, NX), 0.2), "float32"),   # P
+        f"{REGION}_{TIME}_evaporation.tif":            (np.full((NY, NX), 0.5), "float32"),   # ET > P
+        f"{REGION}_{TIME}_open_water_evaporation.tif": (np.full((NY, NX), 1.0), "float32"),
+        f"{REGION}_{TIME}_winter_temperature.tif":     (np.zeros((NY, NX)), "float32"),
+        f"{REGION}_horizontal_ksat.tif":               (np.full((NY, NX), ksat), "float32"),
+        f"{REGION}_porosity.tif":                      (np.full((NY, NX), 0.25), "float32"),
+        f"{REGION}_{TIME}_starting_wt.tif":            (np.full((NY, NX), -1.0), "float64"),
+    }
+    for fname, (arr, dt) in fields.items():
+        _write_tif(os.path.join(d, fname), np.asarray(arr), dt)
+
+
+def _arid_cfg(d, txt, prefix):
+    # fsm_on 0: a pure groundwater drawdown test (no lakes). 60 yr to equilibrium.
+    return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
+            f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_cycles 60\nmaxiter 3\n"
+            f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
+            f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\ncycles_to_save 9999\n"
+            f"textfilename {txt}\noutfile_prefix {prefix}\n")
+
+
+def _arid_run(wtm, d, tag, flags):
+    cfg = os.path.join(d, f"cfg_{tag}")
+    with open(cfg, "w") as f:
+        f.write(_arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_")))
+    subprocess.run([wtm, cfg] + flags, cwd=d, env={**os.environ, "OMP_NUM_THREADS": "1"},
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_") and f.endswith(".tif"))
+    with rasterio.open(os.path.join(d, tifs[-1])) as s:
+        return s.read(1)
+
+
+def study_c(wtm):
+    """Taper 3 (accessibility / extinction-depth, -wtm_extinction) clamps the arid drawdown. This is the
+    regression that BITES: without taper 3, taper 2 alone has NO equilibrium in an arid cell (E_eff >
+    precip) and the table runs away; with it, drawdown halts at ~ -d_ext. The taper-2-alone run below IS
+    the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
+    fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
+    print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
+    E = ["-wtm_evap_taper", "-snes_stol", "1e-8"]
+    c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
+    fails = 0
+    with tempfile.TemporaryDirectory(prefix="taperC_") as d:
+        _arid_fixture(d)
+        w2 = float(_arid_run(wtm, d, "C2", E)[c])
+        w8 = float(_arid_run(wtm, d, "C8", E + ["-wtm_extinction", "-wtm_extinction_depth", "8"])[c])
+        w4 = float(_arid_run(wtm, d, "C4", E + ["-wtm_extinction", "-wtm_extinction_depth", "4"])[c])
+        runaway = w2 < -50.0                                          # no equilibrium without taper 3
+        ok8 = -8.0 <= w8 <= -6.5                                      # clamped just inside d_ext = 8
+        ok4 = -4.0 <= w4 <= -3.0                                      # clamped just inside d_ext = 4
+        scales = w4 > w8                                             # shallower d_ext -> shallower clamp
+        print(f"  taper 2 alone      : interior wtd = {w2:8.2f} m  "
+              f"{'OK (runs away, no equilibrium)' if runaway else 'FAIL (expected runaway)'}")
+        print(f"  taper 2 + ext(8 m) : interior wtd = {w8:8.2f} m  "
+              f"{'OK (clamped ~ -d_ext)' if ok8 else 'FAIL (not clamped -- taper 3 broken?)'}")
+        print(f"  taper 2 + ext(4 m) : interior wtd = {w4:8.2f} m  {'OK (clamped ~ -d_ext)' if ok4 else 'FAIL'}")
+        print(f"  clamp scales with d_ext (ext4 shallower than ext8) = {scales}")
+        fails += (not runaway) + (not ok8) + (not ok4) + (not scales)
+    return fails
+
+
 def main():
     if len(sys.argv) < 2:
         print("usage: taper_test.py <wtm.x> [nrank ...]", file=sys.stderr)
@@ -192,6 +265,8 @@ def main():
     fails = study_a(wtm, ranks)
     print()
     fails += study_b(wtm, ranks)
+    print()
+    fails += study_c(wtm)
     print()
     if fails:
         print(f"TAPER TESTS FAILED ({fails} assertion(s))", file=sys.stderr)
