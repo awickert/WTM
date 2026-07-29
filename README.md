@@ -159,6 +159,31 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
 ```
 
+## Surface-water transition (smooth tapers, on by default)
+At the land surface (water-table depth `wtd = 0`) WTM smooths the transition between groundwater and
+surface water with three implicit, order-preserving **tapers**, which replace the old hard `wtd = 0`
+switch. They are **on by default** (this is the recommended model) and are controlled by command-line
+options (PETSc `-wtm_*` flags passed after the config file, not config-file keys). Each is individually
+disabled with `<flag> 0`:
+
+- **Taper 1 — sub-surface sink** (`-wtm_surface_sink`): smoothly holds the water table at/below the
+  surface and hands exfiltrated water to Fill-Spill-Merge (it stays in the domain as surface water /
+  runoff). Preserves 2nd-order time accuracy across the surface. Peak removal `-wtm_surface_sink_qmax`
+  (default 1 m/yr); its band width auto-scales with the timestep for stability (`-wtm_surface_sink_width`
+  overrides).
+- **Taper 2 — demand-identity evaporation** (`-wtm_evap_taper`): a single smooth transition from
+  land-surface evapotranspiration (below the surface) to open-water evaporation (at/above it),
+  replacing the hard ET↔open-water switch. This is what makes lake formation identical regardless of
+  MPI rank count.
+- **Taper 3 — accessibility / extinction depth** (`-wtm_extinction`, depth `-wtm_extinction_depth`,
+  default 8 m): lets an arid water table (evaporative demand > precipitation) draw down via phreatic ET
+  only within the extinction depth, rather than without bound.
+
+Running with any combination other than all three on prints a warning explaining the consequence
+(arid-unsafe, no-effect, or the legacy hard-switch model). The tapers work with either `evap_mode`; in
+`evap_mode 0` the taper governs evaporation in place of the hard "remove all surface water" step. See
+`benchmark/SURFACE_SINK_DESIGN.md` for the full derivation.
+
 ## Outputs
 The program outputs a text file that provides information on the current minimum and maximum water table elevation, the changes in surface water and groundwater within the past iteration, and the number of iterations passed.
 The main output is a geoTiff file that supplies the depth to/elevation of the water table. Negative values indicate a water table below the surface, while positive values indicate a water table above the surface (i.e. a lake).

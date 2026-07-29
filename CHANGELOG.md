@@ -7,11 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Work since v2.0.1. Several new capabilities are **experimental and off by default**
-(gated behind `-wtm_*` runtime options); the default solve path is unchanged in behavior
-except where noted under _Changed_, and the full regression suite (`tests/run_all.sh`: DMDA
-unit tests, ghost-cell, MPI-consistency, mass-balance, FillSpillMerge-consistency, golden,
-and taper) passes.
+Work since v2.0.1. The **default surface-water / evaporation model is now the smooth
+transition** — the surface-transition tapers (1–3, below) are on by default, replacing the
+hard `wtd = 0` switch. Other new capabilities remain experimental and off by default (gated
+behind `-wtm_*` runtime options). The full regression suite (`tests/run_all.sh`: DMDA unit
+tests, ghost-cell, MPI-consistency, mass-balance, FillSpillMerge-consistency, golden, and
+taper) passes.
 
 ### Added
 
@@ -27,15 +28,29 @@ and taper) passes.
   `-wtm_ksat_surface_smoothing_width`, `-wtm_storativity_surface_smoothing_width`): optional rounding
   of the piecewise T/S boundaries, applied consistently across all solver paths.
 
-#### Smooth surface-water transition (experimental, off by default)
-- **Sub-surface sink** (`-wtm_surface_sink`): a smooth, order-preserving near-surface removal that
-  holds the water table at/below the surface and hands the exfiltrated water to FillSpillMerge as a
-  per-cell input — the smooth replacement for the hard "surface water → runoff" handoff. Available on
-  both the Picard/BDF2-on-V and the Anderson default paths.
-- **Demand-identity evaporation taper** (`-wtm_evap_taper`, requires `evap_mode 1`): replaces the
-  hard switch at the surface between land-surface evapotranspiration and open-water evaporation with a
-  single smooth, implicit transition. Makes FillSpillMerge lake formation cross-rank deterministic at
-  the evaporation threshold, where the hard switch is rank-sensitive. See `benchmark/SURFACE_SINK_DESIGN.md`.
+#### Smooth surface-water transition (now the default — three tapers, per-taper off-switches)
+The hard `wtd = 0` switch is replaced by three smooth, implicit, order-preserving tapers, all **on by
+default** and each individually disabled by its flag (e.g. `-wtm_evap_taper 0`):
+- **Taper 1 — sub-surface sink** (`-wtm_surface_sink`): a near-surface removal that holds the water
+  table at/below the surface and hands the exfiltrated water to FillSpillMerge (it stays in the
+  domain) — the smooth replacement for the hard "surface water → runoff" handoff, preserving 2nd-order
+  accuracy across `wtd = 0`. On both the Anderson default and Picard/BDF2-on-V paths. Its width scales
+  with the timestep (`width = C·qmax·dt`, C = 2) for stability at every step (tight — mm–cm — at small
+  transient dt, wider only at large equilibrium dt); `qmax` default 1 m/yr, `-wtm_surface_sink_width`
+  overrides.
+- **Taper 2 — demand-identity evaporation** (`-wtm_evap_taper`): a single smooth, implicit transition
+  from land-surface evapotranspiration (deep) to open-water evaporation (at/above the surface),
+  replacing the hard ET↔open-water switch. Makes FillSpillMerge lake formation cross-rank deterministic
+  at the evaporation threshold. Works in both `evap_mode 1` and `evap_mode 0` (it supersedes evap_mode
+  0's remove-all).
+- **Taper 3 — accessibility / extinction-depth clamp** (`-wtm_extinction`, depth `-wtm_extinction_depth`,
+  default 8 m): gates taper 2's sub-surface evaporative deficit by depth, so an arid table (`ET > precip`)
+  draws down only within the extinction depth (phreatic ET) rather than without bound. Depth basis:
+  rooting depths (Canadell et al. 1996) / groundwater-ET extinction depths (Shah et al. 2007), see
+  `benchmark/SURFACE_SINK_DESIGN.md` §14f.
+
+Any configuration other than all-three-on emits a warning (arid-unsafe, inert, or the legacy
+hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
 
 #### Scaling and memory
 - **Distributed data model** for single-node, many-core runs. The full grid is no longer replicated
@@ -58,6 +73,14 @@ and taper) passes.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **Default surface-water / evaporation model is now the smooth transition** (surface-transition
+  tapers 1–3 on). This replaces the hard `wtd = 0` ET↔open-water switch — which made FillSpillMerge
+  lake formation rank-dependent (non-deterministic across MPI rank counts) and applied no phreatic ET —
+  with a cross-rank-deterministic, 2nd-order-preserving transition, and it lets arid tables draw down
+  physically (phreatic ET to an extinction depth). Recharge becomes the precip source with evaporation
+  carried by the smooth `E_eff`, and runoff becomes `runoff_ratio · precip` (a split of the source).
+  Golden references were regenerated. Disable per taper (e.g. `-wtm_evap_taper 0`) for the legacy
+  behavior; see the tapers under _Added_.
 - **Default solver is Anderson** (acceleration window m = 10) using the piecewise Fan transmissivity.
 - **Conservative finite-volume flux discretization.** Corrects a longitude/latitude grid-spacing swap
   (the east–west and north–south fluxes had each been divided by the _other_ direction's spacing) and
