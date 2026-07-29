@@ -47,9 +47,12 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   PetscMPIInt rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
 
-  // Taper 2: read -wtm_evap_taper now, BEFORE the initial recharge (InitialiseBoth below), so its
-  // explicit recharge sees the same flag as the per-cycle path. update() re-reads it (idempotent).
+  // Taper 2/3: read -wtm_evap_taper / -wtm_extinction now, BEFORE the initial recharge (InitialiseBoth
+  // below), so its explicit recharge sees the same flags as the per-cycle path. update() re-reads them
+  // (idempotent). Warn once (rank 0) about configurations other than the blessed smooth transition.
   FanDarcyGroundwater::read_evap_taper_options(params);
+  if (rank == 0)
+    FanDarcyGroundwater::warn_taper_configuration(params);
 
   // The per-cycle recharge is distributed across ranks except when FSM is on AND
   // infiltration_on is set (then it stays on the serial rank-0 path, because the

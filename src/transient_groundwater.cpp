@@ -798,6 +798,49 @@ void read_evap_taper_options(const Parameters& params) {
   (void)params;
 }
 
+// Emit configuration warnings for the surface-water evaporation model. The intended (blessed)
+// configuration is the smooth transition with BOTH taper 2 (-wtm_evap_taper) and taper 3
+// (-wtm_extinction) on; every other combination is arid-unsafe, inert, or the legacy hard-switch
+// model, and is flagged here. Caller guards rank 0 so this prints once. See SURFACE_SINK_DESIGN.md 14.
+void warn_taper_configuration(const Parameters& params) {
+  if (params.evap_mode) {
+    // evap_mode 1: the smooth ET->open-water transition is the intended model.
+    if (g_evap_taper && !g_extinction)
+      std::cerr << "WARNING: -wtm_evap_taper without -wtm_extinction: in arid cells (ET > precip) the "
+                   "evaporation taper draws the water table down WITHOUT BOUND (no equilibrium). Add "
+                   "-wtm_extinction (accessibility / extinction-depth clamp) unless you specifically want "
+                   "taper 2 alone for testing."
+                << std::endl;
+    else if (!g_evap_taper && g_extinction)
+      std::cerr << "WARNING: -wtm_extinction without -wtm_evap_taper has NO EFFECT: the extinction-depth "
+                   "clamp gates taper 2's evaporative deficit, which is not active."
+                << std::endl;
+    else if (!g_evap_taper && !g_extinction)
+      std::cerr << "WARNING: running the LEGACY hard-switch evaporation model (neither -wtm_evap_taper nor "
+                   "-wtm_extinction). The hard wtd=0 ET<->open-water switch makes FillSpillMerge lake "
+                   "formation rank-dependent (NON-DETERMINISTIC across MPI rank counts) and applies no "
+                   "phreatic ET. The smooth tapers (-wtm_evap_taper -wtm_extinction) are recommended."
+                << std::endl;
+  } else {
+    // evap_mode 0: remove all surface water.
+    if (g_evap_taper) {
+      std::cerr << "WARNING: evap_mode 0 (remove all surface water) with the taper on: the smooth taper "
+                   "governs evaporation, so surface water is evaporated smoothly (not hard-removed) and "
+                   "evap_mode 0 and 1 coincide."
+                << (g_extinction ? "" : " Also, without -wtm_extinction, arid drawdown is unbounded.")
+                << std::endl;
+    } else {
+      std::cerr << "WARNING: evap_mode 0 removes ALL surface water every step (GW-alone testing; Fan "
+                   "Reinfelder et al. 2013)."
+                << std::endl;
+      std::cerr << "WARNING: running the LEGACY hard-switch evaporation model. The hard wtd=0 switch is "
+                   "rank-dependent (non-deterministic FSM lakes) and applies no phreatic ET; the smooth "
+                   "tapers (-wtm_evap_taper -wtm_extinction) are recommended."
+                << std::endl;
+    }
+  }
+}
+
 // Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
 // ADDING to it, so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled
 // out of the solve (taper 1). Because the sink holds wtd<=0, FSM's own wtd>0->runoff handoff never
