@@ -640,3 +640,47 @@ accessible deep-rooted vegetation is present. A single scalar arid default there
 capillary band — i.e. of order the **sclerophyllous-shrubland-to-desert range, ~5–10 m** — with the
 per-cell hook (soil texture × biome rooting depth) as the eventual data-driven refinement. Final value: TBD
 (Wickert to choose from this table).
+
+### 14g. Default flip: tapers 1+2+3 on, dt-scaled sink width (2026-07-29)
+
+The three tapers became the model **default** (off-switches per taper: `-wtm_surface_sink 0`,
+`-wtm_evap_taper 0`, `-wtm_extinction 0`). The default recharge/evaporation model is now the smooth
+transition; golden references were regenerated (only expected *values* moved — mass-balance, MPI- and
+FSM-consistency still pass, so the new default is conservative and cross-rank deterministic). The
+biggest golden move is `fsm_evap0` (~10 m at one cell): in `evap_mode 0` the depression previously had
+its surface water hard-deleted every step; with the taper a lake correctly fills it — a success, not a
+regression.
+
+**Sink width must scale with the timestep — `width = C·qmax·dt` (C = 2).** The implicit near-surface
+sink is a near-clamp, so its *stable* width tracks the per-step removal depth `qmax·dt`. Measured
+(sink-only, wet cell driven to the surface, both solver paths; `qmax = 1 m/yr`):
+
+| width \ dt | 1 yr | 0.1 yr | 0.01 yr |
+|---|---|---|---|
+| 1.0 m  | converges (wtd −0.64 m) | converges | converges |
+| 0.1 m  | **DIVERGED_MAX_IT** | converges (−0.064 m) | converges |
+| 0.01 m | **DIVERGED** | **DIVERGED** | converges (−0.006 m) |
+
+The convergence boundary is `width ≈ qmax·dt`; below it the fixed-point iteration hits the 10000-iter
+cap on **both** Anderson and Picard. A fixed absolute width is therefore wrong: at the equilibrium
+`dt = 1 yr` it must be ~1 m (physically too wide — the table sits ~1 m down), and a physical mm–cm width
+diverges. Tying the width to `qmax·dt` makes it stable at every step and **as tight as the timestep
+allows** — mm–cm at the small dt of the 2nd-order transient regime (where the sink earns its keep, e.g.
+`width = 1 cm, dt = 0.01 yr → wtd = −6 mm`), only necessarily wider at a large equilibrium dt (which
+needs no time accuracy). Same spirit as the §9 `λ = C/dt` parameterization: the removal scale tracks
+the substep, not an absolute length. (Adaptive dt: the default uses the base `deltat`, which errs wide
+= stable.)
+
+**Caveat to revisit — exfiltration (Wickert):** a tighter width holds the table nearer the surface,
+which routes *more* water to FSM as exfiltration. We may be over-estimating exfiltration; if so, revisit
+`C` or `qmax`. Rolling with the current values for now.
+
+**Why taper 1 is not folded into taper 2 (Wickert asked).** They are two different physical fluxes with
+two destinations — taper 2 → atmosphere (evaporation, capped at `owe`, leaves the system); taper 1 →
+FSM (exfiltration/runoff, stays in the domain) — and they already *layer* (taper 2 takes its `owe`
+share first, taper 1 disposes of only the post-evaporation remainder `≈ max(0, supply − owe)`), so they
+cooperate rather than duplicate. A single-curve unification (one removal split at `owe`) is possible but
+is polish, not correctness: it merges two physically-distinct processes into one object that re-splits
+internally for the budget (a destination kink), does not remove taper 1's dt-scaled-width stiffness, and
+blurs the clean two-channel mass accounting. Kept separate (consistent with §14a). Revisit only if a
+concrete simplification emerges.
