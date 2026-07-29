@@ -510,14 +510,27 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
   g_extended_soil = (extsoil == PETSC_TRUE);
 
-  // Sub-surface sink [WIP]: Qmax supplied in m/yr (intuitive), stored as m/s. Requires
-  // -wtm_bdf2_on_V (implemented only in the Picard RHS/operator). See SURFACE_SINK_DESIGN.md sec 11.
-  PetscBool sink = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_surface_sink", &sink);
+  // Taper 1 -- sub-surface sink: a smooth, order-preserving near-surface removal that holds the water
+  // table at/below the land surface and hands the exfiltrated water to FillSpillMerge (it stays in the
+  // domain, unlike taper 2's evaporation). Applied on the Anderson default path (FormFunctionLocal,
+  // every solve) and the Picard BDF2-on-V path; it smooths the wtd=0 exfiltration->runoff handoff that
+  // otherwise breaks 2nd-order accuracy. Qmax supplied in m/yr (intuitive), stored as m/s.
+  PetscBool sink = PETSC_TRUE;  // taper 1 default ON (off-switch: -wtm_surface_sink 0 / false)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_sink", &sink, nullptr);
   g_surface_sink         = (sink == PETSC_TRUE);
-  double sink_qmax_yr    = 0.0;
+  double sink_qmax_yr    = 1.0;  // default peak removal 1 m/yr (~ precip/evap scale; supplied m/yr, stored m/s)
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_qmax", &sink_qmax_yr, nullptr);
   g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
+  // Default sink width SCALES WITH the per-timestep removal depth: width = C * qmax * dt. The implicit
+  // near-surface removal is a near-clamp, so its stable width tracks qmax*dt: if width < qmax*dt the
+  // solve diverges (DIVERGED_MAX_IT on both paths), and if width is much larger the table is held too
+  // far below the surface. C=2 gives stability headroom while keeping the table tight -- mm-cm at the
+  // small dt of the 2nd-order transient regime, only necessarily wider at a large equilibrium dt. A
+  // -wtm_surface_sink_width overrides. (Adaptive dt: uses the base deltat, conservative -- errs wide =
+  // stable.) NOTE (exfiltration): a tight width routes MORE water to FSM as exfiltration; if that
+  // over-exfiltrates, revisit C or qmax. See SURFACE_SINK_DESIGN.md sec 11/14.
+  constexpr double C_sink = 2.0;
+  g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
   // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Read here AND early in
@@ -778,15 +791,15 @@ bool extinction_on() { return g_extinction; }
 // sees the flag) AND in update() (so a standalone solve still parses it). Idempotent -- it just
 // re-reads the same PETSc options -- so the double call is harmless.
 void read_evap_taper_options(const Parameters& params) {
-  PetscBool evap_taper = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_evap_taper", &evap_taper);
+  PetscBool evap_taper = PETSC_TRUE;  // taper 2 default ON (off-switch: -wtm_evap_taper 0 / false)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_evap_taper", &evap_taper, nullptr);
   g_evap_taper = (evap_taper == PETSC_TRUE);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
 
   // Taper 3: accessibility / extinction-depth clamp (awickert/WTM#4). Own on/off toggle plus the depth.
-  PetscBool extinction = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_extinction", &extinction);
+  PetscBool extinction = PETSC_TRUE;  // taper 3 default ON (off-switch: -wtm_extinction 0 / false)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_extinction", &extinction, nullptr);
   g_extinction = (extinction == PETSC_TRUE);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_extinction_depth", &g_extinction_depth, nullptr);
 

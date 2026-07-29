@@ -236,7 +236,8 @@ def study_c(wtm):
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:
         _arid_fixture(d)
-        w2 = float(_arid_run(wtm, d, "C2", E)[c])
+        # taper 3 is default-on, so "taper 2 alone" must explicitly disable it (-wtm_extinction 0).
+        w2 = float(_arid_run(wtm, d, "C2", E + ["-wtm_extinction", "0"])[c])
         w8 = float(_arid_run(wtm, d, "C8", E + ["-wtm_extinction", "-wtm_extinction_depth", "8"])[c])
         w4 = float(_arid_run(wtm, d, "C4", E + ["-wtm_extinction", "-wtm_extinction_depth", "4"])[c])
         runaway = w2 < -50.0                                          # no equilibrium without taper 3
