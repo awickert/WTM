@@ -379,54 +379,32 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
     }
   }
 
-  // get the starting runoff using precip and evap inputs:
-  // Evap mode 1: Use the computed open-water evaporation rate
-  if (params.evap_mode) {
-    std::cout << "p updating the recharge field" << std::endl;
-    // Taper 2: evaporation is the implicit ET->open-water transition, so feed just the precip source
-    // (matches the per-cycle path). read_evap_taper_options() ran in initialise() before this.
-    const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+  // get the starting runoff using precip and evap inputs. Taper-first (mode-independent): the taper
+  // (2/3) governs evaporation via the implicit E_eff, so feed just precip regardless of evap_mode --
+  // the smooth removal auto-zeroes standing water, so no independent wtd=0 under the taper. Otherwise
+  // mode 1 evaporates surface water at owe (persists); mode 0 removes all surface water (wtd=0;
+  // GW-alone testing, Fan Reinfelder et al. 2013). Matches the per-cycle path.
+  const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+  std::cout << (evap_taper       ? "p updating the recharge field (taper)"
+               : params.evap_mode ? "p updating the recharge field"
+                                  : "p removing all surface water")
+            << std::endl;
 #pragma omp parallel for default(none) shared(arp, params, evap_taper)
-    for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (evap_taper) {
-        arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
-      } else if (arp.wtd(i) > 0) {  // if there is surface water present
-        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
-      } else {  // water table is below the surface
-        // Recharge is always positive.
-        arp.rech(i) =
-            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
-      }
-
-      if (arp.rech(i) > 0) {
-        // if there is positive recharge, some of it may run off.
-        // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
-      }
+  for (unsigned int i = 0; i < arp.topo.size(); i++) {
+    if (evap_taper) {
+      arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
+    } else if (arp.wtd(i) > 0) {  // surface water present
+      if (!params.evap_mode)
+        arp.wtd(i) = 0;  // evap_mode 0: remove all surface water (GW-alone testing)
+      arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
+    } else {  // water table below the surface; recharge is always positive
+      arp.rech(i) =
+          (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
     }
-  }
-
-  // Evap mode 0: remove all surface water (like Fan Reinfelder et al., 2013)
-  else {
-    std::cout << "p removing all surface water" << std::endl;
-#pragma omp parallel for default(none) shared(arp, params)
-    for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (arp.wtd(i) > 0) {  // if there is surface water present
-        arp.wtd(i) = 0;      // use this option when testing GW component alone
-        // still set recharge because it could be positive in this cell, and some may run off or move to neighbouring
-        // cells
-        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
-      } else {  // water table is below the surface
-        arp.rech(i) =
-            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
-      }
-      if (arp.rech(i) > 0) {
-        // if there is positive recharge, some of it may run off.
-        // set the amount of runoff based on runoff_ratio, and subtract this amount from the recharge.
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
-      }
+    if (arp.rech(i) > 0) {
+      // positive recharge may partly run off (runoff_ratio); subtract it from the recharge.
+      arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
+      arp.rech(i) -= arp.runoff(i);
     }
   }
 

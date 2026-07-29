@@ -790,10 +790,12 @@ void read_evap_taper_options(const Parameters& params) {
   g_extinction = (extinction == PETSC_TRUE);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_extinction_depth", &g_extinction_depth, nullptr);
 
-  // Taper 2 IS the ET->open-water evaporation transition; it only makes sense with the open-water
-  // rate in play (evap_mode 1). evap_mode 0 (remove-all-surface-water) has no owe to transition to.
-  if (g_evap_taper && !params.evap_mode)
-    throw std::runtime_error("-wtm_evap_taper requires evap_mode 1 (it smooths the ET->open-water transition)");
+  // The taper works in BOTH evap_modes: evap_mode 0 also supplies open_water_evap (used for surface
+  // recharge), so E_eff has the owe it needs, and the recharge paths check the taper first so it
+  // governs evaporation mode-independently (the smooth removal auto-zeroes standing water in place of
+  // mode 0's hard wtd=0). Configuration mismatches are surfaced as warnings, not errors -- see the
+  // warn_taper_configuration() checks. (params retained for that call site.)
+  (void)params;
 }
 
 // Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
