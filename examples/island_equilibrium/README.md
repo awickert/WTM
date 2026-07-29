@@ -19,7 +19,20 @@ python3 examples/island_equilibrium/demo.py corsica  --map
 
 Requires `rasterio` and `numpy` (and `matplotlib` for `--map`). Each run does serial (`n=1`) plus
 `--ranks` (default 4 and 8), reports the cross-rank max difference, and — with `--map` — renders the
-terrain, ocean, river network, and lakes.
+figure described next.
+
+## Reading the figures
+
+Each figure below has **two panels**:
+
+- **Left — the equilibrium surface hydrology (serial run).** Terrain shaded by elevation; the
+  **ocean** boundary in blue; the **river** network (drainage) in cyan; and **lakes** (standing water
+  ponded in closed depressions) in magenta.
+- **Right — serial vs. parallel, in nanometres.** The absolute difference between the serial (`n=1`)
+  and parallel (`n=8`) equilibrium water tables, `|wtd_serial − wtd_parallel|`, scaled to nm. It is
+  essentially **all black (0 nm)** — a max of a few nanometres, at the level of floating-point
+  reduction noise — so the two runs are the **same answer**. That is the point of the demo: the
+  implicit 2nd-order solve is identical whether run on one core or on eight MPI ranks.
 
 ## Two topographies
 

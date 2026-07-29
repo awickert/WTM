@@ -114,7 +114,9 @@ def run(d, region, cpd, south, n):
         return s.read(1)
 
 
-def render_map(d, region, wtd, out):
+def render_map(d, region, w_serial, w_par, npar, out):
+    """Left: the feature map (ocean / rivers / lakes). Right: |serial - parallel| -- the visual
+    serial==parallel proof (machine-zero)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -137,15 +139,25 @@ def render_map(d, region, wtd, out):
         if best:
             acc[best] += acc[yy, xx]
     rivers = (acc > 0.008 * land.sum()) & land
-    fig, ax = plt.subplots(figsize=(6, 7))
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(11, 7))
+    # -- left: features --
     ax.imshow(np.where(land, topo, np.nan), cmap="terrain", vmin=0, vmax=topo.max())
-    ax.imshow(np.where(~land, 0, np.nan), cmap="Blues", vmin=-1, vmax=1)     # ocean
-    ax.imshow(np.where(rivers, 1, np.nan), cmap="winter", vmin=0, vmax=1)    # rivers
-    lk = np.where(land & (wtd > 0.05), wtd, np.nan)                          # lakes
+    ax.imshow(np.where(~land, 0, np.nan), cmap="Blues", vmin=-1, vmax=1)     # ocean (blue)
+    ax.imshow(np.where(rivers, 1, np.nan), cmap="winter", vmin=0, vmax=1)    # rivers (cyan)
+    lk = np.where(land & (w_serial > 0.05), w_serial, np.nan)               # lakes (magenta)
     if np.isfinite(np.nanmax(lk)):
         ax.imshow(lk, cmap="cool", vmin=0, vmax=np.nanmax(lk))
-    ax.set_title(f"{region}: equilibrium (2nd-order Picard)\nocean, rivers, lakes")
+    ax.set_title(f"{region}: equilibrium (2nd-order Picard, serial)\nterrain, ocean (blue), "
+                 "rivers (cyan), lakes (magenta)")
     ax.axis("off")
+    # -- right: serial vs parallel, in nanometres --
+    diff = np.where(land, np.abs(w_serial - w_par) * 1e9, np.nan)           # m -> nm
+    im = ax2.imshow(diff, cmap="magma")
+    ax2.set_title(f"|serial - parallel(n={npar})|   (nanometres)\n"
+                  f"max = {np.nanmax(diff):.2f} nm  =>  serial == parallel")
+    ax2.axis("off")
+    fig.colorbar(im, ax=ax2, fraction=0.046, pad=0.04, label="nm")
     plt.tight_layout()
     plt.savefig(out, dpi=95)
     print(f"  wrote {out}")
@@ -172,14 +184,16 @@ def main():
     print(f"{region}: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
           f"{int((~land).sum())} ocean cells")
     fail = 0
+    w_par, npar = None, None
     for n in a.ranks:
         wn = run(d, region, cpd, south, n)
         md = float(np.abs(w1 - wn)[land].max())
         ok = md < 1e-6
         fail += not ok
+        w_par, npar = wn, n                                             # keep the last (largest) for the map
         print(f"  serial vs n={n}: max|dwtd| = {md:.3e} m  {'CONSISTENT' if ok else 'MISMATCH'}")
-    if a.map:
-        render_map(d, region, w1, os.path.join(HERE, f"{region}_map.png"))
+    if a.map and w_par is not None:
+        render_map(d, region, w1, w_par, npar, os.path.join(HERE, f"{region}_map.png"))
     sys.exit(1 if fail else 0)
 
 
