@@ -574,3 +574,69 @@ evaluated on the *solved* head (like the sink), so the balance is found within t
 
 Everything is behind `-wtm_evap_taper` (off by default), so no default/production behavior changes; the
 above applies only to runs that opt into the smooth transition.
+
+### 14f. Extinction-depth literature — the `d_ext` decision basis (2026-07-29)
+
+Two literatures bound the depth over which groundwater ET operates, and thus the taper-3 accessibility
+scale `d_ext` (below which `A(wtd)=0` and phreatic ET ceases). Values are verified against the cited
+sources; a "±" is given where the source's standard error was retrieved, and marked "(SE n/r)" where the
+central value was confirmed but the standard error was not captured in retrieval (consult the paper's
+table for the exact SE). All depths in metres.
+
+**Table 1 — Groundwater-ET extinction depth, by soil texture** (the *direct* model analog).
+Shah, Nachabe & Ross (2007), *Ground Water* 45(3):329–338, doi:10.1111/j.1745-6584.2007.00302.x.
+Baseline (bare-soil) extinction depths; ET was found to decay with water-table depth **exponentially,
+not linearly** (supports the front-loaded smootherstep over a linear ramp). Point estimates (no SE).
+
+| Soil texture | Extinction depth (m) |
+|---|---|
+| Sand | 0.5 |
+| Loamy sand | 0.7 |
+| Sandy loam | 1.3 |
+| Silt loam | 4.2 |
+
+Land cover deepens it: deep-rooted (forest) ≈ 2.5 m in sand; groundwater/vadose-zone decoupling begins
+at water-table depth 0.3–1.0 m depending on texture. (Finer soils → higher capillary rise → deeper
+extinction.)
+
+**Table 2 — Maximum rooting depth, by biome** (the deeper, transpiration reach).
+Canadell, Jackson, Ehleringer, Mooney, Sala & Schulze (1996), *Oecologia* 108:583–595,
+doi:10.1007/BF00329030. 255 woody/herbaceous species; 194 rooted ≥2 m, 50 ≥5 m, 22 ≥10 m.
+
+| Biome | Max rooting depth (m) |
+|---|---|
+| Tundra | 0.5 (SE n/r) |
+| Boreal forest | 2.0 ± 0.3 |
+| Cropland | 2.1 ± 0.2 |
+| Temperate grassland | 2.6 ± 0.2 |
+| Temperate deciduous forest | 2.9 ± 0.2 |
+| Tropical deciduous forest | 3.7 (SE n/r) |
+| Temperate coniferous forest | 3.9 ± 0.4 |
+| Sclerophyllous shrubland/forest | 5.2 ± 0.8 |
+| Tropical evergreen forest | 7.3 (SE n/r) |
+| Desert | 9.5 ± 2.4 |
+| Tropical grassland / savanna | 15.0 (SE n/r) |
+| **Global mean** | **4.6 ± 0.5** |
+
+**Table 3 — Phreatophyte extreme individual records** (the arid deep tail; single-plant records, not
+biome means). Boscia from Canadell (1996) (Kalahari well-drilling); mesquite/tamarisk from compiled
+secondary records.
+
+| Species | Rooting depth (m) | Setting |
+|---|---|---|
+| *Tamarix aphylla* (tamarisk) | ~20 | — |
+| *Prosopis* (mesquite) | 35–53 | Arizona open-pit record 53 m |
+| *Boscia albitrunca* | 68 | Central Kalahari; deepest known of any plant |
+
+**Reading for the arid choice.** Arid landscapes — precisely where `ET > P` and taper 3 bites — are
+**bimodal** in extinction depth:
+- **shallow bare-soil direct evaporation** on coarse arid soils: **0.5–1.3 m** (Shah, sand → sandy loam);
+- **deep phreatophytic transpiration**: **desert biome 9.5 ± 2.4 m**, semi-arid **savanna 15.0 m**, and
+  extreme individuals **20–68 m**.
+
+The effective groundwater-ET extinction for a modeled arid cell lies between these, set by whether
+accessible deep-rooted vegetation is present. A single scalar arid default therefore wants to sit in the
+**phreatic-transpiration** band (capturing dryland vegetation's access to the table), not the bare-soil
+capillary band — i.e. of order the **sclerophyllous-shrubland-to-desert range, ~5–10 m** — with the
+per-cell hook (soil texture × biome rooting depth) as the eventual data-driven refinement. Final value: TBD
+(Wickert to choose from this table).
