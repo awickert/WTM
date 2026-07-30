@@ -1,6 +1,11 @@
+# richdem is pinned to the awickert fork's `submodule-gdal-pin` branch, which hosts the GDAL-register-once
+# commit (r-barnes/richdem#100) that upstream has not yet merged, so a fresh `git submodule update --init`
+# can fetch it. This matches the Barnes2019-DepressionHierarchy DH build (its issue #5). Revert url ->
+# r-barnes/richdem.git and branch -> dev once #100 merges.
 [submodule "common/richdem"]
 	path = common/richdem
-	url = https://github.com/r-barnes/richdem
+	url = https://github.com/awickert/richdem.git
+	branch = submodule-gdal-pin
 [submodule "common/fmt"]
 	path = common/fmt
 	url = https://github.com/fmtlib/fmt.git
