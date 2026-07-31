@@ -87,6 +87,12 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   heterogeneous real terrain, at a step tolerance of `1e-8` (the damped solver converges linearly, so
   the previous `1e-6` stopped a hair loose and left µm-scale cross-rank rank-dependence). Everything
   remains overridable via the usual `-snes_*` options.
+- **Transient runs default to the genuinely 2nd-order `-wtm_bdf2_on_V` (Picard) solver.** On a
+  transient the time-discretization accuracy is the answer, and the matrix-free Anderson path silently
+  under-converges (and diverges when pushed) on stiff transient drainage, so the semi-implicit path is
+  both more accurate and more robust there. Force the matrix-free path on a transient with
+  `-wtm_anderson`; explicit `-wtm_*` path flags also take precedence. Equilibrium runs are unchanged
+  (Anderson — the steady state does not depend on the time scheme).
 - **Conservative finite-volume flux discretization.** Corrects a longitude/latitude grid-spacing swap
   (the east–west and north–south fluxes had each been divided by the _other_ direction's spacing) and
   restores exact flux conservation across shared cell faces. This is a discretization-correctness fix;

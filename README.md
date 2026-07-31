@@ -124,6 +124,9 @@ The model chooses sensible solver defaults, so no PETSc solver flags are require
 * **Equilibrium runs** use a matrix-free Anderson-mixing solver (fast; the steady state does not depend
   on the time discretization). It is damped (`-snes_anderson_beta 0.5`) for robust convergence on steep,
   heterogeneous real terrain.
+* **Transient runs** default to the semi-implicit **BDF2-on-V** solver, which is genuinely 2nd-order in
+  time and takes much larger, more accurate time steps toward the target state. Add `-wtm_anderson` to
+  force the faster 1st-order matrix-free path instead.
 
 Any of these can still be overridden from the command line with the usual PETSc `-snes_*` options
 (e.g. `-snes_stol`, `-snes_anderson_beta`).
