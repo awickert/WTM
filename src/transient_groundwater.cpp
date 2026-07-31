@@ -678,10 +678,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     for (int i = xs; i < xs + xm; i++) {
       dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - my_topo[j][i];
       if (dmdapack.mask[j][i] == 0) {
-        if (dmdapack.starting_wtd[j][i] > 0)
-          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j];
-        else
-          arp.total_loss_to_ocean_gw += dmdapack.starting_wtd[j][i] * arp.cell_area[j] * dmdapack.porosity_vec[j][i];
+        // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
+        // exactly (post-solve wtd = 0), but the Picard CG/GAMG solve leaves a tiny, MPI-decomposition-
+        // dependent residual head here. That residual is solver noise, not ocean loss -- accumulating
+        // it into total_loss_to_ocean_gw made the diagnostic scale with the rank count (n1 0.047, n4
+        // 0.141) and broke MPI consistency. Project to exact 0 and do NOT accumulate: the real
+        // land->ocean groundwater loss is the Darcy interface flux (total_ocean_outflow_gw), counted in
+        // accumulate_ocean_outflow. Initial ocean-cell water (from the input starting_wt) is still
+        // captured once, at setup, by set_starting_values. Anderson is unaffected (it added 0 here).
         dmdapack.starting_wtd[j][i] = 0.;
         continue;
       }
