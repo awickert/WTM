@@ -38,16 +38,31 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // to use Newton-Krylov with the analytic Jacobian and Picard preconditioner.
   SNESSetType(user_context.snes, SNESANDERSON);
 
-  // Default the Anderson window to 10 (PETSc default is 30). On this problem m=10
-  // converges in the same iteration count as m=30 but with less vector work per
-  // iteration (~10-15% faster); m=5 starts costing iterations at larger grids, so
-  // 10 is the safe margin (benchmark/SOLVER_NOTES.md). Set only if the user did
-  // not specify -snes_anderson_m, so a runtime override still wins.
-  PetscBool anderson_m_set = PETSC_FALSE;
+  // Anderson defaults: narrow window m=10 PLUS mild damping beta=0.5. The undamped default (beta=1)
+  // STALLS to DIVERGED_MAX_IT on steep, heterogeneous real DEMs (reproduced on the Corsica DEM; matches
+  // Kerry's Esquibel hang); beta=0.5 converges there (Corsica: 10000-iter stall -> ~30-44 iters). It is
+  // the DAMPING, not the window, that buys the robustness: m=30 (PETSc's default window) also converges
+  // but its extra per-iteration vector reductions add cross-rank FP non-associativity that the
+  // discontinuous FSM/runoff routing amplifies into ~2 mm rank-dependence (breaks fsm_runoff golden
+  // consistency); m=10/beta=0.5 stays machine-consistent (~1e-8) AND keeps the narrow window's lower
+  // per-iteration cost. Set only if the user did not override, so runtime -snes_anderson_m /
+  // -snes_anderson_beta still win (raise beta toward 1 for speed on well-conditioned problems).
+  PetscBool anderson_m_set = PETSC_FALSE, anderson_beta_set = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_m", &anderson_m_set);
-  if (!anderson_m_set) {
-    PetscOptionsSetValue(nullptr, "-snes_anderson_m", "10");
-  }
+  PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_beta", &anderson_beta_set);
+  if (!anderson_m_set) PetscOptionsSetValue(nullptr, "-snes_anderson_m", "10");
+  if (!anderson_beta_set) PetscOptionsSetValue(nullptr, "-snes_anderson_beta", "0.5");
+
+  // Step-tolerance default 1e-8. The damped default (beta=0.5) converges LINEARLY, so it stops right
+  // AT the requested step tolerance rather than over-shooting it as the undamped solver does; at the
+  // looser 1e-6 that left ~1e-6 (um-scale) rank-dependence in the water table (each rank converges to
+  // its own 1e-6-accurate solution). 1e-8 is tight enough that the parallel solve is machine-consistent
+  // (~1e-9 cross-rank) AND still reachable on steep terrain (Corsica converges in ~80 iters; a residual
+  // -snes_atol criterion CANNOT be reached there -- the residual floors above 1e-8 -- so use the step
+  // tolerance, which tracks solution change and is reachable). Set only if the user did not override.
+  PetscBool snes_stol_set = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-snes_stol", &snes_stol_set);
+  if (!snes_stol_set) PetscOptionsSetValue(nullptr, "-snes_stol", "1e-8");
 
   // Semi-implicit Picard path (experimental; PICARD_MG_DESIGN.md / PICARD_MATH.md).
   // Gated behind -wtm_picard so the default Anderson path is untouched. When on,

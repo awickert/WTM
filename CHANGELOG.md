@@ -81,7 +81,12 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   carried by the smooth `E_eff`, and runoff becomes `runoff_ratio · precip` (a split of the source).
   Golden references were regenerated. Disable per taper (e.g. `-wtm_evap_taper 0`) for the legacy
   behavior; see the tapers under _Added_.
-- **Default solver is Anderson** (acceleration window m = 10) using the piecewise Fan transmissivity.
+- **Solver defaults are chosen automatically; no PETSc solver flags are required on the command line.**
+  Equilibrium runs use the matrix-free Anderson solver (acceleration window m = 10) with the piecewise
+  Fan transmissivity and mild damping (`-snes_anderson_beta 0.5`) for robust convergence on steep,
+  heterogeneous real terrain, at a step tolerance of `1e-8` (the damped solver converges linearly, so
+  the previous `1e-6` stopped a hair loose and left µm-scale cross-rank rank-dependence). Everything
+  remains overridable via the usual `-snes_*` options.
 - **Conservative finite-volume flux discretization.** Corrects a longitude/latitude grid-spacing swap
   (the east–west and north–south fluxes had each been divided by the _other_ direction's spacing) and
   restores exact flux conservation across shared cell faces. This is a discretization-correctness fix;
@@ -97,6 +102,11 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
 - **Integer division** that froze transient forcing at its start-time values.
 - Water-budget diagnostics made **MPI-consistent** (owned-cells-only partials + scalar reduction).
 - Picard post-equilibrium **false divergence** (a sensible default `-snes_atol`).
+- **Anderson solver stall on steep real terrain** (`DIVERGED_MAX_IT` at the iteration cap; reported on a
+  real DEM). The undamped default diverged on steep, heterogeneous topography; the default now damps
+  (`-snes_anderson_beta 0.5`), verified to converge on the Corsica DEM at 1–4 MPI ranks. The damping is
+  the fix — a wider acceleration window also converges but adds per-iteration parallel reductions that
+  the discontinuous FillSpillMerge routing amplifies into ~mm cross-rank differences, so m stays at 10.
 
 ### Deprecated
 - **Newton-Krylov solver path disabled.** The analytic-Jacobian path (`-snes_type newtonls` _without_

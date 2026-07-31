@@ -55,7 +55,7 @@ cycles_to_save     9999
 EOF
 }
 
-run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.cfg" -snes_stol 1e-6 >"$WORK/n${n}.log" 2>&1 ); }
+run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.cfg" -snes_stol 1e-8 >"$WORK/n${n}.log" 2>&1 ); }
 
 echo "=== FillSpillMerge MPI-consistency regression ==="
 echo "binary: $WTM   rank counts vs n=1: ${RANKS[*]}"

@@ -114,13 +114,19 @@ Other parameters include:
 
 Once the configuration file has been set up appropriately, simply open a terminal and type
 ```
-# Optionally:
+# Optionally set the number of CPU threads for the parallel groundwater solve:
 # export OMP_NUM_THREADS=N
-# Required
-./build/wtm.x Config_file.cfg -snes_mf -snes_type anderson -snes_stol T
+./build/wtm.x Config_file.cfg
 ```
 Here, N is the number of CPU threads you want the parallel processing for the groundwater-flow step to use. In the above line, you are setting an environment variable that will define this until you exit the terminal window.
-T is the tolerance setting for the SNES solver (e.g. 0.000001).
+
+The model chooses sensible solver defaults, so no PETSc solver flags are required on the command line:
+* **Equilibrium runs** use a matrix-free Anderson-mixing solver (fast; the steady state does not depend
+  on the time discretization). It is damped (`-snes_anderson_beta 0.5`) for robust convergence on steep,
+  heterogeneous real terrain.
+
+Any of these can still be overridden from the command line with the usual PETSc `-snes_*` options
+(e.g. `-snes_stol`, `-snes_anderson_beta`).
 
 There will be some on-screen outputs to indicate the first steps through the code, after which values of interest will be output to the text file and an updated geoTiff output file will be saved every X iterations (X is set in the configuration file).
 
