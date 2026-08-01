@@ -120,16 +120,18 @@ Once the configuration file has been set up appropriately, simply open a termina
 ```
 Here, N is the number of CPU threads you want the parallel processing for the groundwater-flow step to use. In the above line, you are setting an environment variable that will define this until you exit the terminal window.
 
-The model chooses sensible solver defaults, so no PETSc solver flags are required on the command line:
-* **Equilibrium runs** use a matrix-free Anderson-mixing solver (fast; the steady state does not depend
-  on the time discretization). It is damped (`-snes_anderson_beta 0.5`) for robust convergence on steep,
-  heterogeneous real terrain.
-* **Transient runs** default to the semi-implicit **BDF2-on-V** solver, which is genuinely 2nd-order in
-  time and takes much larger, more accurate time steps toward the target state. Add `-wtm_anderson` to
-  force the faster 1st-order matrix-free path instead.
+The model chooses sensible solver defaults, so no PETSc solver flags are required on the command line.
+The **default solver is the semi-implicit BDF2-on-V (Picard)** path, for both run types:
+* **Equilibrium runs** reach steady state in a handful of *large, stable* time steps — Picard's
+  Newton + algebraic-multigrid solve has a nearly step-size-independent cost, so you can raise `deltat`
+  by orders of magnitude to converge fast.
+* **Transient runs** get genuine 2nd-order-in-time accuracy from the same solver.
 
-Any of these can still be overridden from the command line with the usual PETSc `-snes_*` options
-(e.g. `-snes_stol`, `-snes_anderson_beta`).
+The alternative is the matrix-free **Anderson** solver, opt-in with `-wtm_anderson`. It is faster
+*per step at small `deltat`* and bit-exact across MPI ranks, but it has no preconditioner and so is
+stiffness-limited: it cannot take large time steps (it diverges when `deltat` is raised) and it
+under-converges on stiff transients. Use it only for small-`deltat` / fast-science cases. Any explicit
+PETSc `-snes_*` option (e.g. `-snes_stol`, `-snes_anderson_beta`) still overrides the defaults.
 
 There will be some on-screen outputs to indicate the first steps through the code, after which values of interest will be output to the text file and an updated geoTiff output file will be saved every X iterations (X is set in the configuration file).
 

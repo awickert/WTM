@@ -78,25 +78,28 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool bdf2v_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2_on_V", &bdf2v_flag);
 
-  // TRANSIENT runs default to the 2nd-order-in-time, volume-form BDF2-on-V (Picard) path. On a
-  // transient the time-discretization accuracy IS the answer, and BDF2-on-V is far more accurate per
-  // step than the matrix-free Anderson head-form (~100x on the benchmark/picard drainage fixture) and
-  // lets the run take much larger steps toward the target state. EQUILIBRIUM runs keep the faster
-  // matrix-free Anderson default -- the steady state is independent of the time scheme, so Anderson's
-  // speed wins with no accuracy cost. Override on a transient with -wtm_anderson to force the
-  // matrix-free path; any explicit path flag (-wtm_picard / -wtm_bdf2 / -wtm_bdf2_on_V /
-  // -wtm_dt_adaptive) also takes precedence over this default.
+  // The DEFAULT solver is the semi-implicit, volume-form BDF2-on-V (Picard) path -- for BOTH run types.
+  // EQUILIBRIUM: Picard's Newton+GAMG takes large, stable time steps whose cost is nearly dt-independent
+  // (Corsica: ~28 SNES iters flat from dt=1 to 1000 yr), so it reaches steady state in a handful of big
+  // steps. The matrix-free Anderson default it replaces has NO preconditioner and is stiffness-limited:
+  // it diverges once dt is raised (Corsica: fails at 10 yr) -- exactly the "10x dt did not converge"
+  // that motivated this. TRANSIENT: BDF2-on-V is genuinely 2nd-order in time; the matrix-free path
+  // silently under-converges (and diverges when pushed) on stiff transient drainage. Anderson is kept
+  // only for the rare small-dt / fast-science case, opt-in via -wtm_anderson (it is also matrix-free ->
+  // bit-exact across ranks). Any explicit path flag (-wtm_picard / -wtm_bdf2 / -wtm_bdf2_on_V /
+  // -wtm_dt_adaptive) takes precedence over this default.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
-  bool transient_default_picard = false;
-  if (params.run_type == "transient" && !force_anderson && !any_path_flag) {
-    bdf2v_flag                = PETSC_TRUE;
-    transient_default_picard  = true;
+  bool default_picard = false;
+  if (!force_anderson && !any_path_flag) {
+    bdf2v_flag     = PETSC_TRUE;
+    default_picard = true;
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "Transient run: defaulting to the 2nd-order BDF2-on-V (Picard) solver for time accuracy.\n"
-        "  Override with -wtm_anderson to force the faster 1st-order matrix-free Anderson path.\n");
+        "Defaulting to the semi-implicit BDF2-on-V (Picard) solver: large stable time steps (fast to\n"
+        "  equilibrium) and 2nd-order-in-time accuracy. Override with -wtm_anderson for the matrix-free\n"
+        "  Anderson solver (rare: small-dt / fast-science / bit-exact-across-ranks cases).\n");
   }
 
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);
@@ -109,7 +112,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
         PETSC_COMM_WORLD,
         "-wtm_dt_adaptive set: BDF2 + adaptive dt (tol=%g m); enabling the Picard solver path.\n",
         user_context.dt_tol);
-  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE && !transient_default_picard) {
+  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE && !default_picard) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   if (user_context.use_picard) {

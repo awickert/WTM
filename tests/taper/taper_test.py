@@ -2,9 +2,11 @@
 """Surface-transition taper tests (the SURFACE_SINK_DESIGN sec 14d experiment sequence).
 
 These exercise the smooth surface-water transition -- the sub-surface sink (-wtm_surface_sink,
-taper 1) plus the demand-identity evaporation taper (-wtm_evap_taper, taper 2) -- on the Anderson
-DEFAULT solver, i.e. the production path whose hard wtd=0 switch used to make FillSpillMerge lake
-formation flip with the MPI rank count near the evaporation threshold.
+taper 1) plus the demand-identity evaporation taper (-wtm_evap_taper, taper 2) -- on the matrix-free
+Anderson solver (forced with -wtm_anderson; the default is now Picard). This validates the tapers on
+the matrix-free path specifically (the Picard-path tapers are exercised by the golden suite). It is
+the path whose hard wtd=0 switch used to make FillSpillMerge lake formation flip with the MPI rank
+count near the evaporation threshold.
 
 Study A -- the triggering case (plateau with an off-centre depression). Sweep the open-water
 evaporation rate `owe` through the critical value owe = precip. The smooth taper must give:
@@ -90,8 +92,10 @@ outfile_prefix {prefix}
 """
 
 
-# Anderson DEFAULT path (no -wtm_bdf2_on_V) with both tapers on.
-TAPER_FLAGS = ["-wtm_surface_sink", "-wtm_surface_sink_qmax", "1.0",
+# Matrix-free Anderson path (forced; default is now Picard) with both tapers on. The width 1.0
+# (= qmax*dt, the marginal-stability point) is a deliberate Anderson-path stress; Picard would need
+# the dt-scaled default. Anderson is the opt-in path this test also keeps covered.
+TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink", "-wtm_surface_sink_qmax", "1.0",
                "-wtm_surface_sink_width", "1.0", "-wtm_evap_taper", "-snes_stol", "1e-8"]
 
 
@@ -231,7 +235,7 @@ def study_c(wtm):
     the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
     fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
     print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
-    E = ["-wtm_evap_taper", "-snes_stol", "1e-8"]
+    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8"]
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:

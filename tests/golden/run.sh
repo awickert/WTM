@@ -96,20 +96,15 @@ run_case() { # name nranks -> sets $PREFIX
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$WORK/${name}_n${n}.log" 2>&1 )
 }
 
-# Per-case cross-rank comparison tolerance (metres). Default (golden.py) is ~1e-6 -- above FP-
-# reduction noise, below any real change. fsm_evap1 needs a physical (cm) tolerance: with the
-# corrected conservative flux (benchmark/GRID_CONVENTION.md) its equilibrium sits near an FSM
-# spill/merge routing THRESHOLD, where the ~1e-13 machine-eps rank-dependence of the parallel
-# Anderson solve (FP-reduction non-associativity) is amplified by the DISCONTINUOUS FSM routing into
-# ~mm cross-rank differences. This is inherent (parallel reductions x discontinuous routing), NOT a
-# flux/solver bug -- the groundwater solve alone is MPI-consistent to ~1e-13 (fsm_on 0). A breach of
-# this cm tolerance would mean a routing FLIP (lake-scale) -- the separate FSM-determinism issue.
-# fsm_runoff is the same class at a smaller scale: under the damped Anderson default (beta=0.5) its
-# equilibrium sits near a runoff spill/merge threshold, so the (now ~1e-8, not 1e-13) cross-rank GW
-# noise is amplified into ~3 um differences on some rank counts -- physically negligible and, again,
-# discontinuous-routing amplification, not a solver bug. 1e-4 m sits well above that jitter and far
-# below any real routing change (this fixture moves ~35 m when the runoff path actually flips).
-case_tol() { case "$1" in fsm_evap1) echo 5e-2 ;; fsm_runoff) echo 1e-4 ;; *) echo "" ;; esac; }
+# Per-case cross-rank comparison tolerance (metres). All cases use the default (~1e-6, above FP-
+# reduction noise and below any real change). Under the Picard default the groundwater solve is
+# cross-rank consistent to ~1e-9 EVEN on the FSM-routing-threshold cases (measured: fsm_evap1 and
+# fsm_runoff both ~1e-9 at n=2..8), so the discontinuous spill/merge routing stays deterministic and
+# no per-case relaxation is needed. (This is a Picard win: under the older matrix-free Anderson
+# default those two fixtures sat near a routing threshold where Anderson's larger cross-rank GW noise
+# was amplified by the discontinuous routing into ~mm-cm differences and needed physical tolerances;
+# if you run the tests under -wtm_anderson, expect that to return.)
+case_tol() { echo ""; }
 
 fail=0
 for name in "${CASES[@]}"; do
