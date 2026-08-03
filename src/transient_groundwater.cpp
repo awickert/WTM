@@ -502,12 +502,21 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       arp, dmdapack.starting_wtd, dmdapack.rech_dist, dmdapack.mask, dmdapack.porosity_vec, xs, ys, xm, ym);
   PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
 
+  // Recharge is a per-step AMOUNT (a depth) = rate*dt, but rech_dist is baked ONCE as
+  // rate*params.deltat (irf.cpp / WTM.cpp). The residual adds my_rech directly and scales only the
+  // flux by user_context.deltat, so on a VARIABLE-dt path (adaptive / Newton dt-continuation) an
+  // unscaled source over-recharges when dt shrinks below params.deltat -- the "source term grows as
+  // the step shrinks" instability that broke earlier adaptive stepping. Rescale to rate*(actual dt) so
+  // recharge and drainage scale together; the steady state is then dt-independent (rate = drainage at
+  // the fixed point, dt cancels). Exactly 1.0 on every fixed-dt path, so those are byte-identical.
+  // See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+  const double rech_dt_scale = user_context.deltat / params.deltat;
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
-#pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params) collapse(2)
+#pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params, rech_dt_scale) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      dmdapack.rech_vec[j][i] =
-          add_recharge(dmdapack.rech_dist[j][i], dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
+      dmdapack.rech_vec[j][i] = add_recharge(
+          dmdapack.rech_dist[j][i] * rech_dt_scale, dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
     }
   }
 
