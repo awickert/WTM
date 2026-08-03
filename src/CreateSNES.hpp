@@ -59,6 +59,19 @@ struct AppCtx {
   // operator solvers (Anderson/Picard) diverge from far; see benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   bool use_newton = false;
 
+  // --- Newton dt-continuation (gated behind -wtm_dt_continuation; needs -wtm_newton) ---
+  // Pseudo-transient continuation for EQUILIBRIUM from a far guess: start deltat small (so the storage
+  // term S/deltat keeps the Jacobian diagonally dominant -- a large step from far overshoots into a
+  // SINGULAR Jacobian), and grow it geometrically after each converged step so it reaches a near-steady
+  // large dt as the state warms. deltat persists across cycles, so it ramps toward equilibrium. GROW-
+  // ONLY (no reject/retry yet), so it must be ramped gently enough not to overshoot. The per-step
+  // recharge is rescaled to rate*deltat in update() (rech_dist is baked at rate*params.deltat), so the
+  // steady state is correct at ANY ramped dt (recharge and flux both scale with dt -> dt cancels at the
+  // fixed point). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+  bool   use_newton_continuation = false;
+  double dtc_grow                = 1.5;  // geometric dt growth per converged step (-wtm_dtc_grow)
+  double dtc_dt_max              = 0.0;  // cap on deltat [s]; 0 => set from params in InitialiseSNES
+
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.
   // vs backward Euler this doubles the diffusion coefficient (dt->2dt) and the storage

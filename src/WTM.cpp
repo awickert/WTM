@@ -340,6 +340,21 @@ void update(
     }
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps to cover %g s (fixed would be %d)\n",
                 nsteps, cycle_duration, params.maxiter);
+  } else if (user_context.use_newton_continuation) {
+    // Newton pseudo-transient continuation: take maxiter steps with deltat starting small (so the
+    // Jacobian stays diagonally dominant -- a large step from a far guess overshoots into a SINGULAR
+    // Jacobian) and growing geometrically after each converged step. deltat persists across cycles, so
+    // it ramps toward a near-steady large dt as the state warms. The per-step recharge is rescaled to
+    // rate*deltat in update(), so the steady state is correct at any dt. Grow-only (no reject/retry):
+    // if a step overshoots, update() still throws -- ramp gently (-wtm_dtc_grow) or lower -wtm_dtc_dt0.
+    // See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+    int iter_count = 0;
+    while (iter_count++ < params.maxiter) {
+      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      user_context.deltat *= user_context.dtc_grow;
+      if (user_context.deltat > user_context.dtc_dt_max) user_context.deltat = user_context.dtc_dt_max;
+    }
+    PetscPrintf(PETSC_COMM_WORLD, "dt-continuation: deltat now %g s after this cycle.\n", user_context.deltat);
   } else {
     int iter_count = 0;
     while (iter_count++ < params.maxiter) {

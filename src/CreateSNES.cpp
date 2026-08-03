@@ -112,6 +112,27 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
+
+  // Newton dt-continuation (-wtm_dt_continuation; needs -wtm_newton): equilibrium PTC that starts
+  // deltat small (diagonally dominant -> non-singular Jacobian from a far guess) and grows it after
+  // each converged step. Start dt defaults to params.deltat/200 (-wtm_dtc_dt0 overrides, seconds);
+  // growth 1.5x/step (-wtm_dtc_grow); cap 1000*params.deltat (-wtm_dtc_dt_max). deltat persists across
+  // cycles, so it ramps toward equilibrium. The WTM.cpp cycle loop drives the ramp. See
+  // benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+  PetscBool dtc_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
+  user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
+  if (user_context.use_newton_continuation) {
+    double dt0 = params.deltat / 200.0;
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
+    user_context.deltat = dt0;  // start small (overrides the params.deltat init above)
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
+    user_context.dtc_dt_max = 1000.0 * params.deltat;
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g/step, dt_max=%g s.\n",
+                dt0, user_context.dtc_grow, user_context.dtc_dt_max);
+  }
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
     PetscPrintf(
