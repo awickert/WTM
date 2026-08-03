@@ -202,9 +202,42 @@ solver's dt ceiling.
   is stuck). Also untested: Levenberg–Marquardt Jacobian regularization (needs code).
 
 **Bottom line for longer steps:** raise the *linear* ceiling with MUMPS (regional) or tuned HYPRE
-(scalable) — real, single-step-verified (0.1→0.3 yr); handle the *cold nonlinear* phase with continuation;
-and the biggest speed opportunity left is a **warm start** (grid sequencing) to skip that cold phase on the
-fine grid, plus resolving the FSM–GW coupling so the system settles.
+(scalable) — real, single-step-verified (0.1→0.3 yr); handle the *cold nonlinear* phase with continuation.
+
+### Better first guess + grid sequencing (2026-08-03) — and why the deeper limiter is the drainage timescale
+Andy's idea: an analytical-ish first guess using SPATIALLY-VARYING transmissivity (the Dupuit guess is 1-D
+constant-coefficient). Built + tested two routes:
+- **Frozen-coefficient elliptic guess** — solve the LINEAR `Σ_faces T_face·(L/d)·(h_c−h_nbr) = R_c·A_c`
+  with T frozen per cell (WTM's T at a depth estimate; varies via K, fdepth, depth), harmonic-mean faces,
+  Dirichlet h=0 at ocean. In principle the 2-D analogue of Dupuit and much closer to equilibrium. IN
+  PRACTICE the **free surface defeats it**: freezing T deep (small T) → the solve mounds to the surface →
+  next iterate freezes T shallow (large T) → deep, a limit cycle; even damped Picard (ω=0.25) drifts
+  surface-saturated. So a *cheap* frozen-T guess is not much better than Dupuit — the free-surface
+  nonlinearity resists cheap approximation.
+- **Grid sequencing** (coarse equilibrium → interpolate up → warm fine start) — did NOT unlock larger fine
+  steps: the fine solve from the interpolated start still failed at dt = 0.3 yr. Two reasons: the coarse
+  solve itself never reached a true equilibrium, and a warm start does not change the fine-grid *linear*
+  conditioning that caps dt.
+
+**The deeper finding (reframes the whole problem):** with **FSM OFF**, the pure GW continuation STILL does
+not settle — per-cycle max|Δwtd| stays 10–25 m over 12 cycles. So the non-settling is NOT mainly the FSM
+coupling; it is that the **groundwater equilibration timescale is ~decades** (`t ~ S·L²/T`), while the
+conditioning-capped dt (~0.03–0.3 yr) advances only a few years of physical time per run. Reaching
+equilibrium = marching through a decades-long drainage transient, which at the dt ceiling is ~100+ steps.
+A better *guess* only helps if it is close to the true nonlinear equilibrium, which the cheap guesses are
+not; and the dt ceiling caps physical-time progress regardless of the guess.
+
+**So the real accelerators are the two we have not built:**
+1. **Direct steady-state (dt→∞) elliptic solve** — skip the transient entirely and solve the equilibrium
+   BVP `∇·(T(h)∇h)+R=0` directly. Hard: at dt→∞ the storage term vanishes, so the Jacobian is the pure
+   free-surface elliptic operator (ill-conditioned, T spans orders) — needs a good guess + strong PC +
+   trust region/continuation *on the elliptic problem itself*.
+2. **FAS nonlinear multigrid** (`SNESFAS`) — the gold standard for elliptic equilibria: coarse levels give
+   *global* corrections that kill the slow, large-scale drainage modes in O(1) work-units, independent of
+   the domain size / drainage timescale. This is the principled fix for "many steps through a slow
+   transient," and the biggest-payoff untested investment.
+Absent those, the practical path is continuation + reject/retry + MUMPS/HYPRE: robust and unattended, but
+~100 steps to equilibrium on a stiff fine grid because of the drainage timescale.
 
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
