@@ -303,9 +303,10 @@ static double dEffectiveStorativityDnew(
     const double S = (V(my_new_wtd) - V(my_original_wtd)) / dwtd;
     return (Vprime(my_new_wtd) - S) / dwtd;
   }
-  // Near convergence (new ≈ old): dS/d(new) → V''(old)/2
+  // Near convergence (new ≈ old): dS/d(new) → V''(old)/2. With V''(w) = (1-p)·eps²/(w²+eps²)^1.5,
+  // that limit is (1-p)·eps² / (4·(w²+eps²)^1.5) -- the ½ from the Taylor limit times the ½ in V''.
   const double w = my_original_wtd;
-  return (1.0 - my_porosity) * eps * eps / (2.0 * std::pow(w * w + eps * eps, 1.5));
+  return (1.0 - my_porosity) * eps * eps / (4.0 * std::pow(w * w + eps * eps, 1.5));
 }
 
 // The solve inputs are read from distributed DMDA arrays (indexed [y][x] over
