@@ -341,17 +341,35 @@ void update(
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps to cover %g s (fixed would be %d)\n",
                 nsteps, cycle_duration, params.maxiter);
   } else if (user_context.use_newton_continuation) {
-    // Newton pseudo-transient continuation: take maxiter steps with deltat starting small (so the
-    // Jacobian stays diagonally dominant -- a large step from a far guess overshoots into a SINGULAR
-    // Jacobian) and growing geometrically after each converged step. deltat persists across cycles, so
-    // it ramps toward a near-steady large dt as the state warms. The per-step recharge is rescaled to
-    // rate*deltat in update(), so the steady state is correct at any dt. Grow-only (no reject/retry):
-    // if a step overshoots, update() still throws -- ramp gently (-wtm_dtc_grow) or lower -wtm_dtc_dt0.
-    // See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
-    int iter_count = 0;
-    while (iter_count++ < params.maxiter) {
-      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
-      user_context.deltat *= user_context.dtc_grow;
+    // Newton pseudo-transient continuation (equilibrium): march maxiter ACCEPTED steps with a
+    // Newton-iteration-controlled dt. Start deltat small so the storage term S/deltat keeps the
+    // Jacobian diagonally dominant (a large step from a far guess overshoots into a SINGULAR Jacobian,
+    // which fails even a direct solve); GROW dt after an easy step (converged in <= dtc_easy_iters),
+    // HOLD it when a step was hard (near the safe ceiling), and REJECT+shrink+retry when a step does
+    // not converge (update() returns -1 without committing, so the state is preserved). Reject/retry is
+    // what lets it survive the dt overshoot AND the per-cycle FSM perturbation that defeats the Picard
+    // adaptive path. deltat persists across cycles, ramping toward a near-steady large dt as the state
+    // warms; the recharge is rescaled to rate*deltat in update() so the steady state is correct at any
+    // dt. A rejected step's pre-solve budget accumulators (set_starting_values) are rolled back so a
+    // retry does not double-count. See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+    int accepted = 0, retries = 0;
+    while (accepted < params.maxiter) {
+      const double rech_snap  = arp.total_added_recharge;   // roll back on a rejected step
+      const double ocean_snap = arp.total_loss_to_ocean_gw;
+      const double dt_try     = user_context.deltat;
+      const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      if (its < 0) {  // rejected (non-converged): restore accumulators, shrink dt, retry same step
+        arp.total_added_recharge  = rech_snap;
+        arp.total_loss_to_ocean_gw = ocean_snap;
+        user_context.deltat        = dt_try * user_context.dtc_shrink;
+        if (++retries > user_context.dtc_max_retries)
+          throw std::runtime_error("dt-continuation: step failed to converge after max retries; deltat too "
+                                   "small or the guess is too far (lower -wtm_dtc_grow / raise -wtm_dtc_dt0).");
+        continue;  // do NOT advance `accepted`
+      }
+      accepted++;
+      retries = 0;
+      if (its <= user_context.dtc_easy_iters) user_context.deltat = dt_try * user_context.dtc_grow;  // else HOLD
       if (user_context.deltat > user_context.dtc_dt_max) user_context.deltat = user_context.dtc_dt_max;
     }
     PetscPrintf(PETSC_COMM_WORLD, "dt-continuation: deltat now %g s after this cycle.\n", user_context.deltat);

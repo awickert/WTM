@@ -634,6 +634,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       PETSC_COMM_WORLD, "%s Number of nonlinear iterations = %" PetscInt_FMT "\n", SNESConvergedReasons[reason], its);
 
   if (reason != 2 && reason != 3 && reason != 4) {
+    // Newton dt-continuation drives the step; a non-converged step is a REJECT (the caller shrinks dt
+    // and retries from the unchanged state), not a fatal error. Return a negative sentinel WITHOUT
+    // committing (the state commit is below, after this check, so starting_wtd is preserved for the
+    // retry). Every other path still throws -- their callers do not handle a failure return.
+    if (user_context.use_newton_continuation) return -1;
     throw std::runtime_error("The SNES solver has not converged.");
   }
 
@@ -749,7 +754,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
   // The full wtd field is assembled once per cycle, after the maxiter loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
-  return 0;
+  // Return the Newton iteration count (>=0) so the dt-continuation controller can grow dt after an
+  // easy step; a non-converged continuation step returned -1 above.
+  return static_cast<int>(its);
 }
 
 // Assemble the full wtd field on every rank from each rank's owned cells of the

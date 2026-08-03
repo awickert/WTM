@@ -69,8 +69,12 @@ struct AppCtx {
   // steady state is correct at ANY ramped dt (recharge and flux both scale with dt -> dt cancels at the
   // fixed point). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   bool   use_newton_continuation = false;
-  double dtc_grow                = 1.5;  // geometric dt growth per converged step (-wtm_dtc_grow)
-  double dtc_dt_max              = 0.0;  // cap on deltat [s]; 0 => set from params in InitialiseSNES
+  double dtc_grow                = 1.5;   // dt growth when a step converges EASILY (-wtm_dtc_grow)
+  double dtc_shrink              = 0.25;  // dt shrink on a REJECTED (non-converged) step (-wtm_dtc_shrink)
+  double dtc_dt_max              = 0.0;   // cap on deltat [s]; 0 => set from params in InitialiseSNES
+  int    dtc_easy_iters          = 8;     // grow dt only if the step converged in <= this many Newton iters
+                                          // (-wtm_dtc_easy_iters); otherwise hold dt (near the safe ceiling)
+  int    dtc_max_retries         = 15;    // consecutive rejects before giving up (-wtm_dtc_max_retries)
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.

@@ -127,11 +127,16 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
     user_context.deltat = dt0;  // start small (overrides the params.deltat init above)
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
     user_context.dtc_dt_max = 1000.0 * params.deltat;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
+    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
+    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
     PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g/step, dt_max=%g s.\n",
-                dt0, user_context.dtc_grow, user_context.dtc_dt_max);
+                "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
+                "dt_max=%g s.\n",
+                dt0, user_context.dtc_grow, user_context.dtc_easy_iters, user_context.dtc_shrink,
+                user_context.dtc_dt_max);
   }
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
