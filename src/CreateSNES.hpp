@@ -75,6 +75,10 @@ struct AppCtx {
   int    dtc_easy_iters          = 8;     // grow dt only if the step converged in <= this many Newton iters
                                           // (-wtm_dtc_easy_iters); otherwise hold dt (near the safe ceiling)
   int    dtc_max_retries         = 15;    // consecutive rejects before giving up (-wtm_dtc_max_retries)
+  // Equilibrium detector: set by update() to the global max |w^{n+1}-w^n| this step; the continuation
+  // reports it per cycle (→ 0 at steady state). A residual/state-change SER dt controller was tried and
+  // is worse than growing on solve-ease (see WTM.cpp), so this is a diagnostic, not a step controller.
+  double last_dh_max             = 0.0;
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.

@@ -369,10 +369,17 @@ void update(
       }
       accepted++;
       retries = 0;
-      if (its <= user_context.dtc_easy_iters) user_context.deltat = dt_try * user_context.dtc_grow;  // else HOLD
+      // Grow Δt after an EASY step (converged in <= dtc_easy_iters), HOLD when hard (near the free-
+      // boundary ceiling). NOTE: a residual/state-change SER controller (grow ∝ Δw_prev/Δw) was tried
+      // and is WORSE here -- during the long drainage transient Δw is large and only slowly shrinking,
+      // so SER holds Δt small and never advances; growing on solve-EASE advances far better. last_dh_max
+      // is still tracked (below) as an equilibrium detector, not a step controller.
+      if (its <= user_context.dtc_easy_iters) user_context.deltat *= user_context.dtc_grow;  // else HOLD
       if (user_context.deltat > user_context.dtc_dt_max) user_context.deltat = user_context.dtc_dt_max;
     }
-    PetscPrintf(PETSC_COMM_WORLD, "dt-continuation: deltat now %g s after this cycle.\n", user_context.deltat);
+    PetscPrintf(PETSC_COMM_WORLD,
+                "dt-continuation: deltat now %g s after this cycle; last max|Δw| = %g m (-> 0 at equilibrium).\n",
+                user_context.deltat, user_context.last_dh_max);
   } else {
     int iter_count = 0;
     while (iter_count++ < params.maxiter) {

@@ -706,8 +706,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     DMDAVecGetArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
     DMDAVecGetArray(user_context.da, user_context.precip_vec, &my_precip);  // taper 3 deficit (E_eff - P)
   }
+  double dh_max_local = 0.0;  // max |w^{n+1} - w^n| over owned land cells (for the PTC/SER dt controller)
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
+      if (dmdapack.mask[j][i] != 0)
+        dh_max_local = std::max(dh_max_local, std::abs((dmdapack.x[j][i] - my_topo[j][i]) - dmdapack.starting_wtd[j][i]));
       dmdapack.starting_wtd[j][i] = dmdapack.x[j][i] - my_topo[j][i];
       if (dmdapack.mask[j][i] == 0) {
         // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
@@ -747,6 +750,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     DMDAVecRestoreArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
     DMDAVecRestoreArray(user_context.da, user_context.precip_vec, &my_precip);
   }
+
+  // Global max |Δw| this step: the pseudo-transient/SER dt controller grows Δt as this shrinks toward
+  // equilibrium (the discrete steady residual ~ S·Δw/Δt), so the ramp accelerates to Newton near steady
+  // state. Reduced here (cheap) so WTM.cpp's continuation loop can read user_context.last_dh_max.
+  MPI_Allreduce(&dh_max_local, &user_context.last_dh_max, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
 
   // Account the water that left through land->ocean faces this solve (Darcy interface flux at the
   // converged head), the term that closes the water budget against the Dirichlet ocean boundary.
