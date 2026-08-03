@@ -182,8 +182,29 @@ strong PC lets the steps grow larger once warm. Continuation+MUMPS ramped to 0.1
 water routing perturbs the GW state (~26 m inter-cycle changes persisted after 14 cycles on the crop), so
 the system approaches a limit cycle rather than a clean fixed point. Reaching a *settled* equilibrium is
 a GW↔FSM coupling question (how many GW steps per FSM call, or FSM under-relaxation), separate from the
-solver's dt ceiling. Untested levers: recharge/homotopy continuation, grid sequencing (coarse→fine warm
-start), and Levenberg–Marquardt Jacobian regularization (would need code).
+solver's dt ceiling.
+
+**Full-grid caveat + negative results (be honest about what does NOT help):**
+- **On the full 384k grid the preconditioner advantage is muted** in a fresh run: MUMPS continuation
+  plateaus ~0.02–0.04 yr over 8 cycles, ≈ GAMG, because the big cold domain stays *nonlinear-limited* for
+  many cycles (MUMPS's higher *linear* ceiling only pays off once warm, as the small crop showed by cycle
+  6 at 0.175 yr). So on a fresh fine equilibrium run the bottleneck is the **cold nonlinear phase**, and
+  the lever is *warming* (continuation, or a warm start), not the linear solver.
+- **Trust region** (`newtontr`): no help for the nonlinear ceiling (same `DIVERGED_MAX_IT` as line search).
+- **Nonlinearity smoothing** (larger `-wtm_ksat/storativity_*_smoothing_width`): does NOT raise the
+  nonlinear ceiling (dt = 1 yr fails at widths 0.1→3.0), and it shifts the near-surface physics — not a
+  convergence lever.
+- **Recharge / homotopy continuation** (ramp recharge 0→full at large dt): does NOT help — the ceiling is
+  set by the *flux* Jacobian conditioning, which the source term doesn't change (10% recharge at dt = 1 yr
+  still `DIVERGED_LINEAR_SOLVE`).
+- **Most promising untested lever: grid sequencing** (solve a coarse grid to equilibrium — cheap, large dt
+  — then interpolate up as a warm fine-grid start, skipping the cold nonlinear phase where the fine solve
+  is stuck). Also untested: Levenberg–Marquardt Jacobian regularization (needs code).
+
+**Bottom line for longer steps:** raise the *linear* ceiling with MUMPS (regional) or tuned HYPRE
+(scalable) — real, single-step-verified (0.1→0.3 yr); handle the *cold nonlinear* phase with continuation;
+and the biggest speed opportunity left is a **warm start** (grid sequencing) to skip that cold phase on the
+fine grid, plus resolving the FSM–GW coupling so the system settles.
 
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
