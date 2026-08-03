@@ -90,9 +90,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // -wtm_dt_adaptive) takes precedence over this default.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
+  // -wtm_newton: opt-in true Newton-Krylov path (analytic Jacobian). Like -wtm_anderson it selects a
+  // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
+  PetscBool newton_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_newton", &newton_flag);
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
   bool default_picard = false;
-  if (!force_anderson && !any_path_flag) {
+  if (!force_anderson && !newton_flag && !any_path_flag) {
     bdf2v_flag     = PETSC_TRUE;
     default_picard = true;
     PetscPrintf(
@@ -106,6 +110,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
   user_context.use_bdf2        = (bdf2_flag == PETSC_TRUE) || user_context.use_dt_adaptive || user_context.use_bdf2_on_V;
   user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
+  // Newton path is exclusive with Picard (a path flag wins if the user set both).
+  user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
     PetscPrintf(
@@ -155,6 +161,30 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // stop a real transient early. PETSc's default snes_atol (1e-50) effectively disables
     // this. Verified: default -> divergence after equilibrium; 1e-6 -> clean. Overridable.
     if (!atol_set) PetscOptionsSetValue(nullptr, "-snes_atol", "1e-6");
+  } else if (user_context.use_newton) {
+    // Newton-Krylov defaults. The analytic Jacobian (FormJacobianLocal, registered in update()) is
+    // NON-symmetric (the dT/dw transmissivity-nonlinearity terms), so the inner solve is GMRES, not
+    // CG. GAMG with unsmoothed aggregation preconditions the (near-elliptic) operator; a bt line
+    // search globalizes from a far/cold start. snes_atol 1e-6 mirrors the Picard path (stop at a
+    // machine-zero equilibrium residual instead of chasing a relative reduction). newtontr (trust
+    // region) is the likely-more-robust alternative -- override with -snes_type newtontr. All set
+    // only if the user did not, so runtime options win. Verify the Jacobian with -snes_test_jacobian
+    // (needs -wtm_ksat_*_smoothing_width > 0 so the residual uses the smooth T that the tangent
+    // differentiates); see FormJacobianLocal.
+    PetscBool ksp_set = PETSC_FALSE, pc_set = PETSC_FALSE, snes_set = PETSC_FALSE, ls_set = PETSC_FALSE,
+              atol_set = PETSC_FALSE, nsmooth_set = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, "-ksp_type", &ksp_set);
+    PetscOptionsHasName(nullptr, nullptr, "-pc_type", &pc_set);
+    PetscOptionsHasName(nullptr, nullptr, "-snes_type", &snes_set);
+    PetscOptionsHasName(nullptr, nullptr, "-snes_linesearch_type", &ls_set);
+    PetscOptionsHasName(nullptr, nullptr, "-snes_atol", &atol_set);
+    PetscOptionsHasName(nullptr, nullptr, "-pc_gamg_agg_nsmooths", &nsmooth_set);
+    if (!snes_set)    PetscOptionsSetValue(nullptr, "-snes_type", "newtonls");
+    if (!ls_set)      PetscOptionsSetValue(nullptr, "-snes_linesearch_type", "bt");
+    if (!ksp_set)     PetscOptionsSetValue(nullptr, "-ksp_type", "gmres");            // Jacobian is non-symmetric
+    if (!pc_set)      PetscOptionsSetValue(nullptr, "-pc_type", "gamg");
+    if (!nsmooth_set) PetscOptionsSetValue(nullptr, "-pc_gamg_agg_nsmooths", "0");
+    if (!atol_set)    PetscOptionsSetValue(nullptr, "-snes_atol", "1e-6");
   }
 
   SNESSetFromOptions(user_context.snes);

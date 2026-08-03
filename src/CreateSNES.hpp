@@ -52,6 +52,13 @@ struct AppCtx {
   Mat picard_A    = nullptr;  // assembled SPD operator A(x) (also the GAMG preconditioner)
   Vec picard_r    = nullptr;  // residual work vector for SNESSetPicard
 
+  // --- Newton-Krylov path (gated behind -wtm_newton; default off) ---
+  // Opt-in true Newton on the matrix-free residual (FormFunctionLocal): registers the analytic
+  // Jacobian FormJacobianLocal (∂F/∂x of the conservative-FV flux + secant storativity + sink/evap
+  // tangents). NON-symmetric (dT/dw) → GMRES, not CG. For cold-start equilibrium where the frozen-
+  // operator solvers (Anderson/Picard) diverge from far; see benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+  bool use_newton = false;
+
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.
   // vs backward Euler this doubles the diffusion coefficient (dt->2dt) and the storage
