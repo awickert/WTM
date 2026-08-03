@@ -298,6 +298,27 @@ far-from-solution limit. So the effective levers are the nonlinear-globalization
 **good initial guess (Dupuit) + continuation** — and, to push further, trust-region or a homotopy on the
 recharge/nonlinearity, *not* a conditioning transform.
 
+### Homotopy / natural-parameter continuation — tried both axes; the dt-continuation already IS optimal (2026-08-04)
+The reframe (obstacle = nonlinear far-from-solution) points to homotopy: deform an easy problem into the
+hard one, tracking the solution. Tested the two physical axes:
+- **Recharge homotopy** (R: 0→full, steady state at each): fails at the FIRST step. At R=0 the steady
+  solution is h=0, i.e. the water table at **sea level (wtd=-topo, deepest)** → T at its tiniest (7-order
+  exp floor) → the elliptic operator is nearly singular, so the first recharge increment needs enormous
+  head changes. R-homotopy runs from the *worst* transmissivity regime toward the better one — backwards.
+- **Nonlinearity homotopy** (ramp fdepth large→real, so T goes constant→exp; warm-start each): the easy end
+  (large fdepth) converges in 8 iters, but each fdepth decrement shifts the equilibrium enough that the
+  warm start is "far" for the large-dt Newton, so it stalls early (dt=1 yr fails at the first step; dt=0.1
+  yr reaches only fmin=64 of 2.5). Finer steps + smaller dt help but that is just... the dt-continuation.
+
+**Conclusion — the dt-continuation already IS the optimal continuation.** The difficulty is not the *path*
+to equilibrium (which any homotopy controls) but that the equilibrium *problem* is nonlinearly stiff, so
+Newton's basin is tiny and needs a *very close* next-guess. Only small-dt steps provide that closeness,
+because the **storage term uniquely supplies both the free-boundary regularization AND the closest guess**
+(the previous physical/pseudo-time state). R and fdepth homotopies don't — they move the solution without
+supplying a comparably close guess. So the robust `-wtm_dt_continuation` (+ Dupuit guess + MUMPS/HYPRE) is
+not just *a* method, it is the *right* continuation for this problem; the ~100-step cost is the intrinsic
+price of a decades-long drainage transient through a stiff free-boundary nonlinearity, not a solver defect.
+
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
 `rech_dist` is baked once as `rate·params.deltat` (irf.cpp / WTM.cpp), and the residual scales only the
