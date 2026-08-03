@@ -268,6 +268,36 @@ pseudo-transient FAS — NOT on the bare equilibrium. That is the correct, and s
 (scope with Andy). The cheaper immediate win remains: tuned HYPRE/MUMPS as the per-step linear solver in
 the continuation, which raises the dt ceiling (0.1→0.3 yr) within the storage-regularized framework.
 
+### Kirchhoff discharge-potential (built, `-wtm_kirchhoff`) + the conditioning reframe (2026-08-04)
+Since the transmissivity's 7-order dynamic range is the suspected driver, the classic remedy is the
+Kirchhoff transform: solve for the discharge potential `Φ = ∫T dwtd` (Φ ≈ fdepth·T) instead of the head,
+so the exact chain-rule Jacobian `dF/dΦ = (dF/dh)/T` divides T back out. Fully implemented as an opt-in
+change of variable (residual converts Φ→wtd→head; Jacobian column-scaled by 1/T; guess Φ(wtd) in/out).
+It reaches the IDENTICAL equilibrium (verified 8.7e-8 m, quadratic convergence) — but **does not raise the
+dt ceiling; it makes conditioning WORSE**, and a conditioning diagnostic showed *why the premise was
+wrong*:
+
+| at the Dupuit start | dt=0.3yr | dt=1yr | dt=∞ |
+|---|---|---|---|
+| **cond(J_wtd)** (plain head form) | **1.0e4** | **5.3e3** | 2.7e7 |
+| cond(J_Φ) (Kirchhoff, volume-form) | 5.0e7 | 1.8e6 | 4.6e7 |
+
+**The plain Jacobian is WELL-conditioned at finite dt (~1e4).** So the dt=1 yr failure (`DIVERGED_MAX_IT`,
+80 iters, where cond is only 5.3e3) is **nonlinear** — the Newton *iteration* can't converge from the far
+start — **not linear ill-conditioning.** The transmissivity range causes a hard *nonlinearity* (poor
+Newton directions far from the solution), not a bad linear system. Kirchhoff is a *conditioning* remedy,
+so it targets the wrong axis, and it makes cond 500–10000× worse (Φ spans the same 7 orders; the head-form
+storage term contributes 1/T ~ 1e11 to the diagonal for deep cells). A volume-form residual cuts that
+blow-up (1e11 → 5e7, MUMPS-solvable) but Φ is still far worse-conditioned than plain wtd, so it would be
+runnable-but-not-better; not built. Kept opt-in as a documented dead-end (`-wtm_kirchhoff`, off by default).
+
+**This refines the earlier "conditioning limit" language:** the GAMG→MUMPS/HYPRE win (0.1→0.3 yr) is
+preconditioner *quality* on a T-heterogeneous but only moderately-conditioned operator (MUMPS handles cond
+1e4 trivially; GAMG's aggregation just does poorly on it), and the dt ceiling proper is a **nonlinear**
+far-from-solution limit. So the effective levers are the nonlinear-globalization ones we already have —
+**good initial guess (Dupuit) + continuation** — and, to push further, trust-region or a homotopy on the
+recharge/nonlinearity, *not* a conditioning transform.
+
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
 `rech_dist` is baked once as `rate·params.deltat` (irf.cpp / WTM.cpp), and the residual scales only the
