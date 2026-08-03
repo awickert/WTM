@@ -587,21 +587,26 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
         &user_context);
 
-    // The Newton-Krylov path (analytic FormJacobianLocal) is DISABLED. It is unused -- the default
-    // solver is Anderson, and the order-2 production path is -wtm_picard (semi-implicit) which drives
-    // newtonls via SNESSetPicard and never reaches here. Its analytic Jacobian is also unmaintained:
-    // it omits the sub-surface-sink and evaporation-taper tangents, so it would diverge. Refuse it
-    // explicitly rather than run a stale, wrong-Jacobian solve. FormJacobianLocal is intentionally
-    // RETAINED in-source below so a Newton solver can be rebuilt later (add the missing tangents,
-    // then re-register here). Anderson (snes_type == SNESANDERSON) is matrix-free and skips this.
+    // Newton-Krylov path (-wtm_newton): register the analytic Jacobian of FormFunctionLocal. The
+    // Jacobian (FormJacobianLocal) is the exact ∂F/∂x of the conservative-FV residual including the
+    // sink/evap-taper tangents; verify it against FD with -snes_test_jacobian (see FormJacobianLocal).
+    // Anderson (snes_type == SNESANDERSON) is matrix-free and skips this. Any OTHER non-Anderson
+    // type reaching here WITHOUT -wtm_newton is refused: it would drive a Newton solve with no
+    // registered Jacobian (PETSc would fall back to a full FD Jacobian -- prohibitively slow).
     SNESType snes_type;
     SNESGetType(user_context.snes, &snes_type);
-    if (std::string(snes_type) != std::string(SNESANDERSON)) {
-      throw std::runtime_error(
-          std::string("The Newton-Krylov solver (-snes_type ") + snes_type +
-          ") is disabled: its analytic Jacobian is unmaintained (missing the sink/evap-taper tangents) "
-          "and would diverge. Use the default Anderson solver, or -wtm_picard for the semi-implicit "
-          "(BDF2-on-V) path.");
+    const bool is_anderson = (std::string(snes_type) == std::string(SNESANDERSON));
+    if (!is_anderson) {
+      if (!user_context.use_newton) {
+        throw std::runtime_error(
+            std::string("The Newton-Krylov solver (-snes_type ") + snes_type +
+            ") needs -wtm_newton to register its analytic Jacobian. Use the default Anderson solver, "
+            "-wtm_picard for the semi-implicit (BDF2-on-V) path, or add -wtm_newton for true Newton.");
+      }
+      DMDASNESSetJacobianLocal(
+          user_context.da,
+          (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
+          &user_context);
     }
 
     // Evaluate initial guess
