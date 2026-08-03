@@ -134,12 +134,23 @@ warm-start showed). This is pseudo-transient continuation. MUMPS (`-pc_type lu
 -pc_factor_mat_solver_type mumps`) is a robust direct fallback where available.
 
 **dt-continuation IMPLEMENTED (`-wtm_dt_continuation`, 2026-08-03).** Opt-in on the Newton path: starts
-`deltat` small (default `params.deltat/200`) and grows it 1.5×/converged step (`-wtm_dtc_grow`),
-persisting across cycles. On Esquibel 384k from the Dupuit guess it ramps dt 0.001→0.038 yr with **every
-step converging** (4–12 Newton iters, GMRES/GAMG 4–5 inner iters — scalable), through the exact
-early-phase that a fixed large dt could not survive. GROW-ONLY for now: it eventually overshoots the safe
-dt ceiling (dt grew faster than the state warmed) and throws — next is reject+retry (needs a budget-
-accumulator rollback, since `set_starting_values` accumulates per call) or a gentler ramp/cap.
+`deltat` small (default `params.deltat/200`) and, via a Newton-iteration-controlled reject+retry
+controller (commit f61d28a), GROWS dt after an easy step (≤ `dtc_easy_iters`), HOLDS when hard, and
+REJECTS+shrinks+retries a non-converged step (`update()` returns −1 without committing; the rejected
+step's budget accumulators are rolled back). Reject+retry is what survives both the dt overshoot into a
+singular Jacobian AND the per-cycle FSM perturbation. On Esquibel 384k it completes 8 cycles **unattended**,
+handling 3 rejects gracefully — where a grow-only ramp threw at cycle 4 and the adaptive *Picard* path
+died at cycle 2 (`DIVERGED_MAX_IT`, Picard oscillation).
+
+**Robust but not yet fast on stiff grids — the dt ceiling is a CONDITIONING limit, not FSM.** The
+controller's dt plateaus at the safe overshoot ceiling (~0.02–0.03 yr on Esquibel) rather than ramping
+large. More GW steps between FSM calls (maxiter 12 vs 3) raised the ceiling only modestly (0.02→0.03 yr,
+with more rejects), so the cap is fundamental to Esquibel's fine, steep grid (900 cells/degree; T spans
+many orders → very stiff Jacobian → low overshoot threshold), not primarily the FSM perturbation
+(contrast Corsica, 120 cells/degree, which took dt = 1 yr from the Dupuit guess). So on steep fine grids
+it reaches equilibrium via many small-ish steps — robust and unattended, but slow. The real speed lever
+there is lifting the conditioning ceiling (a stronger preconditioner, or continuation on the *conditioning*
+rather than just dt), not the FSM cadence.
 
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
