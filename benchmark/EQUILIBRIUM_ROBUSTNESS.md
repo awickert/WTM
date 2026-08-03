@@ -117,18 +117,26 @@ FD-verified it to 6.4e-8 on all terms. Findings, in order:
 So the durable answer to cold-start equilibrium is **analytic Newton (`-wtm_newton`) + a Dupuit physical
 initial guess + a scalable linear solver.** On SMALL grids that solver is GMRES/GAMG (8 Newton iters).
 
-**Fine grid (Esquibel 384k) — the inner linear solve is the open problem.** The Jacobian is correct
-(same code, verified), and the Newton *direction* is fine, but the inner Krylov solve is fragile at
-scale: from the Dupuit guess, GAMG DIVERGES (no progress in 10000 its) while ASM+ILU(1) CONVERGES the
-first step (297 GMRES its, residual 1.39e5→4.87e4) — then step 2's linear solve diverges as the state
-moves into worse-conditioned regime/taper bands. The transmissivity spans many orders of magnitude, so
-the Jacobian is badly conditioned and GAMG's aggregation is unsuited without tuning. **Next: a scalable
-preconditioner for this nonsymmetric, high-dynamic-range operator** — field-split / physics-based PC,
-GAMG tuning (`-pc_gamg_threshold`, `-mg_levels_pc_type ilu -mg_levels_ksp_type gmres`), dt-continuation
-(smaller/ramped dt for gentler, better-conditioned steps), or nonlinear preconditioning. This is the
-real remaining R&D; the analytic Jacobian and the guess-pairing are done and validated.
+**Fine grid (Esquibel 384k) — SOLVED; the blocker was large-dt overshoot, not the preconditioner.**
+The Jacobian is correct at scale too (quadratic convergence proves it). The initial "inner solve fails
+at step 1" was a red herring about the Krylov method: at her dt (0.2 yr) BOTH GAMG *and MUMPS (a direct
+solver!)* fail at step 1 — which means the step-1 **Jacobian is singular**, not that the preconditioner
+is weak. Mechanism: at large dt the storage term `S/dt` on the diagonal is tiny, so the diagonal loses
+dominance and the full Newton step from the far Dupuit guess **overshoots** into a singular-Jacobian
+state. At **small dt (0.001 yr) the diagonal is dominant and Newton + GMRES/GAMG converges cleanly on
+384k**: 3–5 Newton iters/step, quadratic tails, inner GAMG only **4–5 GMRES iters/step**
+(mesh-independent — fully scalable, no MUMPS needed). The overshoot threshold from the Dupuit guess is
+≈ dt 0.02–0.05 yr.
 
-Open also: whether to auto-generate the Dupuit guess inside WTM (opt-in) so cold-start users get it free.
+**The complete recipe: `-wtm_newton` (GMRES/GAMG) + a Dupuit initial guess + dt-continuation** — start
+dt ≈ 0.005–0.01 yr, ramp up as the state warms toward equilibrium (warm + large dt is fine, as Corsica's
+warm-start showed). This is pseudo-transient continuation. MUMPS (`-pc_type lu
+-pc_factor_mat_solver_type mumps`) is a robust direct fallback where available.
+
+Remaining implementation (not R&D — engineering): (1) wire dt-continuation into the Newton path
+(`-wtm_dt_adaptive` currently forces the Picard path, so Newton can't use it yet — the Newton path needs
+its own dt-ramp: grow dt on SNES success, shrink on a DIVERGED_LINEAR/overshoot); (2) optionally
+auto-generate the Dupuit guess inside WTM (opt-in) so cold-start users get it for free.
 
 ## Verified formulas & Esquibel findings (2026-08)
 **Literature (verified against sources):**
