@@ -239,6 +239,35 @@ not; and the dt ceiling caps physical-time progress regardless of the guess.
 Absent those, the practical path is continuation + reject/retry + MUMPS/HYPRE: robust and unattended, but
 ~100 steps to equilibrium on a stiff fine grid because of the drainage timescale.
 
+### Direct-analytical exploration + the free-boundary/storage insight (2026-08-03) — the key synthesis
+Explored the "direct analytical" route Andy suggested, culminating in the **Kirchhoff / discharge-potential
+transform**: define `Φ(wtd)=∫T(wtd')dwtd'` so `T∇h = ∇Φ + T∇topo` and the operator becomes a
+CONSTANT-COEFFICIENT Laplacian `∇²Φ` (transmissivity absorbed into the pointwise Φ↔wtd map + a topo-drift
+source). For WTM's piecewise T the integral is clean (`Φ = fdepth·T` in the exp regime, quadratic in the
+linear regime, linear above surface). Elegant — and it DOES linearize the operator (SPD Laplacian,
+multigrid-trivial). **But it does not tame the problem:** the topo-drift source `Σ G·e·(topo_c−topo_nbr)`
+is O(90) per face while `R·A` is O(1e-4), so on steep terrain the water table is topography-following and
+the frozen-drift Picard oscillates *bimodally* — cells split into "at surface" (T capped) and "very deep"
+(T→0) at the wtd=0 free boundary — even under heavy under-relaxation (ω=0.12). The earlier frozen-T guess
+failed the same way. scratchpad/kirchhoff.py, frozenT_guess.py.
+
+**THE INSIGHT (ties the whole investigation together): the wtd=0 free surface is a FREE-BOUNDARY problem,
+and the STORAGE term is what regularizes it.** Every direct/analytical/steady-state approach removes the
+storage term and solves the bare elliptic problem — and every one hits the same surface/deep bimodal
+instability at the free boundary where T switches regime. Time-stepping WORKS because the storage term
+`S/Δt` adds a positive Jacobian diagonal (`∂storage/∂h = S/Δt > 0`) that keeps the operator diagonally
+dominant and non-singular across the free boundary. This is the SAME mechanism as the dt ceiling: **the dt
+ceiling is exactly where the storage regularization (`S/Δt`) becomes too weak to hold the free boundary**
+(large Δt → small `S/Δt` → the free-boundary elliptic operator goes singular). Direct steady-state (dt→∞)
+is therefore the *least* regularized, hardest case — which is why it, and the analytical transforms, fail.
+
+**Consequence for FAS:** bare-steady-state FAS would hit the IDENTICAL free-boundary instability (its
+smoother is a local Picard/Newton, which we've shown oscillates there). FAS must run *inside the
+time-stepping* — as the linear solver / accelerator for each implicit (storage-regularized) step, or as a
+pseudo-transient FAS — NOT on the bare equilibrium. That is the correct, and still substantial, next build
+(scope with Andy). The cheaper immediate win remains: tuned HYPRE/MUMPS as the per-step linear solver in
+the continuation, which raises the dt ceiling (0.1→0.3 yr) within the storage-regularized framework.
+
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
 `rech_dist` is baked once as `rate·params.deltat` (irf.cpp / WTM.cpp), and the residual scales only the
