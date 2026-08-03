@@ -152,6 +152,39 @@ it reaches equilibrium via many small-ish steps — robust and unattended, but s
 there is lifting the conditioning ceiling (a stronger preconditioner, or continuation on the *conditioning*
 rather than just dt), not the FSM cadence.
 
+### Methods to permit longer / more stable time steps (2026-08-03 investigation, on cropped Esquibel 900 cpd)
+There are TWO distinct dt ceilings, and they need different levers:
+
+**1. Linear-solve ceiling — preconditioner-limited (the Jacobian is ILL-CONDITIONED, not singular).**
+Proof: at dt = 0.3 yr from the Dupuit guess the default GAMG fails at iteration 0 (`DIVERGED_LINEAR_SOLVE`),
+but **MUMPS direct converges in 27 Newton iters** — the system is well-posed, GAMG just can't precondition
+it. Levers, all raising the ceiling from GAMG's ~0.1 yr to ~0.3 yr:
+  - **MUMPS** (`-ksp_type preonly -pc_type lu -pc_factor_mat_solver_type mumps`): dt≈0.3 yr, 27 iters.
+    Robust; fine for REGIONAL grids (≲1M cells), does not scale to a global grid.
+  - **Tuned HYPRE BoomerAMG** (`-pc_type hypre -pc_hypre_type boomeramg
+    -pc_hypre_boomeramg_strong_threshold 0.7 -pc_hypre_boomeramg_relax_type_all SOR/Jacobi`): dt≈0.3 yr,
+    43 iters. **SCALABLE** — the recommended preconditioner for stiff grids where GAMG stalls.
+  - Default GAMG (Chebyshev smoother + smoothed aggregation) is poorly suited to this nonsymmetric,
+    high-dynamic-range (T spans many orders) operator; ~0.1 yr.
+
+**2. Nonlinear ceiling — globalization-limited.** Beyond ~0.3 yr from the cold Dupuit guess, NEITHER a
+line search NOR a trust region (`-snes_type newtontr`) converges (both `DIVERGED_MAX_IT` at 100 iters):
+the Newton *iteration* can't jump that far. The only lever is **continuation** (ramp dt small→large); the
+nonlinear ceiling rises as the state warms toward equilibrium.
+
+**Best combination = continuation + a strong preconditioner.** Continuation handles the cold phase; the
+strong PC lets the steps grow larger once warm. Continuation+MUMPS ramped to 0.175 yr vs default-GAMG's
+~0.05 yr. NB the iteration-based dt controller interacts with linear-solve accuracy: exact solves (MUMPS)
+→ fewer Newton iters → the controller grows dt more; inexact AMG → more Newton iters → it holds. Raise
+`-wtm_dtc_easy_iters` to let an AMG-preconditioned continuation ramp higher.
+
+**The remaining limiter is the FSM–GW coupling, not the step size.** With FSM on, each cycle's surface-
+water routing perturbs the GW state (~26 m inter-cycle changes persisted after 14 cycles on the crop), so
+the system approaches a limit cycle rather than a clean fixed point. Reaching a *settled* equilibrium is
+a GW↔FSM coupling question (how many GW steps per FSM call, or FSM under-relaxation), separate from the
+solver's dt ceiling. Untested levers: recharge/homotopy continuation, grid sequencing (coarse→fine warm
+start), and Levenberg–Marquardt Jacobian regularization (would need code).
+
 ### The recharge–dt coupling: a root-cause fix (the important finding)
 Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
 `rech_dist` is baked once as `rate·params.deltat` (irf.cpp / WTM.cpp), and the residual scales only the
