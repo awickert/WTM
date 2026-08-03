@@ -229,6 +229,18 @@ static double evapRemovalTangent(const double wtd, const double et_yr, const dou
   }
   return rprime > 0.0 ? rprime : 0.0;  // SPD clamp
 }
+// Unclamped dR/dwtd -- the EXACT derivative of evapRemoval (no SPD clamp). The Picard operator uses
+// the clamped tangent above to keep its linearization SPD, but the true Newton Jacobian must
+// differentiate the residual as written (evapRemoval is unclamped), so it uses this. Identical to
+// evapRemovalTangent except the final max(.,0) is dropped; can be negative where ET > owe.
+static double evapRemovalTangentRaw(const double wtd, const double et_yr, const double owe_yr,
+                                   const double p_rate) {
+  if (!g_extinction) return evapTaperTangentRaw(wtd, et_yr, owe_yr);  // taper 2 unchanged
+  const double e      = evapTaper(wtd, et_yr, owe_yr);
+  const double eprime = evapTaperTangentRaw(wtd, et_yr, owe_yr);
+  if (e <= p_rate) return eprime;  // wet: R = E_eff
+  return eprime * accessTaper(wtd) + (e - p_rate) * accessTaperTangent(wtd);
+}
 
 // Smooth (C-inf) depth-integrated transmissivity: a differentiable blend of the
 // piecewise production form above. Kept for a future Newton path; its analytic
@@ -1079,31 +1091,71 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
 
 /* ------------------------------------------------------------------- */
 /*
-   FormJacobianLocal - Analytic 5-point Jacobian of FormFunctionLocal.
+   FormJacobianLocal - Analytic 5-point Jacobian of FormFunctionLocal (the exact ∂F/∂x of the
+   conservative-FV head-form residual). Registered on the opt-in Newton-Krylov path (-wtm_newton;
+   see update()); the SNESSolve constant b = hⁿ is independent of x, so J(F − b) = J(F).
 
-   For ocean cells (mask == 0): J = I (unit diagonal for Dirichlet).
-   For land cells: differentiates
-       f = (uxx + uyy) * dt/S + x - rech
-   analytically through the smooth transmissivity T(x) and storativity S(x).
-   All smoothing constants must match those in depthIntegratedTransmissivitySmooth
-   and updateEffectiveStorativity.
+   Residual (land cells): f = (x_c − rech) + dt·N/(A_j·S) + dt·removal/S, with
+     N       = Σ_X e_X·G_X·(x_c − x_X)      conservative-FV net outflow (X ∈ {E,W,N,S})
+     e_X     = 2/(τ_c + τ_X),  τ = 1/T       harmonic-mean face conductance
+     G_X     = geom_ew (E,W) / geom_n / geom_s   face geometry factor
+     A_j     = cellsize_NS² / geom_ew        cell area
+     S       = updateEffectiveStorativity(wⁿ_c, w_c, poro)   secant storativity (centre only)
+     removal = surfaceSink(w_c) + evapRemoval(w_c, …)        tapers (centre only)
+   with w = x − topo. Differentiating w.r.t. the centre head x_c and the four neighbour heads x_X:
+     ∂f/∂x_X = B·G_X·[ −2·τ'_X/sum_X²·(x_c−x_X) − e_X ]                        (off-diagonal)
+     ∂f/∂x_c = 1 + B·Σ_X G_X·[ e_X − 2·τ'_c/sum_X²·(x_c−x_X) ]
+               − (S'/S)·(flux_term + removal_term) + D·removal'               (diagonal)
+   where B = dt/(A_j·S), D = dt/S, τ' = dTransmissivityInverseDwtd (d(1/T)/dw of the SMOOTH T),
+   S' = dEffectiveStorativityDnew, removal' = surfaceSinkTangent + evapRemovalTangentRaw (the
+   UNCLAMPED evap tangent, so this is the exact derivative of the residual as written).
 
-   NOTE: neighbor arrays (fdepth, ksat, topo) are accessed via global DM
-   vectors; for single-process runs this is always safe.  A future MPI
-   extension should scatter those arrays to local vectors with ghosts first.
+   For ocean cells (mask == 0): J = I (unit diagonal for the Dirichlet f = x). Ocean neighbours of a
+   land cell ARE coupled (their column carries the true off-diagonal); their own row pins dx = 0.
+
+   INEXACT-NEWTON note: τ' is always the SMOOTH-T derivative, while the residual uses the piecewise
+   (C0) Fan T unless a -wtm_ksat_*_smoothing_width is set. So with no smoothing width this Jacobian
+   is a differentiable inexact-Newton approximation; to VERIFY it against FD with -snes_test_jacobian,
+   set positive -wtm_ksat_soilbottom_smoothing_width / -wtm_ksat_surface_smoothing_width (and a
+   -wtm_storativity_surface_smoothing_width) so residual and derivative use the identical smooth forms.
+
+   Uses the SAME local ghosted vectors (topo_local/fdepth_local/ksat_local) and neighbour-access
+   pattern as FormFunctionLocal, so it is exactly as MPI-safe as the residual.
  */
 static PetscErrorCode FormJacobianLocal(
     DMDALocalInfo* info, PetscScalar** x, Mat Jmat, Mat P, AppCtx* user_context) {
   DM           da = user_context->da;
-  PetscScalar **cellsize_ew_sq, **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_porosity, **my_starting_wtd;
+  PetscScalar **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_porosity, **my_starting_wtd, **gew, **gn, **gs;
 
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
-  PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
-  PetscCall(DMDAVecGetArray(da, user_context->fdepth_vec, &my_fdepth));
-  PetscCall(DMDAVecGetArray(da, user_context->ksat_vec, &my_ksat));
-  PetscCall(DMDAVecGetArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
+  PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
+  PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;  // taper 2/3 inputs (m/yr)
+  if (g_evap_taper) {
+    PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
+    PetscCall(DMDAVecGetArray(da, user_context->precip_vec, &my_precip));
+  }
+
+  const bool   smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
+  const bool   sink_on  = g_surface_sink;
+  const bool   taper_on = g_evap_taper;
+  const double dt       = user_context->deltat;
+  const double cns2     = user_context->cellsize_NS_squared;
+
+  // 1/T of the SAME (smooth or piecewise) form the residual uses. dTransmissivityInverseDwtd (below)
+  // is the derivative of the SMOOTH T, so it is the exact tangent only when smooth_T is true.
+  const auto Tinv = [&](double wtd, double fd, double ks) {
+    const double T = smooth_T ? depthIntegratedTransmissivitySmooth(wtd, fd, ks)
+                              : depthIntegratedTransmissivity(wtd, fd, ks);
+    return T > 0.0 ? 1.0 / T : 1e30;
+  };
 
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
@@ -1115,120 +1167,111 @@ static PetscErrorCode FormJacobianLocal(
         MatStencil col;
         col.j = j; col.i = i; col.c = 0;
         MatSetValuesStencil(Jmat, 1, &row, 1, &col, &one, INSERT_VALUES);
-        MatSetValuesStencil(P,    1, &row, 1, &col, &one, INSERT_VALUES);
-      } else {
-        // WTD at center and 4 neighbours
-        const double wtd_c = x[j][i]     - my_topo[j][i];
-        const double wtd_E = x[j][i + 1] - my_topo[j][i + 1];
-        const double wtd_W = x[j][i - 1] - my_topo[j][i - 1];
-        const double wtd_N = x[j + 1][i] - my_topo[j + 1][i];
-        const double wtd_S = x[j - 1][i] - my_topo[j - 1][i];
-
-        // 1/T at centre and 4 neighbours; cap at 1e30 when T ≈ 0
-        const auto T_inv = [](double T) { return T > 0.0 ? 1.0 / T : 1e30; };
-        const double Tinv_c = T_inv(depthIntegratedTransmissivitySmooth(wtd_c, my_fdepth[j][i],     my_ksat[j][i]));
-        const double Tinv_E = T_inv(depthIntegratedTransmissivitySmooth(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]));
-        const double Tinv_W = T_inv(depthIntegratedTransmissivitySmooth(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]));
-        const double Tinv_N = T_inv(depthIntegratedTransmissivitySmooth(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]));
-        const double Tinv_S = T_inv(depthIntegratedTransmissivitySmooth(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]));
-
-        // d(1/T)/dwtd at centre and 4 neighbours (needed for full Jacobian only)
-        const double dTinv_c = dTransmissivityInverseDwtd(wtd_c, my_fdepth[j][i],     my_ksat[j][i]);
-        const double dTinv_E = dTransmissivityInverseDwtd(wtd_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
-        const double dTinv_W = dTransmissivityInverseDwtd(wtd_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
-        const double dTinv_N = dTransmissivityInverseDwtd(wtd_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
-        const double dTinv_S = dTransmissivityInverseDwtd(wtd_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
-
-        // Harmonic-mean conductances and their sums
-        const double sumE = Tinv_c + Tinv_E,  e_E = 2.0 / sumE;
-        const double sumW = Tinv_c + Tinv_W,  e_W = 2.0 / sumW;
-        const double sumN = Tinv_c + Tinv_N,  e_N = 2.0 / sumN;
-        const double sumS = Tinv_c + Tinv_S,  e_S = 2.0 / sumS;
-
-        // Head differences
-        const double ux_E = x[j][i + 1] - x[j][i];
-        const double ux_W = x[j][i]     - x[j][i - 1];
-        const double uy_N = x[j + 1][i] - x[j][i];
-        const double uy_S = x[j][i]     - x[j - 1][i];
-
-        // Storativity at center and its derivative w.r.t. x[j,i]
-        const double S         = updateEffectiveStorativity(my_starting_wtd[j][i], wtd_c, my_porosity[j][i]);
-        const double dS_dnew   = dEffectiveStorativityDnew(my_starting_wtd[j][i], wtd_c, my_porosity[j][i]);
-        const double dt_over_S = user_context->deltat / S;
-        const double cns2      = user_context->cellsize_NS_squared;
-        const double cew2      = cellsize_ew_sq[j][i];
-
-        // uxx + uyy needed for the storativity part of the diagonal
-        const double uxx = (e_W * ux_W - e_E * ux_E) / cns2;
-        const double uyy = (e_S * uy_S - e_N * uy_N) / cew2;
-
-        // ∂e_X/∂x[neighbour] = -2·dTinv_X / sumX²
-        const double de_E_dxE = -2.0 * dTinv_E / (sumE * sumE);
-        const double de_W_dxW = -2.0 * dTinv_W / (sumW * sumW);
-        const double de_N_dxN = -2.0 * dTinv_N / (sumN * sumN);
-        const double de_S_dxS = -2.0 * dTinv_S / (sumS * sumS);
-
-        // ∂e_X/∂x[j,i] = -2·dTinv_c / sumX²  (centre changes all four conductances)
-        const double de_E_dxc = -2.0 * dTinv_c / (sumE * sumE);
-        const double de_W_dxc = -2.0 * dTinv_c / (sumW * sumW);
-        const double de_N_dxc = -2.0 * dTinv_c / (sumN * sumN);
-        const double de_S_dxc = -2.0 * dTinv_c / (sumS * sumS);
-
-        // Full analytic Jacobian off-diagonal entries
-        const double J_east  = -(de_E_dxE * ux_E + e_E) * dt_over_S / cns2;
-        const double J_west  = (de_W_dxW * ux_W - e_W) * dt_over_S / cns2;
-        const double J_north = -(de_N_dxN * uy_N + e_N) * dt_over_S / cew2;
-        const double J_south = (de_S_dxS * uy_S - e_S) * dt_over_S / cew2;
-
-        const double d_uxx_dc = (de_W_dxc * ux_W + e_W - de_E_dxc * ux_E + e_E) / cns2;
-        const double d_uyy_dc = (de_S_dxc * uy_S + e_S - de_N_dxc * uy_N + e_N) / cew2;
-        const double J_center = (d_uxx_dc + d_uyy_dc) * dt_over_S
-                              - (uxx + uyy) * user_context->deltat * dS_dnew / (S * S)
-                              + 1.0;
-
-        // Symmetric Picard preconditioner: freeze T, average S between neighbors.
-        // P[i,j][i+1,j] = P[i+1,j][i,j] by construction → symmetric → GAMG-compatible.
-        const double S_E = updateEffectiveStorativity(my_starting_wtd[j][i+1], wtd_E, my_porosity[j][i+1]);
-        const double S_W = updateEffectiveStorativity(my_starting_wtd[j][i-1], wtd_W, my_porosity[j][i-1]);
-        const double S_N = updateEffectiveStorativity(my_starting_wtd[j+1][i], wtd_N, my_porosity[j+1][i]);
-        const double S_S = updateEffectiveStorativity(my_starting_wtd[j-1][i], wtd_S, my_porosity[j-1][i]);
-
-        const double P_east  = -e_E * user_context->deltat / (0.5 * (S + S_E) * cns2);
-        const double P_west  = -e_W * user_context->deltat / (0.5 * (S + S_W) * cns2);
-        const double P_north = -e_N * user_context->deltat / (0.5 * (S + S_N) * cew2);
-        const double P_south = -e_S * user_context->deltat / (0.5 * (S + S_S) * cew2);
-        // Diagonal = -(sum of off-diagonals) + 1; strictly diagonally dominant → SPD.
-        const double P_center = -(P_east + P_west + P_north + P_south) + 1.0;
-
-        MatStencil  cols[5];
-        PetscScalar vals[5];
-        cols[0].j = j;     cols[0].i = i + 1; cols[0].c = 0;
-        cols[1].j = j;     cols[1].i = i - 1; cols[1].c = 0;
-        cols[2].j = j + 1; cols[2].i = i;     cols[2].c = 0;
-        cols[3].j = j - 1; cols[3].i = i;     cols[3].c = 0;
-        cols[4].j = j;     cols[4].i = i;     cols[4].c = 0;
-
-        vals[0] = J_east; vals[1] = J_west; vals[2] = J_north; vals[3] = J_south; vals[4] = J_center;
-        MatSetValuesStencil(Jmat, 1, &row, 5, cols, vals, INSERT_VALUES);
-
-        vals[0] = P_east; vals[1] = P_west; vals[2] = P_north; vals[3] = P_south; vals[4] = P_center;
-        MatSetValuesStencil(P, 1, &row, 5, cols, vals, INSERT_VALUES);
+        if (P != Jmat) MatSetValuesStencil(P, 1, &row, 1, &col, &one, INSERT_VALUES);
+        continue;
       }
+
+      // wtd at centre and 4 neighbours (ghosted heads/topo, matching the residual)
+      const double w_c = x[j][i]     - my_topo[j][i];
+      const double w_E = x[j][i + 1] - my_topo[j][i + 1];
+      const double w_W = x[j][i - 1] - my_topo[j][i - 1];
+      const double w_N = x[j + 1][i] - my_topo[j + 1][i];
+      const double w_S = x[j - 1][i] - my_topo[j - 1][i];
+
+      // τ = 1/T and its wtd-derivative τ' at centre and neighbours
+      const double tau_c  = Tinv(w_c, my_fdepth[j][i],     my_ksat[j][i]);
+      const double tau_E  = Tinv(w_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
+      const double tau_W  = Tinv(w_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
+      const double tau_N  = Tinv(w_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
+      const double tau_S  = Tinv(w_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
+      const double taup_c = dTransmissivityInverseDwtd(w_c, my_fdepth[j][i],     my_ksat[j][i]);
+      const double taup_E = dTransmissivityInverseDwtd(w_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
+      const double taup_W = dTransmissivityInverseDwtd(w_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
+      const double taup_N = dTransmissivityInverseDwtd(w_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
+      const double taup_S = dTransmissivityInverseDwtd(w_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
+
+      // Harmonic-mean face conductances e_X = 2/(τ_c+τ_X) and their geometry factors G_X.
+      const double sumE = tau_c + tau_E, e_E = 2.0 / sumE, G_E = gew[j][i];
+      const double sumW = tau_c + tau_W, e_W = 2.0 / sumW, G_W = gew[j][i];
+      const double sumN = tau_c + tau_N, e_N = 2.0 / sumN, G_N = gn[j][i];
+      const double sumS = tau_c + tau_S, e_S = 2.0 / sumS, G_S = gs[j][i];
+
+      // Head differences x_c − x_nbr (outflow-positive)
+      const double dE = x[j][i] - x[j][i + 1];
+      const double dW = x[j][i] - x[j][i - 1];
+      const double dN = x[j][i] - x[j + 1][i];
+      const double dS = x[j][i] - x[j - 1][i];
+
+      const double net_outflow = e_E * G_E * dE + e_W * G_W * dW + e_N * G_N * dN + e_S * G_S * dS;
+
+      const double A_j = cns2 / gew[j][i];  // cell area (matches the residual)
+      const double S   = updateEffectiveStorativity(my_starting_wtd[j][i], w_c, my_porosity[j][i]);
+      const double Sp  = dEffectiveStorativityDnew(my_starting_wtd[j][i], w_c, my_porosity[j][i]);
+      const double B   = dt / (A_j * S);  // flux prefactor
+      const double D   = dt / S;          // removal prefactor
+
+      double removal = 0.0, rho = 0.0;  // removal [m/s] and its exact (unclamped) wtd-derivative
+      if (sink_on) {
+        removal += surfaceSink(w_c);
+        rho     += surfaceSinkTangent(w_c);
+      }
+      if (taper_on) {
+        const double p_rate = my_precip[j][i] / SECONDS_IN_A_YEAR;
+        removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], p_rate);
+        rho     += evapRemovalTangentRaw(w_c, my_evap[j][i], my_owe[j][i], p_rate);
+      }
+
+      const double flux_term    = B * net_outflow;  // dt·N/(A_j·S)   (part of the residual)
+      const double removal_term = D * removal;       // dt·removal/S   (part of the residual)
+
+      // Off-diagonals: ∂f/∂x_X = B·G_X·[ −2·τ'_X/sum_X²·dX − e_X ]
+      const double J_east  = B * G_E * (-2.0 * taup_E / (sumE * sumE) * dE - e_E);
+      const double J_west  = B * G_W * (-2.0 * taup_W / (sumW * sumW) * dW - e_W);
+      const double J_north = B * G_N * (-2.0 * taup_N / (sumN * sumN) * dN - e_N);
+      const double J_south = B * G_S * (-2.0 * taup_S / (sumS * sumS) * dS - e_S);
+
+      // ∂N/∂x_c: each face contributes G_X·(e_X − 2·τ'_c/sum_X²·dX)
+      const double dN_dc = G_E * (e_E - 2.0 * taup_c / (sumE * sumE) * dE)
+                         + G_W * (e_W - 2.0 * taup_c / (sumW * sumW) * dW)
+                         + G_N * (e_N - 2.0 * taup_c / (sumN * sumN) * dN)
+                         + G_S * (e_S - 2.0 * taup_c / (sumS * sumS) * dS);
+
+      const double J_center = 1.0 + B * dN_dc - (Sp / S) * (flux_term + removal_term) + D * rho;
+
+      MatStencil  cols[5];
+      PetscScalar vals[5];
+      cols[0].j = j;     cols[0].i = i + 1; cols[0].c = 0;
+      cols[1].j = j;     cols[1].i = i - 1; cols[1].c = 0;
+      cols[2].j = j + 1; cols[2].i = i;     cols[2].c = 0;
+      cols[3].j = j - 1; cols[3].i = i;     cols[3].c = 0;
+      cols[4].j = j;     cols[4].i = i;     cols[4].c = 0;
+      vals[0] = J_east; vals[1] = J_west; vals[2] = J_north; vals[3] = J_south; vals[4] = J_center;
+      MatSetValuesStencil(Jmat, 1, &row, 5, cols, vals, INSERT_VALUES);
+      if (P != Jmat) MatSetValuesStencil(P, 1, &row, 5, cols, vals, INSERT_VALUES);
     }
   }
 
   MatAssemblyBegin(Jmat, MAT_FINAL_ASSEMBLY);
   MatAssemblyEnd(Jmat, MAT_FINAL_ASSEMBLY);
-  MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY);
+  if (P != Jmat) {
+    MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY);
+  }
 
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
-  PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
-  PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_vec, &my_fdepth));
-  PetscCall(DMDAVecRestoreArray(da, user_context->ksat_vec, &my_ksat));
-  PetscCall(DMDAVecRestoreArray(da, user_context->topo_vec, &my_topo));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_local, &my_fdepth));
+  PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecRestoreArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  if (g_evap_taper) {
+    PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
+    PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
+    PetscCall(DMDAVecRestoreArray(da, user_context->precip_vec, &my_precip));
+  }
   return 0;
 }
 
