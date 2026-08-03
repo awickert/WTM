@@ -133,10 +133,31 @@ dt ≈ 0.005–0.01 yr, ramp up as the state warms toward equilibrium (warm + la
 warm-start showed). This is pseudo-transient continuation. MUMPS (`-pc_type lu
 -pc_factor_mat_solver_type mumps`) is a robust direct fallback where available.
 
-Remaining implementation (not R&D — engineering): (1) wire dt-continuation into the Newton path
-(`-wtm_dt_adaptive` currently forces the Picard path, so Newton can't use it yet — the Newton path needs
-its own dt-ramp: grow dt on SNES success, shrink on a DIVERGED_LINEAR/overshoot); (2) optionally
-auto-generate the Dupuit guess inside WTM (opt-in) so cold-start users get it for free.
+**dt-continuation IMPLEMENTED (`-wtm_dt_continuation`, 2026-08-03).** Opt-in on the Newton path: starts
+`deltat` small (default `params.deltat/200`) and grows it 1.5×/converged step (`-wtm_dtc_grow`),
+persisting across cycles. On Esquibel 384k from the Dupuit guess it ramps dt 0.001→0.038 yr with **every
+step converging** (4–12 Newton iters, GMRES/GAMG 4–5 inner iters — scalable), through the exact
+early-phase that a fixed large dt could not survive. GROW-ONLY for now: it eventually overshoots the safe
+dt ceiling (dt grew faster than the state warmed) and throws — next is reject+retry (needs a budget-
+accumulator rollback, since `set_starting_values` accumulates per call) or a gentler ramp/cap.
+
+### The recharge–dt coupling: a root-cause fix (the important finding)
+Enabling *any* variable-dt path exposed a latent bug. Recharge is a per-step **amount** `= rate·dt`, but
+`rech_dist` is baked once as `rate·params.deltat` (irf.cpp / WTM.cpp), and the residual scales only the
+*flux* by the actual `user_context.deltat`. So when a variable-dt path shrinks dt below `params.deltat`,
+the source stays at the full `params.deltat` amount while drainage shrinks → **the table is over-recharged,
+faster and faster as the step shrinks** → instability. This is almost certainly why the earlier
+adaptive-dt attempts were "problematic" (dt got stuck small / diverged): shrinking dt to fight stiffness
+*amplified* the over-recharge. **Fix:** rescale `rech_dist` by `user_context.deltat/params.deltat` so
+recharge and drainage scale together; the steady state is then dt-independent (`rate = drainage` at the
+fixed point, dt cancels). Exactly 1.0 on every fixed-dt path → those are byte-identical (golden unchanged).
+**Demonstrated (Esquibel 384k):** with the rescale the continuation ramps 9 steps; without it the identical
+run diverges at step 3, and one 0.001-yr step over-recharges the table 6× more. The `-wtm_dt_adaptive`
+Picard path shares this recharge code, so the fix likely rehabilitates adaptive stepping there too —
+worth revisiting.
+
+Remaining: (1) continuation reject+retry / gentler ramp so it doesn't overshoot the tail; (2) revisit the
+adaptive Picard path now that recharge is dt-correct; (3) optionally auto-generate the Dupuit guess in-WTM.
 
 ## Verified formulas & Esquibel findings (2026-08)
 **Literature (verified against sources):**
