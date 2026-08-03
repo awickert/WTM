@@ -526,6 +526,21 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
 
   while (params.cycles_done < params.total_cycles) {
     update(params, arp, user_context, dmdapack, deps);
+    // Opt-in convergence-based early stop (dt-continuation only): once the per-step water-table change has
+    // stayed below -wtm_eq_tol for two consecutive cycles, the system has settled to steady state, so stop
+    // rather than burning the remaining fixed cycles. Off (eq_tol=0) -> loop runs the full total_cycles.
+    if (user_context.eq_tol > 0.0 && user_context.use_newton_continuation) {
+      if (user_context.last_dh_max < user_context.eq_tol) {
+        if (++user_context.settled_count >= 2) {
+          PetscPrintf(PETSC_COMM_WORLD,
+                      "equilibrium reached: max|Δw| = %g m < %g for 2 cycles; stopping at cycle %d of %d.\n",
+                      user_context.last_dh_max, user_context.eq_tol, params.cycles_done, params.total_cycles);
+          break;
+        }
+      } else {
+        user_context.settled_count = 0;
+      }
+    }
   }
 }
 

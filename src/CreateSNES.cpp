@@ -132,6 +132,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, nullptr);  // early-stop tol [m], 0=off
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",

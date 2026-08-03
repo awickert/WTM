@@ -79,6 +79,11 @@ struct AppCtx {
   // reports it per cycle (→ 0 at steady state). A residual/state-change SER dt controller was tried and
   // is worse than growing on solve-ease (see WTM.cpp), so this is a diagnostic, not a step controller.
   double last_dh_max             = 0.0;
+  // Opt-in convergence-based early stop for the dt-continuation (-wtm_eq_tol, metres; 0 = off): stop the
+  // cycle loop once last_dh_max stays below eq_tol for two consecutive cycles (settled to steady state),
+  // instead of always running the full total_cycles. Off by default -> existing behaviour unchanged.
+  double eq_tol                  = 0.0;
+  int    settled_count           = 0;
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.
