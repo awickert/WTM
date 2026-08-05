@@ -201,6 +201,37 @@ low-risk next step is a **B1 Python POC on the sub-window**: implement `T=T0(1�
 reproduces the exp basin/ceiling, then sweep `n` down to measure how much the dt-ceiling widens and where
 the finite-depth degeneracy starts to bite — *before* touching WTM's physics or calibration.
 
+## Track B — B1 power-law POC results (2026-08-05) — NEGATIVE for the numerics
+Implemented `T=T0(1−d/M)^n` with FD-verified tangent (`scratchpad/pow_newton.py`), on the same 60×60
+sub-window and Newton harness as Track A. Two parameterizations tested:
+- **`M = n·fdepth`** (the clean exp-limit family, `n→∞` = exp): large `n` reproduces the exp ceiling
+  (n=8 converges at dt=0.1, stalls at 0.3, exactly like the exp). Lowering `n` **worsens** the basin
+  (n=2, n=1 fail even at dt=0.1) because `M` shrinks with `n`, so the deep water table breaches the finite
+  depth: **T=0 fully-drained cells = 1.7% (n=8) → 25% (n=2) → 47% (n=1)** at the dt=0.1 solution. The
+  degeneracy hazard flagged in B2 bites hard and early.
+- **`M = Mf·fdepth`** (M decoupled from `n`, kept deep to avoid degeneracy): scanned `n∈{1,2,4,8}` ×
+  `Mf∈{8,16,32}`. **No combination beats the exp basin — every profile still stalls at dt=0.3 yr**, the
+  exp's own ceiling. The combos that compress the dynamic range to ~2 orders (large `Mf`, small `n`) fail
+  even at dt=0.1 *and* change the physical answer.
+
+**Why this is a hard negative (the premise was flawed).** The transmissivity dynamic range is **physically
+pinned by the boundary values**: T must fall from its surface value to ≈0 at the deepest water table
+(~6–7 orders on this terrain, set by the physics of a deep equilibrium table). *Any* profile matching the
+same physics spans the same range — the exp's 7 orders are not an artifact of the exp, they are the
+physics. Compressing the range (which was the whole hope) either fails to converge anyway or changes the
+computed water table. This mirrors the old "flattening" observation correctly: a *near-constant* T is easy,
+but only because it is a *different, wrong* problem — a 2-order-varying T is still hard. **The dt-ceiling is
+invariant to the transmissivity functional form.**
+
+**Consequence — the investigation closes.** The equilibrium cold-start difficulty is **intrinsic to the
+far-from-solution nonlinear steady-drainage problem on stiff terrain** — not the solver linearization (A1),
+not the initial guess in L2 (A2), not the transmissivity functional form (B1). **dt-continuation** (a
+sequence of nearby solves; committed, reliable on the real 384k Esquibel case) is the correct tool, not a
+workaround for a fixable formulation. *Separate, not foreclosed:* a power-law/parabolic profile may still
+be worth adopting for **data-fit / physical-realism** reasons (Ambroise/Beven/Freer's original motivation —
+matching observed recessions), but B1 removes "it will speed up the equilibrium solve" from the reasons to
+do so; that is now a modeling decision for Andy + data, decoupled from solver performance.
+
 ### Sources
 - Beven, K. (2021), *A history of TOPMODEL*, HESS 25, 527–549 — https://hess.copernicus.org/articles/25/527/2021/ (Eqs. 6–8; Fig. 7 profile/recession caption)
 - Ambroise, Beven & Freer (1996a), *Toward a generalization of the TOPMODEL concepts: topographic indices of hydrological similarity*, WRR 32(7), 2135–2145 — https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/95WR03716
