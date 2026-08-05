@@ -101,3 +101,45 @@ data — in that order. A1/A2 satisfy (a); B needs (c) demonstrated.
 - **A1 (log T):** untried; the one analytical property of the exp we have NOT exploited; Andy hopeful,
   low prior intuition — prototype first.
 - **A2 (analytical guess):** untried; cheap; strictly an initial condition, so low risk.
+
+---
+
+## Results (2026-08-05) — Track A prototyped on the 60×60 Esquibel sub-window
+Vectorized, FD-verified head-form Newton (`scratchpad/logT_newton.py`, `picard_ref.py`, `a2_guess.py`,
+`cont_seed.py`). Baseline reproduced the validated C++ behavior: plain Newton from the Dupuit guess
+converges at **dt=0.1 yr (7 iters)** and stalls at **dt≥0.3 yr** (line search collapses; tiny basin).
+
+**A1 (exploit log-T linearity) — NEGATIVE.** Three independent ways of using `log T = log(fk)+(wtd+SH)/f`
+being exactly linear in wtd all leave the ~0.3-yr ceiling unmoved:
+- *Magnitude* — log-T trust region (cap per-cell `|Δwtd| ≤ c·fdepth` ⇒ `|Δ log T| ≤ c`, c=1,2):
+  identical stall. Clamping the step magnitude is redundant with the backtracking line search; it does
+  not change the Newton *direction*, which is the problem.
+- *Coefficient-lag* — frozen-T Picard (the exact exponential coefficient, lagged): undamped **oscillates**
+  (one step overshoots to −114 m then swings back — reproduces the documented Kerry cold-start oscillation);
+  damped (Armijo) converges only to **dt≈0.1–0.3 yr**, same ceiling as Newton.
+- *Change of variable* — Kirchhoff `Φ=∫T dwtd` (already done, `EQUILIBRIUM_ROBUSTNESS.md`): dead end;
+  topography keeps T explicit so it does not linearize, and it worsens conditioning.
+- **Conclusion:** the tiny basin is **not** a property of the linearization scheme — Newton and damped
+  Picard hit the same wall. It is set by the exp physics + being far from the solution.
+
+**A2 (1-D analytical / TOPMODEL steady-state guess) — MARGINAL & FRAGILE.** Local-equilibrium depth
+`z = fdepth·(ln(T0/R) − TI)`, `TI=ln(a/tanβ)`, `a` from D8 flow accumulation on the crop DEM, `T0` the
+WTM surface transmissivity. The *raw* guess is **worse than Dupuit** (deeper initial residual; flat-area
+`z` blows up to −79 m — the known TOPMODEL flats pathology). Adding TOPMODEL's free catchment-mean-depth
+offset `z_bar`, there is a **band of offsets (+10..+60 m) where Newton converges at dt=0.3 yr (44–99 iters)**
+— a real ~3× ceiling bump over Dupuit. BUT:
+- The natural selection criterion — pick `z_bar` that minimizes the static initial residual — **picks the
+  wrong offset**: static `‖F‖` falls monotonically to its min at +80 m, yet +80 m *fails* while +40 m
+  (higher residual) succeeds. So closeness in L2 norm ≠ wider basin; there is no cheap a-priori signal to
+  land in the good band.
+- Even the best A2 only reaches **dt≈0.3 yr** — the same ceiling MUMPS/HYPRE already give, and far short of
+  the dt=10–1000 yr regime a big-step equilibrium solve wants.
+- Seeding dt-continuation from A2 vs Dupuit: **inconclusive** — the toy continuation controller here
+  collapsed dt for *all* seeds (it is cruder than the committed C++ reject/retry controller, which works
+  from Dupuit on the real 384k case); within that crude test A2 seeds were no better (the min-residual +80
+  seed was worst).
+
+**Net (decision tree).** Track A yields **no robust, cleanly-shippable ≥2× win**. Both A1 and A2 point to
+the same thing: the difficulty is **intrinsic to the exponential**, not to the solver or the guess-in-L2.
+This is exactly the branch the plan named as motivating **Track B** (a gentler T(depth) formulation). The
+already-committed **dt-continuation** remains the reliable production path to equilibrium.
