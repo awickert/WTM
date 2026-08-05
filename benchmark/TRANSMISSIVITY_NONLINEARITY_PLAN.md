@@ -143,3 +143,67 @@ offset `z_bar`, there is a **band of offsets (+10..+60 m) where Newton converges
 the same thing: the difficulty is **intrinsic to the exponential**, not to the solver or the guess-in-L2.
 This is exactly the branch the plan named as motivating **Track B** (a gentler T(depth) formulation). The
 already-committed **dt-continuation** remains the reliable production path to equilibrium.
+
+---
+
+## Track B — B2 literature review (2026-08-05)
+Sourced from the generalized-TOPMODEL literature (see Sources). The question Andy posed: *is there a
+numerically-gentler T(depth) that still fits data comparably to the exponential?* Short answer: **yes —
+the power-law profile, which contains WTM's exponential as a limiting case.**
+
+**The three classical profiles (Ambroise, Beven & Freer 1996a; Beven "History of TOPMODEL" 2021).**
+`D` = gravity-drainage storage deficit (depth to water table), `T0` = transmissivity at saturation
+(`D=0`), `m`/`M` = a depth scaling parameter. Each profile implies a distinct topographic index and a
+distinct baseflow recession shape (the recession is the field-observable that discriminates them):
+
+| profile | `T(D)` | topographic index | recession (linear when plotted) |
+|---|---|---|---|
+| **exponential** (WTM's) | `T0·exp(−D/m)` | `ln(a/tanβ)` | `1/Qb` vs t (1st-order hyperbolic) |
+| **linear** | `T0·(1 − D/M)` | (a/tanβ)-based | `ln Qb` vs t (exponential) |
+| **parabolic** | `T0·(1 − D/M)²` | `√(a/tanβ)`-based | `1/√Qb` vs t (2nd-order hyperbolic) |
+
+- Exponential: `q = T0 tanβ exp(−D/m)` (Beven 2021, Eq. 6); `Qb = Q0 exp(−D̄/m)` (Eq. 8). This is exactly
+  WTM's `T = fdepth·ksat·exp((wtd+1.5)/fdepth)` with `m=fdepth`. It is the analytically convenient one
+  (closed-form store–discharge) but **never reaches zero** — hence the ~7-order dynamic range that our
+  Track-A tests proved is the nonlinearity driver.
+- Linear & parabolic reach **T=0 at a finite deficit `D=M`** (a physical bedrock/base depth). Their
+  dynamic range is ~1–2 orders (vs the exp's 7) and `dT/dD` is bounded and gentle → a structurally milder
+  Jacobian → wider Newton basin.
+
+**Power-law profile — the generalization that matters (Iorgulescu & Musy 1997; Duan & Miller 1997).**
+`T(D) = T0·(1 − D/M)^n`. This *generalizes* linear (n=1) and parabolic (n=2), and — the key property —
+**recovers WTM's exponential exactly as n→∞** with `M = n·m` (verified numerically: n=1000, M=n·fdepth
+reproduces `exp(−D/fdepth)` to 4 decimals; `scratchpad/` check). So the exponential is not discarded; it
+becomes the `n→∞` end of a **one-parameter family with a numerical-convenience knob**: small `n` = bounded
+dynamic range + finite depth = gentle Newton basin; large `n` = today's calibration and behavior.
+
+**Trade-offs (honest).**
+- *For the numerics:* the win is exactly what our controlled flattening test predicted — compressing the
+  dynamic range widens the basin. Power-law at finite `n` does this by construction.
+- *New hazard:* the finite depth `T→0` at `D=M` can make fully-drained cells **disconnected/degenerate**
+  (zero lateral transmissivity) — a *different* numerical failure mode the exp never has (it stays
+  positive asymptotically). Mitigable by choosing `M` large enough that `D<M` everywhere, or a small `T`
+  floor; must be checked, not assumed.
+- *For the data / calibration:* Ambroise/Beven/Freer developed these **because** the exponential recession
+  often does *not* match observations — the exp "was found to be not appropriate" for the Ringelbach
+  catchment, where the parabolic form fit better. So non-exp forms are **data-defensible and roughly
+  equifinal** in the recession sense (you pick the profile from the observed recession shape). **Caveat:**
+  that evidence is small-catchment *recession* fitting; WTM's use is *global equilibrium water-table depth*,
+  calibrated on Fan/Cuthbert exponential e-folding depths (`fdepth_a/b/fmin` are exp-specific). A power-law
+  migration needs its own water-table validation and a rule to set `(n, M)` from the existing `fdepth`
+  data — the `n→∞` limit gives a safe, continuous starting point (reproduce current results, then lower
+  `n` and watch the water table + basin).
+
+**Recommendation for the B-branch decision (Andy's call).** The power-law profile is the defensible Track-B
+form: a literature-grounded superset of the current exp, tunable from "identical to today" (`n→∞`) toward
+"numerically gentle" (small `n`), addressing exactly the "exp is convenient-until-it-isn't" framing. The
+low-risk next step is a **B1 Python POC on the sub-window**: implement `T=T0(1−D/M)^n`, confirm large-`n`
+reproduces the exp basin/ceiling, then sweep `n` down to measure how much the dt-ceiling widens and where
+the finite-depth degeneracy starts to bite — *before* touching WTM's physics or calibration.
+
+### Sources
+- Beven, K. (2021), *A history of TOPMODEL*, HESS 25, 527–549 — https://hess.copernicus.org/articles/25/527/2021/ (Eqs. 6–8; Fig. 7 profile/recession caption)
+- Ambroise, Beven & Freer (1996a), *Toward a generalization of the TOPMODEL concepts: topographic indices of hydrological similarity*, WRR 32(7), 2135–2145 — https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/95WR03716
+- Ambroise, Freer & Beven (1996b), *Application of a generalized TOPMODEL to the small Ringelbach catchment*, WRR 32(7) — https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/95wr03715
+- Iorgulescu & Musy (1997), *Generalization of TOPMODEL for a power law transmissivity profile*, Hydrol. Process. 11, 1353–1355 — https://onlinelibrary.wiley.com/doi/abs/10.1002/(SICI)1099-1085(199707)11:9%3C1353::AID-HYP585%3E3.0.CO;2-U
+- Duan & Miller (1997), *A generalized power function for the subsurface transmissivity profile in TOPMODEL*, WRR 33(11), 2559–2562
