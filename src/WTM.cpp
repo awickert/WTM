@@ -529,7 +529,15 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
     // Opt-in convergence-based early stop (dt-continuation only): once the per-step water-table change has
     // stayed below -wtm_eq_tol for two consecutive cycles, the system has settled to steady state, so stop
     // rather than burning the remaining fixed cycles. Off (eq_tol=0) -> loop runs the full total_cycles.
-    if (user_context.eq_tol > 0.0 && user_context.use_newton_continuation) {
+    //
+    // Gate on dt having ramped up first. Early in the continuation ramp dt is tiny (dt0 = params.deltat/200),
+    // so the table barely moves per step and max|Δw| would fall below eq_tol SPURIOUSLY -- declaring
+    // equilibrium before the system has actually equilibrated. Only trust the settle signal once dt has
+    // grown to at least half the continuation ceiling (the ramp is essentially complete, steps are large,
+    // and a small max|Δw| genuinely means steady state). If dt never reaches that (e.g. reject/retry holds
+    // it down), the early stop simply never fires and the loop runs the full total_cycles -- conservative.
+    if (user_context.eq_tol > 0.0 && user_context.use_newton_continuation &&
+        user_context.deltat >= 0.5 * user_context.dtc_dt_max) {
       if (user_context.last_dh_max < user_context.eq_tol) {
         if (++user_context.settled_count >= 2) {
           PetscPrintf(PETSC_COMM_WORLD,
