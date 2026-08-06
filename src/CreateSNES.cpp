@@ -94,6 +94,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
   PetscBool newton_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_newton", &newton_flag);
+  // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
+  // "-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01": the analytic-Jacobian Newton path, dt-continuation
+  // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
+  // run terminates at equilibrium without hand-tuning total_cycles. Each piece stays individually
+  // overridable; an explicit Picard/Anderson path flag still takes precedence (Newton is exclusive with
+  // Picard -- a warning is printed below if that happens). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+  PetscBool stiff_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_stiff", &stiff_flag);
+  if (stiff_flag) newton_flag = PETSC_TRUE;  // select the Newton path (a Picard/Anderson flag overrides below)
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
   bool default_picard = false;
   if (!force_anderson && !newton_flag && !any_path_flag) {
@@ -112,6 +121,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
+  if (stiff_flag && !user_context.use_newton) {
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_stiff has no effect: an explicit Picard/Anderson path flag takes precedence over the\n"
+                "  Newton path it selects. Drop the Picard/Anderson flag to use the stiff cold-start recipe.\n");
+  }
 
   // Newton dt-continuation (-wtm_dt_continuation; needs -wtm_newton): equilibrium PTC that starts
   // deltat small (diagonally dominant -> non-singular Jacobian from a far guess) and grows it after
@@ -121,6 +135,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   PetscBool dtc_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
+  if (stiff_flag) dtc_flag = PETSC_TRUE;  // the bundle enables dt-continuation
   user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
   if (user_context.use_newton_continuation) {
     double dt0 = params.deltat / 200.0;
@@ -132,12 +147,19 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
+    // The bundle defaults the early-stop to 1 cm/step (gated on dt in WTM.cpp so it cannot fire during the
+    // ramp); a user -wtm_eq_tol below still wins.
+    if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.01;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, nullptr);  // early-stop tol [m], 0=off
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",
                 dt0, user_context.dtc_grow, user_context.dtc_easy_iters, user_context.dtc_shrink,
                 user_context.dtc_dt_max);
+    if (stiff_flag)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "-wtm_stiff: hard cold-start recipe active (Newton + dt-continuation + eq_tol=%g m early stop).\n",
+                  user_context.eq_tol);
   }
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
