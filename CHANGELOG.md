@@ -19,6 +19,16 @@ taper) passes.
 #### Solvers and time integration
 - **Semi-implicit Picard groundwater solver** (`-wtm_picard`): builds an SPD operator solved
   with CG + GAMG, as an alternative to the matrix-free default. See `benchmark/picard/PICARD_MATH.md`.
+- **Analytic-Jacobian Newton solver** (`-wtm_newton`): a true Newton–Krylov path (GMRES + GAMG) driven
+  by an exact, finite-difference-verified Jacobian of the conservative-FV residual — including the
+  surface-sink and evaporation / accessibility taper tangents. Paired with **dt-continuation**
+  (`-wtm_dt_continuation`): a pseudo-transient ramp that starts `deltat` small, so a far / cold initial
+  water table stays inside the Newton basin, and grows it after each converged step until the table
+  settles. An optional convergence-based early stop (`-wtm_eq_tol`, metres of maximum per-step change)
+  ends the run at equilibrium; it only engages once `deltat` has ramped up, so it cannot trip early. The
+  convenience bundle **`-wtm_stiff`** turns on all three at once (equivalent to
+  `-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`) for hard equilibrium cold-starts on stiff terrain.
+  See `benchmark/EQUILIBRIUM_ROBUSTNESS.md`.
 - **Second-order transient time integration.** Fixed-step BDF2 (`-wtm_bdf2`), a volume-form
   variant that is genuinely 2nd order under recharge (`-wtm_bdf2_on_V`), variable-step BDF2, and
   **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/picard/BDF2_ADAPTIVE_DESIGN.md`.
@@ -114,13 +124,6 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   Corsica DEM at 1–4 MPI ranks. The damping is the fix — a wider acceleration window also converges but
   adds per-iteration parallel reductions that the discontinuous FillSpillMerge routing amplifies into
   ~mm cross-rank differences, so m stays at 10.
-
-### Deprecated
-- **Newton-Krylov solver path disabled.** The analytic-Jacobian path (`-snes_type newtonls` _without_
-  `-wtm_picard`) is unused, and its Jacobian is unmaintained (it lacks the sink / evaporation-taper
-  terms), so it would diverge. It is now refused at solver setup with a message pointing to the default
-  Anderson solver or `-wtm_picard`. The Jacobian code is retained in-source so the path can be rebuilt.
-  (The `-wtm_picard` path, which drives `newtonls` internally, is unaffected.)
 
 ### Removed
 - The `-wtm_const_storativity` diagnostic path.

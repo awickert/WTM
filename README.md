@@ -133,6 +133,13 @@ stiffness-limited: it cannot take large time steps (it diverges when `deltat` is
 under-converges on stiff transients. Use it only for small-`deltat` / fast-science cases. Any explicit
 PETSc `-snes_*` option (e.g. `-snes_stol`, `-snes_anderson_beta`) still overrides the defaults.
 
+For hard equilibrium **cold starts on stiff terrain** — a deep, far-from-equilibrium initial water table
+(for example a cold start of `wtd = 0`) on steep, heterogeneous topography, where the solver struggles to
+take the first large steps — add **`-wtm_stiff`**. It bundles the analytic-Jacobian **Newton** solver with
+*dt-continuation*: `deltat` starts small (keeping the far initial guess within the Newton basin) and ramps
+up automatically as the table settles, stopping at equilibrium on its own. It is shorthand for
+`-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`, and each piece can be overridden individually.
+
 There will be some on-screen outputs to indicate the first steps through the code, after which values of interest will be output to the text file and an updated geoTiff output file will be saved every X iterations (X is set in the configuration file).
 
 ## Example of a full config file:
