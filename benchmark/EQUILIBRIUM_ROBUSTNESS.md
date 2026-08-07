@@ -363,3 +363,48 @@ adaptive Picard path now that recharge is dt-correct; (3) optionally auto-genera
 
 Sources: Haitjema & Mitchell-Bruker 2005 (*Groundwater* 43(6)); Beven & Kirkby 1979 (TOPMODEL);
 Fan, Li & Miguez-Macho 2013 (*Science*).
+
+---
+
+## Solver-by-regime diagnostic at Kerry's real settings (2026-08-07)
+
+Corrects earlier comparisons that were run at the wrong time step. Kerry's actual production settings
+(confirmed): **`dt = 1 week` (604800 s)**, `-snes_stol 1e-6`, `-snes_mf -snes_type anderson`, **cold start**
+(`supplied_wt 0`). Her config *file* said `deltat 6307200` (73 days), but she runs 1-week steps — ~10×
+smaller. Every earlier direct solver comparison here was at the 73-day step and is therefore invalid.
+
+Test on a **valid** small domain: an ocean-ringed interior island cut from her Esquibel DEM (75×117,
+615 m relief), edge-touching land zeroed so all boundaries are ocean (Dirichlet). (Naive mid-domain crops
+are ill-posed — artificial no-flow walls break *every* solver, including her Anderson; don't use them.)
+
+**At `dt = 1 week`, cold, on the steep island:**
+
+| solver | outcome |
+|---|---|
+| Anderson (hers; `-snes_mf -snes_type anderson -snes_stol 1e-6`) | **converges**, ~5 iters/step, 100 cycles |
+| our default Picard (BDF2-on-V) | `DIVERGED_MAX_IT` — frozen-coefficient **oscillation** (the Kerry-hang mode) |
+| our Newton + GAMG | `DIVERGED_LINEAR_SOLVE` at step 1 (preconditioner breakdown) |
+| our Newton + MUMPS | `DIVERGED_LINE_SEARCH`, residual floors ~71 — linear solve is fine, so the obstacle is the **cold Newton basin**, not the PC |
+| our `-wtm_stiff` (continuation) | converging (slow ramp) — the only one of ours that survives cold |
+
+**Why Anderson wins at her settings:** small `dt` ⇒ the storage term `S·A/dt` dominates ⇒ the operator is
+diagonally dominant ⇒ an accelerated matrix-free fixed point (Anderson mixing) converges in a handful of
+cheap iterations. Our Picard/Newton are built for *large* steps; at small `dt` they gain nothing and hit
+their cold-start failure modes. Newton+MUMPS isolates the obstacle as the nonlinear **basin**, not the
+preconditioner — consistent with the transmissivity-nonlinearity finding.
+
+**Solver by regime (the workflow this implies):**
+- **Cold spin-up (→ equilibrium):** **Anderson** (robust, proven; small steps are acceptable since the
+  workflow uses them anyway). `-wtm_stiff` (continuation) is the big-step alternative but pays a ramp cost —
+  Anderson-vs-`-wtm_stiff` *total* time to equilibrium is **not yet measured** (the open question).
+- **Warm transience (post-equilibrium):** **Picard/Newton (BDF2-on-V)** — a warm start removes the
+  cold-start basin/oscillation that sinks them here, and BDF2-on-V gives genuine 2nd-order-in-time accuracy
+  Anderson lacks. *(Rests on prior BDF2 findings + warm-start basin logic; not re-tested from equilibrium
+  this session.)*
+- **Pipeline:** Anderson spin-up → equilibrium water table → hand off as `starting_wt` for Picard/Newton
+  transient runs.
+
+**Merge-time regression risk:** this branch makes **Picard the default**, which *fails* on Kerry's exact
+cold + 1-week-`dt` workflow (where her Anderson works). Merging upstream would regress a bare default run of
+her case; she would need `-wtm_anderson` or `-wtm_stiff`. The earlier "Picard as default" decision was
+argued for *large-`dt` equilibrium* and does not hold for small-`dt` cold starts. Flag before merge.
