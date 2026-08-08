@@ -32,6 +32,15 @@ taper) passes.
 - **Second-order transient time integration.** Fixed-step BDF2 (`-wtm_bdf2`), a volume-form
   variant that is genuinely 2nd order under recharge (`-wtm_bdf2_on_V`), variable-step BDF2, and
   **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/picard/BDF2_ADAPTIVE_DESIGN.md`.
+- **Time-averaged interblock transmissivity** (`-wtm_Tbar`, _experimental_): uses each cell's
+  step-time-averaged transmissivity `T̄ = (Φ(wᵗ⁺¹) − Φ(wᵗ)) / (wᵗ⁺¹ − wᵗ)` (the Kirchhoff-potential
+  difference — the log-mean of the exponential deep T, the arithmetic mean of the affine soil T, and the
+  constant surface T, continuously) as the per-cell value feeding the unchanged harmonic interblock mean,
+  instead of the instantaneous start-of-step T. This addresses the exponential T's frozen-coefficient lag
+  that makes the outer iteration oscillate on stiff steps. Same physics and same equilibrium (`T̄ → T` at
+  steady state); it composes with every solver (Anderson residual, Picard operator, exact Newton
+  Jacobian). Requires the piecewise Fan T (refused with ksat smoothing, extended soil, or Kirchhoff).
+  See `benchmark/TBAR_TIME_AVERAGING.md`.
 - **Extended-soil option** (`-wtm_extended_soil`, _experimental_): continues the aquifer above the
   land surface to remove the water-table-depth = 0 free boundary from the groundwater step.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,

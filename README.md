@@ -140,6 +140,14 @@ take the first large steps — add **`-wtm_stiff`**. It bundles the analytic-Jac
 up automatically as the table settles, stopping at equilibrium on its own. It is shorthand for
 `-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`, and each piece can be overridden individually.
 
+An experimental conditioning option, **`-wtm_Tbar`**, addresses the same stiffness from a different angle:
+it uses each cell's *step-time-averaged* transmissivity (the Kirchhoff-potential difference over the step)
+for the interblock flux instead of the instantaneous start-of-step value. The exponential transmissivity
+is what makes the frozen-coefficient iteration oscillate on stiff steps; averaging it over the step damps
+that oscillation. It composes with any solver, changes nothing at equilibrium (the time-average collapses
+to the instantaneous value as the table settles), and requires the piecewise transmissivity (it is refused
+with the smoothing / extended-soil / Kirchhoff options). See `benchmark/TBAR_TIME_AVERAGING.md`.
+
 There will be some on-screen outputs to indicate the first steps through the code, after which values of interest will be output to the text file and an updated geoTiff output file will be saved every X iterations (X is set in the configuration file).
 
 ## Example of a full config file:
