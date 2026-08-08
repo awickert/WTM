@@ -486,15 +486,19 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMDAVecGetArray(da, user_context.geom_n_vec, &gn);
   DMDAVecGetArray(da, user_context.geom_s_vec, &gs);
   DMDAVecGetArray(da, user_context.T_local, &my_T);
+  PetscScalar** my_starting_wtd_local = nullptr;  // -wtm_Tbar: ghosted w^n, so the accounted ocean-face
+  if (g_Tbar) DMDAVecGetArray(da, user_context.starting_wtd_local, &my_starting_wtd_local);  // T̄ matches the solve
 
   DMDALocalInfo info;
   DMDAGetLocalInfo(da, &info);
+  // Rebuild the SAME per-cell face T the solve used at the converged head, so the accounted land->ocean
+  // flux closes the budget: instantaneous T, or (with -wtm_Tbar) the step-time-averaged T̄.
   const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   for (auto j = info.gys; j < info.gys + info.gym; j++)
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
-      const double wtd_T = xx[j][i] - my_topo[j][i];
-      my_T[j][i] = 1.0 / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
-                                   : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
+      const double wtd_T   = xx[j][i] - my_topo[j][i];
+      const double wtd_old = g_Tbar ? my_starting_wtd_local[j][i] : 0.0;  // w^n; unused off -wtm_Tbar
+      my_T[j][i] = 1.0 / interblockTransmissivity(wtd_T, wtd_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
     }
 
   const double dt = user_context.deltat;
@@ -520,6 +524,7 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMDAVecRestoreArray(da, user_context.geom_n_vec, &gn);
   DMDAVecRestoreArray(da, user_context.geom_s_vec, &gs);
   DMDAVecRestoreArray(da, user_context.T_local, &my_T);
+  if (g_Tbar) DMDAVecRestoreArray(da, user_context.starting_wtd_local, &my_starting_wtd_local);
   DMRestoreLocalVector(da, &xloc);
 }
 
@@ -1645,6 +1650,8 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
+  PetscScalar** my_starting_wtd_local = nullptr;  // -wtm_Tbar: ghosted w^n for the time-averaged T̄
+  if (g_Tbar) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
   if (g_evap_taper) {
     PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
@@ -1658,13 +1665,14 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   // (mirrors FormFunctionLocal). Production uses the piecewise (C0) Fan form; a positive
   // -wtm_ksat_soilbottom_smoothing_width (-1.5 m) and/or -wtm_ksat_surface_smoothing_width (0 m)
   // swaps in the smooth (C-inf) form, rounding that boundary. Both 0 (default) => piecewise. The
-  // widths are read once per cycle in update() (universal across solver paths).
+  // widths are read once per cycle in update() (universal across solver paths). -wtm_Tbar swaps the
+  // instantaneous T for the step-time-averaged T̄ (against the ghosted w^n), matching the residual.
   const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   for (auto j = info.gys; j < info.gys + info.gym; j++) {
     for (auto i = info.gxs; i < info.gxs + info.gxm; i++) {
-      const double wtd_T = xx[j][i] - my_topo[j][i];
-      my_T[j][i] = 1.0 / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
-                                   : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
+      const double wtd_T   = xx[j][i] - my_topo[j][i];
+      const double wtd_old = g_Tbar ? my_starting_wtd_local[j][i] : 0.0;  // w^n; unused off -wtm_Tbar
+      my_T[j][i] = 1.0 / interblockTransmissivity(wtd_T, wtd_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
     }
   }
 
@@ -1781,6 +1789,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
   PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
+  if (g_Tbar) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
