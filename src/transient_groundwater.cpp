@@ -1340,6 +1340,8 @@ static PetscErrorCode FormJacobianLocal(
     PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
     PetscCall(DMDAVecGetArray(da, user_context->precip_vec, &my_precip));
   }
+  PetscScalar** my_starting_wtd_local = nullptr;  // -wtm_Tbar: ghosted w^n for the time-averaged T̄
+  if (g_Tbar) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
 
   const bool   smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   const bool   sink_on  = g_surface_sink;
@@ -1347,12 +1349,25 @@ static PetscErrorCode FormJacobianLocal(
   const double dt       = user_context->deltat;
   const double cns2     = user_context->cellsize_NS_squared;
 
-  // 1/T of the SAME (smooth or piecewise) form the residual uses. dTransmissivityInverseDwtd (below)
-  // is the derivative of the SMOOTH T, so it is the exact tangent only when smooth_T is true.
-  const auto Tinv = [&](double wtd, double fd, double ks) {
-    const double T = smooth_T ? depthIntegratedTransmissivitySmooth(wtd, fd, ks)
-                              : depthIntegratedTransmissivity(wtd, fd, ks);
+  // τ = 1/T and its wtd-derivative τ'. Off -wtm_Tbar: the instantaneous T (smooth if a ksat width is
+  // set, else piecewise) and dTransmissivityInverseDwtd (the SMOOTH-T derivative -> exact only when
+  // smooth_T; else a differentiable inexact-Newton approximation). With -wtm_Tbar: the step-time-
+  // averaged T̄ = (Φ(w)−Φ(w^n))/(w−w^n) and its EXACT tangent d(1/T̄)/dw = −T̄'/T̄², with
+  // T̄' = [T(w) − T̄]/(w−w^n) (Δ→0 limit T'(w)/2) built from the piecewise T (Φ's derivative) -- so on
+  // the -wtm_Tbar path this is an exact analytic Jacobian of the T̄ residual (T̄ is C1 -> FD-verifiable).
+  const auto Tinv = [&](double w_new, double w_old, double fd, double ks) {
+    const double T = interblockTransmissivity(w_new, w_old, fd, ks, smooth_T);
     return T > 0.0 ? 1.0 / T : 1e30;
+  };
+  const auto tauPrime = [&](double w_new, double w_old, double fd, double ks) {
+    if (!g_Tbar) return dTransmissivityInverseDwtd(w_new, fd, ks);
+    const double Tb = interblockTransmissivity(w_new, w_old, fd, ks, smooth_T);
+    if (Tb <= 0.0) return 0.0;
+    const double dwtd  = w_new - w_old;
+    const double dTbar = (std::abs(dwtd) > 1e-9)
+                             ? (depthIntegratedTransmissivity(w_new, fd, ks) - Tb) / dwtd
+                             : 0.5 * dDepthIntegratedTransmissivityDwtd(w_new, fd, ks);
+    return -dTbar / (Tb * Tb);
   };
 
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
@@ -1381,17 +1396,26 @@ static PetscErrorCode FormJacobianLocal(
       const double w_N = wtd_of(j + 1, i);
       const double w_S = wtd_of(j - 1, i);
 
-      // τ = 1/T and its wtd-derivative τ' at centre and neighbours
-      const double tau_c  = Tinv(w_c, my_fdepth[j][i],     my_ksat[j][i]);
-      const double tau_E  = Tinv(w_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
-      const double tau_W  = Tinv(w_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
-      const double tau_N  = Tinv(w_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
-      const double tau_S  = Tinv(w_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
-      const double taup_c = dTransmissivityInverseDwtd(w_c, my_fdepth[j][i],     my_ksat[j][i]);
-      const double taup_E = dTransmissivityInverseDwtd(w_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
-      const double taup_W = dTransmissivityInverseDwtd(w_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
-      const double taup_N = dTransmissivityInverseDwtd(w_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
-      const double taup_S = dTransmissivityInverseDwtd(w_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
+      // w^n (ghosted) at centre and neighbours -- the "before" state for the -wtm_Tbar time-average;
+      // ignored (0) off the -wtm_Tbar path (Tinv/tauPrime do not read it there).
+      const auto wold_of = [&](int jj, int ii) { return g_Tbar ? my_starting_wtd_local[jj][ii] : 0.0; };
+      const double wo_c = wold_of(j, i);
+      const double wo_E = wold_of(j, i + 1);
+      const double wo_W = wold_of(j, i - 1);
+      const double wo_N = wold_of(j + 1, i);
+      const double wo_S = wold_of(j - 1, i);
+
+      // τ = 1/T and its wtd-derivative τ' at centre and neighbours (T̄-aware; see the lambdas above)
+      const double tau_c  = Tinv(w_c, wo_c, my_fdepth[j][i],     my_ksat[j][i]);
+      const double tau_E  = Tinv(w_E, wo_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
+      const double tau_W  = Tinv(w_W, wo_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
+      const double tau_N  = Tinv(w_N, wo_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
+      const double tau_S  = Tinv(w_S, wo_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
+      const double taup_c = tauPrime(w_c, wo_c, my_fdepth[j][i],     my_ksat[j][i]);
+      const double taup_E = tauPrime(w_E, wo_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
+      const double taup_W = tauPrime(w_W, wo_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
+      const double taup_N = tauPrime(w_N, wo_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
+      const double taup_S = tauPrime(w_S, wo_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
 
       // Harmonic-mean face conductances e_X = 2/(τ_c+τ_X) and their geometry factors G_X.
       const double sumE = tau_c + tau_E, e_E = 2.0 / sumE, G_E = gew[j][i];
@@ -1482,6 +1506,7 @@ static PetscErrorCode FormJacobianLocal(
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
     PetscCall(DMDAVecRestoreArray(da, user_context->precip_vec, &my_precip));
   }
+  if (g_Tbar) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
   return 0;
 }
 
