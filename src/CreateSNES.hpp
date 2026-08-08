@@ -42,6 +42,11 @@ struct AppCtx {
   Vec T_local      = nullptr;  // scratch: 1/T, computed over ghost range each F eval
   Vec mask_local   = nullptr;  // ghost mask, so ocean-outflow accounting can find land->ocean faces
                                // at rank boundaries. Scattered once at init (static within a run).
+  Vec starting_wtd_local = nullptr;  // ghost w^n (previous-step wtd), for the -wtm_Tbar time-averaged
+                                     // interblock transmissivity T̄ = (Φ(w^{n+1})-Φ(w^n))/(w^{n+1}-w^n):
+                                     // a neighbour's T̄ needs its w^n, so w^n must be ghosted. Re-
+                                     // scattered each solve in update() (w^n changes per step). Only
+                                     // used on the -wtm_Tbar path.
 
   // --- Semi-implicit Picard path (gated behind -wtm_picard; default off) ---
   // The row-scaled operator A(x) uses centre-cell storativity (so porosity and
@@ -178,6 +183,7 @@ struct AppCtx {
     DMCreateLocalVector(da, &ksat_local);
     DMCreateLocalVector(da, &T_local);
     DMCreateLocalVector(da, &mask_local);
+    DMCreateLocalVector(da, &starting_wtd_local);  // ghost w^n for -wtm_Tbar (see field comment)
   }
 };
 

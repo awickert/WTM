@@ -134,6 +134,58 @@ static double dischargePotentialInverse(const double Phi, const double fdepth, c
 }
 static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge potential Φ (Newton path)
 
+// --- Time-averaged interblock transmissivity (-wtm_Tbar) -----------------------------------------
+// The exponential T(wtd) is the dominant nonlinearity: the frozen-coefficient solvers freeze T at the
+// CURRENT iterate (≈ start-of-step), which lags the true within-step transmissivity and makes the outer
+// iteration oscillate/overshoot on stiff steps (the Kerry cold-start hang). Remedy: for the flux
+// coefficient use each cell's TIME-AVERAGED T over the step wtd^n → wtd^{n+1}, not the instantaneous T.
+// Because ∂Φ/∂wtd = T (Φ = dischargePotential, the piecewise Kirchhoff potential), the exact wtd-average
+// of T between the two states is the Kirchhoff-potential difference
+//     T̄ = (Φ(wtd^{n+1}) − Φ(wtd^n)) / (wtd^{n+1} − wtd^n)
+// which is the LOG-MEAN in the deep exponential regime (where ln T is linear in wtd), the ARITHMETIC
+// mean in the shallow-soil affine regime, and the constant surface T -- one continuous (C1) expression
+// across all regimes. This changes ONLY the per-cell T that feeds the (unchanged) harmonic interblock
+// mean: same physics, same equilibrium (at steady state wtd^{n+1}=wtd^n so T̄ → T), better-conditioned
+// transient steps. It composes with any solver (residual-level change): Anderson evaluates it directly,
+// Picard/Newton use it in the operator/Jacobian. Requires the piecewise Fan T (Φ is its antiderivative),
+// so it is incompatible with ksat smoothing, extended soil, and the Kirchhoff variable change (enforced
+// in update()). See benchmark/TBAR_TIME_AVERAGING.md.
+static bool g_Tbar = false;  // -wtm_Tbar: use the step-time-averaged T̄ as the per-cell interblock T
+
+// Defined below; forward-declared so interblockTransmissivity can fall back to the smooth form.
+static double depthIntegratedTransmissivitySmooth(double wtd_T, double fdepth, double ksat);
+
+// Per-cell interblock transmissivity for the harmonic face mean. With -wtm_Tbar, the step-time-averaged
+// T̄ via the Kirchhoff-potential difference (small |Δwtd| → the instantaneous piecewise T, the exact
+// Δ→0 limit); otherwise the instantaneous T (smooth form if a ksat smoothing width is set, else
+// piecewise). wtd_old (= wtd^n) is ignored off the -wtm_Tbar path.
+static double interblockTransmissivity(
+    const double wtd_new, const double wtd_old, const double fdepth, const double ksat, const bool smooth_T) {
+  if (g_Tbar) {
+    const double dwtd = wtd_new - wtd_old;
+    if (std::abs(dwtd) > 1e-9) {
+      const double Tbar =
+          (dischargePotential(wtd_new, fdepth, ksat) - dischargePotential(wtd_old, fdepth, ksat)) / dwtd;
+      if (Tbar > 0.0) return Tbar;
+    }
+    return depthIntegratedTransmissivity(wtd_new, fdepth, ksat);
+  }
+  return smooth_T ? depthIntegratedTransmissivitySmooth(wtd_new, fdepth, ksat)
+                  : depthIntegratedTransmissivity(wtd_new, fdepth, ksat);
+}
+
+// Exact wtd-derivative of the PIECEWISE Fan transmissivity (deep: T/fdepth = ksat·exp((wtd+1.5)/fdepth);
+// soil: ksat; surface: 0). Used for the -wtm_Tbar Newton Jacobian tangent (the Δ→0 limit dT̄/dwtd_new →
+// T'(wtd_new)/2, and the finite-Δ tangent [T(wtd_new) − T̄]/Δwtd needs the piecewise T at wtd_new).
+[[maybe_unused]] static double dDepthIntegratedTransmissivityDwtd(
+    const double wtd_T, const double fdepth, const double ksat) {
+  if (fdepth <= 0) return 0.0;
+  constexpr double shallow = 1.5;
+  if (wtd_T < -shallow) return ksat * std::exp((wtd_T + shallow) / fdepth);  // d/dwtd of fdepth·ksat·exp(...)
+  if (wtd_T > 0 && !g_extended_soil) return 0.0;                             // surface clamp: T constant
+  return ksat;                                                              // soil affine: d/dwtd of ksat·(wtd+1.5+fdepth)
+}
+
 // Conductivity smoothing widths (metres) for the two kinks in the piecewise (C0) Fan
 // transmissivity, each independent and each defaulting to 0 => sharp at that boundary:
 //   * g_ksat_soilbottom_smoothing_width (-wtm_ksat_soilbottom_smoothing_width): the -1.5 m
@@ -589,6 +641,19 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (kirchhoff == PETSC_TRUE && !user_context.use_newton)
     throw std::runtime_error("-wtm_kirchhoff is a Newton-path option; also pass -wtm_newton.");
 
+  // -wtm_Tbar: use the step-time-averaged interblock transmissivity T̄ (Kirchhoff-potential difference;
+  // see interblockTransmissivity). Composes with any solver. Requires the piecewise Fan T (Φ is its
+  // antiderivative), so it is incompatible with ksat smoothing, extended soil, and the Kirchhoff change
+  // of variable (which redefines the solve variable). Applies on the Anderson residual, the Picard
+  // operator, and the Newton Jacobian.
+  PetscBool tbar = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_Tbar", &tbar);
+  g_Tbar = (tbar == PETSC_TRUE);
+  if (g_Tbar && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 ||
+                 g_extended_soil || g_kirchhoff))
+    throw std::runtime_error("-wtm_Tbar requires the piecewise Fan transmissivity: remove "
+                             "-wtm_ksat_*_smoothing_width, -wtm_extended_soil, and -wtm_kirchhoff.");
+
   // Taper 1 -- sub-surface sink: a smooth, order-preserving near-surface removal that holds the water
   // table at/below the land surface and hands the exfiltrated water to FillSpillMerge (it stays in the
   // domain, unlike taper 2's evaporation). Applied on the Anderson default path (FormFunctionLocal,
@@ -628,6 +693,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   const bool picard_bdf2_V = user_context.use_bdf2 && user_context.bdf2_have_history && user_context.use_bdf2_on_V;
   const bool sink_active_this_step = g_surface_sink && (matrix_free || picard_bdf2_V);
   const bool evap_active_this_step = g_evap_taper && (matrix_free || picard_bdf2_V);
+
+  // -wtm_Tbar: ghost-scatter w^n (starting_wtd) so a neighbour's time-averaged T̄ can read its w^n
+  // under MPI. w^n is fixed for this step (set above by set_starting_values), so scatter ONCE here
+  // rather than per SNES iteration. starting_wtd is checked out read-write by DMDA_Array_Pack, but
+  // this scatter only READS it (global → local), which is safe alongside the outstanding pointer.
+  if (g_Tbar) {
+    DMGlobalToLocalBegin(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
+    DMGlobalToLocalEnd(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
+  }
 
   if (user_context.use_picard) {
     // Semi-implicit Picard path (PICARD_MATH.md).
@@ -1108,19 +1182,25 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
     PetscCall(DMDAVecGetArray(da, user_context->open_water_evap_vec, &my_owe));
     PetscCall(DMDAVecGetArray(da, user_context->precip_vec, &my_precip));  // taper 3 deficit (E_eff - P)
   }
+  PetscScalar** my_starting_wtd_local = nullptr;  // -wtm_Tbar: ghosted w^n for the time-averaged T̄
+  if (g_Tbar) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
 
   // Use the smooth (C-inf) T when a ksat smoothing width is set (universal across solver paths);
   // otherwise the exact piecewise (C0) Fan form (production). Widths are read once in update().
   const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   // Compute 1/T over the full ghost range so neighbor lookups in the owned-range loop below are valid.
-#pragma omp parallel for default(none) shared(info, my_T, x, my_topo, my_fdepth, my_ksat, smooth_T, g_kirchhoff) collapse(2)
+  // -wtm_Tbar swaps the instantaneous T for the step-time-averaged T̄ (Kirchhoff-potential difference
+  // against the ghosted w^n); off it, this is byte-identical to the instantaneous form.
+#pragma omp parallel for default(none)                                                                          \
+    shared(info, my_T, x, my_topo, my_fdepth, my_ksat, smooth_T, g_kirchhoff, g_Tbar, my_starting_wtd_local)   \
+    collapse(2)
   for (auto j = info->gys; j < info->gys + info->gym; j++) {
     for (auto i = info->gxs; i < info->gxs + info->gxm; i++) {
       // Kirchhoff: the SNES variable x is the discharge potential Φ, so wtd = Φ⁻¹(x); else x is the head.
       const double wtd_T = g_kirchhoff ? dischargePotentialInverse(x[j][i], my_fdepth[j][i], my_ksat[j][i])
                                        : x[j][i] - my_topo[j][i];
-      my_T[j][i] = 1. / (smooth_T ? depthIntegratedTransmissivitySmooth(wtd_T, my_fdepth[j][i], my_ksat[j][i])
-                                  : depthIntegratedTransmissivity(wtd_T, my_fdepth[j][i], my_ksat[j][i]));
+      const double wtd_old = g_Tbar ? my_starting_wtd_local[j][i] : 0.0;  // w^n (ghosted); unused off -wtm_Tbar
+      my_T[j][i] = 1. / interblockTransmissivity(wtd_T, wtd_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
     }
   }
 
@@ -1196,6 +1276,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
     PetscCall(DMDAVecRestoreArray(da, user_context->precip_vec, &my_precip));
   }
+  if (g_Tbar) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
 
   PetscLogFlops(info->xm * info->ym * (72.0));
   return 0;

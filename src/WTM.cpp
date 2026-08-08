@@ -597,6 +597,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.ksat_local);
   VecDestroy(&user_context.T_local);
   VecDestroy(&user_context.mask_local);
+  VecDestroy(&user_context.starting_wtd_local);
 
   // Picard path (nullptr / no-op when -wtm_picard was not set).
   MatDestroy(&user_context.picard_A);
