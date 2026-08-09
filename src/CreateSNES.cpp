@@ -200,9 +200,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_predict_guess: seeding the initial guess (and iteration-1 T̄) with the 2nd-order\n"
                 "  history extrapolation (guarded).\n");
+  // tr_expl (explicit old-state flux+removal at w^n) is used by TR-BDF2's trapezoidal stage AND by the
+  // predictor's first-step forward-Euler bootstrap, so allocate it for either.
+  if (user_context.use_tr_bdf2 || user_context.use_predict_guess)
+    VecDuplicate(user_context.x, &user_context.tr_expl);
   if (user_context.use_tr_bdf2) {
     VecDuplicate(user_context.x, &user_context.tr_ygamma);  // intermediate Y_gamma
-    VecDuplicate(user_context.x, &user_context.tr_expl);    // explicit old-state flux+removal (TR half)
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_tr_bdf2: L-stable, strongly-damped 2nd-order matrix-free Anderson (TR-BDF2; two staged\n"
                 "  solves/step, self-starting).\n");

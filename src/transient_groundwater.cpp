@@ -655,29 +655,58 @@ static void compute_tr_explicit(AppCtx& user_context) {
 // land surface (wtd=0). Land cells only (ocean keeps its Dirichlet x=0). Call only once a history exists.
 static void apply_predictor_guess(AppCtx& user_context) {
   DM da = user_context.da;
-  PetscScalar **x, **wn, **wnm1, **topo, **mask;
+  const auto [xs, ys, xm, ym] = get_corners(da);
+  constexpr double STEP_CAP = 50.0;  // m: absolute cap on the extrapolated step (guards a wild predictor)
+
+  // Guard + write helper: clamp the step, forbid a land-surface (wtd=0) crossing in the GUESS (the
+  // trajectory is non-smooth there), and store the head x = (w^n + step) + topo.
+  const auto guarded_write = [&](PetscScalar** x, PetscScalar** wn, PetscScalar** topo, int j, int i,
+                                 double step) {
+    if (step > STEP_CAP) step = STEP_CAP;
+    if (step < -STEP_CAP) step = -STEP_CAP;
+    double pred = wn[j][i] + step;
+    if (wn[j][i] < 0.0 && pred > 0.0) pred = 0.0;
+    if (wn[j][i] > 0.0 && pred < 0.0) pred = 0.0;
+    x[j][i] = pred + topo[j][i];  // SNES variable is the head
+  };
+
+  PetscScalar **x, **wn, **topo, **mask;
   DMDAVecGetArray(da, user_context.x, &x);
   DMDAVecGetArray(da, user_context.starting_wtd, &wn);
-  DMDAVecGetArray(da, user_context.starting_wtd_prev, &wnm1);
   DMDAVecGetArray(da, user_context.topo_vec, &topo);
   DMDAVecGetArray(da, user_context.mask, &mask);
-  const auto [xs, ys, xm, ym] = get_corners(da);
-  const double omega    = user_context.deltat / user_context.bdf2_prev_dt;
-  constexpr double STEP_CAP = 50.0;  // m: absolute cap on the extrapolated step (guards a wild ω)
-  for (int j = ys; j < ys + ym; j++)
-    for (int i = xs; i < xs + xm; i++) {
-      if (mask[j][i] == 0) continue;  // ocean: keep the Dirichlet guess (x = 0)
-      double step = omega * (wn[j][i] - wnm1[j][i]);
-      if (step > STEP_CAP) step = STEP_CAP;
-      if (step < -STEP_CAP) step = -STEP_CAP;
-      double pred = wn[j][i] + step;
-      if (wn[j][i] < 0.0 && pred > 0.0) pred = 0.0;  // no surface crossing in the guess (non-smooth there)
-      if (wn[j][i] > 0.0 && pred < 0.0) pred = 0.0;
-      x[j][i] = pred + topo[j][i];  // SNES variable is the head
-    }
+
+  if (user_context.bdf2_have_history) {
+    // Steps 2+: 2nd-order history extrapolation  w^{n+1} ≈ w^n + ω(w^n − w^{n-1}),  ω = Δt/Δt_{n-1}.
+    PetscScalar** wnm1;
+    DMDAVecGetArray(da, user_context.starting_wtd_prev, &wnm1);
+    const double omega = user_context.deltat / user_context.bdf2_prev_dt;
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        if (mask[j][i] != 0) guarded_write(x, wn, topo, j, i, omega * (wn[j][i] - wnm1[j][i]));
+    DMDAVecRestoreArray(da, user_context.starting_wtd_prev, &wnm1);
+  } else {
+    // First step (no history): forward-Euler bootstrap  w^{n+1} ≈ w^n + Δt·f(w^n).  The wtd step is
+    //   Δw = my_rech − E/Sy(w^n),   E = dt·(N(w^n)/A_j + removal(w^n))  (compute_tr_explicit),
+    // i.e. Δt·dwtd/dt at w^n. This is the Δt_tiny→0 limit of "run a tiny step, then extrapolate": the
+    // trajectory tangent. For a warm transient start (transient runs supply a starting table) f(w^n) is
+    // moderate, so the forward-Euler direction is stable; the guard caps any overshoot.
+    compute_tr_explicit(user_context);  // fills user_context.tr_expl with E per owned land cell
+    PetscScalar **expl, **rech, **poro;
+    DMDAVecGetArray(da, user_context.tr_expl, &expl);
+    DMDAVecGetArray(da, user_context.rech_vec, &rech);
+    DMDAVecGetArray(da, user_context.porosity_vec, &poro);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        if (mask[j][i] != 0)
+          guarded_write(x, wn, topo, j, i, rech[j][i] - expl[j][i] / specificYield(wn[j][i], poro[j][i]));
+    DMDAVecRestoreArray(da, user_context.tr_expl, &expl);
+    DMDAVecRestoreArray(da, user_context.rech_vec, &rech);
+    DMDAVecRestoreArray(da, user_context.porosity_vec, &poro);
+  }
+
   DMDAVecRestoreArray(da, user_context.x, &x);
   DMDAVecRestoreArray(da, user_context.starting_wtd, &wn);
-  DMDAVecRestoreArray(da, user_context.starting_wtd_prev, &wnm1);
   DMDAVecRestoreArray(da, user_context.topo_vec, &topo);
   DMDAVecRestoreArray(da, user_context.mask, &mask);
 }
@@ -806,7 +835,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // under MPI. w^n is fixed for this step (set above by set_starting_values), so scatter ONCE here
   // rather than per SNES iteration. starting_wtd is checked out read-write by DMDA_Array_Pack, but
   // this scatter only READS it (global → local), which is safe alongside the outstanding pointer.
-  if (g_Tbar || user_context.use_tr_bdf2) {  // TR-BDF2's trapezoidal stage also needs ghosted w^n (old flux)
+  if (g_Tbar || user_context.use_tr_bdf2 || user_context.use_predict_guess) {  // ghosted w^n: T̄, TR-BDF2 old
+    // flux, and the predictor's first-step forward-Euler bootstrap (compute_tr_explicit) all read it.
     DMGlobalToLocalBegin(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
     DMGlobalToLocalEnd(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
   }
@@ -826,7 +856,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         &user_context);
 
     FormInitialGuess(&user_context, user_context.da, user_context.x);
-    if (user_context.use_predict_guess && user_context.bdf2_have_history) apply_predictor_guess(user_context);
+    if (user_context.use_predict_guess) apply_predictor_guess(user_context);
     SNESSolve(user_context.snes, nullptr, user_context.x);
   } else {
     // Set local function evaluation routine (always needed).
@@ -860,7 +890,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
     // Evaluate initial guess
     FormInitialGuess(&user_context, user_context.da, user_context.x);
-    if (user_context.use_predict_guess && user_context.bdf2_have_history) apply_predictor_guess(user_context);
+    if (user_context.use_predict_guess) apply_predictor_guess(user_context);
 
     // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)
     FormRHS(&user_context, user_context.da, user_context.b);
