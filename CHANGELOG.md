@@ -32,6 +32,10 @@ taper) passes.
 - **Second-order transient time integration.** Fixed-step BDF2 (`-wtm_bdf2`), a volume-form
   variant that is genuinely 2nd order under recharge (`-wtm_bdf2_on_V`), variable-step BDF2, and
   **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/picard/BDF2_ADAPTIVE_DESIGN.md`.
+  Time-order is decoupled from the solver: **`-wtm_bdf2_on_V` composes with `-wtm_anderson`** to give
+  the matrix-free Anderson solver a genuine 2nd-order-in-time residual (no operator/preconditioner),
+  so a run can be both fast (Anderson's cheap matrix-free iterations) and 2nd-order in time. It shares
+  the Picard BDF2-on-V fixed point exactly, and leaves Anderson's stable time step unchanged (measured).
 - **Time-averaged interblock transmissivity** (`-wtm_Tbar`, _experimental_): uses each cell's
   step-time-averaged transmissivity `T̄ = (Φ(wᵗ⁺¹) − Φ(wᵗ)) / (wᵗ⁺¹ − wᵗ)` (the Kirchhoff-potential
   difference — the log-mean of the exponential deep T, the arithmetic mean of the affine soil T, and the

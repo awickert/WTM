@@ -133,6 +133,12 @@ stiffness-limited: it cannot take large time steps (it diverges when `deltat` is
 under-converges on stiff transients. Use it only for small-`deltat` / fast-science cases. Any explicit
 PETSc `-snes_*` option (e.g. `-snes_stol`, `-snes_anderson_beta`) still overrides the defaults.
 
+By default Anderson is 1st-order-in-time (backward Euler). For 2nd-order-in-time accuracy *with*
+Anderson's cheap matrix-free iterations, add **`-wtm_bdf2_on_V`**: `-wtm_anderson -wtm_bdf2_on_V` runs
+the same BDF2-on-V discretization the default Picard path uses, but on the matrix-free residual (no
+operator/preconditioner). Time discretization is thus decoupled from the solver, and this leaves
+Anderson's stable time step unchanged.
+
 For hard equilibrium **cold starts on stiff terrain** — a deep, far-from-equilibrium initial water table
 (for example a cold start of `wtd = 0`) on steep, heterogeneous topography, where the solver struggles to
 take the first large steps — add **`-wtm_stiff`**. It bundles the analytic-Jacobian **Newton** solver with
