@@ -647,6 +647,41 @@ static void compute_tr_explicit(AppCtx& user_context) {
   }
 }
 
+// Overwrite the SNES initial guess x with the guarded 2nd-order history predictor
+//   w^{n+1} ≈ w^n + ω(w^n − w^{n-1}),  ω = Δt/Δt_{n-1},   x = (w^n + step) + topo   (the head).
+// This makes the iteration-1 T̄ a genuine step time-average instead of the instantaneous T(w^n), and
+// starts every solver closer to the root. Guarded so a non-smooth trajectory (shock, GW↔SW surface
+// crossing) cannot produce a wild guess: the predicted step is capped in magnitude and may not cross the
+// land surface (wtd=0). Land cells only (ocean keeps its Dirichlet x=0). Call only once a history exists.
+static void apply_predictor_guess(AppCtx& user_context) {
+  DM da = user_context.da;
+  PetscScalar **x, **wn, **wnm1, **topo, **mask;
+  DMDAVecGetArray(da, user_context.x, &x);
+  DMDAVecGetArray(da, user_context.starting_wtd, &wn);
+  DMDAVecGetArray(da, user_context.starting_wtd_prev, &wnm1);
+  DMDAVecGetArray(da, user_context.topo_vec, &topo);
+  DMDAVecGetArray(da, user_context.mask, &mask);
+  const auto [xs, ys, xm, ym] = get_corners(da);
+  const double omega    = user_context.deltat / user_context.bdf2_prev_dt;
+  constexpr double STEP_CAP = 50.0;  // m: absolute cap on the extrapolated step (guards a wild ω)
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++) {
+      if (mask[j][i] == 0) continue;  // ocean: keep the Dirichlet guess (x = 0)
+      double step = omega * (wn[j][i] - wnm1[j][i]);
+      if (step > STEP_CAP) step = STEP_CAP;
+      if (step < -STEP_CAP) step = -STEP_CAP;
+      double pred = wn[j][i] + step;
+      if (wn[j][i] < 0.0 && pred > 0.0) pred = 0.0;  // no surface crossing in the guess (non-smooth there)
+      if (wn[j][i] > 0.0 && pred < 0.0) pred = 0.0;
+      x[j][i] = pred + topo[j][i];  // SNES variable is the head
+    }
+  DMDAVecRestoreArray(da, user_context.x, &x);
+  DMDAVecRestoreArray(da, user_context.starting_wtd, &wn);
+  DMDAVecRestoreArray(da, user_context.starting_wtd_prev, &wnm1);
+  DMDAVecRestoreArray(da, user_context.topo_vec, &topo);
+  DMDAVecRestoreArray(da, user_context.mask, &mask);
+}
+
 int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
@@ -791,6 +826,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         &user_context);
 
     FormInitialGuess(&user_context, user_context.da, user_context.x);
+    if (user_context.use_predict_guess && user_context.bdf2_have_history) apply_predictor_guess(user_context);
     SNESSolve(user_context.snes, nullptr, user_context.x);
   } else {
     // Set local function evaluation routine (always needed).
@@ -824,6 +860,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
     // Evaluate initial guess
     FormInitialGuess(&user_context, user_context.da, user_context.x);
+    if (user_context.use_predict_guess && user_context.bdf2_have_history) apply_predictor_guess(user_context);
 
     // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)
     FormRHS(&user_context, user_context.da, user_context.b);
@@ -900,11 +937,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // closes to the SNES tolerance. See benchmark/WATER_BUDGET.md.
   if (user_context.use_picard) accumulate_budget_terms(user_context, arp, dmdapack);
 
-  // BDF2: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
-  // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag,
-  // so BDF2 engages from the second step on (the first bootstraps with backward Euler).
+  // BDF2 / predictor: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
+  // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag, so BDF2 /
+  // the predictor engage from the second step on (the first bootstraps with backward Euler / w^n guess).
   // (fsm_off / Phase A: history is continuous; Phase B will reset the flag after FSM.)
-  if (user_context.use_bdf2) {
+  if (user_context.use_bdf2 || user_context.use_predict_guess) {
     PetscScalar** my_starting_wtd_prev;
     DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &my_starting_wtd_prev);
     for (int j = ys; j < ys + ym; j++)

@@ -132,6 +132,15 @@ struct AppCtx {
   // benchmark/TBAR_TIME_AVERAGING.md.
   bool use_tr_bdf2 = false;
   int  tr_stage    = 0;        // 0 = n/a; 1 = trapezoidal stage; 2 = BDF2 stage
+
+  // --- Predictor-seeded initial guess (-wtm_predict_guess) ---
+  // Seed the SNES initial guess (hence the iteration-1 T̄ coefficient) with the 2nd-order history
+  // extrapolation w^{n+1} ≈ w^n + ω(w^n − w^{n-1}) (ω = Δt/Δt_{n-1}) instead of w^n. Without it, the
+  // iteration-1 T̄ collapses to the instantaneous T(w^n) (Δwtd→0) -- the frozen start-of-step value we
+  // are trying to beat -- so T̄'s before-and-after advantage is unrealized on the first evaluation.
+  // Guarded (no surface crossing in the guess; capped magnitude). Needs the w^{n-1} history carrier
+  // (starting_wtd_prev), so it also switches that on. Speed/robustness only (the root is unchanged).
+  bool use_predict_guess = false;
   Vec  tr_ygamma   = nullptr;  // intermediate Y_gamma (owned range; storage is centre-only)
   Vec  tr_expl     = nullptr;  // dt*(N(w^n)/A_j + removal(w^n)) per owned land cell (explicit TR half)
 

@@ -96,6 +96,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_tr_bdf2", &tr_bdf2_flag);
   user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
   if (tr_bdf2_flag) force_anderson = PETSC_TRUE;  // take the matrix-free Anderson path
+  // -wtm_predict_guess: seed the initial guess (and thus iteration-1 T̄) with the 2nd-order history
+  // extrapolation instead of w^n. Needs the w^{n-1} history carrier (below).
+  PetscBool predict_guess_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_predict_guess", &predict_guess_flag);
+  user_context.use_predict_guess = (predict_guess_flag == PETSC_TRUE);
   // -wtm_newton: opt-in true Newton-Krylov path (analytic Jacobian). Like -wtm_anderson it selects a
   // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
   PetscBool newton_flag = PETSC_FALSE;
@@ -184,13 +189,17 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
-  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- so allocate it whenever BDF2 is on, independent
-  // of use_picard.
-  if (user_context.use_bdf2) {
+  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- and also by the predictor-seeded guess. Allocate
+  // it whenever BDF2 or the predictor is on, independent of use_picard.
+  if (user_context.use_bdf2 || user_context.use_predict_guess) {
     VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
     VecSet(user_context.starting_wtd_prev, 0.0);
     user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
   }
+  if (user_context.use_predict_guess)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_predict_guess: seeding the initial guess (and iteration-1 T̄) with the 2nd-order\n"
+                "  history extrapolation (guarded).\n");
   if (user_context.use_tr_bdf2) {
     VecDuplicate(user_context.x, &user_context.tr_ygamma);  // intermediate Y_gamma
     VecDuplicate(user_context.x, &user_context.tr_expl);    // explicit old-state flux+removal (TR half)
