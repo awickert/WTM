@@ -51,6 +51,14 @@ taper) passes.
   steady state); it composes with every solver (Anderson residual, Picard operator, exact Newton
   Jacobian). Requires the piecewise Fan T (refused with ksat smoothing, extended soil, or Kirchhoff).
   See `benchmark/TBAR_TIME_AVERAGING.md`.
+- **Predictor-seeded initial guess** (`-wtm_predict_guess`, _experimental_): seeds the solve's initial
+  guess (and hence the iteration-1 `T̄` coefficient) with a guarded 2nd-order history extrapolation
+  `wᵗ⁺¹ ≈ wᵗ + ω(wᵗ − wᵗ⁻¹)` (forward-Euler `wᵗ + Δt·f(wᵗ)` on the first step, which has no history),
+  instead of `wᵗ`. Without it the iteration-1 `T̄` collapses to the instantaneous `T(wᵗ)`, so `T̄`'s
+  before-and-after advantage is unrealized on the first residual evaluation. Measured with `-wtm_Tbar` it
+  cuts nonlinear iterations (~11 % on a 2-week warm transient; ~48 % at 8-week steps; ~34 % on the first
+  step) — a **speed** win only: it does **not** change the equilibrium and does **not** raise the stable
+  step ceiling (that is set by the operator, not the guess). Off by default.
 - **Extended-soil option** (`-wtm_extended_soil`, _experimental_): continues the aquifer above the
   land surface to remove the water-table-depth = 0 free boundary from the groundwater step.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,
