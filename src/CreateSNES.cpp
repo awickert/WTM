@@ -90,6 +90,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // -wtm_dt_adaptive) takes precedence over this default.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
+  // -wtm_tr_bdf2: L-stable strong-damping 2nd-order on the matrix-free Anderson path (two staged solves
+  // per step). Implies the Anderson path (self-starting; no Picard operator, no BDF2 history vector).
+  PetscBool tr_bdf2_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_tr_bdf2", &tr_bdf2_flag);
+  user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
+  if (tr_bdf2_flag) force_anderson = PETSC_TRUE;  // take the matrix-free Anderson path
   // -wtm_newton: opt-in true Newton-Krylov path (analytic Jacobian). Like -wtm_anderson it selects a
   // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
   PetscBool newton_flag = PETSC_FALSE;
@@ -184,6 +190,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
     VecSet(user_context.starting_wtd_prev, 0.0);
     user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
+  }
+  if (user_context.use_tr_bdf2) {
+    VecDuplicate(user_context.x, &user_context.tr_ygamma);  // intermediate Y_gamma
+    VecDuplicate(user_context.x, &user_context.tr_expl);    // explicit old-state flux+removal (TR half)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_tr_bdf2: L-stable, strongly-damped 2nd-order matrix-free Anderson (TR-BDF2; two staged\n"
+                "  solves/step, self-starting).\n");
   }
   if (user_context.use_picard) {
     DMCreateMatrix(user_context.da, &user_context.picard_A);

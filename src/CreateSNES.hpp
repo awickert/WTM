@@ -121,6 +121,20 @@ struct AppCtx {
   // AppCtx flag). Note: smoothing does NOT by itself restore BDF2 order 2 -- the order-1 cause was
   // the storativity treatment; see BDF2_ADAPTIVE_DESIGN.md.
 
+  // --- TR-BDF2 (-wtm_tr_bdf2; matrix-free Anderson only) ---
+  // L-stable, strongly (monotone) damped 2nd-order-in-time alternative to BDF2-on-V, for the matrix-free
+  // Anderson residual. One step = TWO staged implicit solves: (1) a trapezoidal sub-step to t+gamma*dt
+  // giving the intermediate Y_gamma, then (2) a BDF2 sub-step from (w^n, Y_gamma) to w^{n+1}. gamma=2-sqrt2;
+  // both stages share the diagonal (SDIRK). Self-starting (no w^{n-1}). Unlike plain BDF2 its stiff-mode
+  // damping is monotone (not oscillatory), so it is the safe choice if BDF2 rings on Anderson near the
+  // step ceiling. tr_stage selects the residual branch; tr_ygamma carries Y_gamma between the two solves;
+  // tr_expl caches the explicit old-state (w^n) flux+removal that the trapezoidal stage needs. See
+  // benchmark/TBAR_TIME_AVERAGING.md.
+  bool use_tr_bdf2 = false;
+  int  tr_stage    = 0;        // 0 = n/a; 1 = trapezoidal stage; 2 = BDF2 stage
+  Vec  tr_ygamma   = nullptr;  // intermediate Y_gamma (owned range; storage is centre-only)
+  Vec  tr_expl     = nullptr;  // dt*(N(w^n)/A_j + removal(w^n)) per owned land cell (explicit TR half)
+
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
   // TANGENT dV/dh on the operator diagonal -- instead of the 2-level backward-Euler secant

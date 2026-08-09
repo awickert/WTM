@@ -579,6 +579,74 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
   if (my_prev) DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &my_prev);
 }
 
+// Precompute the explicit old-state (w^n) term the TR-BDF2 trapezoidal stage needs:
+//   tr_expl = dt*( N(w^n)/A_j + removal(w^n) )   per owned LAND cell,
+// with N the conservative-FV net outflow at w^n. Uses the ghosted w^n (starting_wtd_local, scattered in
+// update()) for neighbour heads and instantaneous T(w^n) (scratched into T_local). Called once per step
+// before the trapezoidal solve; mirrors FormFunctionLocal's flux, evaluated at w^n instead of the iterate.
+static void compute_tr_explicit(AppCtx& user_context) {
+  DM da = user_context.da;
+  PetscScalar **wn, **my_topo, **my_fdepth, **my_ksat, **my_mask, **my_T, **gew, **gn, **gs, **expl;
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
+  DMDAVecGetArray(da, user_context.starting_wtd_local, &wn);
+  DMDAVecGetArray(da, user_context.topo_local, &my_topo);
+  DMDAVecGetArray(da, user_context.fdepth_local, &my_fdepth);
+  DMDAVecGetArray(da, user_context.ksat_local, &my_ksat);
+  DMDAVecGetArray(da, user_context.mask, &my_mask);
+  DMDAVecGetArray(da, user_context.geom_ew_vec, &gew);
+  DMDAVecGetArray(da, user_context.geom_n_vec, &gn);
+  DMDAVecGetArray(da, user_context.geom_s_vec, &gs);
+  DMDAVecGetArray(da, user_context.T_local, &my_T);
+  DMDAVecGetArray(da, user_context.tr_expl, &expl);
+  if (g_evap_taper) {
+    DMDAVecGetArray(da, user_context.evap_vec, &my_evap);
+    DMDAVecGetArray(da, user_context.open_water_evap_vec, &my_owe);
+    DMDAVecGetArray(da, user_context.precip_vec, &my_precip);
+  }
+  DMDALocalInfo info;
+  DMDAGetLocalInfo(da, &info);
+  const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
+  // 1/T(w^n) over the ghost range (instantaneous; the explicit trapezoidal flux uses T at w^n).
+  for (auto j = info.gys; j < info.gys + info.gym; j++)
+    for (auto i = info.gxs; i < info.gxs + info.gxm; i++)
+      my_T[j][i] = 1.0 / interblockTransmissivity(wn[j][i], wn[j][i], my_fdepth[j][i], my_ksat[j][i], smooth_T);
+  const double dt = user_context.deltat;
+  for (auto j = info.ys; j < info.ys + info.ym; j++)
+    for (auto i = info.xs; i < info.xs + info.xm; i++) {
+      if (my_mask[j][i] == 0) { expl[j][i] = 0.0; continue; }
+      const double h_c = wn[j][i] + my_topo[j][i];
+      const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
+      const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
+      const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
+      const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
+      const double N   = e_E * gew[j][i] * (h_c - (wn[j][i + 1] + my_topo[j][i + 1]))
+                       + e_W * gew[j][i] * (h_c - (wn[j][i - 1] + my_topo[j][i - 1]))
+                       + e_N * gn[j][i] * (h_c - (wn[j + 1][i] + my_topo[j + 1][i]))
+                       + e_S * gs[j][i] * (h_c - (wn[j - 1][i] + my_topo[j - 1][i]));
+      const double A_j = user_context.cellsize_NS_squared / gew[j][i];
+      double removal = 0.0;
+      if (g_surface_sink) removal += surfaceSink(wn[j][i]);
+      if (g_evap_taper)
+        removal += evapRemoval(wn[j][i], my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
+      expl[j][i] = dt * N / A_j + dt * removal;
+    }
+  DMDAVecRestoreArray(da, user_context.starting_wtd_local, &wn);
+  DMDAVecRestoreArray(da, user_context.topo_local, &my_topo);
+  DMDAVecRestoreArray(da, user_context.fdepth_local, &my_fdepth);
+  DMDAVecRestoreArray(da, user_context.ksat_local, &my_ksat);
+  DMDAVecRestoreArray(da, user_context.mask, &my_mask);
+  DMDAVecRestoreArray(da, user_context.geom_ew_vec, &gew);
+  DMDAVecRestoreArray(da, user_context.geom_n_vec, &gn);
+  DMDAVecRestoreArray(da, user_context.geom_s_vec, &gs);
+  DMDAVecRestoreArray(da, user_context.T_local, &my_T);
+  DMDAVecRestoreArray(da, user_context.tr_expl, &expl);
+  if (g_evap_taper) {
+    DMDAVecRestoreArray(da, user_context.evap_vec, &my_evap);
+    DMDAVecRestoreArray(da, user_context.open_water_evap_vec, &my_owe);
+    DMDAVecRestoreArray(da, user_context.precip_vec, &my_precip);
+  }
+}
+
 int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
@@ -703,7 +771,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // under MPI. w^n is fixed for this step (set above by set_starting_values), so scatter ONCE here
   // rather than per SNES iteration. starting_wtd is checked out read-write by DMDA_Array_Pack, but
   // this scatter only READS it (global → local), which is safe alongside the outstanding pointer.
-  if (g_Tbar) {
+  if (g_Tbar || user_context.use_tr_bdf2) {  // TR-BDF2's trapezoidal stage also needs ghosted w^n (old flux)
     DMGlobalToLocalBegin(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
     DMGlobalToLocalEnd(user_context.da, user_context.starting_wtd, INSERT_VALUES, user_context.starting_wtd_local);
   }
@@ -757,10 +825,27 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // Evaluate initial guess
     FormInitialGuess(&user_context, user_context.da, user_context.x);
 
-    // set the RHS
+    // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)
     FormRHS(&user_context, user_context.da, user_context.b);
-    // Solve nonlinear system
-    SNESSolve(user_context.snes, user_context.b, user_context.x);
+    if (user_context.use_tr_bdf2) {
+      // TR-BDF2: two staged implicit solves per step. Precompute the explicit old-state flux the
+      // trapezoidal stage needs (from the ghosted w^n scattered above), then solve stage 1 for the
+      // intermediate Y_gamma, store it, and solve stage 2 (BDF2 from w^n and Y_gamma) for w^{n+1}.
+      compute_tr_explicit(user_context);
+      user_context.tr_stage = 1;  // trapezoidal → Y_gamma (initial guess = FormInitialGuess above)
+      SNESSolve(user_context.snes, user_context.b, user_context.x);
+      SNESConvergedReason stage1_reason;
+      SNESGetConvergedReason(user_context.snes, &stage1_reason);
+      if (stage1_reason < 0)
+        throw std::runtime_error("TR-BDF2 trapezoidal stage (1) did not converge.");
+      VecCopy(user_context.x, user_context.tr_ygamma);  // Y_gamma carried into stage 2
+      user_context.tr_stage = 2;  // BDF2 → w^{n+1} (initial guess = Y_gamma, already in x)
+      SNESSolve(user_context.snes, user_context.b, user_context.x);
+      user_context.tr_stage = 0;
+    } else {
+      // Solve nonlinear system (single implicit solve)
+      SNESSolve(user_context.snes, user_context.b, user_context.x);
+    }
   }
 
   SNESGetIterationNumber(user_context.snes, &its);
@@ -1140,11 +1225,12 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
   // matrix-free BDF2-on-V path instead folds the FULL 3-level storage (V^{n+1},V^n,V^{n-1}) into the
   // residual itself, so its RHS is zero. The bootstrap step (no history yet) still uses the BE RHS.
   const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
-#pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, bdf2v) collapse(2)
+  const bool zero_rhs = bdf2v || user_context->use_tr_bdf2;  // TR-BDF2 stages are also self-contained (b=0)
+#pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, zero_rhs) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      b[j][i] = bdf2v ? 0.0
-                      : my_starting_wtd[j][i] + my_topo[j][i];  // land mask==0: topo and wtd already 0 elsewhere
+      b[j][i] = zero_rhs ? 0.0
+                         : my_starting_wtd[j][i] + my_topo[j][i];  // land mask==0: topo and wtd already 0 elsewhere
     }
   }
   DMDAVecRestoreArray(da, B, &b);
@@ -1200,6 +1286,18 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   }
   PetscScalar** my_starting_wtd_prev = nullptr;  // w^{n-1} (owned; storage is centre-only) for BDF2-on-V
   if (bdf2v) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
+  // TR-BDF2 (matrix-free): tr_stage 1 = trapezoidal (needs the precomputed explicit old-state flux+removal
+  // tr_expl); tr_stage 2 = BDF2 from (w^n, Y_gamma). gamma=2-sqrt2; recharge conserves via c1*gamma+c3=1.
+  // Head-scaled by Sy like BDF2-on-V. Intended standalone (not combined with -wtm_Tbar).
+  const int    tr_stage = user_context->use_tr_bdf2 ? user_context->tr_stage : 0;
+  const double TR_G  = 2.0 - std::sqrt(2.0);
+  const double tr_c1 = 1.0 / (TR_G * (2.0 - TR_G));
+  const double tr_c2 = (1.0 - TR_G) * (1.0 - TR_G) / (TR_G * (2.0 - TR_G));
+  const double tr_c3 = (1.0 - TR_G) / (2.0 - TR_G);
+  PetscScalar** my_tr_ygamma = nullptr;
+  PetscScalar** my_tr_expl   = nullptr;
+  if (tr_stage == 2) PetscCall(DMDAVecGetArray(da, user_context->tr_ygamma, &my_tr_ygamma));
+  if (tr_stage == 1) PetscCall(DMDAVecGetArray(da, user_context->tr_expl, &my_tr_expl));
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;  // taper 2/3: ET, owe, precip (m/yr)
   if (g_evap_taper) {
     PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
@@ -1233,7 +1331,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff,                            \
-           bdf2v, a_c, b_c, c_c, my_starting_wtd_prev) collapse(2)
+           bdf2v, a_c, b_c, c_c, my_starting_wtd_prev,                                                        \
+           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
@@ -1277,7 +1376,28 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         if (sink_on) removal += surfaceSink(w_c);
         if (taper_on) removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
 
-        if (bdf2v) {
+        if (tr_stage == 1) {
+          // TR-BDF2 stage 1 (trapezoidal to t+gamma*dt), head-scaled by Sy(Y_gamma). w_c is the iterate =
+          // Y_gamma: implicit half at Y_gamma + explicit half at w^n (my_tr_expl, precomputed in update()).
+          // Recharge over gamma*dt = gamma*my_rech (constant source, exact).
+          const double poro = my_porosity[j][i];
+          const double Sy   = specificYield(w_c, poro);
+          const double storage = (storedVolume(w_c, poro) - storedVolume(my_starting_wtd[j][i], poro)) / Sy;
+          const double impl    = user_context->deltat * net_outflow / A_j + user_context->deltat * removal;
+          f[j][i] = storage + 0.5 * TR_G * (impl + my_tr_expl[j][i]) / Sy - TR_G * my_rech[j][i];
+        } else if (tr_stage == 2) {
+          // TR-BDF2 stage 2 (BDF2 from w^n and Y_gamma to w^{n+1}), head-scaled by Sy(w^{n+1}). w_c is the
+          // iterate = w^{n+1}. Recharge conserves over the whole step (c1*gamma + c3 = 1; Y_gamma already
+          // carries gamma*my_rech via V(Y_gamma)).
+          const double poro   = my_porosity[j][i];
+          const double Sy     = specificYield(w_c, poro);
+          const double wtd_Yg = my_tr_ygamma[j][i] - my_topo[j][i];  // tr_ygamma stores the HEAD; V needs wtd
+          const double storage = (storedVolume(w_c, poro) - tr_c1 * storedVolume(wtd_Yg, poro)
+                                  + tr_c2 * storedVolume(my_starting_wtd[j][i], poro)) / Sy;
+          f[j][i] = storage
+                    + tr_c3 * (user_context->deltat * net_outflow / A_j + user_context->deltat * removal) / Sy
+                    - tr_c3 * my_rech[j][i];
+        } else if (bdf2v) {
           // 2nd-order-in-time: storage = 3-level BDF2 difference of the stored VOLUME, head-scaled by the
           // specific yield Sy = dV/dh (so the residual stays O(metres) for Anderson; scaling by a positive
           // per-cell factor leaves the root/accuracy unchanged). RHS b=0 on this path (FormRHS), so the
@@ -1318,6 +1438,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   }
   if (g_Tbar) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
   if (bdf2v) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
+  if (tr_stage == 2) PetscCall(DMDAVecRestoreArray(da, user_context->tr_ygamma, &my_tr_ygamma));
+  if (tr_stage == 1) PetscCall(DMDAVecRestoreArray(da, user_context->tr_expl, &my_tr_expl));
 
   PetscLogFlops(info->xm * info->ym * (72.0));
   return 0;
