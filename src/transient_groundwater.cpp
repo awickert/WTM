@@ -1136,11 +1136,15 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
 
   const auto [xs, ys, xm, ym] = get_corners(da);
 
-#pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo) collapse(2)
+  // Anderson BE: the SNES RHS b = h^n carries the previous-step storage (residual = F(x) − b). The
+  // matrix-free BDF2-on-V path instead folds the FULL 3-level storage (V^{n+1},V^n,V^{n-1}) into the
+  // residual itself, so its RHS is zero. The bootstrap step (no history yet) still uses the BE RHS.
+  const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
+#pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, bdf2v) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      b[j][i] = my_starting_wtd[j][i] + my_topo[j][i];  // when land mask == 0, both topo and wtd have already been set
-                                                        // to 0 elsewhere, so no need for another if statement here
+      b[j][i] = bdf2v ? 0.0
+                      : my_starting_wtd[j][i] + my_topo[j][i];  // land mask==0: topo and wtd already 0 elsewhere
     }
   }
   DMDAVecRestoreArray(da, B, &b);
@@ -1181,6 +1185,21 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+  // Matrix-free 2nd-order-in-time (-wtm_anderson -wtm_bdf2_on_V): once a history exists, the storage
+  // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
+  // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
+  // BDF2-on-V operator (verified). The bootstrap step (no history) uses backward Euler. See
+  // benchmark/TBAR_TIME_AVERAGING.md / BDF2_ADAPTIVE_DESIGN.md.
+  const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
+  double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // BDF2-on-V weights (a_c V^{n+1} - b_c V^n + c_c V^{n-1})
+  if (bdf2v) {
+    const double omega = user_context->deltat / user_context->bdf2_prev_dt;
+    a_c = (1.0 + 2.0 * omega) / (1.0 + omega);
+    b_c = 1.0 + omega;
+    c_c = omega * omega / (1.0 + omega);
+  }
+  PetscScalar** my_starting_wtd_prev = nullptr;  // w^{n-1} (owned; storage is centre-only) for BDF2-on-V
+  if (bdf2v) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;  // taper 2/3: ET, owe, precip (m/yr)
   if (g_evap_taper) {
     PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
@@ -1213,7 +1232,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool taper_on = g_evap_taper;
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
-           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff) collapse(2)
+           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff,                            \
+           bdf2v, a_c, b_c, c_c, my_starting_wtd_prev) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
@@ -1257,8 +1277,23 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         if (sink_on) removal += surfaceSink(w_c);
         if (taper_on) removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
 
-        f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S)
-                  + user_context->deltat * removal / S;
+        if (bdf2v) {
+          // 2nd-order-in-time: storage = 3-level BDF2 difference of the stored VOLUME, head-scaled by the
+          // specific yield Sy = dV/dh (so the residual stays O(metres) for Anderson; scaling by a positive
+          // per-cell factor leaves the root/accuracy unchanged). RHS b=0 on this path (FormRHS), so the
+          // whole storage lives here. Matches the Picard BDF2-on-V fixed point:
+          //   a_c V(w^{n+1}) - b_c V(w^n) + c_c V(w^{n-1}) - Sy·rech + dt·N/A_j + dt·removal = 0, ÷Sy.
+          const double poro = my_porosity[j][i];
+          const double Sy   = specificYield(w_c, poro);
+          const double storage = (a_c * storedVolume(w_c, poro) - b_c * storedVolume(my_starting_wtd[j][i], poro)
+                                  + c_c * storedVolume(my_starting_wtd_prev[j][i], poro)) / Sy;
+          f[j][i] = storage - my_rech[j][i] + user_context->deltat * net_outflow / (A_j * Sy)
+                    + user_context->deltat * removal / Sy;
+        } else {
+          // Backward Euler (secant storativity): the SNES RHS b=h^n supplies the previous-step storage.
+          f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S)
+                    + user_context->deltat * removal / S;
+        }
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
       }
@@ -1282,6 +1317,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
     PetscCall(DMDAVecRestoreArray(da, user_context->precip_vec, &my_precip));
   }
   if (g_Tbar) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
+  if (bdf2v) PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
 
   PetscLogFlops(info->xm * info->ym * (72.0));
   return 0;

@@ -118,7 +118,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
   user_context.use_bdf2        = (bdf2_flag == PETSC_TRUE) || user_context.use_dt_adaptive || user_context.use_bdf2_on_V;
-  user_context.use_picard      = (picard_flag == PETSC_TRUE) || user_context.use_bdf2;
+  // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: -wtm_anderson
+  // -wtm_bdf2_on_V gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
+  // not the solver). Only take the Picard operator path when Anderson is NOT forced.
+  user_context.use_picard      = (picard_flag == PETSC_TRUE || user_context.use_bdf2) && force_anderson != PETSC_TRUE;
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
   if (stiff_flag && !user_context.use_newton) {
@@ -167,17 +170,24 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
         PETSC_COMM_WORLD,
         "-wtm_dt_adaptive set: BDF2 + adaptive dt (tol=%g m); enabling the Picard solver path.\n",
         user_context.dt_tol);
+  } else if (user_context.use_bdf2 && force_anderson == PETSC_TRUE) {
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_anderson + BDF2-on-V: 2nd-order-in-time matrix-free Anderson (BDF2-on-V residual, no\n"
+                "  operator/preconditioner). Time-order decoupled from the solver.\n");
   } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE && !default_picard) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
+  }
+  // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
+  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- so allocate it whenever BDF2 is on, independent
+  // of use_picard.
+  if (user_context.use_bdf2) {
+    VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
+    VecSet(user_context.starting_wtd_prev, 0.0);
+    user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
   }
   if (user_context.use_picard) {
     DMCreateMatrix(user_context.da, &user_context.picard_A);
     VecDuplicate(user_context.x, &user_context.picard_r);
-    if (user_context.use_bdf2) {
-      VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
-      VecSet(user_context.starting_wtd_prev, 0.0);
-      user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
-    }
 
     // Defect-correction Picard is a modified-Newton iteration whose "Jacobian" is
     // the frozen operator A(x): each outer step solves A(x_k) dx = -(A x_k - b) via
