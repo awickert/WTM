@@ -222,3 +222,11 @@ The main output is a geoTiff file that supplies the depth to/elevation of the wa
 
 ## Completing a model run
 A satisfactory method of detecting whether the model has reached equilibrium is still under construction. For now, it is at the discretion of the user whether he output after a given number of iterations is appropriate to use. The code will automatically complete after the number of iterations selected in the total_cycles parameter have been performed.
+
+## Development status and upstream porting
+
+This is a research branch that explores solver, time-integration, and surface-physics improvements over
+the upstream release (Callaghan's WTM, v2.0.1). Most additions are opt-in runtime flags and off by default,
+so the production path is unchanged. The maintained checklist of which improvements are intended for
+upstream — and *why* each (accuracy, speed, correctness, or other, quantified where measured) — is in
+[`PORT_TO_UPSTREAM.md`](PORT_TO_UPSTREAM.md).
