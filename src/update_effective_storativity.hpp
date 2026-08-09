@@ -4,6 +4,15 @@
 // in the effective-storativity V(w). Default 0.01 m (1 cm); represents sub-grid land-surface
 // roughness, physically defensible up to ~10 cm (esp. with large cells). Always on (no piecewise
 // V form is wired); settable via -wtm_storativity_surface_smoothing_width.
+//
+// RECOMMENDATION (cold-start conditioning; see benchmark/SURFACE_SMOOTHING_STABILIZATION.md): the
+// wtd=0 storativity jump is a driver of the frozen-coefficient contraction failure ("disease 2").
+// A WIDER width (~0.1-0.5 m), composed with -wtm_Tbar, cuts cold-start iterations ~16-24% for BOTH
+// Anderson and Picard (island AND 384k Esquibel) and lifts Picard's island ceiling 1->2 wk -- a real
+// conditioning/speed win. It does NOT raise Anderson's step ceiling, and it SHIFTS the shallow-cell
+// equilibrium ~0.2-0.35% (0.5 m; larger widths distort more -- 0.5 m is the sweet spot). Kept at the
+// 0.01 m DEFAULT to preserve v2.0.1 numbers; raise it per-run when you want the speedup and can accept
+// the small equilibrium shift.
 extern double g_storativity_surface_smoothing_width;
 
 // [WIP experiment -wtm_extended_soil] Treat the aquifer as continuing infinitely ABOVE the land
