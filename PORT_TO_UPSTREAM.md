@@ -66,6 +66,7 @@ These are **not** transparent add-ons — they change her numbers. Port each as 
 | **Log-transform of the equation (variable)** | Same reason — the water-table depth is already ~log(T) in the deep regime; a log/Kirchhoff variable moves ill-conditioning from flux to storage, no net gain. The log/Kirchhoff structure pays off only as a *coefficient* (= `-wtm_Tbar`). *(Volume-form Kirchhoff untested — the one open variant.)* |
 | **Picard (BDF2-on-V) as the DEFAULT** | Merge regression for Kerry: diverges on her cold + 1-week-dt workflow; ~25× slower than Anderson at 384k; GAMG not mesh-independent under exp-T. Keep Picard opt-in only. |
 | **Auto-Dupuit initial guess** | Dropped — dt-continuation makes the guess irrelevant. |
+| **Anderson-accelerated GAMG-Picard** (`-wtm_aa_picard`) | Converges warm but expensively (a GAMG solve every iteration); **fails cold-start-to-equilibrium** (the Picard nonlinear preconditioner hard-fails mid-drainage → `DIVERGED_INNER`, aborting the outer solve). Buys GAMG's per-iteration cost + a new fragility, not steps+robustness. Kept off-by-default as a documented dead-end. See `benchmark/AA_PICARD.md`. |
 | **Power-law transmissivity** | Would need data calibration (changes physics); did not help the cold-start Newton basin. |
 
 ---
