@@ -130,6 +130,22 @@ So at Kerry's 1-week setting T̄ gives Anderson headroom to 2 weeks and makes th
 Wall-clock ranking is unchanged (Anderson+T̄ ≈ 20 s vs Picard+T̄ ≈ 492 s for the same patch): T̄'s payoff is
 step size and robustness, and on Anderson it is a pure win.
 
+### TR-BDF2 vs plain BDF2-on-V (Anderson, `-wtm_tr_bdf2`)
+
+Plain BDF2 is L-stable but its stiff-mode amplification is *oscillatory* (complex, decaying ~1/√z) — it
+can "ring" near the step ceiling. TR-BDF2 (trapezoidal sub-step to `t+γΔt`, then BDF2 to `t+Δt`; γ=2−√2)
+is L-stable with *monotone* strong damping. Measured on the warm 2× perturbation (island):
+
+| scheme | step ceiling | iters @ 4 wk | @ 8 wk |
+|---|---|---|---|
+| backward Euler | 4 wk | 686 | FAIL |
+| BDF2-on-V | 4 wk | **2563** (ringing) | FAIL |
+| **TR-BDF2** | **8 wk** | **387** | 702 (OK) |
+
+TR-BDF2 takes **2× the stable step** and needs **~6× fewer iterations near the ceiling**, for ~11 % more
+work per step at small dt (two staged solves). Same equilibrium as BDF2-on-V (mean 0.039 m). So on the
+Anderson path TR-BDF2 dominates plain BDF2-on-V for robustness; the extra per-step cost is the trade.
+
 ### Bottom line
 
 `-wtm_Tbar` is a small, physics-preserving, off-by-default residual-level change that **enlarges the

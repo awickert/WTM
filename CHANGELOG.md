@@ -36,6 +36,12 @@ taper) passes.
   the matrix-free Anderson solver a genuine 2nd-order-in-time residual (no operator/preconditioner),
   so a run can be both fast (Anderson's cheap matrix-free iterations) and 2nd-order in time. It shares
   the Picard BDF2-on-V fixed point exactly, and leaves Anderson's stable time step unchanged (measured).
+- **TR-BDF2 for matrix-free Anderson** (`-wtm_tr_bdf2`): an L-stable, strongly (monotonically) damped
+  2nd-order-in-time alternative to plain BDF2-on-V (whose stiff-mode damping is oscillatory). One step is
+  two staged implicit solves (trapezoidal to `t + γΔt`, then BDF2 to `t + Δt`; γ = 2−√2, self-starting).
+  Measured on a warm 2× perturbation it takes **2× the stable step (8 vs 4 weeks)** of BE / BDF2-on-V and
+  needs ~6× fewer iterations near the ceiling (no ringing), for ~11 % more work per step at small `deltat`.
+  See `benchmark/TBAR_TIME_AVERAGING.md`.
 - **Time-averaged interblock transmissivity** (`-wtm_Tbar`, _experimental_): uses each cell's
   step-time-averaged transmissivity `T̄ = (Φ(wᵗ⁺¹) − Φ(wᵗ)) / (wᵗ⁺¹ − wᵗ)` (the Kirchhoff-potential
   difference — the log-mean of the exponential deep T, the arithmetic mean of the affine soil T, and the

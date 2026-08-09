@@ -137,7 +137,9 @@ By default Anderson is 1st-order-in-time (backward Euler). For 2nd-order-in-time
 Anderson's cheap matrix-free iterations, add **`-wtm_bdf2_on_V`**: `-wtm_anderson -wtm_bdf2_on_V` runs
 the same BDF2-on-V discretization the default Picard path uses, but on the matrix-free residual (no
 operator/preconditioner). Time discretization is thus decoupled from the solver, and this leaves
-Anderson's stable time step unchanged.
+Anderson's stable time step unchanged. For a more strongly damped (L-stable, non-ringing) 2nd-order
+option, **`-wtm_tr_bdf2`** runs TR-BDF2 (two staged solves per step); in testing it took twice the stable
+time step of BDF2-on-V with fewer iterations near the limit, at a modest per-step cost.
 
 For hard equilibrium **cold starts on stiff terrain** — a deep, far-from-equilibrium initial water table
 (for example a cold start of `wtd = 0`) on steep, heterogeneous topography, where the solver struggles to
