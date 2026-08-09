@@ -96,6 +96,14 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_tr_bdf2", &tr_bdf2_flag);
   user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
   if (tr_bdf2_flag) force_anderson = PETSC_TRUE;  // take the matrix-free Anderson path
+  // -wtm_aa_picard: Anderson-accelerated GAMG-Picard via nonlinear preconditioning. OUTER = Anderson on
+  // the head-form residual; the GAMG-Picard solve is the outer's NONLINEAR PRECONDITIONER (wired below +
+  // in update()). Implies the Anderson main path (matrix-free head-form residual); the Picard operator is
+  // allocated for the NPC.
+  PetscBool aa_picard_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_aa_picard", &aa_picard_flag);
+  user_context.use_aa_picard = (aa_picard_flag == PETSC_TRUE);
+  if (aa_picard_flag) force_anderson = PETSC_TRUE;  // outer solver = matrix-free Anderson (head form)
   // -wtm_predict_guess: seed the initial guess (and thus iteration-1 T̄) with the 2nd-order history
   // extrapolation instead of w^n. Needs the w^{n-1} history carrier (below).
   PetscBool predict_guess_flag = PETSC_FALSE;
@@ -269,6 +277,37 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     if (!pc_set)      PetscOptionsSetValue(nullptr, "-pc_type", "gamg");
     if (!nsmooth_set) PetscOptionsSetValue(nullptr, "-pc_gamg_agg_nsmooths", "0");
     if (!atol_set)    PetscOptionsSetValue(nullptr, "-snes_atol", "1e-6");
+  }
+
+  // Anderson-accelerated GAMG-Picard: the OUTER SNES stays Anderson (default type; head-form residual is
+  // registered in update()). Attach the GAMG-Picard solve as its NONLINEAR PRECONDITIONER -- allocate the
+  // Picard operator and instantiate the NPC, defaulting it to a defect-correction Picard (newtonls + basic
+  // line search, ONE sweep) with a CG+GAMG inner solve via -npc_-prefixed options that SNESSetFromOptions
+  // applies below. The NPC's Picard callbacks are registered per solve in update().
+  if (user_context.use_aa_picard) {
+    DMCreateMatrix(user_context.da, &user_context.picard_A);
+    VecDuplicate(user_context.x, &user_context.picard_r);
+    const auto setdef = [](const char* key, const char* val) {
+      PetscBool set = PETSC_FALSE;
+      PetscOptionsHasName(nullptr, nullptr, key, &set);
+      if (!set) PetscOptionsSetValue(nullptr, key, val);
+    };
+    setdef("-npc_snes_type", "newtonls");          // NPC = modified Newton on A(x) = defect-correction Picard
+    setdef("-npc_snes_linesearch_type", "basic");  // full-step (plain Picard update)
+    setdef("-npc_snes_max_it", "1");               // one GAMG-Picard sweep per outer Anderson step
+    // GMRES (not CG) for the NPC inner solve: the GAMG preconditioner comes out slightly INDEFINITE here
+    // (CG bails DIVERGED_INDEFINITE_PC), and GMRES does not require an SPD preconditioner. GAMG unsmoothed.
+    setdef("-npc_ksp_type", "gmres");
+    setdef("-npc_pc_type", "gamg");
+    setdef("-npc_pc_gamg_agg_nsmooths", "0");
+    SNES npc;
+    SNESGetNPC(user_context.snes, &npc);            // instantiate the NPC (inherits the outer DM)
+    // LEFT nonlinear preconditioning: Anderson accelerates the residual of the NPC-preconditioned map.
+    // Measured to converge cold where RIGHT side diverges (DIVERGED_INNER).
+    SNESSetNPCSide(user_context.snes, PC_LEFT);
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_aa_picard: Anderson-accelerated GAMG-Picard (outer Anderson on the head-form residual;\n"
+                "  GAMG-Picard nonlinear preconditioner, one sweep/step). Experimental.\n");
   }
 
   SNESSetFromOptions(user_context.snes);

@@ -866,6 +866,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
         &user_context);
 
+    // -wtm_aa_picard: register the GAMG-Picard solve as the OUTER Anderson's nonlinear preconditioner.
+    // The outer keeps the head-form FormFunctionLocal (above); the NPC solves A(x)x = b(x) (volume form,
+    // CG+GAMG) and the outer Anderson mixes the preconditioned iterates.
+    if (user_context.use_aa_picard) {
+      SNES npc;
+      SNESGetNPC(user_context.snes, &npc);
+      SNESSetPicard(npc, user_context.picard_r, FormPicardRHS, user_context.picard_A, user_context.picard_A,
+                    FormPicardOperator, &user_context);
+    }
+
     // Newton-Krylov path (-wtm_newton): register the analytic Jacobian of FormFunctionLocal. The
     // Jacobian (FormJacobianLocal) is the exact ∂F/∂x of the conservative-FV residual including the
     // sink/evap-taper tangents; verify it against FD with -snes_test_jacobian (see FormJacobianLocal).

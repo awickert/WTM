@@ -133,6 +133,16 @@ struct AppCtx {
   bool use_tr_bdf2 = false;
   int  tr_stage    = 0;        // 0 = n/a; 1 = trapezoidal stage; 2 = BDF2 stage
 
+  // --- Anderson-accelerated GAMG-Picard via nonlinear preconditioning (-wtm_aa_picard) ---
+  // Outer solver = Anderson on the head-form residual (FormFunctionLocal, well-scaled -> Anderson-safe).
+  // The GAMG-preconditioned Picard solve (FormPicardOperator/RHS) is attached as the OUTER's nonlinear
+  // PRECONDITIONER (SNESGetNPC + SNESSetPicard), so each Anderson step is a full multigrid Picard update
+  // that Anderson then mixes/damps. Combines GAMG's large-step power with Anderson's oscillation-damping,
+  // avoiding the volume-form residual that plain Anderson diverges on. Uses the Picard operator (picard_A/
+  // picard_r) for the NPC, but the MAIN residual is the matrix-free head form (use_picard stays false).
+  // Experimental (Skunkworks). See benchmark/AA_PICARD.md.
+  bool use_aa_picard = false;
+
   // --- Predictor-seeded initial guess (-wtm_predict_guess) ---
   // Seed the SNES initial guess (hence the iteration-1 T̄ coefficient) with the 2nd-order history
   // extrapolation w^{n+1} ≈ w^n + ω(w^n − w^{n-1}) (ω = Δt/Δt_{n-1}) instead of w^n. Without it, the
