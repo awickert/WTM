@@ -75,7 +75,8 @@ the solve variable). A neighbour's T̄ needs its `w^n`, so `w^n` is ghost-scatte
 
 ## Empirical results
 
-Driver: `scratchpad/tbar_suite/` (cold dt sweep, warm perturbation, Esquibel headline). Test bed: the
+Driver + machine-readable results (JSON): `benchmark/tbar_suite/` (cold dt sweep, warm perturbation,
+Esquibel headline). Test bed: the
 ocean-ringed Esquibel island (75×117, 2544 land cells, ~615 m relief), 1-week base dt (Kerry's setting),
 default tapers on. `T̄` on = `-wtm_Tbar`.
 
