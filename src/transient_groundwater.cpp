@@ -49,6 +49,35 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo*, PetscScalar**, PetscScal
 static PetscErrorCode FormPicardRHS(SNES, Vec, Vec, void*);
 static PetscErrorCode FormPicardOperator(SNES, Vec, Mat, Mat, void*);
 
+// --- Background (bedrock) transmissivity floor (-wtm_T_bedrock) -----------------------------------
+// The Fan et al. (2013) transmissivity T = fdepth·ksat·exp((wtd+1.5)/fdepth) is a fit to the WEATHERED,
+// fractured shallow zone. Extrapolated to depth with the steep-terrain e-folding length (fdepth ~ 2.5 m)
+// it predicts T dropping ~69 orders of magnitude over ~400 m and underflowing to EXACTLY 0 below ~-1864 m
+// -- physically absurd (no crust loses 69 orders over 400 m) and the numerical root of the deep-cell
+// operator singularity: cells below ~-90 m have conductance below machine-epsilon relative to the surface,
+// so their operator rows go numerically zero -> the matrix is rank-deficient -> every inversion-based
+// solver (Picard/GAMG, Newton, MUMPS) fails at large dt (matrix-free Anderson is immune but still
+// stiffness-throttled). See benchmark/PICARD_STIFFNESS_POSTMORTEM.md, memory finding-operator-singularity.
+//
+// Real crust does NOT go to zero: it retains a small background permeability (Manning & Ingebritsen 1999,
+// Rev. Geophys.: mean crustal k ~ 1e-14 m² at 1 km falling to ~1e-16..-17 at depth; K = k·ρg/μ ~ 1e-7 m/s
+// down to ~1e-9..-10 for competent bedrock) down to the base of the active flow system (ultimately the
+// brittle-ductile transition, ~10-15 km). Integrating that background layer gives a constant ADDITIVE
+// transmissivity T_bedrock = K_bedrock · d_active. Adding it recovers the correct physics AND caps T's
+// dynamic range: with T_bedrock = 1e-8 m²/s the range collapses from ~69 orders to ~3.7 (surface ~4.6e-5),
+// crossover at ~-20 m (just below the weathered zone) -- singular operator becomes non-singular, well
+// within double precision's ~13-order headroom. Because it is a CONSTANT additive term:
+//   * T(wtd)         gains + T_bedrock                     (depthIntegratedTransmissivity[Smooth])
+//   * Φ(wtd) = ∫T    gains + T_bedrock·wtd                 (dischargePotential; keeps T̄ = ΔΦ/Δwtd EXACT)
+//   * dT/dwtd        is UNCHANGED (derivative of a constant is 0; dDepthIntegratedTransmissivityDwtd)
+//   * d(1/T)/dwtd    changes only via the T in the denominator (dTransmissivityInverseDwtd)
+// So it composes with T̄ and every solver as a residual-level change. NOTE: this alters the DEEP
+// equilibrium water table (deep cells now drain slowly instead of being frozen) -- the most sensitive
+// region vs v2.0.1 -- so it is OFF by default and wants a sensitivity sweep + sign-off before adoption.
+// Incompatible with the -wtm_kirchhoff variable change (Φ + T_bedrock·wtd is not analytically invertible);
+// enforced in update().
+static double g_T_bedrock = 0.0;  // -wtm_T_bedrock: additive background transmissivity floor [m²/s], 0 = off
+
 //////////////////////
 // PUBLIC FUNCTIONS //
 //////////////////////
@@ -79,14 +108,14 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
     // also seems an okay thing to do in this case.
     return 0;
   } else if (wtd_T < -shallow) {  // Equation S6 from the Fan paper
-    return std::max(0.0, fdepth * ksat * std::exp((wtd_T + shallow) / fdepth));
+    return std::max(0.0, fdepth * ksat * std::exp((wtd_T + shallow) / fdepth)) + g_T_bedrock;
   } else if (wtd_T > 0 && !g_extended_soil) {
     // If wtd_T is greater than 0, max out rate of groundwater movement
     // as though wtd_T were 0. The surface water will get to move in
     // FillSpillMerge. (Extended-soil skips this clamp: the S4 form continues past the surface.)
-    return std::max(0.0, ksat * (0 + shallow + fdepth));
+    return std::max(0.0, ksat * (0 + shallow + fdepth)) + g_T_bedrock;
   } else {                                                    // Equation S4 from the Fan paper (extended: also wtd>0)
-    return std::max(0.0, ksat * (wtd_T + shallow + fdepth));  // max because you can't have a negative transmissivity.
+    return std::max(0.0, ksat * (wtd_T + shallow + fdepth)) + g_T_bedrock;  // max: no negative transmissivity.
   }
 }
 
@@ -115,11 +144,13 @@ static double dischargePotential(const double wtd, const double fdepth, const do
   if (fdepth <= 0) return 0.0;
   constexpr double shallow = 1.5;
   const double fd = fdepth, k = ksat;
-  if (wtd < -shallow) return fd * fd * k * std::exp((wtd + shallow) / fd);  // exp regime: Φ = fdepth·T
+  // + g_T_bedrock·wtd throughout: the antiderivative of the constant background floor, so ∂Φ/∂wtd = T
+  // (floored) and T̄ = ΔΦ/Δwtd stays exact (only ΔΦ is ever used, so the -∞ reference is immaterial).
+  if (wtd < -shallow) return fd * fd * k * std::exp((wtd + shallow) / fd) + g_T_bedrock * wtd;  // exp: Φ = fdepth·T
   const double Phi0 = k * (0.5 * (shallow + fd) * (shallow + fd) + 0.5 * fd * fd);  // Φ at wtd = 0
-  if (wtd > 0.0) return Phi0 + k * (shallow + fd) * wtd;                    // surface: T const → Φ linear
+  if (wtd > 0.0) return Phi0 + k * (shallow + fd) * wtd + g_T_bedrock * wtd;  // surface: T const → Φ linear
   const double u = wtd + shallow + fd;                                     // linear regime (-1.5 ≤ wtd ≤ 0)
-  return k * (0.5 * u * u + 0.5 * fd * fd);
+  return k * (0.5 * u * u + 0.5 * fd * fd) + g_T_bedrock * wtd;
 }
 // Inverse Φ → wtd (piecewise; continuous, matches dischargePotential's branch boundaries).
 static double dischargePotentialInverse(const double Phi, const double fdepth, const double ksat) {
@@ -357,7 +388,7 @@ static double depthIntegratedTransmissivitySmooth(const double wtd_T, const doub
   const double T_linear = ksat * (wtd_eff + shallow + fdepth);
   const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
 
-  return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
+  return std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp) + g_T_bedrock;
 }
 
 // Analytic derivative of (1/T) with respect to wtd_T for the Newton-Krylov Jacobian
@@ -382,9 +413,10 @@ static double dTransmissivityInverseDwtd(const double wtd_T, const double fdepth
 
   const double T_linear = ksat * (wtd_eff + shallow + fdepth);
   const double T_exp    = fdepth * ksat * std::exp(u / fdepth);
-  const double T        = std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp);
-  if (T <= 0.0) return 0.0;
+  const double T        = std::max(0.0, (1.0 - sigma_1) * T_linear + sigma_1 * T_exp) + g_T_bedrock;
+  if (T <= 0.0) return 0.0;  // with g_T_bedrock>0, T is bounded away from 0 (no dead-cell division)
 
+  // dT/dwtd is unchanged by the constant floor; only the T in the denominator carries it.
   const double dT = dsigma1 * (T_exp - T_linear)
                   + (1.0 - sigma_1) * ksat * dwtd_eff
                   + sigma_1 * ksat * std::exp(u / fdepth);
@@ -790,6 +822,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                  g_extended_soil || g_kirchhoff))
     throw std::runtime_error("-wtm_Tbar requires the piecewise Fan transmissivity: remove "
                              "-wtm_ksat_*_smoothing_width, -wtm_extended_soil, and -wtm_kirchhoff.");
+
+  // -wtm_T_bedrock: additive background (bedrock) transmissivity floor [m²/s]; default 0 = v2.0.1 (no
+  // floor). A constant added to T everywhere, representing the deep crust's small nonzero conductance
+  // integrated over the active flow thickness; it removes the deep-cell operator singularity by capping
+  // T's dynamic range (e.g. 1e-8 -> ~3.7 orders vs surface). See the block above depthIntegratedTransmissivity.
+  // Incompatible with -wtm_kirchhoff (Φ + T_bedrock·wtd is not analytically invertible for the Φ variable).
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_T_bedrock", &g_T_bedrock, nullptr);
+  if (g_T_bedrock < 0.0)
+    throw std::runtime_error("-wtm_T_bedrock must be >= 0 (it is an additive transmissivity floor in m^2/s).");
+  if (g_T_bedrock > 0.0 && g_kirchhoff)
+    throw std::runtime_error("-wtm_T_bedrock is incompatible with -wtm_kirchhoff: Phi + T_bedrock*wtd has no "
+                             "closed-form inverse for the discharge-potential variable.");
 
   // Taper 1 -- sub-surface sink: a smooth, order-preserving near-surface removal that holds the water
   // table at/below the land surface and hands the exfiltrated water to FillSpillMerge (it stays in the
