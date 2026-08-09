@@ -75,7 +75,63 @@ the solve variable). A neighbour's T̄ needs its `w^n`, so `w^n` is ghost-scatte
 
 ## Empirical results
 
-See `benchmark/tbar_suite/` for the driver. Results table appended by the suite run (see the session
-notes / memory `finding-logmean-transmissivity`).
+Driver: `scratchpad/tbar_suite/` (cold dt sweep, warm perturbation, Esquibel headline). Test bed: the
+ocean-ringed Esquibel island (75×117, 2544 land cells, ~615 m relief), 1-week base dt (Kerry's setting),
+default tapers on. `T̄` on = `-wtm_Tbar`.
 
-<!-- RESULTS_PLACEHOLDER: cold-start dt sweep, warm perturbation ceilings, Esquibel headline, wall-clock vs Anderson -->
+### Cold start to equilibrium — maximum stable dt (stability vs time-step size)
+
+| solver | ceiling without T̄ | ceiling with T̄ |
+|---|---|---|
+| Anderson | 4 wk | **8 wk (2×)** |
+| Picard (BDF2-on-V, default) | *fails at 1 wk* (frozen-coefficient hang, 10000-iter divergence) | **1 wk (rescued)** |
+| Newton (`-wtm_stiff`) | reaches equilibrium but slow (per-iteration GMRES+GAMG cost; times out at 400 s where Anderson takes 2 s) | same, settles ~2 cycles sooner |
+
+- **T̄ doubles Anderson's stable cold step (4→8 wk)** and **rescues the default Picard's cold start** at
+  Kerry's 1-week dt (baseline Picard diverges cold; this is the Kerry-Picard-hang, cured).
+- **Accuracy is unchanged by T̄.** At each dt Anderson and Anderson+T̄ reach the *same* equilibrium
+  (2 wk: 4.735 vs 4.731 m; 4 wk: 11.664 vs 11.664 m max vs the Anderson@1wk reference). T̄ changes
+  *convergence*, not the answer. (The equilibrium's own drift with dt — 0.17 m@1wk → ~12 m@4wk vs the
+  fine-dt reference — is a pre-existing dt-dependence of the coupled GW↔FillSpillMerge steady state,
+  shared by both, not a T̄ effect.)
+- Iteration reduction grows with stiffness: ~4 % fewer Anderson iters at 1 wk, ~11 % at 4 wk.
+
+### Warm-start perturbation (2× recharge from equilibrium) — step ceiling to failure
+
+| solver | ceiling without T̄ | ceiling with T̄ | iters where both converge |
+|---|---|---|---|
+| Anderson | 4 wk | **8 wk (2×)** | 4 wk: 686 → 598 (~13 % fewer) |
+| Picard (default) | 1 wk | **4 wk (4×)** | 1 wk: 200 → 141 (~30 % fewer) |
+
+T̄ roughly **doubles Anderson's and quadruples the default Picard's** stable step under perturbation, and
+cuts the iteration count where both converge.
+
+### Wall-clock vs Anderson
+
+The step-ceiling and iteration-count wins do **not** make the implicit solvers beat Anderson on
+wall-clock in the small-dt regime: Anderson's matrix-free iterations carry no linear solve (~2 s for a
+full island equilibrium), whereas each Picard/Newton iteration pays a preconditioned solve (Picard+T̄ ~26 s,
+Newton times out at 400 s for the same equilibrium). T̄'s value is **robustness and step size** (bigger
+stable steps, fewer nonlinear iterations, curing the cold-Picard hang), not making Picard/Newton faster
+than Anderson at small dt. Applied to Anderson itself, T̄ is a pure win: same cheap iterations, 2× the
+stable step, identical equilibrium.
+
+### Esquibel headline — real 384k-cell patch (Kerry's domain, 166k land cells)
+
+The island result holds on real terrain (cold start, `run_type=equilibrium`):
+
+| solver | cold ceiling without T̄ | cold ceiling with T̄ |
+|---|---|---|
+| Anderson | 1 wk (2 wk diverges) — *this is Kerry's exact setting* | **2 wk (2×)**; and 1 wk slightly faster (19.5 vs 21.1 s, 1926 vs 2001 iters) |
+| Picard (default) | *times out cold* (no convergence in 600 s) | **converges** (492 s, 1967 iters) — cold-Picard rescue holds on real terrain |
+
+So at Kerry's 1-week setting T̄ gives Anderson headroom to 2 weeks and makes the default Picard usable cold.
+Wall-clock ranking is unchanged (Anderson+T̄ ≈ 20 s vs Picard+T̄ ≈ 492 s for the same patch): T̄'s payoff is
+step size and robustness, and on Anderson it is a pure win.
+
+### Bottom line
+
+`-wtm_Tbar` is a small, physics-preserving, off-by-default residual-level change that **enlarges the
+stable time step ~2–4× and cures the default-Picard cold-start divergence**, at no accuracy cost and
+composing with every solver. It is the numerical realization of managing the exponential transmissivity
+by *integrating it over the step* rather than freezing it at the step's start.
