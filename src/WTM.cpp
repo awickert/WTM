@@ -390,10 +390,12 @@ void update(
   // intermediate solves only need each rank's owned cells).
   FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
 
-  // Taper 1: hand this cycle's implicit-sink removal to FSM. The sink held wtd<=0 during the solve,
-  // so FSM's own wtd>0->runoff handoff won't fire; gather the accumulated exfiltration depth into
-  // rank-0 arp.runoff (adding) so this cycle's FillSpillMerge routes it. No-op when the sink is off.
-  if (params.fsm_on && FanDarcyGroundwater::surface_sink_on())
+  // Taper 1 / extended-soil: hand this cycle's above-surface removal to FSM. The sink held wtd<=0 during
+  // the solve (so FSM's own wtd>0->runoff handoff won't fire); extended-soil truncated the above-surface
+  // water into the same accumulator between steps. Either way, gather the accumulated depth into rank-0
+  // arp.runoff (adding) so this cycle's FillSpillMerge routes it. No-op when both are off (stays 0).
+  if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
+                        || FanDarcyGroundwater::surface_exfiltration_to_runoff_on()))
     FanDarcyGroundwater::gather_sink_removed_to_zero(params, arp, user_context, dmdapack);
 
   std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;

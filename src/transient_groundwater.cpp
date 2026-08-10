@@ -245,6 +245,12 @@ static bool             g_surface_sink       = false;
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
 
+// -wtm_surface_exfiltration_to_runoff: post-solve surface exfiltration-to-runoff collection. Standard clamped-T physics; water is allowed to
+// mound during the solve, then clamped to wtd=0 with the exact above-surface storage routed to FSM (via
+// the sink accumulator). A robust, tuning-free "collect" alternative to the implicit sink; needs the sink
+// off to do anything. See the truncation site in update().
+static bool             g_surface_exfiltration_to_runoff_array    = false;
+
 // Taper 2 -- demand-identity evaporation: the atmospheric loss transitions SMOOTHLY from the
 // land-surface ET grid (deep) to the open-water rate owe (at/above the surface), as a logistic in
 // wtd, treated IMPLICITLY in the solver (like the sink). Replaces the hard wtd>0 ? owe : ET recharge
@@ -797,6 +803,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
   g_extended_soil = (extsoil == PETSC_TRUE);
 
+  // -wtm_surface_exfiltration_to_runoff: post-solve clamp-to-surface + route the exact excess to FSM (standard clamped
+  // T; robust "collect" alternative to the implicit sink). Composes with -wtm_Tbar (unlike extended_soil,
+  // it keeps the piecewise Fan T). Use with -wtm_surface_sink 0 (else the sink holds wtd<=0 first).
+  PetscBool surfexfil = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil);
+  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE);
+
   // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
   // range out of the Jacobian conditioning; see the transform helpers above). The Φ transform is the
   // antiderivative of the PIECEWISE Fan T, so it requires the piecewise T (no ksat smoothing widths) and
@@ -1093,6 +1106,26 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                                               my_precip[j][i] / SECONDS_IN_A_YEAR);
         arp.total_evap_removed += evap_depth * arp.cell_area[j];
       }
+      // Post-solve surface exfiltration-to-runoff collection / truncation. Two opt-in modes route above-surface water to FSM
+      // BETWEEN steps -- an explicit "collect" that is cheaper and more robust than the implicit sink
+      // (no qmax/width/ramp, mass-exact, cannot diverge):
+      //   -wtm_surface_exfiltration_to_runoff : STANDARD physics (T stays CLAMPED above the surface, so parked water
+      //       adds no extra transmissivity -> no lateral spreading). Water is allowed to mound during
+      //       the solve, then clamped to the surface here = A_legacy but with a PER-STEP collect instead
+      //       of waiting for FSM's cadence. The robust variant. (Turn the sink off to use it: else the
+      //       sink holds wtd<=0 and this never fires.)
+      //   -wtm_extended_soil   : EXTENDED-soil physics (no T-clamp -> T GROWS above the surface). Tested
+      //       NEGATIVE (2026-08-10): the un-clamped T conducts laterally = a new stiffness (slower,
+      //       diverges at large dt). Kept as a documented dead-end; the clamp variant is the one to use.
+      // Excess = storedVolume(wtd) - storedVolume(0): the real above-surface storage under the ACTIVE
+      // storativity (~wtd surface-water depth in standard physics; porosity*wtd in extended soil).
+      if ((g_surface_exfiltration_to_runoff_array || g_extended_soil) && dmdapack.starting_wtd[j][i] > 0.0) {
+        const double poro         = dmdapack.porosity_vec[j][i];
+        const double excess_depth = storedVolume(dmdapack.starting_wtd[j][i], poro) - storedVolume(0.0, poro);
+        arp.total_surface_removed += excess_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
+        dmdapack.sink_removed_dist[j][i] += excess_depth;              // collect -> gather -> arp.runoff -> FSM
+        dmdapack.starting_wtd[j][i] = 0.0;                             // truncate to the real land surface
+      }
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
@@ -1177,6 +1210,15 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // decide whether to gather the sink accumulator into arp.runoff for FSM without reaching into the
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
 bool surface_sink_on() { return g_surface_sink; }
+
+// Whether extended-soil surface truncation routes above-surface water to FSM (via the same sink
+// accumulator). Lets the cycle loop gather the accumulator for FSM when extended soil is on, just as
+// for the sink. Set in update() from -wtm_extended_soil.
+bool extended_soil_on() { return g_extended_soil; }
+
+// Whether post-solve surface exfiltration-to-runoff collection routes above-surface water to FSM (via the sink accumulator).
+// Lets the cycle loop gather the accumulator for FSM, as for the sink. Set from -wtm_surface_exfiltration_to_runoff.
+bool surface_exfiltration_to_runoff_on() { return g_surface_exfiltration_to_runoff_array; }
 
 // Whether the demand-identity evaporation taper is on (taper 2). Lets the explicit-recharge sites
 // (irf.cpp, WTM.cpp) drop their hard ET<->owe switch and feed just precip, because the smooth

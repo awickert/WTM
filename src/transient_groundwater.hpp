@@ -23,6 +23,14 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // Whether the implicit sub-surface sink is configured this run (taper 1).
 bool surface_sink_on();
 
+// Whether extended-soil surface truncation is on (-wtm_extended_soil): routes above-surface water to
+// FSM via the sink accumulator, so the cycle loop must gather it just as for the sink.
+bool extended_soil_on();
+
+// Whether post-solve surface exfiltration-to-runoff collection is on (-wtm_surface_exfiltration_to_runoff): clamps wtd->0 and routes the exact
+// above-surface excess to FSM via the sink accumulator, so the cycle loop must gather it as for the sink.
+bool surface_exfiltration_to_runoff_on();
+
 // Whether the demand-identity evaporation taper is on (taper 2). The explicit-recharge sites feed
 // just precip when this is set -- the smooth implicit E_eff carries the ET->open-water transition.
 bool evap_taper_on();
