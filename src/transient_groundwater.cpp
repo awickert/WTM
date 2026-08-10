@@ -1148,6 +1148,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     DMDAVecGetArray(user_context.da, user_context.precip_vec, &my_precip);  // taper 3 deficit (E_eff - P)
   }
   double dh_max_local = 0.0;  // max |w^{n+1} - w^n| over owned land cells (for the PTC/SER dt controller)
+  int    dh_i_local = -1, dh_j_local = -1;  // argmax cell (diagnostic: which land cell moves most this step)
+  int    nflick_local = 0;                  // # owned land cells with |Δw| > 1mm (within-cycle flicker diagnostic)
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
       // Back-transform the SNES variable to wtd: Kirchhoff x=Φ → wtd=Φ⁻¹(x); else head x → wtd=x−topo.
@@ -1158,8 +1160,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // identical. The metric measures the RELAXED change (the true state move), so it stays honest.
       const double relaxed = (g_relax >= 1.0) ? new_wtd
                                               : g_relax * new_wtd + (1.0 - g_relax) * dmdapack.starting_wtd[j][i];
-      if (dmdapack.mask[j][i] != 0)
-        dh_max_local = std::max(dh_max_local, std::abs(relaxed - dmdapack.starting_wtd[j][i]));
+      if (dmdapack.mask[j][i] != 0) {
+        const double dh = std::abs(relaxed - dmdapack.starting_wtd[j][i]);
+        if (dh > dh_max_local) { dh_max_local = dh; dh_i_local = i; dh_j_local = j; }
+        if (dh > 1e-3) nflick_local++;
+      }
       dmdapack.starting_wtd[j][i] = relaxed;
       if (dmdapack.mask[j][i] == 0) {
         // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
@@ -1231,6 +1236,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // equilibrium (the discrete steady residual ~ S·Δw/Δt), so the ramp accelerates to Newton near steady
   // state. Reduced here (cheap) so WTM.cpp's continuation loop can read user_context.last_dh_max.
   MPI_Allreduce(&dh_max_local, &user_context.last_dh_max, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+  MPI_Allreduce(&nflick_local, &user_context.last_dh_nflicker, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD);
+  user_context.last_dh_i = dh_i_local;  // argmax cell (exact at n=1; rank-local under MPI -- diagnostic only)
+  user_context.last_dh_j = dh_j_local;
 
   // Account the water that left through land->ocean faces this solve (Darcy interface flux at the
   // converged head), the term that closes the water budget against the Dirichlet ocean boundary.

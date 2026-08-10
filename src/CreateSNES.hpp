@@ -85,6 +85,9 @@ struct AppCtx {
   // reports it per cycle (→ 0 at steady state). A residual/state-change SER dt controller was tried and
   // is worse than growing on solve-ease (see WTM.cpp), so this is a diagnostic, not a step controller.
   double last_dh_max             = 0.0;
+  int    last_dh_i               = -1;  // argmax (i,j) of last_dh_max: which land cell moves most (diagnostic)
+  int    last_dh_j               = -1;
+  int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
   // Opt-in convergence-based early stop for the dt-continuation (-wtm_eq_tol, metres; 0 = off): stop the
   // cycle loop once last_dh_max stays below eq_tol for two consecutive cycles (settled to steady state),
   // instead of always running the full total_cycles. Off by default -> existing behaviour unchanged.
