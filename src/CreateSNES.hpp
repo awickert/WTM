@@ -26,6 +26,8 @@ struct AppCtx {
   Vec rech_vec            = nullptr;
   Vec porosity_vec        = nullptr;
   Vec fringe_width_vec    = nullptr;  // per-cell sink band width (capillary fringe); see -wtm_fringe_source
+  Vec prev_cycle_wtd      = nullptr;  // post-FSM water table at the previous cycle (for the per-CYCLE convergence metric)
+  double last_cycle_dw    = 1e30;     // max|wtd_cycleN - wtd_cycleN-1| over the domain (the honest steady-state metric)
   Vec starting_wtd        = nullptr;
 
   // Distributed forcing fields for the recharge computation. Scattered from
@@ -88,9 +90,14 @@ struct AppCtx {
   int    last_dh_i               = -1;  // argmax (i,j) of last_dh_max: which land cell moves most (diagnostic)
   int    last_dh_j               = -1;
   int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
-  // Opt-in convergence-based early stop for the dt-continuation (-wtm_eq_tol, metres; 0 = off): stop the
-  // cycle loop once last_dh_max stays below eq_tol for two consecutive cycles (settled to steady state),
-  // instead of always running the full total_cycles. Off by default -> existing behaviour unchanged.
+  // Opt-in convergence-based early stop (-wtm_eq_tol, metres; 0 = off): stop the cycle loop once the
+  // PER-CYCLE water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state
+  // measure) stays below eq_tol for two consecutive cycles, instead of always running total_cycles. The
+  // per-SUB-STEP max|Δw| (last_dh_max) is NOT used for the stop: at lake/shore free boundaries it carries a
+  // cosmetic within-cycle flicker that returns to the same value each cycle, so gating on it would never
+  // settle. Recommended value ~1e-2 m (the worst cell moves <~1 cm per ~1-yr cycle); the achievable floor
+  // is set by that cosmetic lakeshore wiggle, so tighter tolerances need it excluded. Off by default ->
+  // existing behaviour unchanged (auto-set to 1e-2 only under -wtm_stiff).
   double eq_tol                  = 0.0;
   int    settled_count           = 0;
 
@@ -204,6 +211,8 @@ struct AppCtx {
     VecDuplicate(x, &rech_vec);
     VecDuplicate(x, &porosity_vec);
     VecDuplicate(x, &fringe_width_vec);
+    VecDuplicate(x, &prev_cycle_wtd);
+    VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);

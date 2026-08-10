@@ -502,6 +502,26 @@ void update(
   std::cerr << "t Set recharge time = " << recharge_timer.lap() << std::endl;
   std::cerr << "After setting recharge values: " << get_current_time_and_date_as_str() << std::endl;
 
+  // Per-CYCLE convergence metric: max change in the (post-FSM) water table since the previous cycle. This
+  // is the HONEST steady-state signal -- unlike the per-sub-step max|Δw|, it excludes the cosmetic within-
+  // cycle oscillation at lake/shore free boundaries (which returns to the same value each cycle and so
+  // over-reports non-convergence). Wired to -wtm_eq_tol in run(). (Distributed-recharge path: starting_wtd
+  // is post-FSM here; the serial path measures pre-FSM, still a valid cycle-to-cycle change.)
+  {
+    const auto [pxs, pys, pxm, pym] = get_corners(user_context.da);
+    PetscScalar **prevw;
+    DMDAVecGetArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
+    double dw_local = 0.0;
+    for (int j = pys; j < pys + pym; j++)
+      for (int i = pxs; i < pxs + pxm; i++) {
+        if (dmdapack.mask[j][i] != 0)
+          dw_local = std::max(dw_local, std::abs(dmdapack.starting_wtd[j][i] - static_cast<double>(prevw[j][i])));
+        prevw[j][i] = dmdapack.starting_wtd[j][i];
+      }
+    MPI_Allreduce(&dw_local, &user_context.last_cycle_dw, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    DMDAVecRestoreArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
+  }
+
   // Print values about the change in water table depth to the text file.
   PrintValues(params, arp);
 
@@ -528,23 +548,24 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
 
   while (params.cycles_done < params.total_cycles) {
     update(params, arp, user_context, dmdapack, deps);
-    // Opt-in convergence-based early stop (dt-continuation only): once the per-step water-table change has
-    // stayed below -wtm_eq_tol for two consecutive cycles, the system has settled to steady state, so stop
-    // rather than burning the remaining fixed cycles. Off (eq_tol=0) -> loop runs the full total_cycles.
-    //
-    // Gate on dt having ramped up first. Early in the continuation ramp dt is tiny (dt0 = params.deltat/200),
-    // so the table barely moves per step and max|Δw| would fall below eq_tol SPURIOUSLY -- declaring
-    // equilibrium before the system has actually equilibrated. Only trust the settle signal once dt has
-    // grown to at least half the continuation ceiling (the ramp is essentially complete, steps are large,
-    // and a small max|Δw| genuinely means steady state). If dt never reaches that (e.g. reject/retry holds
-    // it down), the early stop simply never fires and the loop runs the full total_cycles -- conservative.
-    if (user_context.eq_tol > 0.0 && user_context.use_newton_continuation &&
-        user_context.deltat >= 0.5 * user_context.dtc_dt_max) {
-      if (user_context.last_dh_max < user_context.eq_tol) {
+    PetscPrintf(PETSC_COMM_WORLD,
+                "cycle %d: per-cycle max|Δwtd| = %g m  [within-cycle max|Δw| = %g m, %d cells>1mm]\n",
+                params.cycles_done, user_context.last_cycle_dw, user_context.last_dh_max,
+                user_context.last_dh_nflicker);
+    // Convergence-based early stop (opt-in via -wtm_eq_tol): stop once the PER-CYCLE water-table change
+    // stays below eq_tol for two consecutive cycles. Uses the per-cycle metric (not the per-sub-step
+    // max|Δw|), so the cosmetic within-cycle lake/shore flicker cannot hold the run hostage. The dt-
+    // continuation ramp still needs dt near its ceiling for a small change to mean "steady" (not "tiny
+    // step"); the fixed-dt march (default Anderson/Picard) is trustworthy directly; adaptive-dt is skipped.
+    const bool settle_trustworthy =
+        (user_context.use_newton_continuation && user_context.deltat >= 0.5 * user_context.dtc_dt_max)
+        || (!user_context.use_newton_continuation && !user_context.use_dt_adaptive);
+    if (user_context.eq_tol > 0.0 && settle_trustworthy) {
+      if (user_context.last_cycle_dw < user_context.eq_tol) {
         if (++user_context.settled_count >= 2) {
           PetscPrintf(PETSC_COMM_WORLD,
-                      "equilibrium reached: max|Δw| = %g m < %g for 2 cycles; stopping at cycle %d of %d.\n",
-                      user_context.last_dh_max, user_context.eq_tol, params.cycles_done, params.total_cycles);
+                      "equilibrium reached: per-cycle max|Δwtd| = %g m < %g for 2 cycles; stopping at cycle %d of %d.\n",
+                      user_context.last_cycle_dw, user_context.eq_tol, params.cycles_done, params.total_cycles);
           break;
         }
       } else {
@@ -590,6 +611,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.rech_vec);
   VecDestroy(&user_context.porosity_vec);
   VecDestroy(&user_context.fringe_width_vec);
+  VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
   VecDestroy(&user_context.precip_vec);
   VecDestroy(&user_context.evap_vec);
