@@ -159,6 +159,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
   if (stiff_flag) dtc_flag = PETSC_TRUE;  // the bundle enables dt-continuation
   user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
+  // Early-stop tolerance parsed for ALL solver paths (was previously only inside the Newton block below,
+  // so -wtm_eq_tol was silently ignored on the default Anderson/Picard path). 0 = off. run() checks the
+  // PER-CYCLE water-table change against it.
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, nullptr);  // early-stop tol [m], 0=off
   if (user_context.use_newton_continuation) {
     double dt0 = params.deltat / 200.0;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
@@ -172,7 +176,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // The bundle defaults the early-stop to 1 cm/step (gated on dt in WTM.cpp so it cannot fire during the
     // ramp); a user -wtm_eq_tol below still wins.
     if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.01;
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, nullptr);  // early-stop tol [m], 0=off
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",
