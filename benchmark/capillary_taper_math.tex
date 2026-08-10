@@ -1,0 +1,65 @@
+% Content-matching surrogate for the capillary fringe -- paste-ready draft for the WTM paper.
+% Voice: A. Wickert conventions (spaced en-dashes " -- " for asides, no em-dashes; active voice).
+% NOTATION: reconcile symbols with the paper before use -- here z is depth below the land surface,
+% varphi the physical fringe weight, S the numerical spline, psi_a the capillary length.
+
+\subsection{A content-matching surrogate for the capillary fringe}
+
+WTM resolves a single water-table depth per grid cell, so the capillary fringe -- the
+tension-saturated zone above the water table -- is a sub-grid feature that the model neither
+resolves nor reports. We therefore do not represent the fringe profile; we represent its integrated
+effect, and we choose that representation to aid the solver while fixing its physical scale from the
+soil.
+
+Let $z \ge 0$ denote depth below the land surface. Let the real capillary taper be a dimensionless
+weight $\varphi(z) \in [0,1]$ with $\varphi(0)=1$ at the surface and $\varphi \to 0$ at depth. Its
+single physically meaningful scalar is its content,
+\begin{equation}
+A_{\mathrm{phys}} \;=\; \int_0^{\infty} \varphi(z)\,\mathrm{d}z \;=\; \psi_a ,
+\label{eq:content}
+\end{equation}
+which equals the capillary length $\psi_a$ for any profile normalized to unity at the surface -- a
+sharp fringe of height $\psi_a$, an exponential $e^{-z/\psi_a}$, and so on. The profile's own shape
+cancels in Eq.~\eqref{eq:content}, and only its content survives.
+
+We replace $\varphi$ by a compact-support spline chosen for numerical conditioning,
+\begin{equation}
+S(z) = s\!\left(z/w\right), \quad 0 \le z \le w, \qquad S(z)=0 \ \ (z>w),
+\end{equation}
+with $s:[0,1]\to[0,1]$, $s(0)=1$, $s(1)=0$, monotone and $C^{2}$, and shape factor
+\begin{equation}
+\kappa_S \;=\; \int_0^{1} s(u)\,\mathrm{d}u .
+\end{equation}
+We fix the spline width $w$ by requiring that it carry the same content as the physical taper,
+\begin{equation}
+\int_0^{w} S(z)\,\mathrm{d}z \;=\; A_{\mathrm{phys}}
+\qquad\Longrightarrow\qquad
+\boxed{\,w \;=\; \psi_a / \kappa_S\,}.
+\label{eq:width}
+\end{equation}
+For the symmetric quintic smoothstep $s(u)=1-(6u^{5}-15u^{4}+10u^{3})$, $\kappa_S=\tfrac12$ and
+$w = 2\,\psi_a$.
+
+Equation~\eqref{eq:width} preserves exactly the two quantities that carry physical meaning -- the
+taper's content (its zeroth moment, and hence the water it redistributes) and its length scale
+$\psi_a$ -- while leaving the pointwise shape $s$ free. Because the content is preserved and the
+taper only redistributes water among stores, the domain water balance remains exactly the prescribed
+$P-\mathrm{ET}$. The shape is legitimately free: it is sub-grid and unreported, so no model output
+and no conserved quantity depends on it. We size the fringe from the soil through a first-order
+pedotransfer,
+\begin{equation}
+\psi_a \;=\; C\,\sqrt{n/K_s},
+\label{eq:pedo}
+\end{equation}
+with $n$ the porosity, $K_s$ the saturated hydraulic conductivity, and $C$ a single calibration
+constant, following $K_s \propto r^{2}$ for a characteristic pore radius $r$ and capillary rise
+$\psi_a \propto 1/r$.
+
+We do not claim that the spline is the fringe. We collapse the real taper to its one observable,
+conserved scalar -- its content $\psi_a$ -- and reproduce that scalar with a solver-friendly spline
+by matching areas (Eq.~\ref{eq:width}). The representation is physically scaled and numerically
+shaped, and we state both plainly.
+
+% If the effective fringe depth is also wanted, add a first-moment (centroid) constraint
+% \int_0^w z\,S\,dz = \int_0^\infty z\,\varphi\,dz, which fixes one shape parameter and trades
+% shape freedom for fidelity. The zeroth moment above is the honest minimum for a scalar-wtd model.
