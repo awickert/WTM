@@ -276,23 +276,23 @@ static double           g_extinction_depth   = 8.0;   // d_ext: accessibility ex
 
 // Compact-support C2 quintic smoothstep ramp: 0 for wtd <= -w, smoothly rising to 1 at wtd = 0
 // (p(u) = u^3(6u^2 - 15u + 10), p'(0)=p'(1)=0). Argument is wtd = h - topo (centre cell).
-static double surfaceSinkRamp(const double wtd) {
-  const double w = g_surface_sink_width;
+// The band width w is now a PER-CELL argument (the fringe width, from the fringe-size field); callers pass
+// it in. See the fringe-size field populated in update() and the taper-design principle (size = physical).
+static double surfaceSinkRamp(const double wtd, const double w) {
   if (wtd <= -w) return 0.0;
   if (wtd >= 0.0) return 1.0;
   const double u = (wtd + w) / w;  // in (0,1)
   return u * u * u * (u * (6.0 * u - 15.0) + 10.0);
 }
 // d(ramp)/d(wtd) = p'(u)/w, with p'(u) = 30 u^2 (1-u)^2.
-static double surfaceSinkRampTangent(const double wtd) {
-  const double w = g_surface_sink_width;
+static double surfaceSinkRampTangent(const double wtd, const double w) {
   if (wtd <= -w || wtd >= 0.0) return 0.0;
   const double u = (wtd + w) / w;
   return 30.0 * u * u * (1.0 - u) * (1.0 - u) / w;
 }
-static double surfaceSink(const double wtd) { return g_surface_sink_qmax * surfaceSinkRamp(wtd); }
-static double surfaceSinkTangent(const double wtd) {
-  return g_surface_sink_qmax * surfaceSinkRampTangent(wtd);
+static double surfaceSink(const double wtd, const double w) { return g_surface_sink_qmax * surfaceSinkRamp(wtd, w); }
+static double surfaceSinkTangent(const double wtd, const double w) {
+  return g_surface_sink_qmax * surfaceSinkRampTangent(wtd, w);
 }
 
 // Taper 2 helpers. sigma is the logistic 1/(1+e^{-u}); u = (wtd - wtd_c)/s. E_eff(wtd) transitions
@@ -663,7 +663,7 @@ static void compute_tr_explicit(AppCtx& user_context) {
                        + e_S * gs[j][i] * (h_c - (wn[j - 1][i] + my_topo[j - 1][i]));
       const double A_j = user_context.cellsize_NS_squared / gew[j][i];
       double removal = 0.0;
-      if (g_surface_sink) removal += surfaceSink(wn[j][i]);
+      if (g_surface_sink) removal += surfaceSink(wn[j][i], g_surface_sink_width);
       if (g_evap_taper)
         removal += evapRemoval(wn[j][i], my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
       expl[j][i] = dt * N / A_j + dt * removal;
@@ -1092,7 +1092,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
       if (sink_active_this_step) {
         // Sink removed dt*Q(w^{n+1}) (Q is m/s -> dt*Q is a depth). To FSM (stays in domain).
-        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i]);
+        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i], g_surface_sink_width);
         arp.total_surface_removed += removed_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += removed_depth;              // per-cycle FSM input (taper 1)
       }
@@ -1493,7 +1493,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool taper_on = g_evap_taper;
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
-           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff,                            \
+           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff, g_surface_sink_width,      \
            bdf2v, a_c, b_c, c_c, my_starting_wtd_prev,                                                        \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
@@ -1536,7 +1536,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // dt*Q/S: evaluated at the current iterate, so implicit at the Anderson root. Matrix-free ->
         // no tangent needed (unlike the Picard operator). Off unless their flags are set.
         double removal = 0.0;  // m/s
-        if (sink_on) removal += surfaceSink(w_c);
+        if (sink_on) removal += surfaceSink(w_c, g_surface_sink_width);
         if (taper_on) removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
 
         if (tr_stage == 1) {
@@ -1761,8 +1761,8 @@ static PetscErrorCode FormJacobianLocal(
 
       double removal = 0.0, rho = 0.0;  // removal [m/s] and its exact (unclamped) wtd-derivative
       if (sink_on) {
-        removal += surfaceSink(w_c);
-        rho     += surfaceSinkTangent(w_c);
+        removal += surfaceSink(w_c, g_surface_sink_width);
+        rho     += surfaceSinkTangent(w_c, g_surface_sink_width);
       }
       if (taper_on) {
         const double p_rate = my_precip[j][i] / SECONDS_IN_A_YEAR;
@@ -1902,7 +1902,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k like the storage
           // term; scaled by A_j to match the operator's dt*Q'(w_k)*A_j diagonal (volume form).
           const double dt = user_context->deltat;
-          bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k) * xx[j][i] - dt * surfaceSink(w_k));
+          bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k, g_surface_sink_width) * xx[j][i] - dt * surfaceSink(w_k, g_surface_sink_width));
         }
         if (g_evap_taper) {
           // Taper 2: implicit demand-identity evaporation dt*E_eff(w^{n+1}) (ET -> owe), Picard-
@@ -2078,7 +2078,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double A_south  = -dt * e_S * gs[j][i];
         // Storage and sub-surface sink now scale with the cell area A_j (volume form). The sink
         // tangent dt*Q'(w_k)*A_j is >= 0, so the diagonal stays dominant -> SPD-preserving.
-        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k) * A_j : 0.0;
+        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k, g_surface_sink_width) * A_j : 0.0;
         // Taper 2 (+ taper 3) evaporation diagonal: dt*R'(w_k)*A_j, SPD-clamped >= 0 (matches the RHS
         // term). R' == E_eff' when taper 3 is off.
         const double evap_diag = (g_evap_taper && bdf2_on_V)
