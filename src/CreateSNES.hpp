@@ -25,6 +25,7 @@ struct AppCtx {
   Vec topo_vec            = nullptr;
   Vec rech_vec            = nullptr;
   Vec porosity_vec        = nullptr;
+  Vec fringe_width_vec    = nullptr;  // per-cell sink band width (capillary fringe); see -wtm_fringe_source
   Vec starting_wtd        = nullptr;
 
   // Distributed forcing fields for the recharge computation. Scattered from
@@ -199,6 +200,7 @@ struct AppCtx {
     VecDuplicate(x, &topo_vec);
     VecDuplicate(x, &rech_vec);
     VecDuplicate(x, &porosity_vec);
+    VecDuplicate(x, &fringe_width_vec);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);

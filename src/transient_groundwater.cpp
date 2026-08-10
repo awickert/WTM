@@ -251,6 +251,19 @@ static double           g_surface_sink_width = 1.0;  // w: band width below the 
 // off to do anything. See the truncation site in update().
 static bool             g_surface_exfiltration_to_runoff_array    = false;
 
+// -- Fringe size (sink band width) source (-wtm_fringe_source). The sink band width is the physical
+// capillary fringe height psi_a per cell, content-matched to the sink spline as w = psi_a / KAPPA_SINK
+// (see benchmark/capillary_taper_math.tex). Modes: none (default) = today's numerical width
+// g_surface_sink_width (byte-identical); fixed = uniform -wtm_fringe_length; ksat = pedotransfer
+// psi_a = C*sqrt(n/ksat), capped at g_fringe_cap; file (not yet) = per-cell raster. Populated per cell
+// into user_context.fringe_width_vec in update() and read at every sink call site.
+enum FringeSource { FRINGE_NONE = 0, FRINGE_FIXED, FRINGE_KSAT };
+static int              g_fringe_source    = FRINGE_NONE;
+static double           g_fringe_length    = 0.1;    // -wtm_fringe_length [m]: fixed fringe height psi_a (FIXED)
+static double           g_fringe_ksat_coef = 5e-4;   // -wtm_fringe_ksat_coef C [SI]: psi_a = C*sqrt(n/ksat)
+static double           g_fringe_cap       = 2.0;    // -wtm_fringe_cap [m]: max psi_a
+static constexpr double KAPPA_SINK         = 0.5;    // sink spline shape-factor (quintic) -> w = psi_a/KAPPA_SINK
+
 // Taper 2 -- demand-identity evaporation: the atmospheric loss transitions SMOOTHLY from the
 // land-surface ET grid (deep) to the open-water rate owe (at/above the surface), as a logistic in
 // wtd, treated IMPLICITLY in the solver (like the sink). Replaces the hard wtd>0 ? owe : ET recharge
@@ -636,6 +649,8 @@ static void compute_tr_explicit(AppCtx& user_context) {
   DMDAVecGetArray(da, user_context.geom_s_vec, &gs);
   DMDAVecGetArray(da, user_context.T_local, &my_T);
   DMDAVecGetArray(da, user_context.tr_expl, &expl);
+  PetscScalar **my_fringe;
+  DMDAVecGetArray(da, user_context.fringe_width_vec, &my_fringe);
   if (g_evap_taper) {
     DMDAVecGetArray(da, user_context.evap_vec, &my_evap);
     DMDAVecGetArray(da, user_context.open_water_evap_vec, &my_owe);
@@ -663,7 +678,7 @@ static void compute_tr_explicit(AppCtx& user_context) {
                        + e_S * gs[j][i] * (h_c - (wn[j - 1][i] + my_topo[j - 1][i]));
       const double A_j = user_context.cellsize_NS_squared / gew[j][i];
       double removal = 0.0;
-      if (g_surface_sink) removal += surfaceSink(wn[j][i], g_surface_sink_width);
+      if (g_surface_sink) removal += surfaceSink(wn[j][i], my_fringe[j][i]);
       if (g_evap_taper)
         removal += evapRemoval(wn[j][i], my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
       expl[j][i] = dt * N / A_j + dt * removal;
@@ -678,6 +693,7 @@ static void compute_tr_explicit(AppCtx& user_context) {
   DMDAVecRestoreArray(da, user_context.geom_s_vec, &gs);
   DMDAVecRestoreArray(da, user_context.T_local, &my_T);
   DMDAVecRestoreArray(da, user_context.tr_expl, &expl);
+  DMDAVecRestoreArray(da, user_context.fringe_width_vec, &my_fringe);
   if (g_evap_taper) {
     DMDAVecRestoreArray(da, user_context.evap_vec, &my_evap);
     DMDAVecRestoreArray(da, user_context.open_water_evap_vec, &my_owe);
@@ -871,6 +887,46 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
+  // -- Fringe-size source: set the per-cell sink band width (the physical capillary fringe), populated
+  // into user_context.fringe_width_vec. Default none = today's numerical width (byte-identical). See the
+  // FringeSource enum above and benchmark/capillary_taper_math.tex.
+  {
+    const char *fringe_modes[] = {"none", "fixed", "ksat", "file"};
+    PetscInt    fmode          = 0;
+    PetscOptionsGetEList(nullptr, nullptr, "-wtm_fringe_source", fringe_modes, 4, &fmode, nullptr);
+    if (fmode == 3)
+      throw std::runtime_error("-wtm_fringe_source file: not yet implemented (use none|fixed|ksat).");
+    g_fringe_source = static_cast<int>(fmode);  // 0 none, 1 fixed, 2 ksat (matches FringeSource)
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_length", &g_fringe_length, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_ksat_coef", &g_fringe_ksat_coef, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_cap", &g_fringe_cap, nullptr);
+
+    // Populate w = psi_a / KAPPA_SINK per cell (content-match). none -> uniform g_surface_sink_width
+    // (byte-identical); fixed -> uniform; ksat -> psi_a = C*sqrt(n/ksat), capped at g_fringe_cap.
+    const auto [fxs, fys, fxm, fym] = get_corners(user_context.da);
+    PetscScalar **fw, **fks, **fpo;
+    DMDAVecGetArray(user_context.da, user_context.fringe_width_vec, &fw);
+    DMDAVecGetArray(user_context.da, user_context.ksat_vec, &fks);
+    DMDAVecGetArray(user_context.da, user_context.porosity_vec, &fpo);
+    for (int j = fys; j < fys + fym; j++)
+      for (int i = fxs; i < fxs + fxm; i++) {
+        double w;
+        if (g_fringe_source == FRINGE_KSAT) {
+          const double ks  = std::max(static_cast<double>(fks[j][i]), 1e-30);
+          const double psi = std::min(g_fringe_cap, g_fringe_ksat_coef * std::sqrt(fpo[j][i] / ks));
+          w                = psi / KAPPA_SINK;
+        } else if (g_fringe_source == FRINGE_FIXED) {
+          w = g_fringe_length / KAPPA_SINK;
+        } else {  // FRINGE_NONE
+          w = g_surface_sink_width;  // today's numerical width -> byte-identical default
+        }
+        fw[j][i] = w;
+      }
+    DMDAVecRestoreArray(user_context.da, user_context.fringe_width_vec, &fw);
+    DMDAVecRestoreArray(user_context.da, user_context.ksat_vec, &fks);
+    DMDAVecRestoreArray(user_context.da, user_context.porosity_vec, &fpo);
+  }
+
   // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Read here AND early in
   // WTM.cpp::initialise() (before the initial recharge) via the same call, so the explicit-recharge
   // sites -- including irf.cpp's initial pass -- all see a consistent flag. See SURFACE_SINK_DESIGN.md 14.
@@ -1057,6 +1113,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscScalar **my_fdepth_cb = nullptr, **my_ksat_cb = nullptr;  // for the Kirchhoff Φ⁻¹ back-transform
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
+  PetscScalar **my_fringe;
+  DMDAVecGetArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
     DMDAVecGetArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
     DMDAVecGetArray(user_context.da, user_context.ksat_vec, &my_ksat_cb);
@@ -1092,7 +1150,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
       if (sink_active_this_step) {
         // Sink removed dt*Q(w^{n+1}) (Q is m/s -> dt*Q is a depth). To FSM (stays in domain).
-        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i], g_surface_sink_width);
+        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i], my_fringe[j][i]);
         arp.total_surface_removed += removed_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += removed_depth;              // per-cycle FSM input (taper 1)
       }
@@ -1129,6 +1187,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
+  DMDAVecRestoreArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
     DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
     DMDAVecRestoreArray(user_context.da, user_context.ksat_vec, &my_ksat_cb);
@@ -1433,6 +1492,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecGetArray(da, user_context->T_local, &my_T));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
+  PetscScalar **my_fringe;
+  PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
   // Matrix-free 2nd-order-in-time (-wtm_anderson -wtm_bdf2_on_V): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
@@ -1493,7 +1554,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool taper_on = g_evap_taper;
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
-           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff, g_surface_sink_width,      \
+           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff, my_fringe,               \
            bdf2v, a_c, b_c, c_c, my_starting_wtd_prev,                                                        \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
@@ -1536,7 +1597,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // dt*Q/S: evaluated at the current iterate, so implicit at the Anderson root. Matrix-free ->
         // no tangent needed (unlike the Picard operator). Off unless their flags are set.
         double removal = 0.0;  // m/s
-        if (sink_on) removal += surfaceSink(w_c, g_surface_sink_width);
+        if (sink_on) removal += surfaceSink(w_c, my_fringe[j][i]);
         if (taper_on) removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
 
         if (tr_stage == 1) {
@@ -1593,6 +1654,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecRestoreArray(da, user_context->T_local, &my_T));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
@@ -1654,6 +1716,8 @@ static PetscErrorCode FormJacobianLocal(
   PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
+  PetscScalar **my_fringe;
+  PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;  // taper 2/3 inputs (m/yr)
   if (g_evap_taper) {
@@ -1761,8 +1825,8 @@ static PetscErrorCode FormJacobianLocal(
 
       double removal = 0.0, rho = 0.0;  // removal [m/s] and its exact (unclamped) wtd-derivative
       if (sink_on) {
-        removal += surfaceSink(w_c, g_surface_sink_width);
-        rho     += surfaceSinkTangent(w_c, g_surface_sink_width);
+        removal += surfaceSink(w_c, my_fringe[j][i]);
+        rho     += surfaceSinkTangent(w_c, my_fringe[j][i]);
       }
       if (taper_on) {
         const double p_rate = my_precip[j][i] / SECONDS_IN_A_YEAR;
@@ -1821,6 +1885,7 @@ static PetscErrorCode FormJacobianLocal(
   PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecRestoreArray(da, user_context->topo_local, &my_topo));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
@@ -1871,6 +1936,8 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecGetArray(da, user_context->topo_vec, &my_topo));
   PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));
+  PetscScalar **my_fringe;
+  PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // for the cell area A_j
   if (bdf2) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
@@ -1902,7 +1969,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k like the storage
           // term; scaled by A_j to match the operator's dt*Q'(w_k)*A_j diagonal (volume form).
           const double dt = user_context->deltat;
-          bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k, g_surface_sink_width) * xx[j][i] - dt * surfaceSink(w_k, g_surface_sink_width));
+          bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k, my_fringe[j][i]) * xx[j][i] - dt * surfaceSink(w_k, my_fringe[j][i]));
         }
         if (g_evap_taper) {
           // Taper 2: implicit demand-identity evaporation dt*E_eff(w^{n+1}) (ET -> owe), Picard-
@@ -1933,6 +2000,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecRestoreArray(da, user_context->topo_vec, &my_topo));
   PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
   if (g_evap_taper) {
@@ -1989,6 +2057,8 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));
   PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecGetArray(da, user_context->porosity_vec, &my_porosity));      // owned: centre S_c
+  PetscScalar **my_fringe;
+  PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));  // owned: centre S_c
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecGetArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
@@ -2078,7 +2148,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double A_south  = -dt * e_S * gs[j][i];
         // Storage and sub-surface sink now scale with the cell area A_j (volume form). The sink
         // tangent dt*Q'(w_k)*A_j is >= 0, so the diagonal stays dominant -> SPD-preserving.
-        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k, g_surface_sink_width) * A_j : 0.0;
+        const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k, my_fringe[j][i]) * A_j : 0.0;
         // Taper 2 (+ taper 3) evaporation diagonal: dt*R'(w_k)*A_j, SPD-clamped >= 0 (matches the RHS
         // term). R' == E_eff' when taper 3 is off.
         const double evap_diag = (g_evap_taper && bdf2_on_V)
@@ -2128,6 +2198,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_local, &my_fdepth));
   PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecRestoreArray(da, user_context->cellsize_EW_squared, &cellsize_ew_sq));
