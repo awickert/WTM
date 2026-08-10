@@ -242,6 +242,7 @@ static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface cla
 // See benchmark/SURFACE_SINK_DESIGN.md sec 11.
 static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
+static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
 
@@ -307,6 +308,14 @@ static double surfaceSink(const double wtd, const double w) { return g_surface_s
 static double surfaceSinkTangent(const double wtd, const double w) {
   return g_surface_sink_qmax * surfaceSinkRampTangent(wtd, w);
 }
+
+// Seepage face (-wtm_direct_to_runoff): remove exactly the ABOVE-surface excess to runoff each step.
+// removal RATE [m/s] = max(0,wtd)/dt, so dt*removal = the excess depth. Pins wtd<=0 (no rate cap -> no
+// pile) and removes nothing below the surface (no depression). The Anderson solve tolerates the hard
+// max fine -- an earlier softplus smoothing was inert (convergence was eps-invariant), so it is gone.
+// (The tangent is the step function, for a future Newton path.)
+static double directToRunoffRemoval(const double wtd, const double dt) { return std::max(0.0, wtd) / dt; }
+static double directToRunoffTangent(const double wtd, const double dt) { return (wtd > 0.0 ? 1.0 : 0.0) / dt; }
 
 // Taper 2 helpers. sigma is the logistic 1/(1+e^{-u}); u = (wtd - wtd_c)/s. E_eff(wtd) transitions
 // ET -> owe as the table rises. Returns m/s (ET/owe supplied in m/yr). The tangent dE/dwtd is
@@ -678,7 +687,8 @@ static void compute_tr_explicit(AppCtx& user_context) {
                        + e_S * gs[j][i] * (h_c - (wn[j - 1][i] + my_topo[j - 1][i]));
       const double A_j = user_context.cellsize_NS_squared / gew[j][i];
       double removal = 0.0;
-      if (g_surface_sink) removal += surfaceSink(wn[j][i], my_fringe[j][i]);
+      if (g_direct_to_runoff)           removal += directToRunoffRemoval(wn[j][i], dt);
+      else if (g_surface_sink) removal += surfaceSink(wn[j][i], my_fringe[j][i]);
       if (g_evap_taper)
         removal += evapRemoval(wn[j][i], my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
       expl[j][i] = dt * N / A_j + dt * removal;
@@ -887,6 +897,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
+  // -wtm_direct_to_runoff: seepage-face removal (supersedes the qmax sink where on). Removes the above-
+  // surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
+  // and no below-surface band -> no pile, no depression.
+  PetscBool seep = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
+  g_direct_to_runoff = (seep == PETSC_TRUE);
+
   // -- Fringe-size source: set the per-cell sink band width (the physical capillary fringe), populated
   // into user_context.fringe_width_vec. Default none = today's numerical width (byte-identical). See the
   // FringeSource enum above and benchmark/capillary_taper_math.tex.
@@ -941,7 +958,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   //  * Picard path: only in the BDF2-on-V branch, once a history exists (the BE bootstrap has none).
   const bool matrix_free   = !user_context.use_picard;
   const bool picard_bdf2_V = user_context.use_bdf2 && user_context.bdf2_have_history && user_context.use_bdf2_on_V;
-  const bool sink_active_this_step = g_surface_sink && (matrix_free || picard_bdf2_V);
+  const bool sink_active_this_step = (g_surface_sink || g_direct_to_runoff) && (matrix_free || picard_bdf2_V);
   const bool evap_active_this_step = g_evap_taper && (matrix_free || picard_bdf2_V);
 
   // -wtm_Tbar: ghost-scatter w^n (starting_wtd) so a neighbour's time-averaged T̄ can read its w^n
@@ -1150,7 +1167,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
       if (sink_active_this_step) {
         // Sink removed dt*Q(w^{n+1}) (Q is m/s -> dt*Q is a depth). To FSM (stays in domain).
-        const double removed_depth = user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i], my_fringe[j][i]);
+        const double removed_depth =
+            g_direct_to_runoff ? std::max(0.0, static_cast<double>(dmdapack.starting_wtd[j][i]))  // = dt*rate = the excess depth
+                      : user_context.deltat * surfaceSink(dmdapack.starting_wtd[j][i], my_fringe[j][i]);
         arp.total_surface_removed += removed_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += removed_depth;              // per-cycle FSM input (taper 1)
       }
@@ -1269,6 +1288,7 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // decide whether to gather the sink accumulator into arp.runoff for FSM without reaching into the
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
 bool surface_sink_on() { return g_surface_sink; }
+bool direct_to_runoff_on() { return g_direct_to_runoff; }
 
 // Whether extended-soil surface truncation routes above-surface water to FSM (via the same sink
 // accumulator). Lets the cycle loop gather the accumulator for FSM when extended soil is on, just as
@@ -1551,10 +1571,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   }
 
   const bool sink_on  = g_surface_sink;  // hoisted for the omp default(none) clause below
+  const bool dtr_on  = g_direct_to_runoff;
   const bool taper_on = g_evap_taper;
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
-           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, taper_on, g_kirchhoff, my_fringe,               \
+           my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
            bdf2v, a_c, b_c, c_c, my_starting_wtd_prev,                                                        \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
@@ -1597,7 +1618,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // dt*Q/S: evaluated at the current iterate, so implicit at the Anderson root. Matrix-free ->
         // no tangent needed (unlike the Picard operator). Off unless their flags are set.
         double removal = 0.0;  // m/s
-        if (sink_on) removal += surfaceSink(w_c, my_fringe[j][i]);
+        if (dtr_on)      removal += directToRunoffRemoval(w_c, user_context->deltat);
+        else if (sink_on) removal += surfaceSink(w_c, my_fringe[j][i]);
         if (taper_on) removal += evapRemoval(w_c, my_evap[j][i], my_owe[j][i], my_precip[j][i] / SECONDS_IN_A_YEAR);
 
         if (tr_stage == 1) {

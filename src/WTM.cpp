@@ -395,7 +395,7 @@ void update(
   // water into the same accumulator between steps. Either way, gather the accumulated depth into rank-0
   // arp.runoff (adding) so this cycle's FillSpillMerge routes it. No-op when both are off (stays 0).
   if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
-                        || FanDarcyGroundwater::surface_exfiltration_to_runoff_on()))
+                        || FanDarcyGroundwater::surface_exfiltration_to_runoff_on() || FanDarcyGroundwater::direct_to_runoff_on()))
     FanDarcyGroundwater::gather_sink_removed_to_zero(params, arp, user_context, dmdapack);
 
   std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;

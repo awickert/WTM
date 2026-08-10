@@ -22,6 +22,8 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 
 // Whether the implicit sub-surface sink is configured this run (taper 1).
 bool surface_sink_on();
+// Whether the direct-to-runoff (seepage-face) removal is configured this run (-wtm_direct_to_runoff).
+bool direct_to_runoff_on();
 
 // Whether extended-soil surface truncation is on (-wtm_extended_soil): routes above-surface water to
 // FSM via the sink accumulator, so the cycle loop must gather it just as for the sink.
