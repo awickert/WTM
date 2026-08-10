@@ -243,6 +243,7 @@ static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface cla
 static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
+static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
 
@@ -904,6 +905,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
   g_direct_to_runoff = (seep == PETSC_TRUE);
 
+  // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
+  // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / seepage). At
+  // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &g_relax, nullptr);
+
   // -- Fringe-size source: set the per-cell sink band width (the physical capillary fringe), populated
   // into user_context.fringe_width_vec. Default none = today's numerical width (byte-identical). See the
   // FringeSource enum above and benchmark/capillary_taper_math.tex.
@@ -1148,9 +1154,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       const double new_wtd = g_kirchhoff
                                  ? dischargePotentialInverse(dmdapack.x[j][i], my_fdepth_cb[j][i], my_ksat_cb[j][i])
                                  : dmdapack.x[j][i] - my_topo[j][i];
+      // Under-relaxation (-wtm_relax a<1): damp the step to w <- a*w_solve + (1-a)*w_prev. a=1 -> byte-
+      // identical. The metric measures the RELAXED change (the true state move), so it stays honest.
+      const double relaxed = (g_relax >= 1.0) ? new_wtd
+                                              : g_relax * new_wtd + (1.0 - g_relax) * dmdapack.starting_wtd[j][i];
       if (dmdapack.mask[j][i] != 0)
-        dh_max_local = std::max(dh_max_local, std::abs(new_wtd - dmdapack.starting_wtd[j][i]));
-      dmdapack.starting_wtd[j][i] = new_wtd;
+        dh_max_local = std::max(dh_max_local, std::abs(relaxed - dmdapack.starting_wtd[j][i]));
+      dmdapack.starting_wtd[j][i] = relaxed;
       if (dmdapack.mask[j][i] == 0) {
         // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
         // exactly (post-solve wtd = 0), but the Picard CG/GAMG solve leaves a tiny, MPI-decomposition-
