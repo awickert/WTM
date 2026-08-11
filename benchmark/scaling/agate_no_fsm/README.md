@@ -247,3 +247,15 @@ Full multi-node data (both grids, both runs, with `job_id`): `results_2026-08-11
 **Bottom line:** WTM runs multi-node correctly (bit-identical) and scales well to at
 least 8 nodes, *better* on bigger grids — a capability the code was never designed
 for, unlocking the big global (141M-cell) runs beyond one node's memory + bandwidth.
+
+## Figures
+
+`make_figures.py` (in this folder) regenerates the figures from the three CSVs —
+`python3 make_figures.py` (needs numpy + matplotlib):
+- `fig_single_node_scaling.png` — GW-solve speedup vs cores (one node), both grids.
+- `fig_multinode_scaling.png` — GW-solve speedup vs nodes, both grids, **both runs per
+  grid** so the shared-node variance is visible.
+- `fig_efficiency.png` — parallel efficiency, single-node vs cores and multi-node vs nodes.
+
+Data + metadata + script + figures live together here, so the figures are reproducible
+from the committed CSVs alone.
