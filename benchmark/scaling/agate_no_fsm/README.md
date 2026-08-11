@@ -222,19 +222,25 @@ cells/rank), so a `GRID=4000` run (more per-rank work) would scale further and i
 more production-representative. (3) `mpiexec -ppn 8` *packs* ranks, inflating the
 1-node baseline vs the unpinned study runs above.
 
-**Bigger grid scales better (4000², 4 nodes, job 15415684):**
+**Bigger grid scales better — and to 8 nodes (4000², job 15416430):**
 
 | nodes | ranks | gw_s | speedup | eff | 2000² eff |
 |---|---|---|---|---|---|
-| 1 | 8 | 26.77 | 1.00× | — | — |
-| 2 | 16 | 14.55 | 1.84× | 92% | 84% |
-| 4 | 32 | 9.26 | 2.89× | 72% | 69% |
+| 1 | 8 | 46.64 | 1.00× | — | — |
+| 2 | 16 | 22.50 | 2.07× | 104% | 84% |
+| 4 | 32 | 13.29 | 3.51× | 88% | 69% |
+| 8 | 64 | 8.46 | 5.51× | 69% | 58% |
 
-The 16M-cell grid is **more efficient at every node count** than the 4M-cell one
-(92% vs 84% at 2 nodes) — more per-rank work amortizes the inter-node comm and the
-gather-to-rank-0. So the more production-realistic the problem size, the better
-multi-node pays off. Correctness bit-identical here too (node-spanning = 0.0 m; the
-Anderson noise floor is larger, 0.21 m, as expected for the bigger grid).
+Per node-doubling: 2.07× / 1.69× / 1.57× — steady, **no wall through 8 nodes**, and
+**more efficient than 2000² at every node count** (69% vs 58% at 8 nodes). Confirms:
+the bigger, more production-realistic problem scales better across nodes (more per-rank
+work amortizes the inter-node comm + the gather-to-rank-0). Correctness bit-identical
+(node-spanning = 0.0 m; Anderson noise floor larger, 0.21 m, as expected).
+
+**Shared-node variance is LARGE** — an *earlier* 4000² 4-node run gave a 1-node baseline
+of 26.8 s vs 46.6 s here (~75% swing from contention), and 4-node speedup 2.89× vs 3.51×.
+So trust the **shape** (steady scaling, bigger-is-better, no wall) and the bit-identical
+correctness; the absolute speedups need an `--exclusive` run to be publication-grade.
 
 **Bottom line:** WTM runs multi-node correctly (bit-identical) and scales well to at
 least 8 nodes, *better* on bigger grids — a capability the code was never designed
