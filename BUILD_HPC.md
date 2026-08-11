@@ -68,10 +68,22 @@ Module names change over time; if these exact versions are gone, use the
 discovery steps in Path A to find the current equivalents. If no PETSc >= 3.17.1
 exists, use the conda path (Path B).
 
-**Per-session shortcut:** after the first successful setup, `msi_env.sh` (in the
-repo root) loads this whole toolchain in one line — `source msi_env.sh` to build
-or run, or `source msi_env.sh test` to also activate the `wtmtest` conda env for
-the Python test suite.
+**Scripted shortcuts (repo root).** Once the toolchain modules and the `wtmtest`
+conda env exist (the one-time steps below), three committed scripts codify the
+whole procedure so you never retype it:
+
+- `source msi_env.sh` — load the verified module set (`source msi_env.sh test`
+  also activates the `wtmtest` conda env for the Python test suite). This is the
+  single source of truth for the toolchain; the other two scripts source it.
+- `./build_msi.sh` — configure + build in one command (sources `msi_env.sh`, runs
+  `cmake` with the MPI wrappers, `make -j`). `--fresh` to reconfigure from clean,
+  `--test` to also run the suite, `--help` for options. Run it on a compute node.
+- `sbatch run_wtm.sbatch <config.cfg>` — submit a production run; it loads the
+  same modules used to build and launches `srun --mpi=pmi2 ./wtm.x`. Edit the
+  `#SBATCH` headers (partition / ntasks / mem / time) for your run.
+
+The manual steps below are what these scripts automate — read them once to
+understand the toolchain, or if a script needs adapting to a new cluster.
 
 ## Dependencies
 
@@ -275,30 +287,13 @@ inside an interactive allocation is the reliable smoke test.
 
 Production runs go through `sbatch` on a production partition (msilong for long
 single-node runs, msismall for shorter single-node, msilarge for multi-node).
-Load the **same** modules/env you built with. Example `run_wtm.sbatch`:
-
-```bash
-#!/bin/bash -l
-#SBATCH --job-name=wtm
-#SBATCH --partition=msilong        # long single-node; or msismall / msilarge
-#SBATCH --nodes=1
-#SBATCH --ntasks=32                # MPI ranks (msilong caps at 32 cores / 128 GB)
-#SBATCH --mem=120gb
-#SBATCH --time=7-00:00:00          # D-HH:MM:SS; msilong allows up to 37 days
-#SBATCH --output=wtm-%j.out
-
-# the SAME modules used to build (MSI):
-module load petsc/3.24.5-gnu-rocky8 gdal/3.12.1-gcc-11.3.0-netcdf-4.9.3 cmake/3.29.2-rocky8
-# (or: source activate wtm, if you built via the conda path)
-
-cd /path/to/WTM/build
-srun --mpi=pmi2 ./wtm.x /path/to/config.cfg   # MPICH under Slurm; uses the 32 ranks
-```
-
-Submit and monitor:
+Use the committed **`run_wtm.sbatch`** template (repo root): it loads the same
+toolchain you built with (via `msi_env.sh`), sets `OMP_NUM_THREADS=1` for pure
+MPI, and launches `srun --mpi=pmi2 ./wtm.x`. Edit the `#SBATCH` headers
+(partition / ntasks / mem / time) for your run, then submit and monitor:
 
 ```sh
-sbatch run_wtm.sbatch
+sbatch run_wtm.sbatch /path/to/config.cfg   # or: WTM_ROOT=$HOME/models/WTM sbatch run_wtm.sbatch <cfg>
 squeue --me
 ```
 
