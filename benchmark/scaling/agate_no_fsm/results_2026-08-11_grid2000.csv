@@ -1,0 +1,12 @@
+# WTM strong-scaling & memory — 2026-08-11, MSI Agate (Rocky 8), groundwater solve only (fsm_on 0)
+# build: after = awickert/WTM bdf2-adaptive-dt @446e3d0, Release -O3; solver: -wtm_anderson -snes_stol 1e-6
+# allocation: shared (non-exclusive), --mem 32gb; grid 2000x2000 = 4,000,000 cells; reps=2
+# strong_speedup / parallel_efficiency are WALL-based vs n=1; kcallaghan not run (--builds after)
+# transcribed from the scaling_study.py summary table; see README.md for setup.
+build,grid,cells,nranks,rc,snes_iters,wall_s,gw_s,mem_total_gb,mem_max_gb,mem_min_gb,strong_speedup,parallel_efficiency,realized_speedup_vs_kcallaghan
+after,2000,4000000,32,0,52,5.9,3.13,4.49,0.66,0.12,6.03,0.188,
+after,2000,4000000,16,0,62,7.2,4.78,3.59,0.73,0.19,4.90,0.306,
+after,2000,4000000,8,0,36,9.8,7.61,3.09,0.86,0.31,3.60,0.450,
+after,2000,4000000,4,0,68,13.9,11.59,2.87,1.12,0.58,2.54,0.635,
+after,2000,4000000,2,0,67,21.7,19.35,2.72,1.63,1.09,1.63,0.815,
+after,2000,4000000,1,0,59,35.3,31.70,2.75,2.75,2.75,1.00,1.000,
