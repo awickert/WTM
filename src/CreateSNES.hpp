@@ -90,15 +90,15 @@ struct AppCtx {
   int    last_dh_i               = -1;  // argmax (i,j) of last_dh_max: which land cell moves most (diagnostic)
   int    last_dh_j               = -1;
   int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
-  // Opt-in convergence-based early stop (-wtm_eq_tol, metres; 0 = off): stop the cycle loop once the
-  // PER-CYCLE water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state
-  // measure) stays below eq_tol for two consecutive cycles, instead of always running total_cycles. The
-  // per-SUB-STEP max|Δw| (last_dh_max) is NOT used for the stop: at lake/shore free boundaries it carries a
-  // cosmetic within-cycle flicker that returns to the same value each cycle, so gating on it would never
-  // settle. Recommended value ~1e-2 m (the worst cell moves <~1 cm per ~1-yr cycle); the achievable floor
-  // is set by that cosmetic lakeshore wiggle, so tighter tolerances need it excluded. Off by default ->
-  // existing behaviour unchanged (auto-set to 1e-2 only under -wtm_stiff).
-  double eq_tol                  = 0.0;
+  // Convergence-based early stop (-wtm_eq_tol, metres; 0 = off): stop the cycle loop once the PER-CYCLE
+  // water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state measure)
+  // stays below eq_tol for two consecutive cycles, instead of always running total_cycles. The per-SUB-STEP
+  // max|Δw| (last_dh_max) is NOT used for the stop: at lake/shore free boundaries it carries a cosmetic
+  // within-cycle flicker that returns to the same value each cycle, so gating on it would never settle. The
+  // achievable floor is set by that cosmetic lakeshore wiggle, so tighter tolerances need it excluded.
+  // Default (resolved in InitialiseSNES): 0.01 m for equilibrium runs (~1 cm per ~1-yr cycle), 0 = off for
+  // transient runs (which must play out in full). Pass -wtm_eq_tol 0 to disable it on an equilibrium run.
+  double eq_tol                  = 0.0;  // pre-resolution sentinel; InitialiseSNES sets the run-type default
   int    settled_count           = 0;
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---

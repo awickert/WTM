@@ -95,8 +95,9 @@ outfile_prefix {prefix}
 # Matrix-free Anderson path (forced; default is now Picard) with both tapers on. The width 1.0
 # (= qmax*dt, the marginal-stability point) is a deliberate Anderson-path stress; Picard would need
 # the dt-scaled default. Anderson is the opt-in path this test also keeps covered.
+# -wtm_eq_tol 0: run the full fixed cycle count (cross-rank determinism check; do not auto-stop).
 TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink", "-wtm_surface_sink_qmax", "1.0",
-               "-wtm_surface_sink_width", "1.0", "-wtm_evap_taper", "-snes_stol", "1e-8"]
+               "-wtm_surface_sink_width", "1.0", "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]
 
 
 def _run(wtm, d, tag, n):
@@ -235,7 +236,7 @@ def study_c(wtm):
     the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
     fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
     print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
-    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8"]
+    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]  # full 60-cycle clamp run
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:

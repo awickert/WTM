@@ -55,7 +55,9 @@ cycles_to_save     9999
 EOF
 }
 
-run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.cfg" -snes_stol 1e-8 >"$WORK/n${n}.log" 2>&1 ); }
+# -wtm_eq_tol 0: pin the full fixed cycle count so the cross-rank comparison is at the same cycle (the
+# equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
+run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/n${n}.log" 2>&1 ); }
 
 echo "=== FillSpillMerge MPI-consistency regression ==="
 echo "binary: $WTM   rank counts vs n=1: ${RANKS[*]}"

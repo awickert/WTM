@@ -64,7 +64,9 @@ run_case() { # evap fsm nranks tag
     local evap="$1" fsm="$2" n="$3" tag="$4"
     local cfg="$WORK/${tag}.cfg"
     base_cfg | sed "s|__EVAP__|$evap|; s|__FSM__|$fsm|; s|__TXT__|$WORK/${tag}.txt|; s|__OUT__|$WORK/${tag}_|" > "$cfg"
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 >"$WORK/${tag}.log" 2>&1 )
+    # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
+    # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${tag}.log" 2>&1 )
 }
 
 echo "=== MPI-consistency regression ==="

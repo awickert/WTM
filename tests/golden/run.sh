@@ -93,7 +93,9 @@ run_case() { # name nranks -> sets $PREFIX
     case_cfg "$name" | sed "s|__X__|x|" > "$cfg"
     echo "textfilename       $WORK/${name}_n${n}.txt" >> "$cfg"
     echo "outfile_prefix     $PREFIX" >> "$cfg"
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$WORK/${name}_n${n}.log" 2>&1 )
+    # -wtm_eq_tol 0: run the full fixed total_cycles so the reference and the cross-rank checks compare at the
+    # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${name}_n${n}.log" 2>&1 )
 }
 
 # Per-case cross-rank comparison tolerance (metres). All cases use the default (~1e-6, above FP-

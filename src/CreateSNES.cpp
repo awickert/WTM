@@ -159,10 +159,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
   if (stiff_flag) dtc_flag = PETSC_TRUE;  // the bundle enables dt-continuation
   user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
-  // Early-stop tolerance parsed for ALL solver paths (was previously only inside the Newton block below,
-  // so -wtm_eq_tol was silently ignored on the default Anderson/Picard path). 0 = off. run() checks the
-  // PER-CYCLE water-table change against it.
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, nullptr);  // early-stop tol [m], 0=off
+  // Convergence-based early stop (-wtm_eq_tol, metres). Default ON for equilibrium runs (0.01 m ~ 1 cm of
+  // max water-table change per ~1-yr cycle), OFF for transient runs (a time-evolution run must play out in
+  // full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value to
+  // override. Parsed for ALL solver paths (was previously only inside the Newton block below, so it was
+  // silently ignored on the default Anderson/Picard path). run() checks the PER-CYCLE change against it.
+  PetscBool eq_tol_set = PETSC_FALSE;
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, &eq_tol_set);  // [m]; 0 = off
+  if (!eq_tol_set)
+    user_context.eq_tol = (params.run_type == "equilibrium") ? 0.01 : 0.0;
   if (user_context.use_newton_continuation) {
     double dt0 = params.deltat / 200.0;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
