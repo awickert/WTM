@@ -242,6 +242,8 @@ of 26.8 s vs 46.6 s here (~75% swing from contention), and 4-node speedup 2.89×
 So trust the **shape** (steady scaling, bigger-is-better, no wall) and the bit-identical
 correctness; the absolute speedups need an `--exclusive` run to be publication-grade.
 
+Full multi-node data (both grids, both runs, with `job_id`): `results_2026-08-11_multinode.csv`.
+
 **Bottom line:** WTM runs multi-node correctly (bit-identical) and scales well to at
 least 8 nodes, *better* on bigger grids — a capability the code was never designed
 for, unlocking the big global (141M-cell) runs beyond one node's memory + bandwidth.

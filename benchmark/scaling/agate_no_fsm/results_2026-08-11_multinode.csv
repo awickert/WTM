@@ -1,0 +1,22 @@
+# WTM multi-node strong scaling -- 2026-08-11, MSI Agate (Rocky 8), groundwater solve only (fsm_on 0)
+# build: awickert/WTM bdf2-adaptive-dt, Release -O3; solver -wtm_anderson -snes_stol 1e-6; launcher mpiexec -ppn 8
+# Fixed 8 ranks/node, node count varied. Shared (NON-exclusive) nodes -> LARGE run-to-run variance
+#   (e.g. 4000^2 1-node baseline 26.77 s in job 15415684 vs 46.64 s in job 15416430) -> trust the SHAPE.
+# Cross-node correctness BIT-IDENTICAL both grids: |16-rank 2-node - 16-rank 1-node| = 0.0 m
+#   (Anderson cross-rank noise floor vs 1-rank: 0.0195 m at 2000^2, 0.2126 m at 4000^2).
+# node_speedup = gw_s(1 node)/gw_s(N nodes); node_efficiency = node_speedup / N. Two runs per grid.
+grid,cells,nodes,ranks_per_node,ranks_total,gw_s,node_speedup,node_efficiency,job_id
+2000,4000000,1,8,8,10.4097,1.000,1.000,15415042
+2000,4000000,2,8,16,5.10452,2.039,1.020,15415042
+2000,4000000,4,8,32,2.96811,3.507,0.877,15415042
+2000,4000000,1,8,8,9.57087,1.000,1.000,15415687
+2000,4000000,2,8,16,5.71488,1.675,0.837,15415687
+2000,4000000,4,8,32,3.47317,2.756,0.689,15415687
+2000,4000000,8,8,64,2.06237,4.641,0.580,15415687
+4000,16000000,1,8,8,26.768,1.000,1.000,15415684
+4000,16000000,2,8,16,14.5495,1.840,0.920,15415684
+4000,16000000,4,8,32,9.26417,2.890,0.722,15415684
+4000,16000000,1,8,8,46.6449,1.000,1.000,15416430
+4000,16000000,2,8,16,22.4958,2.073,1.037,15416430
+4000,16000000,4,8,32,13.2866,3.511,0.878,15416430
+4000,16000000,8,8,64,8.45636,5.516,0.690,15416430
