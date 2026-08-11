@@ -3,7 +3,7 @@
 #SBATCH --partition=msilarge          # multi-node partition (worked: job 15405885 got acn[129-132]).
                                       # Verify with `sinfo -s` if it changes.
 #SBATCH --nodes=4
-#SBATCH --ntasks-per-node=8
+#SBATCH --ntasks-per-node=16           # 16 (not RPN) so the correctness check can put 16 ranks on ONE node
 #SBATCH --mem=32gb                     # per node
 #SBATCH --time=0:40:00
 #SBATCH --output=wtm-multinode-%j.out
@@ -75,7 +75,16 @@ outfile_prefix     ${1}_
 cycles_to_save     9999
 EOF
 }
-gwt() { grep -oE "GW time =\s*[0-9.]+" "$1" 2>/dev/null | grep -oE "[0-9.]+" | sort -g | tail -1; }
+gwt() { python3 -c '
+import re, sys
+try: t = open(sys.argv[1]).read()
+except Exception: print(""); sys.exit()
+# bounded (require whitespace/end after the number) so an interleaved timestamp
+# ("... 2026-08-11 ...") cannot be misparsed as a GW time; sanity-cap at 1e5 s.
+v = [float(x) for x in re.findall(r"GW time =\s*(\d+(?:\.\d+)?)(?=\s|$)", t)]
+v = [x for x in v if x < 1e5]
+print(max(v) if v else "")
+' "$1"; }
 runwtm() {  # label ppn ntot stem   -> run; on failure dump log tail to stdout(.out)
   local label="$1" ppn="$2" ntot="$3" stem="$4"
   mkcfg "$stem" > "$stem.cfg"
@@ -90,30 +99,35 @@ echo "=== mpiexec placement probe (want $RPN ranks on each of 2 DISTINCT hosts) 
 mpiexec -ppn "$RPN" -n $((2*RPN)) hostname 2>/dev/null | sort | uniq -c | sed 's/^/  /' || echo "  probe failed -- mpiexec cannot launch"
 
 echo
-echo "==================== CORRECTNESS: multi-node vs single-rank ===================="
-echo "  [1 rank / 1 node]";            runwtm "ref" 1     1            "$WORK/ref" || true
-echo "  [$((2*RPN)) ranks / 2 nodes]"; runwtm "mn"  "$RPN" $((2*RPN))  "$WORK/mn"  || true
+echo "==================== CORRECTNESS: isolate node-spanning from rank-count noise ===================="
+# Matrix-free Anderson is NOT bit-reproducible across rank counts (non-associative
+# reductions), so |16-rank - 1-rank| is a NOISE FLOOR, not a bug. The clean test is
+# 16-ranks-1-node vs 16-ranks-2-nodes: SAME DMDA decomposition, only node placement
+# (and thus which MPI msgs cross the network) differs -> a real cross-node bug shows
+# as |2 nodes - 1 node| >> the noise floor.
+echo "  [1 rank  / 1 node ]"; runwtm "ref"  1  1  "$WORK/ref"  || true
+echo "  [16 ranks / 1 node]"; runwtm "sn16" 16 16 "$WORK/sn16" || true
+echo "  [16 ranks / 2 nodes]"; runwtm "mn16" 8  16 "$WORK/mn16" || true
 python3 - "$WORK" <<'PY'
-import sys, glob, re
+import sys, glob
 w = sys.argv[1]
-def final_tif(stem):
-    fs = sorted(glob.glob(stem + "_*.tif")); return fs[-1] if fs else None
-rt, mt = final_tif(w+"/ref"), final_tif(w+"/mn")
-if rt and mt:
-    import rasterio, numpy as np
-    a = rasterio.open(rt).read(1); b = rasterio.open(mt).read(1)
-    d = float(np.nanmax(np.abs(a-b)))
-    print(f"  field compare: max|wtd(multi) - wtd(1-rank)| = {d:.3e} m  ->",
-          "PASS (multi-node matches single-node)" if d < 1e-4 else "FAIL -- multi-node DIVERGES")
+def fld(stem):
+    fs = sorted(glob.glob(stem + "_*.tif"))
+    if not fs: return None
+    import rasterio; return rasterio.open(fs[-1]).read(1)
+import numpy as np
+ref, sn, mn = fld(w+"/ref"), fld(w+"/sn16"), fld(w+"/mn16")
+def cmp(a, b): return None if a is None or b is None else float(np.nanmax(np.abs(a-b)))
+d_sn, d_mn, d_node = cmp(ref, sn), cmp(ref, mn), cmp(sn, mn)
+print(f"  |16-rank(1 node)  - 1-rank|  = {d_sn}  m   (Anderson cross-rank noise floor)")
+print(f"  |16-rank(2 nodes) - 1-rank|  = {d_mn}  m")
+print(f"  |2 nodes - 1 node| (SAME 16 ranks -- isolates node-spanning) = {d_node}  m")
+if d_node is None:
+    print("  -> CHECK: a run failed (see log tails above)")
+elif d_sn is not None and d_node <= max(1e-6, 2.0*d_sn):
+    print("  -> PASS: node-spanning adds no error beyond the single-node cross-rank noise")
 else:
-    def dw(log):
-        try: m = re.findall(r"per-cycle max[^=]*=\s*([0-9.eE+-]+)", open(log).read())
-        except FileNotFoundError: return None
-        return float(m[-1]) if m else None
-    r, m = dw(w+"/ref.log"), dw(w+"/mn.log")
-    ok = (r is not None and m is not None and abs(r-m) < 1e-6*max(1.0, abs(r)))
-    print(f"  no output rasters; per-cycle max|dwtd|: 1-rank={r} multi={m}  ->",
-          "PASS" if ok else "CHECK (see the mn log tail above -- crash/hang cross-node?)")
+    print("  -> CHECK: multi-node differs from single-node BEYOND the rank-count noise -- possible cross-node bug")
 PY
 
 echo
