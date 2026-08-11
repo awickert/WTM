@@ -201,18 +201,27 @@ placement differs): **|2 nodes − 1 node| = 0.0 m — bit-for-bit identical.** 
 differ from the 1-rank run by the same 0.0195 m = Anderson's known matrix-free
 16-vs-1-rank noise, not a bug. WTM is provably cross-node-correct.
 
-**Node sweep (2000², fixed 8 ranks/node, FSM off, `mpiexec -ppn 8`):**
+**Node sweep (2000², fixed 8 ranks/node, FSM off, `mpiexec -ppn 8`) — to 8 nodes:**
 
-| nodes | ranks | gw_s | node speedup |
-|---|---|---|---|
-| 1 | 8 | 10.41 | 1.00× |
-| 2 | 16 | 5.10 | 2.04× |
-| 4 | 32 | 2.97 | 3.51× (88%) |
+| nodes | ranks | gw_s | speedup | eff |
+|---|---|---|---|---|
+| 1 | 8 | 9.57 | 1.00× | — |
+| 2 | 16 | 5.71 | 1.68× | 84% |
+| 4 | 32 | 3.47 | 2.76× | 69% |
+| 8 | 64 | 2.06 | 4.64× | 58% |
 
-Adding nodes scales ~linearly (2.04× / 3.51×) — **better than adding cores within a
-node** (8→16 ranks single-node was ~1.5×), because each node brings a *fresh* set of
-16 memory channels rather than sharing one node's. Confirms multi-node as the
-bandwidth lever; the 2→4 falloff is the per-cycle gather-to-rank-0 over Infiniband
-beginning to weigh. (Single-node baseline here is ~35% slower than the unpinned study
-runs above because `mpiexec -ppn 8` *packs* ranks — read node scaling as relative.)
-Next: `GRID=4000` and 8 nodes to find where the gather/IB caps it.
+Adding nodes scales steadily — **~1.67× per node-doubling all the way to 8 nodes**
+(1.68 / 1.65 / 1.68), i.e. NO Infiniband-gather wall yet: throughput keeps climbing
+(4.64× at 8 nodes) while efficiency declines gently. This is *better* than adding
+cores within a node (8→16 ranks single-node ≈ 1.5×), because each node brings a
+*fresh* set of 16 memory channels. Multi-node is the bandwidth lever, confirmed to 8
+nodes. Caveats: (1) shared (non-exclusive) nodes → **~25% run-to-run variance** — an
+earlier 4-node run gave 2.04×/3.51× vs 1.68×/2.76× here; trust the *shape*, not the
+absolute gw_s, until an `--exclusive` run. (2) 2000² is small for 64 ranks (62k
+cells/rank), so a `GRID=4000` run (more per-rank work) would scale further and is
+more production-representative. (3) `mpiexec -ppn 8` *packs* ranks, inflating the
+1-node baseline vs the unpinned study runs above.
+
+**Bottom line:** WTM runs multi-node correctly (bit-identical) and scales well to at
+least 8 nodes — a capability the code was never designed for, unlocking the big
+global (141M-cell) runs beyond one node's memory + bandwidth.
