@@ -96,4 +96,35 @@ matched-grid run would isolate memory-channels from size.
 
 ### grid 4000 (16.0M cells)
 
-_pending — add `results_2026-08-11_grid4000.csv` and the table when the run lands._
+| n | wall_s | gw_s | GW speedup | GW eff | mem min (GB) |
+|---|---|---|---|---|---|
+| 1 | 118.3 | 109.00 | 1.00× | 100% | 10.77 |
+| 2 | 62.6 | 57.71 | 1.89× | 94% | 4.21 |
+| 4 | 39.8 | 35.14 | 3.10× | 78% | 2.15 |
+| 8 | 24.8 | 20.70 | 5.27× | 66% | 1.10 |
+| 16 | 19.0 | 15.00 | 7.27× | 45% | 0.58 |
+| 32 | 16.6 | 12.13 | 8.99× | 28% | 0.32 |
+
+Data: `results_2026-08-11_grid4000.csv`.
+
+### grid-size comparison (GW efficiency)
+
+| n | 2000² | 4000² |
+|---|---|---|
+| 2 | 82% | 94% |
+| 4 | 68% | 78% |
+| 8 | 52% | 66% |
+| 16 | 41% | 45% |
+| 32 | 32% | 28% |
+
+The bigger grid is **more efficient at low–mid core counts** (more work per rank
+amortizes communication/overhead) but its GW peak at n=32 is slightly **lower**
+(8.99× vs 10.13×) and efficiency crosses below 2000² by n=32. Reading: Agate has
+its **own** memory-bandwidth ceiling — it just shows up at n≈16–32 rather than
+the laptop's n≈4. The larger, more bandwidth-hungry problem (500k cells/rank at
+n=32 vs 125k for 2000²) saturates the node's aggregate bandwidth sooner in
+efficiency terms. So the answer to "does the ~4-core wall lift on Agate?" is a
+clear **yes** (both grids gain strongly through n=8, where the laptop had
+flat-lined at ~2.3×), but Agate is not unbounded — its ceiling sits ~4–8× higher
+in core count. Caveat unchanged: shared (non-exclusive) node; an `--exclusive`
+run would sharpen the top end.
