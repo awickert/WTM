@@ -387,8 +387,14 @@ void update(
     }
   }
   // Assemble the full wtd field once, now that the solve loop is done (the
-  // intermediate solves only need each rank's owned cells).
+  // intermediate solves only need each rank's owned cells). Time this all-to-one
+  // gather separately: single-node it is a cheap memory copy, but multi-node it is
+  // an Infiniband transfer to rank 0 every cycle that does NOT shrink with node count
+  // -- the Amdahl term for coupled runs (benchmark/esquibel/FSM_COST.md, task B).
+  richdem::Timer time_gather;
+  time_gather.start();
   FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+  std::cerr << "t gather time = " << time_gather.lap() << std::endl;
 
   // Taper 1 / extended-soil: hand this cycle's above-surface removal to FSM. The sink held wtd<=0 during
   // the solve (so FSM's own wtd>0->runoff handoff won't fire); extended-soil truncated the above-surface
