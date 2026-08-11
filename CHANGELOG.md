@@ -24,11 +24,11 @@ taper) passes.
   surface-sink and evaporation / accessibility taper tangents. Paired with **dt-continuation**
   (`-wtm_dt_continuation`): a pseudo-transient ramp that starts `deltat` small, so a far / cold initial
   water table stays inside the Newton basin, and grows it after each converged step until the table
-  settles. An optional convergence-based early stop (`-wtm_eq_tol`, metres of maximum per-step change)
-  ends the run at equilibrium; it only engages once `deltat` has ramped up, so it cannot trip early. The
-  convenience bundle **`-wtm_stiff`** turns on all three at once (equivalent to
-  `-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`) for hard equilibrium cold-starts on stiff terrain.
-  See `benchmark/EQUILIBRIUM_ROBUSTNESS.md`.
+  settles. On this dt-continuation path the convergence-based early stop (`-wtm_eq_tol`) only engages once
+  `deltat` has ramped up, so it cannot trip early. The convenience bundle **`-wtm_stiff`** turns on all three
+  at once (equivalent to `-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`) for hard equilibrium cold-starts
+  on stiff terrain. See `benchmark/EQUILIBRIUM_ROBUSTNESS.md`. (`-wtm_eq_tol` is now a general, all-paths
+  equilibrium stop that is on by default — see "Automatic equilibrium stop" below.)
 - **Second-order transient time integration.** Fixed-step BDF2 (`-wtm_bdf2`), a volume-form
   variant that is genuinely 2nd order under recharge (`-wtm_bdf2_on_V`), variable-step BDF2, and
   **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/picard/BDF2_ADAPTIVE_DESIGN.md`.
@@ -64,6 +64,17 @@ taper) passes.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,
   `-wtm_ksat_surface_smoothing_width`, `-wtm_storativity_surface_smoothing_width`): optional rounding
   of the piecewise T/S boundaries, applied consistently across all solver paths.
+- **Automatic equilibrium stop, on by default** (`-wtm_eq_tol`). The convergence-based early stop now works
+  on **all** solver paths (it was previously silently ignored except on the Newton dt-continuation path) and
+  gates on the **per-cycle** water-table change `max|wtdᴺ − wtdᴺ⁻¹|` over land — the honest steady-state
+  signal, free of the cosmetic within-cycle free-boundary flicker that the per-sub-step change carries. It is
+  **on by default for equilibrium runs** (0.01 m ≈ 1 cm per ~1-yr cycle; two consecutive cycles below the
+  tolerance → stop) and **off for transient runs**, which must play out in full. `-wtm_eq_tol 0` disables it;
+  any value overrides. Each cycle prints the per-cycle change alongside a within-cycle flicker diagnostic.
+- **Sub-step under-relaxation** (`-wtm_relax a`, default 1 = off): blends each sub-step's solved water table
+  with the previous one, `w ← a·w_solve + (1−a)·w_prev`, damping the period-2 flicker at pinned free
+  boundaries (a FillSpillMerge lake surface, or a `-wtm_direct_to_runoff` seepage cell). Inert at steady
+  state — the equilibrium is unchanged; only the transient march is damped.
 
 #### Smooth surface-water transition (now the default — three tapers, per-taper off-switches)
 The hard `wtd = 0` switch is replaced by three smooth, implicit, order-preserving tapers, all **on by
@@ -88,6 +99,13 @@ default** and each individually disabled by its flag (e.g. `-wtm_evap_taper 0`):
 
 Any configuration other than all-three-on emits a warning (arid-unsafe, inert, or the legacy
 hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
+
+- **Direct-to-runoff seepage face** (`-wtm_direct_to_runoff`, _opt-in alternative to taper 1_): removes the
+  above-surface water-table excess to runoff each sub-step at rate `max(0,wtd)/dt`, pinning the table at the
+  land surface with no rate cap (so no runaway pile) and no below-surface band (so no artificial depression).
+  A simpler, tuning-free surface→runoff handoff; the removed water is routed to FillSpillMerge, so it stays
+  in the domain. Also modestly **faster** (~24 % per cycle on Esquibel), because pinning the seepage cells
+  removes the above-surface churn that otherwise keeps each cycle's solve stiff. Off by default.
 
 #### Scaling and memory
 - **Distributed data model** for single-node, many-core runs. The full grid is no longer replicated
