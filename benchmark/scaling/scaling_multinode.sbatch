@@ -32,7 +32,10 @@ SOLVER="-wtm_anderson -snes_stol 1e-6"
 
 source "$WTM_ROOT/msi_env.sh" test
 export OMP_NUM_THREADS=1
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+# WORK must be on a SHARED filesystem ($HOME, mounted on all nodes) -- NOT node-local
+# /tmp: every node's ranks read the config + synthetic grid, and /tmp is per-node, so
+# the first cross-node attempt died "Failed to read config file!" on the other nodes.
+WORK="$HOME/.wtm_multinode_${SLURM_JOB_ID:-$$}"; mkdir -p "$WORK"; trap 'rm -rf "$WORK"' EXIT
 SDIR="$WORK/synth"; mkdir -p "$SDIR"
 echo "host $(hostname)  nodes_alloc=${SLURM_JOB_NUM_NODES:-?}  grid=${GRID}^2  ranks/node=$RPN  launcher=mpiexec"
 
