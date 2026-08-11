@@ -69,18 +69,25 @@ discovery steps in Path A to find the current equivalents. If no PETSc >= 3.17.1
 exists, use the conda path (Path B).
 
 **Scripted shortcuts (repo root).** Once the toolchain modules and the `wtmtest`
-conda env exist (the one-time steps below), three committed scripts codify the
-whole procedure so you never retype it:
+conda env exist (the one-time steps below), committed scripts codify the whole
+procedure so you never retype it:
 
 - `source msi_env.sh` — load the verified module set (`source msi_env.sh test`
   also activates the `wtmtest` conda env for the Python test suite). This is the
-  single source of truth for the toolchain; the other two scripts source it.
+  single source of truth for the toolchain; the other scripts source it.
 - `./build_msi.sh` — configure + build in one command (sources `msi_env.sh`, runs
-  `cmake` with the MPI wrappers, `make -j`). `--fresh` to reconfigure from clean,
-  `--test` to also run the suite, `--help` for options. Run it on a compute node.
+  `cmake` with the MPI wrappers at Release/`-O3`, `make -j`). `--fresh` to
+  reconfigure from clean, `--test` to also run the suite, `--help` for options.
+  Run it on a compute node.
+- `source run_env.sh` — prepare to RUN an **already-built** WTM (no compile):
+  modules + `wtmtest`, `OMP_NUM_THREADS=1`, and a guard that keeps PETSc's
+  `mpiexec` from being shadowed by conda on PATH. Prints a readiness report.
 - `sbatch run_wtm.sbatch <config.cfg>` — submit a production run; it loads the
   same modules used to build and launches `srun --mpi=pmi2 ./wtm.x`. Edit the
   `#SBATCH` headers (partition / ntasks / mem / time) for your run.
+- `sbatch benchmark/scaling/scaling.sbatch` — unattended MPI strong-scaling sweep
+  of the current build (`GRID` / `RANKS` / `REPS` overridable); results in the job
+  `.out` and `benchmark/scaling/results.csv`.
 
 The manual steps below are what these scripts automate — read them once to
 understand the toolchain, or if a script needs adapting to a new cluster.
