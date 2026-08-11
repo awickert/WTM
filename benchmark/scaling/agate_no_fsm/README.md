@@ -184,3 +184,35 @@ hardware (`cpu:` block above):
 `Cpus_allowed`. The conclusion that survives regardless — MPICH is not pinning and
 the OS is spreading — is what explains the curve. Confirm inside the real
 allocation if certainty is wanted.
+
+## Multi-node scaling — cross-node VALIDATED (2026-08-11)
+
+WTM was designed single-node (`DISTRIBUTED_ARP_DESIGN.md` lists cross-node as a
+non-goal), but it uses PETSc **collective** gather/scatter, so it runs across nodes
+with **no code change** — only launcher/filesystem changes. Two gotchas found and
+fixed (in `scaling_multinode.sbatch`): (1) use **`mpiexec`** (MPICH Hydra, spans the
+Slurm nodelist), NOT `srun --mpi=pmi2` (which aborts/hangs this MPICH); (2) the temp
+work dir (config + input grid) must be on a **shared filesystem** (`$HOME`), not
+node-local `/tmp`, or ranks on other nodes fail "Failed to read config file!".
+
+**Correctness — bit-identical across node layouts.** Comparing the SAME 16-rank DMDA
+decomposition on 1 node vs 2 nodes (cancels Anderson's cross-rank noise; only node
+placement differs): **|2 nodes − 1 node| = 0.0 m — bit-for-bit identical.** Both
+differ from the 1-rank run by the same 0.0195 m = Anderson's known matrix-free
+16-vs-1-rank noise, not a bug. WTM is provably cross-node-correct.
+
+**Node sweep (2000², fixed 8 ranks/node, FSM off, `mpiexec -ppn 8`):**
+
+| nodes | ranks | gw_s | node speedup |
+|---|---|---|---|
+| 1 | 8 | 10.41 | 1.00× |
+| 2 | 16 | 5.10 | 2.04× |
+| 4 | 32 | 2.97 | 3.51× (88%) |
+
+Adding nodes scales ~linearly (2.04× / 3.51×) — **better than adding cores within a
+node** (8→16 ranks single-node was ~1.5×), because each node brings a *fresh* set of
+16 memory channels rather than sharing one node's. Confirms multi-node as the
+bandwidth lever; the 2→4 falloff is the per-cycle gather-to-rank-0 over Infiniband
+beginning to weigh. (Single-node baseline here is ~35% slower than the unpinned study
+runs above because `mpiexec -ppn 8` *packs* ranks — read node scaling as relative.)
+Next: `GRID=4000` and 8 nodes to find where the gather/IB caps it.
