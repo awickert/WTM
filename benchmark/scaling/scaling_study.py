@@ -77,7 +77,13 @@ BUILD_FOLDERS = {
 #     neighbor reads at subdomain boundaries). So kcallaghan has exactly one
 #     working config: anderson at n=1. Its n>1 rows will show rc 59 (caught SEGV).
 ANDERSON_ARGS = ["-snes_type", "anderson", "-snes_stol", "1e-6"]
-SOLVER_ARGS = {"after": ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": ANDERSON_ARGS}
+# The current fork DEFAULTS to the Picard (BDF2-on-V) solver, so select Anderson via WTM's own
+# -wtm_anderson flag (it sets up the matrix-free Anderson path consistently). Passing the raw
+# -snes_type anderson instead makes PETSc run Anderson over WTM's Picard FormPicardRHS, which hands it a
+# read-only-locked vector -> "Object is in wrong state ... locked for read-only" abort in FormPicardRHS.
+# before/kcallaghan predate the Picard default and still take the raw flag.
+FORK_ANDERSON_ARGS = ["-wtm_anderson", "-snes_stol", "1e-6"]
+SOLVER_ARGS = {"after": FORK_ANDERSON_ARGS, "before": ANDERSON_ARGS, "kcallaghan": ANDERSON_ARGS}
 
 # A single well-formed float. Bounded so it stops at the next number even when
 # concurrent MPI ranks interleave their output with no separator (e.g. two ranks
