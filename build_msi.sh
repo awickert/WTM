@@ -58,9 +58,9 @@ fi
 if [ "$FRESH" = 1 ]; then echo "Removing $BUILD_DIR (--fresh)"; rm -rf "$BUILD_DIR"; fi
 mkdir -p "$BUILD_DIR"
 
-echo "==> Configuring (RelWithDebInfo, GDAL on, MPI wrappers) in $BUILD_DIR"
+echo "==> Configuring (Release/-O3, GDAL on, MPI wrappers) in $BUILD_DIR"
 CXX=mpicxx CC=mpicc cmake -S "$ROOT" -B "$BUILD_DIR" \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON
+    -DCMAKE_BUILD_TYPE=Release -DUSE_GDAL=ON
 
 echo "==> Building with -j $JOBS"
 cmake --build "$BUILD_DIR" -j "$JOBS"

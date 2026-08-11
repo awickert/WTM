@@ -67,7 +67,7 @@ To build with `cmake` use:
 ```
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON ..
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GDAL=ON ..
 make
 ```
 Use `-DSANITIZE_ADDRESS=On` to enable addressing sanitizing.
@@ -76,7 +76,7 @@ Alternatively, to build with `ninja`, use:
 ```
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRICHDEM_LOGGING=ON  -GNinja ..
+cmake -DCMAKE_BUILD_TYPE=Release -DRICHDEM_LOGGING=ON  -GNinja ..
 ninja
 ```
 

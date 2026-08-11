@@ -57,7 +57,7 @@ gdal-config --version             # 3.12.1
 
 # 4. Build -- use PETSc's MPI compiler wrappers (the code makes direct MPI_* calls)
 cd WTM && mkdir build && cd build
-CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON ..
+CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GDAL=ON ..
 make -j 8
 
 # 5. Confirm the build (incl. the MPI flip); needs python3 + rasterio
@@ -232,7 +232,7 @@ plain g++ misses the MPI headers/libs that our direct `MPI_*` calls need):
 
 ```sh
 mkdir build && cd build
-CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON ..
+CXX=mpicxx CC=mpicc cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GDAL=ON ..
 make -j
 ```
 
@@ -258,7 +258,7 @@ Build with conda's MPI wrappers:
 
 ```sh
 mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUSE_GDAL=ON \
+cmake -DCMAKE_BUILD_TYPE=Release -DUSE_GDAL=ON \
       -DCMAKE_CXX_COMPILER=$CONDA_PREFIX/bin/mpicxx \
       -DCMAKE_C_COMPILER=$CONDA_PREFIX/bin/mpicc ..
 make -j
