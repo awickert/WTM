@@ -314,9 +314,14 @@ static double surfaceSinkTangent(const double wtd, const double w) {
 // removal RATE [m/s] = max(0,wtd)/dt, so dt*removal = the excess depth. Pins wtd<=0 (no rate cap -> no
 // pile) and removes nothing below the surface (no depression). The Anderson solve tolerates the hard
 // max fine -- an earlier softplus smoothing was inert (convergence was eps-invariant), so it is gone.
-// (The tangent is the step function, for a future Newton path.)
 static double directToRunoffRemoval(const double wtd, const double dt) { return std::max(0.0, wtd) / dt; }
-static double directToRunoffTangent(const double wtd, const double dt) { return (wtd > 0.0 ? 1.0 : 0.0) / dt; }
+// The analytic tangent for a FUTURE Newton path. NOT yet wired into the Jacobian: -wtm_direct_to_runoff
+// currently runs only matrix-free (Anderson), which needs no tangent. Kept (marked maybe_unused) because
+// it records the derivative and the design intent -- but note it is a discontinuous step at wtd=0, exactly
+// the seepage kink the coupling-stability literature says a Newton path would need smoothed first.
+[[maybe_unused]] static double directToRunoffTangent(const double wtd, const double dt) {
+  return (wtd > 0.0 ? 1.0 : 0.0) / dt;
+}
 
 // Taper 2 helpers. sigma is the logistic 1/(1+e^{-u}); u = (wtd - wtd_c)/s. E_eff(wtd) transitions
 // ET -> owe as the table rises. Returns m/s (ET/owe supplied in m/yr). The tangent dE/dwtd is
