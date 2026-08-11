@@ -265,8 +265,10 @@ def main():
     print(f"grids       : {grids}")
     print(f"ranks       : {args.ranks}")
     print(f"maxiter     : {args.maxiter}   total_cycles: {args.total_cycles}")
-    print(f"solver args : {' '.join(ANDERSON_ARGS)}  (all builds; Anderson is what")
-    print(f"              KCallaghan's scripts pass and the v2.0.1 paper recommends)\n")
+    print(f"solver args : after={' '.join(FORK_ANDERSON_ARGS)}  |  "
+          f"before/kcallaghan={' '.join(ANDERSON_ARGS)}")
+    print(f"              (the fork defaults to Picard, so it selects Anderson via -wtm_anderson;")
+    print(f"               before/kcallaghan take the raw -snes_type anderson)\n")
 
     rows = []
     header = f"{'build':<11}{'grid':>6}{'n':>4}{'rc':>4}{'iters':>6}{'wall_s':>9}{'gw_s':>9}   mem GB total/max/min"
