@@ -92,6 +92,45 @@ procedure so you never retype it:
 The manual steps below are what these scripts automate — read them once to
 understand the toolchain, or if a script needs adapting to a new cluster.
 
+## Runbook — MSI (scripted, copy/paste)
+
+**One-time per account.**
+```sh
+# 1. code (fork + working branch + submodules)
+mkdir -p ~/models && cd ~/models
+module load git
+git clone --recurse-submodules -b bdf2-adaptive-dt https://github.com/awickert/WTM.git WTM
+# 2. python env for the tests / scaling study (rasterio); ANACONDA module, not python/*-gcc-*
+module load python/3.10.9_anaconda2023.03_libmamba
+conda config --set auto_activate_base false
+conda create -y -n wtmtest -c conda-forge rasterio numpy
+```
+
+**Each work session** (on an `acn*` compute node — never the login node):
+```sh
+ssh agate
+srun -N 1 --ntasks-per-node=32 --mem=32gb -t 1:30:00 -p msilong --pty bash   # get a node
+cd ~/models/WTM
+git pull                       # if updating
+./build_msi.sh                 # build only if code changed (Release/-O3); skip if already built
+source run_env.sh              # prepare to run: modules + wtmtest + OMP_NUM_THREADS=1 (+ readiness check)
+mpiexec -n 8 build/wtm.x <config.cfg>        # or: srun --mpi=pmi2 -n 8 build/wtm.x <cfg>
+```
+Unattended instead: `sbatch run_wtm.sbatch <cfg>` (production) or
+`sbatch benchmark/scaling/scaling.sbatch` (scaling sweep) — the batch scripts set
+this environment themselves.
+
+### Already installed — get run-ready (copy/paste)
+
+The minimal recipe to make an already-built WTM runnable on a fresh MSI session:
+```sh
+ssh agate
+srun -N 1 --ntasks-per-node=8 --mem=16gb -t 1:00:00 -p interactive --pty bash   # a compute node
+source ~/models/WTM/run_env.sh          # loads modules + wtmtest, sets OMP_NUM_THREADS=1, checks build/wtm.x
+# ready — launch e.g.:
+mpiexec -n 8 ~/models/WTM/build/wtm.x <config.cfg>
+```
+
 ## Dependencies
 
 External (must be provided by modules or conda):
