@@ -26,8 +26,14 @@ So the replicated data model — not compute, not communication — is what stra
 the runs are explicitly provisioned for. The groundwater solve itself already scales well
 (measured ~3.6× at n=8; see `SOLVER_NOTES.md`). The goal is to let it use the whole node.
 
-**Non-goal:** cross-node/InfiniBand scaling. Runs are single-node, so the full-grid
-`MPI_Allreduce` is shared-memory and cheap; the "allreduce hoist" is explicitly de-prioritized.
+**Cross-node (update 2026-08-11): now VALIDATED for the groundwater solve.** Originally a
+non-goal here, but because the solve and its gather/scatter use PETSc collectives, WTM runs
+cross-node with **no code change** — bit-identical, scaling to 8 nodes on MSI Agate (see
+`agate_no_fsm/README.md`). The remaining cross-node limiter is the serial rank-0
+FillSpillMerge / depression hierarchy plus the per-cycle all-to-one gather-to-rank-0 (both
+untested cross-node); **parallelizing FSM** is the next frontier (`FSM_PARALLEL_DESIGN.md`).
+For single-node runs the full-grid `MPI_Allreduce` is shared-memory and cheap, as designed;
+the "allreduce hoist" stays de-prioritized.
 
 ---
 
