@@ -8,6 +8,12 @@
 #     srun -N 1 --ntasks-per-node=8 --mem-per-cpu=4gb -t 2:00:00 -p interactive --pty bash
 # -- do NOT build on the login node.
 #
+# STALE-BINARY TRAP: if you rsync sources here, use `rsync --no-times` (or run this with --fresh).
+# `rsync -a` preserves the SOURCE mtime, which can land OLDER than an existing .o, so the incremental
+# `cmake --build` silently SKIPS the changed file and you run a stale binary. (This bit us: a 139M
+# solve appeared to "fail" because CreateSNES.o was never recompiled -- verify with
+# `strings build/wtm.x | grep <a-new-string>`.) When in doubt after an rsync, build with --fresh.
+#
 # Usage:
 #   ./build_msi.sh                  configure + build (build/, make -j nproc)
 #   ./build_msi.sh --fresh          wipe the build dir first (clean reconfigure)
