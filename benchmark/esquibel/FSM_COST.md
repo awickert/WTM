@@ -96,3 +96,26 @@ bottleneck at any single-node scale to 55M; the GW solve is. This confirms the r
 the parallelize-FSM driver (#80) is NOT compute. It is (1) the multi-node GATHER to rank 0
 (task B) and (2) global-scale MEMORY (the DH-build's full-grid DEM+labels;
 `GLOBAL_SCALING_DESIGN.md`). Task B measures (1).
+
+## Task B: the multi-node gather is NOT a growing Amdahl term (job 15493615)
+
+Fixed grid 13.8M (tiled), coupled fsm_on 1, node sweep 1/2/4/8 (8 ranks/node) on msilarge,
+with a dedicated `t gather time` timer (WTM.cpp) around the per-cycle all-to-one gather to rank 0:
+
+| nodes | ranks | GW/cyc (s) | gather/cyc (s) | FSM/cyc (s) | gather % of cycle |
+|------:|------:|-----------:|---------------:|------------:|------------------:|
+| 1 | 8  | 104.4 | 0.044 | 5e-5 | 0.04% |
+| 2 | 16 | 85.8  | 0.052 | 2e-5 | 0.06% |
+| 4 | 32 | 26.2  | 0.025 | 1e-6 | 0.09% |
+| 8 | 64 | 25.9  | 0.037 | 1e-6 | 0.14% |
+
+**The gather is FLAT (~0.04 s) across node counts** -- gathering 13.8M doubles (~110 MB) to
+rank 0 over Infiniband is ~40 ms and does NOT grow with nodes. It is 0.14% of the cycle even at
+8 nodes; FSM stays microseconds. So neither the serial FSM (A) nor the gather (B) is a real cost
+up to 8 nodes / 13.8M -- the empirical #80 case is WEAKER than the design note assumed.
+CAVEAT keeping #80 alive: GW saturates by 4 nodes here (26->26 s, 4->8 nodes) because 13.8M is
+too small to spread over 64 ranks. The Amdahl wall only appears in the UNREACHED regime -- a
+global-size grid on hundreds of nodes, where GW/cyc is driven to seconds while the fixed gather
+(~7.5 GB to rank 0 at 30" global) + serial FSM (O(N log N) on ~1e9 cells) finally dominate. B
+cannot reach that regime, so it neither confirms nor kills #80; it does show the gather is
+harmless at all currently-reachable scales. Data: fsmcost_multinode_results.csv.
