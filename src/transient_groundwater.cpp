@@ -1199,9 +1199,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         if (user_context.ar_stop_kind == 1 || r < 0) break;   // true convergence (or a real failure)
         if (phase == user_context.ar_max_restarts) break;      // out of restarts
         VecCopy(user_context.ar_best_x, user_context.x);       // restart from the best iterate
-        // NOTE: grow-m on restart (-wtm_adaptive_grow_m) is NOT yet implemented -- changing Anderson's m
-        // mid-solve needs a destroy+recreate of the SNES (SNESReset+re-setup SEGVs); deferred. The flag
-        // currently falls back to restart-only (a warning is printed at setup). See #87.
+        // -wtm_adaptive_grow_m (widen m on restart) is DEFERRED: changing Anderson's m mid-solve needs a
+        // SNESReset + reconfigure, which proved UNRELIABLE across three attempts -- SEGV (lost function
+        // link), then the fresh Anderson context loses the beta=0.5 damping so the grown phase blows up
+        // (undamped, residual -> 1e10), then a hard crash. A correct version needs a full SNES
+        // destroy+recreate (or a pre-built two-level m-switch snes). Until then the flag falls back to
+        // restart-only, which already converges 139M. See #88.
       }
       PetscPrintf(PETSC_COMM_WORLD, "-wtm_adaptive_restart: best residual %g\n", (double)user_context.ar_best_norm);
     } else {

@@ -425,7 +425,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 (int)user_context.ar_max_it, (int)user_context.ar_max_restarts);
     if (user_context.adaptive_grow_m)
       PetscPrintf(PETSC_COMM_WORLD,
-                  "-wtm_adaptive_grow_m: NOT yet implemented (mid-solve m-change needs SNES destroy+recreate); "
-                  "falling back to restart-only. See #87.\n");
+                  "-wtm_adaptive_grow_m: DEFERRED (mid-solve m-change via SNESReset is unreliable -- SEGV / "
+                  "undamped blow-up); falling back to restart-only, which already converges 139M. See #88.\n");
   }
 }
