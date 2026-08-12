@@ -58,4 +58,41 @@ global-scale / gather-driven phenomenon, not an Esquibel-scale one. The next mea
 that would actually size it is a **coupled multi-node run on MSI** (the gather cost) and/or
 a **global-scale single-node fraction** (#78) — not more single-node Esquibel work.
 
-Feeds #79 (fraction-vs-grid-size table) and `benchmark/FSM_PARALLEL_DESIGN.md`.
+Feeds #79 (fraction-vs-grid-size table, below) and `benchmark/FSM_PARALLEL_DESIGN.md`.
+
+## Fraction vs grid size (#78/#79) — single-node coupled fsm_on 1
+
+Real topography at every scale via TILING the 384k Esquibel stack (`make_tiled.py`; each
+tile a full real domain). Island/Esquibel = this laptop; tiled 1.5M–139M = MSI Agate (acn
+EPYC 7763, 32 ranks, msilong; job 15451310, `fsmcost_tiled.sbatch`). GW absolute times are
+not cross-hardware comparable — the FSM/DH FRACTION and the DH-build growth are the point.
+
+| cells | DH-build (once) | FSM /cyc (median) | GW /cyc | FSM fraction | where |
+|------:|----------------:|------------------:|--------:|-------------:|-------|
+| 8,775 (island) | <0.05 s | <0.05 s | ~0.1 s | below timer | laptop |
+| 384,703 (Esquibel) | <0.05 s | 2.4e-6 s (0.14% mean) | ~3.8 s | ~0.14% mean | laptop |
+| 1,538,812 | 0.20 s | 8.0e-7 s | 2.32 s | 0.00003% | MSI |
+| 13,849,308 | 1.70 s | 4.3e-5 s | 23.36 s | 0.00018% | MSI |
+| 55,397,232 | 8.60 s | 4.5e-5 s | 127.67 s | 0.00003% | MSI |
+| 138,877,783 | 30.40 s | — (cold solve aborted) | — | — | MSI |
+
+**Read of the curve:**
+- **FSM per-cycle is negligible at every scale** — microseconds, fraction ~1e-4 % and flat.
+  The median cycle routes ~no water (FSM early-exits); it is never the bottleneck.
+- **DH-build grows ~O(N log N) but is ONE-TIME setup** (0.2 → 1.7 → 8.6 → 30.4 s over
+  1.5M → 139M): each ~2.5–9× cell increase costs ~3.5–8.5× DH time (mildly super-linear =
+  the log factor). Rebuilt only decadal–centennial (topography changes slowly), so amortized
+  to ~0 per cycle — see `benchmark/GLOBAL_SCALING_DESIGN.md`.
+- **GW dominates and scales ~linearly with N** (2.32 → 127.67 s, ~55× for 36× cells; some
+  super-linearity from cache/NUMA spill) — ~99.7%+ of every coupled cycle.
+- **139M cold solve aborted** (`std::runtime_error` after 2.24 h; DH-build completed at
+  30.4 s, zero GW solves finished, NOT OOM — node had 358 GB free, no swap). This is a
+  cold-start solver-convergence limit of the *tiled* domain (361 identical hard-depression
+  tiles drained from wtd=0 at once), NOT an FSM/DH cost — a separate solver-scaling question.
+  A real (non-repeated) global domain, or a warm start, would not hit this.
+
+**Conclusion (single-node, tasks A/#78 done):** FSM+DH compute is not the coupled-model
+bottleneck at any single-node scale to 55M; the GW solve is. This confirms the reframe —
+the parallelize-FSM driver (#80) is NOT compute. It is (1) the multi-node GATHER to rank 0
+(task B) and (2) global-scale MEMORY (the DH-build's full-grid DEM+labels;
+`GLOBAL_SCALING_DESIGN.md`). Task B measures (1).
