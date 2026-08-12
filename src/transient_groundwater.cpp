@@ -820,6 +820,52 @@ static PetscErrorCode HandoffFlailTest(SNES snes, PetscInt it, PetscReal xnorm, 
   return 0;
 }
 
+// Custom SNES convergence test for a -wtm_adaptive_restart Anderson phase. Tracks the GLOBAL best
+// (lowest-residual) iterate across restarts (ar_best_x) and STOPS the phase, recording WHY in
+// ar_stop_kind, so update()'s outer loop can decide converge-vs-restart:
+//   1 = true convergence (relative step < ar_stol)
+//   2 = RATE precursor: rho = |F_k|/|F_{k-1}| > ar_rho_threshold for ar_rho_patience iters -> restart
+//   3 = phase cap ar_max_it reached -> restart
+// A stopped phase always returns a POSITIVE reason so SNESSolve does not report a spurious divergence.
+static PetscErrorCode AdaptiveRestartTest(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
+                                          PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
+  AppCtx* uc       = static_cast<AppCtx*>(ctx);
+  *reason          = SNES_CONVERGED_ITERATING;
+  uc->ar_stop_kind = 0;
+  if (!uc->ar_best_valid || fnorm < uc->ar_best_norm) {  // global best across all restart phases
+    uc->ar_best_norm = fnorm;
+    Vec x;
+    SNESGetSolution(snes, &x);
+    VecCopy(x, uc->ar_best_x);
+    uc->ar_best_valid = PETSC_TRUE;
+  }
+  if (it == 0) {  // start of a phase: seed the rate history, no rho/step test yet
+    uc->ar_prev_norm = fnorm;
+    uc->ar_rho_bad   = 0;
+    return 0;
+  }
+  if (snorm < uc->ar_stol * xnorm) {  // true convergence
+    *reason          = SNES_CONVERGED_SNORM_RELATIVE;
+    uc->ar_stop_kind = 1;
+    return 0;
+  }
+  const PetscReal rho = (uc->ar_prev_norm > 0.0) ? fnorm / uc->ar_prev_norm : 0.0;
+  uc->ar_prev_norm    = fnorm;
+  if (rho > uc->ar_rho_threshold) uc->ar_rho_bad++;
+  else uc->ar_rho_bad = 0;
+  if (uc->ar_rho_bad >= uc->ar_rho_patience) {  // rate precursor -> restart
+    *reason          = SNES_CONVERGED_ITS;
+    uc->ar_stop_kind = 2;
+    return 0;
+  }
+  if (it >= uc->ar_max_it) {  // phase cap -> restart
+    *reason          = SNES_CONVERGED_ITS;
+    uc->ar_stop_kind = 3;
+    return 0;
+  }
+  return 0;
+}
+
 int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   PetscInt its;                // iterations for convergence
   SNESConvergedReason reason;  // Check convergence
@@ -1138,6 +1184,26 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         SNESSolve(user_context.snes_finish, user_context.handoff_picard ? nullptr : user_context.b, user_context.x);
         user_context.handoff_ran_finisher = true;
       }
+    } else if (user_context.use_adaptive_restart) {
+      // rho-triggered proactive restart: run Anderson in phases, restarting the history (each fresh
+      // SNESSolve resets it) from the BEST iterate whenever the RATE degrades (rho -> 1, the flail
+      // precursor) or the phase cap is hit. Converges where a single Anderson phase flails, and -- unlike
+      // the fixed-period default -- adapts to a flail that arrives at an unknown iteration (global). #87.
+      SNESSetConvergenceTest(user_context.snes, AdaptiveRestartTest, &user_context, nullptr);
+      user_context.ar_best_valid = PETSC_FALSE;
+      user_context.ar_best_norm  = 0.0;
+      SNESConvergedReason r = SNES_CONVERGED_ITERATING;
+      for (int phase = 0; phase <= user_context.ar_max_restarts; phase++) {
+        SNESSolve(user_context.snes, user_context.b, user_context.x);
+        SNESGetConvergedReason(user_context.snes, &r);
+        if (user_context.ar_stop_kind == 1 || r < 0) break;   // true convergence (or a real failure)
+        if (phase == user_context.ar_max_restarts) break;      // out of restarts
+        VecCopy(user_context.ar_best_x, user_context.x);       // restart from the best iterate
+        // NOTE: grow-m on restart (-wtm_adaptive_grow_m) is NOT yet implemented -- changing Anderson's m
+        // mid-solve needs a destroy+recreate of the SNES (SNESReset+re-setup SEGVs); deferred. The flag
+        // currently falls back to restart-only (a warning is printed at setup). See #87.
+      }
+      PetscPrintf(PETSC_COMM_WORLD, "-wtm_adaptive_restart: best residual %g\n", (double)user_context.ar_best_norm);
     } else {
       // Solve nonlinear system (single implicit solve)
       SNESSolve(user_context.snes, user_context.b, user_context.x);

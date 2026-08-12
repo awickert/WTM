@@ -68,8 +68,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool restart_type_set = PETSC_FALSE, restart_period_set = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_restart_type", &restart_type_set);
   PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_restart", &restart_period_set);
-  if (!restart_type_set)   PetscOptionsSetValue(nullptr, "-snes_anderson_restart_type", "periodic");
-  if (!restart_period_set) PetscOptionsSetValue(nullptr, "-snes_anderson_restart", "20");
+  // When -wtm_adaptive_restart drives restarts from the outer rho loop (update()), the internal
+  // restart must be OFF (else the two mechanisms fight and the internal one muddies the rho signal).
+  PetscBool ar_here = PETSC_FALSE, ar_growm_here = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &ar_here);
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_grow_m", &ar_growm_here);
+  const bool adaptive_here = (ar_here == PETSC_TRUE || ar_growm_here == PETSC_TRUE);
+  if (!restart_type_set)
+    PetscOptionsSetValue(nullptr, "-snes_anderson_restart_type", adaptive_here ? "none" : "periodic");
+  if (!restart_period_set && !adaptive_here) PetscOptionsSetValue(nullptr, "-snes_anderson_restart", "20");
 
   // Step-tolerance default 1e-8. The damped default (beta=0.5) converges LINEARLY, so it stops right
   // AT the requested step tolerance rather than over-shooting it as the undamped solver does; at the
@@ -140,6 +147,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_handoff_picard", &handoff_picard_flag);
   if (handoff_picard_flag) handoff_flag = PETSC_TRUE;
   if (handoff_flag) force_anderson = PETSC_TRUE;  // phase 1 = matrix-free Anderson (main path)
+  // -wtm_adaptive_restart: rho-triggered proactive Anderson restart (see AppCtx). Selects the Anderson
+  // main path; the outer restart loop lives in update(). -wtm_adaptive_grow_m widens m on each restart.
+  PetscBool adaptive_restart_flag = PETSC_FALSE, adaptive_grow_m_flag = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &adaptive_restart_flag);
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_grow_m", &adaptive_grow_m_flag);
+  if (adaptive_grow_m_flag) adaptive_restart_flag = PETSC_TRUE;
+  if (adaptive_restart_flag) force_anderson = PETSC_TRUE;  // rho-adaptive is an Anderson strategy
   // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
   // "-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01": the analytic-Jacobian Newton path, dt-continuation
   // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
@@ -174,6 +188,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.handoff_picard  = (handoff_picard_flag == PETSC_TRUE);
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_handoff_patience", &user_context.handoff_patience, nullptr);
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_handoff_max_it", &user_context.handoff_max_it, nullptr);
+  user_context.use_adaptive_restart = (adaptive_restart_flag == PETSC_TRUE);
+  user_context.adaptive_grow_m      = (adaptive_grow_m_flag == PETSC_TRUE);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ar_rho", &user_context.ar_rho_threshold, nullptr);
+  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_patience", &user_context.ar_rho_patience, nullptr);
+  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_it", &user_context.ar_max_it, nullptr);
+  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_restarts", &user_context.ar_max_restarts, nullptr);
   if (stiff_flag && !user_context.use_newton) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_stiff has no effect: an explicit Picard/Anderson path flag takes precedence over the\n"
@@ -387,5 +407,25 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 "phase-1 cap=%d). Nonlinear preconditioning; see #87.\n",
                 user_context.handoff_picard ? "Picard(CG+GAMG)" : "Newton(GMRES+GAMG)",
                 (int)user_context.handoff_patience, (int)user_context.handoff_max_it);
+  }
+
+  // -wtm_adaptive_restart: allocate the best-iterate carrier and seed the (possibly growing) window
+  // from the Anderson m default. The rho monitor + outer restart loop live in update().
+  if (user_context.use_adaptive_restart) {
+    VecDuplicate(user_context.x, &user_context.ar_best_x);
+    PetscInt m0 = 10;
+    PetscOptionsGetInt(nullptr, nullptr, "-snes_anderson_m", &m0, nullptr);
+    user_context.ar_current_m = m0;
+    PetscOptionsGetReal(nullptr, nullptr, "-snes_stol", &user_context.ar_stol, nullptr);  // match the run's step tol
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_adaptive_restart: rho-triggered proactive Anderson restart (rho>%.2f for %d iters "
+                "-> restart from best iterate; phase cap %d iters, <=%d restarts). Proactive vs the "
+                "periodic default; generalizes to an unknown flail iteration (global scale). See #87.\n",
+                (double)user_context.ar_rho_threshold, (int)user_context.ar_rho_patience,
+                (int)user_context.ar_max_it, (int)user_context.ar_max_restarts);
+    if (user_context.adaptive_grow_m)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "-wtm_adaptive_grow_m: NOT yet implemented (mid-solve m-change needs SNES destroy+recreate); "
+                  "falling back to restart-only. See #87.\n");
   }
 }

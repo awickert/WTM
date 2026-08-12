@@ -88,6 +88,28 @@ struct AppCtx {
   PetscInt  handoff_max_it    = 60;            // hard cap on phase-1 Anderson iters
   PetscBool handoff_best_valid = PETSC_FALSE;  // a best iterate has been stored this solve
 
+  // --- rho-based proactive adaptive restart (-wtm_adaptive_restart) ---
+  // Restart Anderson's history when the CONVERGENCE RATE degrades (rho = |F_k|/|F_{k-1}| climbs
+  // toward 1) -- the PRECURSOR to the near-convergence flail -- proactively, BEFORE the residual
+  // actually rises (unlike PETSc's difference-restart, which fires on the rise itself, too late).
+  // This generalizes the fixed-period restart to scales where the flail arrives at an unknown
+  // iteration (the road to global). Each restart re-runs Anderson from the best iterate (a fresh
+  // SNESSolve resets the history); with -wtm_adaptive_grow_m it also widens the window. See #87.
+  bool      use_adaptive_restart = false;
+  bool      adaptive_grow_m      = false;
+  Vec       ar_best_x            = nullptr;   // global best (lowest-residual) iterate across restarts
+  PetscReal ar_best_norm         = 0.0;
+  PetscReal ar_prev_norm         = 0.0;       // previous iter's residual (per phase), for rho
+  PetscReal ar_rho_threshold     = 0.9;       // restart when rho exceeds this...
+  PetscReal ar_stol              = 1e-8;      // ...true-convergence step tol inside a phase
+  PetscInt  ar_rho_patience      = 2;         // ...for this many consecutive iters
+  PetscInt  ar_rho_bad           = 0;
+  PetscInt  ar_max_it            = 40;        // cap per Anderson phase before a forced restart
+  PetscInt  ar_max_restarts      = 30;        // outer restart cap
+  PetscInt  ar_current_m         = 10;        // window; grows on restart if adaptive_grow_m
+  PetscInt  ar_stop_kind         = 0;         // set by the test: 0=iterating 1=converged 2=restart 3=maxed
+  PetscBool ar_best_valid        = PETSC_FALSE;
+
   // --- Newton dt-continuation (gated behind -wtm_dt_continuation; needs -wtm_newton) ---
   // Pseudo-transient continuation for EQUILIBRIUM from a far guess: start deltat small (so the storage
   // term S/deltat keeps the Jacobian diagonally dominant -- a large step from far overshoots into a
