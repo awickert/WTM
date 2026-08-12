@@ -1,0 +1,8 @@
+label,reason,total_it,wall_s
+periodic_10,CONVERGED_SNORM_RELATIVE,45,124
+periodic_15,CONVERGED_SNORM_RELATIVE,43,130
+periodic_20,CONVERGED_SNORM_RELATIVE,40,115
+periodic_25,CONVERGED_SNORM_RELATIVE,43,126
+difference_it1,?,?,238
+difference_it2,?,?,275
+difference_it3,DIVERGED_MAX_IT,90,161
