@@ -67,6 +67,27 @@ struct AppCtx {
   // operator solvers (Anderson/Picard) diverge from far; see benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   bool use_newton = false;
 
+  // --- Anderson -> Newton/Picard hand-off (nonlinear preconditioning; -wtm_handoff) ---
+  // Anderson globalizes the cold, ill-conditioned solve (matrix-free, robust FAR from the
+  // solution) but goes UNSTABLE near convergence at large N (residual bottoms out then
+  // oscillates -- the "flail"). Newton/Picard are the opposite: fail cold (singular/steep
+  // operator from far) but excel NEAR the solution, where wtd is settled so T is a tame,
+  // near-fixed coefficient. So run Anderson until it stops making progress, then hand its
+  // BEST iterate to a Newton (GMRES+GAMG) or Picard (CG+GAMG) finisher. This is nonlinear
+  // preconditioning / composing solvers (Brune et al. 2015): Anderson is a global nonlinear
+  // preconditioner that maps the problem into the finisher's convergence basin. See #85/#87.
+  bool      use_handoff       = false;
+  bool      handoff_picard    = false;         // finisher = Picard (SPD CG+GAMG) instead of Newton
+  SNES      snes_finish       = nullptr;       // the phase-2 finisher (shares the DM/residual/Jacobian)
+  Vec       handoff_best_x    = nullptr;       // lowest-residual Anderson iterate, handed to the finisher
+  bool      handoff_ran_finisher = false;      // did phase 2 run this solve (-> read its reason)
+  PetscReal handoff_min_norm  = 0.0;           // running min residual over phase 1
+  PetscReal handoff_stol      = 1e-8;          // step tol for TRUE convergence inside phase 1
+  PetscInt  handoff_stall     = 0;             // consecutive phase-1 iters without a new min residual
+  PetscInt  handoff_patience  = 3;             // hand off after this many stalled iters (the flail trigger)
+  PetscInt  handoff_max_it    = 60;            // hard cap on phase-1 Anderson iters
+  PetscBool handoff_best_valid = PETSC_FALSE;  // a best iterate has been stored this solve
+
   // --- Newton dt-continuation (gated behind -wtm_dt_continuation; needs -wtm_newton) ---
   // Pseudo-transient continuation for EQUILIBRIUM from a far guess: start deltat small (so the storage
   // term S/deltat keeps the Jacobian diagonally dominant -- a large step from far overshoots into a
