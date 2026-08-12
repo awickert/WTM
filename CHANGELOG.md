@@ -182,6 +182,15 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   rise that only occurs *at* the flail — too late). The instability is driven by high-latitude `cos(lat)`
   cell anisotropy, so it is a real property of large real-world domains, not just a test artifact.
   Disable with `-snes_anderson_restart_type none`. See `benchmark/esquibel/` sweeps.
+- **Optional ρ-adaptive Anderson restart** (`-wtm_adaptive_restart`): a *proactive* alternative to the
+  fixed-period default that restarts Anderson's history when the convergence *rate* degrades
+  (ρ = ‖F_k‖/‖F_{k-1}‖ → 1 — the flail precursor, which appears *before* the residual rises), restarting
+  each phase from the best iterate. Because it triggers on the rate rather than a fixed count, it adapts
+  to a flail arriving at an unknown iteration — robustness for scales beyond those tested (the road to
+  global). Confirmed at 139M: converges, and slightly faster than the periodic default (~112 s vs ~140 s,
+  by restarting only when needed). Off by default; tunable via `-wtm_ar_rho / _patience / _max_it /
+  _max_restarts`. (`-wtm_adaptive_grow_m` is reserved but not yet implemented — mid-solve `m` change needs
+  an SNES destroy+recreate; it currently warns and falls back to restart-only.)
 
 ### Removed
 - The `-wtm_const_storativity` diagnostic path.
