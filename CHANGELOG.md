@@ -169,6 +169,19 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   Corsica DEM at 1–4 MPI ranks. The damping is the fix — a wider acceleration window also converges but
   adds per-iteration parallel reductions that the discontinuous FillSpillMerge routing amplifies into
   ~mm cross-rank differences, so m stays at 10.
+- **Anderson near-convergence instability at large scale** (`DIVERGED_MAX_IT`; a cold ~139-million-cell
+  equilibrium solve). Near convergence the Anderson residual-difference vectors go nearly linearly
+  dependent, the least-squares mixing coefficients blow up, and the residual *reverses and oscillates*
+  instead of settling. The fix is a **periodic history restart, now on by default for the Anderson path**
+  (`-snes_anderson_restart_type periodic -snes_anderson_restart 20`): purging the history before it
+  degenerates lets the solve converge (~40 iterations at 139M, robustly across periods 10–25). It is a
+  **safe conditional default** — small grids converge in fewer than 20 iterations so the restart never
+  fires (the full regression suite is byte-identical with it on), and only large / stiff runs engage it.
+  Chosen over widening `m` (which converges but doubles the per-iteration reductions and reopens the
+  cross-rank-consistency issue) and over the adaptive *difference* restart (which triggers on a residual
+  rise that only occurs *at* the flail — too late). The instability is driven by high-latitude `cos(lat)`
+  cell anisotropy, so it is a real property of large real-world domains, not just a test artifact.
+  Disable with `-snes_anderson_restart_type none`. See `benchmark/esquibel/` sweeps.
 
 ### Removed
 - The `-wtm_const_storativity` diagnostic path.

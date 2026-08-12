@@ -53,6 +53,24 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (!anderson_m_set) PetscOptionsSetValue(nullptr, "-snes_anderson_m", "10");
   if (!anderson_beta_set) PetscOptionsSetValue(nullptr, "-snes_anderson_beta", "0.5");
 
+  // Periodic restart (default period 20): purge the Anderson history before its near-convergence
+  // least-squares degenerates. At large/stiff scale the residual-difference columns go linearly
+  // dependent near convergence, the mixing coefficients blow up, and the residual REVERSES and
+  // oscillates -- the "flail" that stalls a cold 139M solve to DIVERGED_MAX_IT. A proactive periodic
+  // restart resets the history while still in the easy regime, so the degeneracy never accumulates:
+  // 139M cold DIVERGES without it, CONVERGES in ~40 iters with it, robustly across periods 10-25.
+  // SAFE as a default: small grids converge in FEWER than `period` iters so the restart NEVER fires
+  // (byte-identical -- verified, full suite unchanged); only large/stiff runs hit it. Chosen over a
+  // wider window (m=20 also converges but does 2x the per-iteration reductions AND may break cross-rank
+  // consistency like m=30) and over the ADAPTIVE (difference) restart, which fires on a residual RISE
+  // that only occurs AT the flail -- too late (confirmed: fails at restart_it 1/2/3). Overridable
+  // (-snes_anderson_restart_type none to disable, -snes_anderson_restart N to retune). See #85/#87.
+  PetscBool restart_type_set = PETSC_FALSE, restart_period_set = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_restart_type", &restart_type_set);
+  PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_restart", &restart_period_set);
+  if (!restart_type_set)   PetscOptionsSetValue(nullptr, "-snes_anderson_restart_type", "periodic");
+  if (!restart_period_set) PetscOptionsSetValue(nullptr, "-snes_anderson_restart", "20");
+
   // Step-tolerance default 1e-8. The damped default (beta=0.5) converges LINEARLY, so it stops right
   // AT the requested step tolerance rather than over-shooting it as the undamped solver does; at the
   // looser 1e-6 that left ~1e-6 (um-scale) rank-dependence in the water table (each rank converges to
