@@ -1,0 +1,41 @@
+#!/bin/bash -l
+#SBATCH --job-name=wtm-eq
+#SBATCH --partition=agsmall
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=16
+#SBATCH --mem=32gb
+#SBATCH --time=24:00:00
+#SBATCH --output=eq-%j.out
+#
+# Equilibrium algorithmic-comparison runner (ONE config per job), cold from t=0, dt=1 week,
+# fsm OFF, 16-core shared slice (first-look timing). Runs to convergence: 100000-cycle
+# backstop + eq_tol 0.01 auto-stop. Designed to run IN PARALLEL with the cc baseline on a
+# separate node, so both converge at once. Compare cycles-to-eq (and confirm the final
+# raster matches the cc baseline's w_eq) to isolate the algorithmic effect at the stable dt.
+# Distinct stem per CONFIG so it never clobbers the running baseline (cc1_baseline_msi).
+#   CONFIG=tbar sbatch algo_eq_msi.sbatch
+set -uo pipefail
+CONFIG="${CONFIG:-cc}"                 # cc | tbar   (one thing changes on top of cc)
+N="${N:-16}"
+case "$CONFIG" in
+  cc)   CFGFLAGS="-wtm_anderson -snes_anderson_restart_type none" ;;
+  tbar) CFGFLAGS="-wtm_anderson -snes_anderson_restart_type none -wtm_Tbar" ;;
+  *) echo "unknown CONFIG '$CONFIG' (want cc|tbar)"; exit 2 ;;
+esac
+WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"
+BIN="$WTM_ROOT/build/wtm.x"
+ESQ="$WTM_ROOT/benchmark/esquibel"
+source "$WTM_ROOT/msi_env.sh" test
+export OMP_NUM_THREADS=1
+export PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/share/proj}"
+cd "$ESQ"
+mkdir -p results/algo/reference
+stem="results/algo/reference/${CONFIG}_eq_msi"
+sed "s#^fsm_on.*#fsm_on 0#;s#^supplied_wt.*#supplied_wt 0#;s#^deltat.*#deltat 604800#;s#^total_cycles.*#total_cycles 100000#;s#^cycles_to_save.*#cycles_to_save 100#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#" eq_awickert.cfg > ${stem}.cfg
+rm -f ${stem}.txt ${stem}_*.tif
+echo "eq CONFIG=$CONFIG: job ${SLURM_JOB_ID:-?} on $(hostname); N=$N ranks; cold from t=0; flags: $CFGFLAGS"
+t0=$(date +%s)
+mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -snes_stol 1e-6 -wtm_eq_tol 0.01 > ${stem}.log 2>&1
+rc=$?; t1=$(date +%s)
+echo "rc=$rc CONFIG=$CONFIG WALL_S=$((t1-t0)) cycles=$(grep -c 'per-cycle max' ${stem}.log 2>/dev/null)"
+grep 'equilibrium reached' ${stem}.log | tail -1 || echo "did NOT auto-stop (backstop/walltime)"
