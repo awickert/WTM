@@ -15,12 +15,15 @@
 # Distinct stem per CONFIG so it never clobbers the running baseline (cc1_baseline_msi).
 #   CONFIG=tbar sbatch algo_eq_msi.sbatch
 set -uo pipefail
-CONFIG="${CONFIG:-cc}"                 # cc | tbar   (one thing changes on top of cc)
+CONFIG="${CONFIG:-cc}"                 # cc | tbar | adaptive | tbar_adaptive
 N="${N:-16}"
+BASE="-wtm_anderson -snes_anderson_restart_type none"   # all configs are Anderson, restart off
 case "$CONFIG" in
-  cc)   CFGFLAGS="-wtm_anderson -snes_anderson_restart_type none" ;;
-  tbar) CFGFLAGS="-wtm_anderson -snes_anderson_restart_type none -wtm_Tbar" ;;
-  *) echo "unknown CONFIG '$CONFIG' (want cc|tbar)"; exit 2 ;;
+  cc)            CFGFLAGS="$BASE" ;;
+  tbar)          CFGFLAGS="$BASE -wtm_Tbar" ;;
+  adaptive)      CFGFLAGS="$BASE -wtm_dt_adaptive" ;;                 # Anderson + adaptive dt (verified: SNES=anderson)
+  tbar_adaptive) CFGFLAGS="$BASE -wtm_Tbar -wtm_dt_adaptive" ;;
+  *) echo "unknown CONFIG '$CONFIG' (want cc|tbar|adaptive|tbar_adaptive)"; exit 2 ;;
 esac
 WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"
 BIN="$WTM_ROOT/build/wtm.x"
