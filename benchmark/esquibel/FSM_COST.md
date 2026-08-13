@@ -97,7 +97,7 @@ the parallelize-FSM driver (#80) is NOT compute. It is (1) the multi-node GATHER
 (task B) and (2) global-scale MEMORY (the DH-build's full-grid DEM+labels;
 `GLOBAL_SCALING_DESIGN.md`). Task B measures (1).
 
-## Task B: the multi-node gather is NOT a growing Amdahl term (job 15493615)
+## Task B: the multi-node gather is NOT a growing Amdahl term (jobs 15493615 @13.8M, 15586370 @55M)
 
 Fixed grid 13.8M (tiled), coupled fsm_on 1, node sweep 1/2/4/8 (8 ranks/node) on msilarge,
 with a dedicated `t gather time` timer (WTM.cpp) around the per-cycle all-to-one gather to rank 0:
@@ -119,3 +119,25 @@ global-size grid on hundreds of nodes, where GW/cyc is driven to seconds while t
 (~7.5 GB to rank 0 at 30" global) + serial FSM (O(N log N) on ~1e9 cells) finally dominate. B
 cannot reach that regime, so it neither confirms nor kills #80; it does show the gather is
 harmless at all currently-reachable scales. Data: fsmcost_multinode_results.csv.
+
+### Confirmed at 55M (job 15586370)
+
+Same harness, fixed grid 55.4M (tiled 12x12), node sweep 1/2/4/8 (8 ranks/node):
+
+| nodes | ranks | GW/cyc (s) | gather/cyc (s) | gather % of cycle |
+|------:|------:|-----------:|---------------:|------------------:|
+| 1 | 8  | 487.7 | 0.314 | 0.06% |
+| 2 | 16 | 277.9 | 0.165 | 0.06% |
+| 4 | 32 | 154.2 | 0.306 | 0.20% |
+| 8 | 64 | 119.3 | 0.235 | 0.19% |
+
+At 4x the grid the finding holds and is in fact **stronger**: the gather stays FLAT (~0.2-0.3 s,
+~460 MB to rank 0 over Infiniband, no growth with node count) and is <0.3% of the cycle even at
+8 nodes. Crucially, unlike 13.8M the GW solve here does **not** saturate by 8 nodes (487->119 s
+= 4.1x, still scaling), so the gather is now measured against a solve that is *still shrinking*
+with nodes -- and it remains negligible. Two grid sizes (13.8M, 55M) x four node counts now
+agree: **the per-cycle all-to-one gather to rank 0 is not a growing Amdahl term at any
+currently-reachable scale.** This is a positive result for the massive-scale goal -- the
+suspected multi-node serial bottleneck (the gather) is not one in practice; the remaining
+multi-node concern is memory (the full-grid DH build), not gather time. Data (both grids):
+fsmcost_multinode_results.csv.
