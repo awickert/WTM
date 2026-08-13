@@ -2,15 +2,17 @@
 #SBATCH --job-name=cc1-baseline
 #SBATCH --partition=agsmall
 #SBATCH --nodes=1
-#SBATCH --exclusive
+#SBATCH --ntasks-per-node=16
+#SBATCH --mem=32gb
 #SBATCH --time=24:00:00
 #SBATCH --output=cc1_baseline-%j.out
 #
-# THE clean-wall-time equilibrium baseline: corrected-Callaghan (matrix-free Anderson,
-# 1st-order backward Euler, restart OFF, no Tbar, no TR-BDF2), COLD from t=0, dt=1 week,
-# fsm OFF, on a DEDICATED (--exclusive) node so the wall time is uncontended. cc_1 is the
-# baseline for BOTH equilibrium time (cycles + clean wall) and the reference w_eq (its
-# converged wtd = the "correct answer" other methods are checked against).
+# FIRST-LOOK equilibrium baseline: corrected-Callaghan (matrix-free Anderson, 1st-order
+# backward Euler, restart OFF, no Tbar, no TR-BDF2), COLD from t=0, dt=1 week, fsm OFF.
+# NOT --exclusive: a 16-core shared-node slice, so wall time is a FIRST-LOOK number (may
+# carry co-tenant contention) -- good enough to know what we're looking at; pristine timing
+# waits for publication once the code is finalized. cc_1 is the baseline for BOTH equilibrium
+# time (cycles + wall) and the reference w_eq (its converged wtd = the "correct answer").
 #
 # Runs to convergence NO MATTER HOW MANY STEPS: 100000-cycle backstop + no per-run timeout;
 # the model's eq_tol auto-stop (per-cycle max|Δwtd| < 0.01 m for 2 consecutive cycles) ends
