@@ -630,13 +630,12 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
       double storage, recharge;
       if (bdf2_on_V) {
         storage  = a_c * storedVolume(w1, poro) - b_c * storedVolume(w0, poro) + c_c * storedVolume(wm1, poro);
-        recharge = specificYield(w1, poro) * rech;
       } else {
         const double S_c = updateEffectiveStorativity(w0, w1, poro);  // secant storativity (matches the RHS)
         const double h1 = dmdapack.x[j][i], h0 = w0 + my_topo[j][i], hm1 = wm1 + my_topo[j][i];
         storage  = S_c * (a_c * h1 - b_c * h0 + c_c * hm1);
-        recharge = S_c * rech;
       }
+      recharge = rech;  // recharge is now a fixed VOLUME (depth); the storativity scaling has moved out.
       arp.total_storage_change  += storage * arp.cell_area[j];
       arp.total_solver_recharge += recharge * arp.cell_area[j];
     }
@@ -1803,7 +1802,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
           const double Sy   = specificYield(w_c, poro);
           const double storage = (storedVolume(w_c, poro) - storedVolume(my_starting_wtd[j][i], poro)) / Sy;
           const double impl    = user_context->deltat * net_outflow / A_j + user_context->deltat * removal;
-          f[j][i] = storage + 0.5 * TR_G * (impl + my_tr_expl[j][i]) / Sy - TR_G * my_rech[j][i];
+          f[j][i] = storage + 0.5 * TR_G * (impl + my_tr_expl[j][i]) / Sy - TR_G * my_rech[j][i] / Sy;
         } else if (tr_stage == 2) {
           // TR-BDF2 stage 2 (BDF2 from w^n and Y_gamma to w^{n+1}), head-scaled by Sy(w^{n+1}). w_c is the
           // iterate = w^{n+1}. Recharge conserves over the whole step (c1*gamma + c3 = 1; Y_gamma already
@@ -1815,7 +1814,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
                                   + tr_c2 * storedVolume(my_starting_wtd[j][i], poro)) / Sy;
           f[j][i] = storage
                     + tr_c3 * (user_context->deltat * net_outflow / A_j + user_context->deltat * removal) / Sy
-                    - tr_c3 * my_rech[j][i];
+                    - tr_c3 * my_rech[j][i] / Sy;
         } else if (bdf2v) {
           // 2nd-order-in-time: storage = 3-level BDF2 difference of the stored VOLUME, head-scaled by the
           // specific yield Sy = dV/dh (so the residual stays O(metres) for Anderson; scaling by a positive
@@ -1826,11 +1825,14 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
           const double Sy   = specificYield(w_c, poro);
           const double storage = (a_c * storedVolume(w_c, poro) - b_c * storedVolume(my_starting_wtd[j][i], poro)
                                   + c_c * storedVolume(my_starting_wtd_prev[j][i], poro)) / Sy;
-          f[j][i] = storage - my_rech[j][i] + user_context->deltat * net_outflow / (A_j * Sy)
+          f[j][i] = storage - my_rech[j][i] / Sy + user_context->deltat * net_outflow / (A_j * Sy)
                     + user_context->deltat * removal / Sy;
         } else {
           // Backward Euler (secant storativity): the SNES RHS b=h^n supplies the previous-step storage.
-          f[j][i] = (this_x - my_rech[j][i]) + user_context->deltat * net_outflow / (A_j * S)
+          // Recharge is a fixed VOLUME (depth) my_rech; dividing by the secant S gives its head-form
+          // contribution so the realized volume is exactly my_rech at any storativity (below the surface
+          // S=porosity and my_rech/S reduces to the old head, byte-identical).
+          f[j][i] = (this_x - my_rech[j][i] / S) + user_context->deltat * net_outflow / (A_j * S)
                     + user_context->deltat * removal / S;
         }
         // my_rech is converted to appropriate recharge for this timestep and starting water
@@ -1922,6 +1924,8 @@ static PetscErrorCode FormJacobianLocal(
   }
   PetscScalar** my_starting_wtd_local = nullptr;  // -wtm_Tbar: ghosted w^n for the time-averaged T̄
   if (g_Tbar) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_local, &my_starting_wtd_local));
+  PetscScalar** my_rech;  // fixed-volume recharge (depth); enters the residual as −my_rech/S (1/S-scaled)
+  PetscCall(DMDAVecGetArray(da, user_context->rech_vec, &my_rech));
 
   const bool   smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   const bool   sink_on  = g_surface_sink;
@@ -2044,7 +2048,11 @@ static PetscErrorCode FormJacobianLocal(
                          + G_N * (e_N - 2.0 * taup_c / (sumN * sumN) * dN)
                          + G_S * (e_S - 2.0 * taup_c / (sumS * sumS) * dS);
 
-      const double J_center = 1.0 + B * dN_dc - (Sp / S) * (flux_term + removal_term) + D * rho;
+      // Recharge is a fixed volume entering the residual as −my_rech/S (a 1/S-scaled term like the
+      // flux/removal), so it joins the −(S'/S)·(…) chain-rule group: ∂(−my_rech/S)/∂x_c = +(S'/S)·(my_rech/S).
+      const double recharge_term = my_rech[j][i] / S;  // dt-independent; head-form recharge magnitude
+      const double J_center =
+          1.0 + B * dN_dc - (Sp / S) * (flux_term + removal_term - recharge_term) + D * rho;
 
       MatStencil  cols[5];
       PetscScalar vals[5];
@@ -2082,6 +2090,7 @@ static PetscErrorCode FormJacobianLocal(
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscCall(DMDAVecRestoreArray(da, user_context->rech_vec, &my_rech));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
@@ -2159,7 +2168,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
         bb[j][i] = A_j * (a_c * Sy * xx[j][i] - a_c * storedVolume(w_k, poro)
                         + b_c * storedVolume(my_starting_wtd[j][i], poro)
                         - c_c * storedVolume(my_starting_wtd_prev[j][i], poro)
-                        + Sy * my_rech[j][i]);
+                        + my_rech[j][i]);  // fixed-volume recharge (depth); no storativity scaling
         if (g_surface_sink) {
           // Implicit sub-surface removal dt*Q(w^{n+1}), Picard-linearized about w_k like the storage
           // term; scaled by A_j to match the operator's dt*Q'(w_k)*A_j diagonal (volume form).
@@ -2181,9 +2190,9 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
         const double A_j = cns2 / gew[j][i];  // volume form: scale the storage/recharge by the cell area
         if (bdf2) {
           const double h_nm1 = my_starting_wtd_prev[j][i] + my_topo[j][i];
-          bb[j][i] = A_j * S_c * (b_c * h_n - c_c * h_nm1 + my_rech[j][i]);
+          bb[j][i] = A_j * (S_c * (b_c * h_n - c_c * h_nm1) + my_rech[j][i]);  // recharge = fixed volume
         } else {
-          bb[j][i] = A_j * S_c * (h_n + my_rech[j][i]);
+          bb[j][i] = A_j * (S_c * h_n + my_rech[j][i]);  // recharge = fixed volume (depth), out of S_c
         }
       }
     }
