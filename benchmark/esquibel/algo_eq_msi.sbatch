@@ -8,11 +8,13 @@
 #SBATCH --output=eq-%j.out
 #
 # Equilibrium algorithmic-comparison runner (ONE config per job), cold from t=0, dt=1 week,
-# fsm OFF, 16-core shared slice (first-look timing). Runs to convergence: 100000-cycle
-# backstop + eq_tol 0.01 auto-stop. Designed to run IN PARALLEL with the cc baseline on a
-# separate node, so both converge at once. Compare cycles-to-eq (and confirm the final
-# raster matches the cc baseline's w_eq) to isolate the algorithmic effect at the stable dt.
-# Distinct stem per CONFIG so it never clobbers the running baseline (cc1_baseline_msi).
+# fsm OFF but WITH -wtm_direct_to_runoff = the Fan & Miguez-Macho config (exfiltration/ponding
+# collected into arp.runoff and removed from the water table, NOT ponded above surface, NOT
+# FSM-routed). This is the physically-correct fsm-off equilibrium; without it, closed basins
+# pond unboundedly (found: 110k cells, up to 758 m) and drive a multi-metre limit cycle.
+# 16-core shared slice (first-look timing). eq_tol 0.1 m auto-stop: runoff cuts the residual
+# oscillation ~100x to ~5 cm / ~18 cells (acceptable margin), so 0.1 m fires cleanly where
+# 0.01 m cannot. Distinct stem per CONFIG so it never clobbers other runs.
 #   CONFIG=tbar sbatch algo_eq_msi.sbatch
 set -uo pipefail
 CONFIG="${CONFIG:-cc}"                 # cc | tbar | adaptive | tbar_adaptive
@@ -38,7 +40,7 @@ sed "s#^fsm_on.*#fsm_on 0#;s#^supplied_wt.*#supplied_wt 0#;s#^deltat.*#deltat 60
 rm -f ${stem}.txt ${stem}_*.tif
 echo "eq CONFIG=$CONFIG: job ${SLURM_JOB_ID:-?} on $(hostname); N=$N ranks; cold from t=0; flags: $CFGFLAGS"
 t0=$(date +%s)
-mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -snes_stol 1e-6 -wtm_eq_tol 0.01 > ${stem}.log 2>&1
+mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -wtm_direct_to_runoff -snes_stol 1e-6 -wtm_eq_tol 0.1 > ${stem}.log 2>&1
 rc=$?; t1=$(date +%s)
 echo "rc=$rc CONFIG=$CONFIG WALL_S=$((t1-t0)) cycles=$(grep -c 'per-cycle max' ${stem}.log 2>/dev/null)"
 grep 'equilibrium reached' ${stem}.log | tail -1 || echo "did NOT auto-stop (backstop/walltime)"
