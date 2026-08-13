@@ -8,13 +8,13 @@
 #SBATCH --output=eq-%j.out
 #
 # Equilibrium algorithmic-comparison runner (ONE config per job), cold from t=0, dt=1 week,
-# fsm OFF but WITH -wtm_direct_to_runoff = the Fan & Miguez-Macho config (exfiltration/ponding
-# collected into arp.runoff and removed from the water table, NOT ponded above surface, NOT
-# FSM-routed). This is the physically-correct fsm-off equilibrium; without it, closed basins
-# pond unboundedly (found: 110k cells, up to 758 m) and drive a multi-metre limit cycle.
-# 16-core shared slice (first-look timing). eq_tol 0.1 m auto-stop: runoff cuts the residual
-# oscillation ~100x to ~5 cm / ~18 cells (acceptable margin), so 0.1 m fires cleanly where
-# 0.01 m cannot. Distinct stem per CONFIG so it never clobbers other runs.
+# fsm OFF, with -wtm_surface_exfiltration_to_runoff = the CORRECT free-surface treatment:
+# water mounds during the solve, then POST-SOLVE the above-surface excess is routed to runoff
+# (->FSM when on) and the table is CLAMPED to the surface (wtd=0). This is the true seepage
+# face. (NOT -wtm_direct_to_runoff, the in-residual max(0,w)/dt kink -- that leaves a
+# dt-dependent RESIDUAL POND above the surface (14k cells, up to 2.26m) and drives the bounce.)
+# eq_tol 0.01 m: with the post-solve clamp the bounce is gone, so TRUE convergence is reached
+# (verified: ~20 cycles, monotone, wtd pinned at 0). Distinct stem per CONFIG.
 #   CONFIG=tbar sbatch algo_eq_msi.sbatch
 set -uo pipefail
 CONFIG="${CONFIG:-cc}"                 # cc | tbar | adaptive | tbar_adaptive
@@ -42,7 +42,7 @@ sed "s#^fsm_on.*#fsm_on 0#;s#^supplied_wt.*#supplied_wt 0#;s#^deltat.*#deltat $D
 rm -f ${stem}.txt ${stem}_*.tif
 echo "eq CONFIG=$CONFIG dt=${MULT}wk: job ${SLURM_JOB_ID:-?} on $(hostname); N=$N ranks; cold from t=0; flags: $CFGFLAGS"
 t0=$(date +%s)
-mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -wtm_direct_to_runoff -snes_stol 1e-6 -wtm_eq_tol 0.1 > ${stem}.log 2>&1
+mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -snes_stol 1e-6 -wtm_eq_tol 0.01 > ${stem}.log 2>&1
 rc=$?; t1=$(date +%s)
 echo "rc=$rc CONFIG=$CONFIG WALL_S=$((t1-t0)) cycles=$(grep -c 'per-cycle max' ${stem}.log 2>/dev/null)"
 grep 'equilibrium reached' ${stem}.log | tail -1 || echo "did NOT auto-stop (backstop/walltime)"
