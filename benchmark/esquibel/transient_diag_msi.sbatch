@@ -26,6 +26,8 @@ case "$METHOD" in
   tr)     BASE="-wtm_anderson -snes_anderson_restart_type none"; METHFLAGS="-wtm_tr_bdf2" ;;
   picard) BASE=""; METHFLAGS="-wtm_picard" ;;                    # independent volume-form BE-in-time
   bdf2v)  BASE="-wtm_anderson -snes_anderson_restart_type none"; METHFLAGS="-wtm_bdf2_on_V" ;;
+  cctbar) BASE="-wtm_anderson -snes_anderson_restart_type none"; METHFLAGS="-wtm_Tbar" ;;       # BE + time-averaged T
+  trtbar) BASE="-wtm_anderson -snes_anderson_restart_type none"; METHFLAGS="-wtm_tr_bdf2 -wtm_Tbar" ;;
   *) echo "unknown METHOD $METHOD"; exit 2 ;;
 esac
 
