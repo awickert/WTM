@@ -43,8 +43,10 @@ print(f"perturbed precip written (f={factor}: {factor}P+{1-factor:.3g}E); "
       f"mean P {p.mean():.4g} -> {newp.mean():.4g};  mean(P-E) {(p-e).mean():.4g} -> {(newp-e).mean():.4g}")
 
 # 3. warm-start water table = the equilibrium output.
-# WTM's supplied_wt path reads {region}_{time}_starting_wt.tif (src/irf.cpp:139) -- NOT _wtd.tif.
-dstW = os.path.join(out, "Esquibel_010000_starting_wt.tif")
+# TRANSIENT runs read the initial water table from {region}_{time}_wtd.tif (src/irf.cpp:79).
+# (Equilibrium + supplied_wt=1 instead reads _starting_wt.tif, src/irf.cpp:139 -- a DIFFERENT path.
+#  This tool is for the transient experiment, so it writes _wtd.tif.)
+dstW = os.path.join(out, "Esquibel_010000_wtd.tif")
 if os.path.exists(eqwtd):
     if os.path.lexists(dstW):
         os.remove(dstW)
