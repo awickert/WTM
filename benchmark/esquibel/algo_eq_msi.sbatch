@@ -18,6 +18,7 @@
 #   CONFIG=tbar sbatch algo_eq_msi.sbatch
 set -uo pipefail
 CONFIG="${CONFIG:-cc}"                 # cc | tbar | adaptive | tbar_adaptive
+MULT="${MULT:-1}"                      # dt multiplier: deltat = MULT * 1 week (dt sweep)
 N="${N:-16}"
 BASE="-wtm_anderson -snes_anderson_restart_type none"   # all configs are Anderson, restart off
 case "$CONFIG" in
@@ -35,10 +36,11 @@ export OMP_NUM_THREADS=1
 export PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/share/proj}"
 cd "$ESQ"
 mkdir -p results/algo/reference
-stem="results/algo/reference/${CONFIG}_eq_msi"
-sed "s#^fsm_on.*#fsm_on 0#;s#^supplied_wt.*#supplied_wt 0#;s#^deltat.*#deltat 604800#;s#^total_cycles.*#total_cycles 100000#;s#^cycles_to_save.*#cycles_to_save 100#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#" eq_awickert.cfg > ${stem}.cfg
+stem="results/algo/reference/${CONFIG}_dt${MULT}_eq_msi"
+DT=$((604800*MULT))
+sed "s#^fsm_on.*#fsm_on 0#;s#^supplied_wt.*#supplied_wt 0#;s#^deltat.*#deltat $DT#;s#^total_cycles.*#total_cycles 400#;s#^cycles_to_save.*#cycles_to_save 400#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#" eq_awickert.cfg > ${stem}.cfg
 rm -f ${stem}.txt ${stem}_*.tif
-echo "eq CONFIG=$CONFIG: job ${SLURM_JOB_ID:-?} on $(hostname); N=$N ranks; cold from t=0; flags: $CFGFLAGS"
+echo "eq CONFIG=$CONFIG dt=${MULT}wk: job ${SLURM_JOB_ID:-?} on $(hostname); N=$N ranks; cold from t=0; flags: $CFGFLAGS"
 t0=$(date +%s)
 mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $CFGFLAGS -wtm_fringe_source ksat -wtm_direct_to_runoff -snes_stol 1e-6 -wtm_eq_tol 0.1 > ${stem}.log 2>&1
 rc=$?; t1=$(date +%s)
