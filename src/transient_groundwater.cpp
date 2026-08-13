@@ -657,7 +657,7 @@ static void compute_tr_explicit(AppCtx& user_context) {
   DMDAVecGetArray(da, user_context.topo_local, &my_topo);
   DMDAVecGetArray(da, user_context.fdepth_local, &my_fdepth);
   DMDAVecGetArray(da, user_context.ksat_local, &my_ksat);
-  DMDAVecGetArray(da, user_context.mask, &my_mask);
+  DMDAVecGetArray(da, user_context.mask_local, &my_mask);  // GHOSTED: the nhead lambda reads neighbour mask
   DMDAVecGetArray(da, user_context.geom_ew_vec, &gew);
   DMDAVecGetArray(da, user_context.geom_n_vec, &gn);
   DMDAVecGetArray(da, user_context.geom_s_vec, &gs);
@@ -682,14 +682,22 @@ static void compute_tr_explicit(AppCtx& user_context) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
       if (my_mask[j][i] == 0) { expl[j][i] = 0.0; continue; }
       const double h_c = wn[j][i] + my_topo[j][i];
+      // Ocean neighbours are Dirichlet head = 0 (matching FormFunctionLocal, where x[ocean] is driven to
+      // 0). starting_wtd stores 0 at ocean cells (a marker, NOT the head), so wn[ocean]+topo would be the
+      // topography, not the boundary head -- for a truncation edge cutting high land that is a huge, and
+      // scheme-inconsistent, error. Use the Dirichlet head here so the explicit trapezoidal flux sees the
+      // SAME boundary as the implicit stages.
+      const auto nhead = [&](int jj, int ii) {
+        return my_mask[jj][ii] == 0 ? 0.0 : (wn[jj][ii] + my_topo[jj][ii]);
+      };
       const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
       const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
       const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
       const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
-      const double N   = e_E * gew[j][i] * (h_c - (wn[j][i + 1] + my_topo[j][i + 1]))
-                       + e_W * gew[j][i] * (h_c - (wn[j][i - 1] + my_topo[j][i - 1]))
-                       + e_N * gn[j][i] * (h_c - (wn[j + 1][i] + my_topo[j + 1][i]))
-                       + e_S * gs[j][i] * (h_c - (wn[j - 1][i] + my_topo[j - 1][i]));
+      const double N   = e_E * gew[j][i] * (h_c - nhead(j, i + 1))
+                       + e_W * gew[j][i] * (h_c - nhead(j, i - 1))
+                       + e_N * gn[j][i] * (h_c - nhead(j + 1, i))
+                       + e_S * gs[j][i] * (h_c - nhead(j - 1, i));
       const double A_j = user_context.cellsize_NS_squared / gew[j][i];
       double removal = 0.0;
       if (g_direct_to_runoff)           removal += directToRunoffRemoval(wn[j][i], dt);
@@ -702,7 +710,7 @@ static void compute_tr_explicit(AppCtx& user_context) {
   DMDAVecRestoreArray(da, user_context.topo_local, &my_topo);
   DMDAVecRestoreArray(da, user_context.fdepth_local, &my_fdepth);
   DMDAVecRestoreArray(da, user_context.ksat_local, &my_ksat);
-  DMDAVecRestoreArray(da, user_context.mask, &my_mask);
+  DMDAVecRestoreArray(da, user_context.mask_local, &my_mask);
   DMDAVecRestoreArray(da, user_context.geom_ew_vec, &gew);
   DMDAVecRestoreArray(da, user_context.geom_n_vec, &gn);
   DMDAVecRestoreArray(da, user_context.geom_s_vec, &gs);
