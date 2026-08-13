@@ -108,6 +108,29 @@ resolved **inside** the solve against the current iterate rather than baked from
 The fix is expected to change the goldens for any transient with surface-crossing cells (equilibria and
 below-surface cases should stay byte-identical); it needs a careful regold and Andy's sign-off.
 
+## Validation of the fix (volume-based recharge)
+
+Four independent checks, all consistent:
+1. **Regression test** `tests/recharge_consistency/` (16x16 surface-crossing plateau): cc-vs-TR-BDF2 gap
+   **3.66 m -> 0.034 m** (bites without the fix; passes with it). Confirmed on both the laptop and MSI binaries.
+2. **Goldens**: below-surface-strict cells and below-surface equilibrium fixed points are byte-identical;
+   the surface-touching cases move because the old values under-counted recharge at crossing cells (they
+   were the buggy values). Regold required.
+3. **FSM before/after** (golden `fsm_*` cases, pre-fix reference vs fixed binary): the fix materially moves
+   FSM-coupled fields -- `fsm_evap1` **+5.0 m wetter** (restored recharge leak), `fsm_runoff` drains four
+   lake cells from +0.38 m to -8.9 m (max change 36 m). Direction is domain-dependent. This is a strong
+   candidate for previously-observed "odd water tables", and FSM masks the water-table symptom by routing
+   the spurious surface water into the lake field.
+4. **Esquibel field-wide** (cc, no-clamp, t=4 wk, fixed vs pre-fix binary): 18,544 land cells shift, max
+   0.32 m, mean **+0.004 m (slightly wetter)** -- the restored recharge, broadly and modestly.
+
+**Scope correction.** The fix does **not** change the Esquibel cell (449,833) 80 m cc-vs-TR-BDF2
+disagreement that first surfaced this investigation (cc +4.92 / tr -75 / bdf2v -85, byte-identical before
+and after). That cell rises 87 m in four weeks -- a numerical artifact of the deep, steep exponential-T
+tail (`finding_operator_singularity`), **not** a recharge effect. The recharge/storativity crossing bug and
+that deep-cell disagreement are two separate things; only the former is fixed here. The deep-cell exp-T
+disagreement is a distinct, still-open anomaly.
+
 ## Bottom line for #93
 
 The benchmark question has an answer — TR-BDF2 buys **~4× stability and a ~2× smaller error constant, with
