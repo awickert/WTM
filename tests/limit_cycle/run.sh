@@ -20,8 +20,8 @@
 #
 # The test asserts all four -- flicker + disagreement bare, quiet + agreement clamped -- so a future change
 # to the overshoot handling (good OR bad) is caught. See finding_lakeshore_flicker / _bounce_activeset.
-# NOTE: the clamp is opt-in (default OFF), so "bare" = no flag. If it is ever DEFAULTED on, the bare case
-# must add an explicit off-switch (e.g. -wtm_surface_exfiltration_to_runoff false) to keep flickering.
+# NOTE: the clamp is now DEFAULT ON (physical runs never flicker), so "bare" here explicitly requests the
+# nonphysical regime via the developer switch -wtm_allow_surface_ponding to reach the flicker.
 set -uo pipefail
 cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
@@ -63,9 +63,12 @@ EOF
 }
 run() { emit "$1"; "$WTM" "$WORK/$1.cfg" $2 -snes_stol 1e-8 > "$WORK/$1.log" 2>&1 \
         || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }; }
-CLAMP="-wtm_surface_exfiltration_to_runoff"
-run cc_bare  "-wtm_anderson"
-run bd_bare  "-wtm_anderson -wtm_bdf2_on_V"
+# BARE = the nonphysical unmanaged-surface regime. The clamp is now DEFAULT ON, so we must explicitly
+# request ponding with the developer switch to reach the flicker (otherwise "bare" would be clamped).
+PONDING="-wtm_allow_surface_ponding"
+CLAMP="-wtm_surface_exfiltration_to_runoff"   # now the default; kept explicit for clarity
+run cc_bare  "-wtm_anderson $PONDING"
+run bd_bare  "-wtm_anderson -wtm_bdf2_on_V $PONDING"
 run cc_clamp "-wtm_anderson $CLAMP"
 run bd_clamp "-wtm_anderson -wtm_bdf2_on_V $CLAMP"
 

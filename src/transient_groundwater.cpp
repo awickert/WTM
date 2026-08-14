@@ -940,13 +940,32 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscBool extsoil = PETSC_FALSE;  // [WIP] -wtm_extended_soil: aquifer continues above surface (smooth GW step)
   PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
   g_extended_soil = (extsoil == PETSC_TRUE);
+  if (g_extended_soil)
+    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_extended_soil]: NONPHYSICAL developer mode -- the aquifer "
+                "continues above the land surface (no free boundary, no surface water). Testing/experiments only, "
+                "not for model runs.\n");
 
-  // -wtm_surface_exfiltration_to_runoff: post-solve clamp-to-surface + route the exact excess to FSM (standard clamped
-  // T; robust "collect" alternative to the implicit sink). Composes with -wtm_Tbar (unlike extended_soil,
-  // it keeps the piecewise Fan T). Use with -wtm_surface_sink 0 (else the sink holds wtd<=0 first).
-  PetscBool surfexfil = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil);
-  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE);
+  // -wtm_allow_surface_ponding [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp entirely, so
+  // above-surface water is left to POND -- the free boundary is unmanaged and the solve limit-cycles
+  // (lakeshore flicker). For testing/diagnostics only (tests/limit_cycle exercises exactly this); it is NOT
+  // a valid model configuration. See finding_surface_water_management_design.
+  PetscBool allow_ponding = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_allow_surface_ponding", &allow_ponding, nullptr);
+  if (allow_ponding == PETSC_TRUE)
+    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_allow_surface_ponding]: NONPHYSICAL developer mode -- surface "
+                "water is UNMANAGED (no clamp); the free boundary will limit-cycle. Testing/diagnostics only, "
+                "not for model runs.\n");
+  const bool anderson_path = !user_context.use_picard && !user_context.use_newton;
+
+  // Surface-water CLAMP (Fan & Miguez-Macho) -- DEFAULT ON so physical runs pin wtd<=0 and never flicker.
+  // "Route vs discard" is the fsm_on choice ON TOP of this (fsm_on routes the exfiltrated water as lakes;
+  // fsm off discards it to runoff -- both keep the clamp). SOLVER-PATH-AWARE: the Anderson path uses this
+  // POST-SOLVE exfiltration clamp; the Picard/Newton paths use the IN-RESIDUAL seepage (-wtm_direct_to_runoff,
+  // below), since they build an operator/Jacobian and need the removal in the residual. Override per flag
+  // (e.g. -wtm_surface_exfiltration_to_runoff false) or, for the nonphysical regime, -wtm_allow_surface_ponding.
+  PetscBool surfexfil = anderson_path ? PETSC_TRUE : PETSC_FALSE;  // default ON for the Anderson path
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, nullptr);
+  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_ponding != PETSC_TRUE);
 
   // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
   // range out of the Jacobian conditioning; see the transform helpers above). The Φ transform is the
@@ -1009,12 +1028,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
-  // -wtm_direct_to_runoff: seepage-face removal (supersedes the qmax sink where on). Removes the above-
-  // surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
-  // and no below-surface band -> no pile, no depression.
+  // -wtm_direct_to_runoff: in-residual seepage-face removal (supersedes the qmax sink where on). Removes the
+  // above-surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
+  // and no below-surface band -> no pile, no depression. OPT-IN (default off): its removal tangent is NOT
+  // yet wired into the Picard operator / Newton Jacobian (directToRunoffTangent is unused), so defaulting it
+  // on for those paths makes their solve inconsistent (Newton diverges/aborts). The Picard/Newton default
+  // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
+  // direct_to_runoff tangent so it can default on for those paths is future work. -wtm_allow_surface_ponding
+  // still forces it off.
   PetscBool seep = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
-  g_direct_to_runoff = (seep == PETSC_TRUE);
+  g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_ponding != PETSC_TRUE);
 
   // -wtm_volume_storage: use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
   // (default Anderson) storage term, instead of the SECANT effective storativity S·Δh. Below the surface
