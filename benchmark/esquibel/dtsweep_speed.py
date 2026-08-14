@@ -81,16 +81,23 @@ for m in METHODS:
 def wall_num(ws):
     try: return float(ws)
     except Exception: return float("inf")
-print("\nSpeed-to-accuracy (least WALL to reach mean|err| <= target; '--' = unreachable at any swept dt):")
-print(f"  {'target(m)':>10} " + "".join(f"{m:>22}" for m in METHODS))
-for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
-    cells = []
-    for m in METHODS:
-        cand = [(wall_num(rows[(m, dt)][1]), dt, rows[(m, dt)][0]) for dt in DTS
-                if (m, dt) in rows and rows[(m, dt)][3] is not None and rows[(m, dt)][3] <= target]
-        if not cand:
-            cells.append(f"{'--':>22}")
-        else:
-            w, dt, st = min(cand)  # least wall meeting the target
-            cells.append(f"{f'{w:.0f}s @dt{dt}({st}cyc)':>22}")
-    print(f"  {target:>10.3g} " + "".join(cells))
+def speed_table(title, cost_idx, unit):  # cost_idx: 4=SNES iterations (clean), 1=wall_s (node-noisy)
+    print(f"\n{title} ('--' = unreachable at any swept dt):")
+    print(f"  {'target(m)':>10} " + "".join(f"{m:>24}" for m in METHODS))
+    for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
+        cells = []
+        for m in METHODS:
+            cand = []
+            for dt in DTS:
+                r = rows.get((m, dt))
+                if r and r[3] is not None and r[3] <= target and r[cost_idx] not in (None, "?"):
+                    cand.append((float(r[cost_idx]), dt, r[0]))
+            if not cand:
+                cells.append(f"{'--':>24}")
+            else:
+                c, dt, st = min(cand)  # least cost meeting the target
+                cells.append(f"{f'{c:.0f}{unit} @dt{dt}({st}cyc)':>24}")
+        print(f"  {target:>10.3g} " + "".join(cells))
+
+speed_table("Speed-to-accuracy by SNES ITERATIONS (residual evals; node-independent, the honest cost)", 4, "its")
+speed_table("Speed-to-accuracy by WALL seconds (node-noisy on shared nodes -- indicative only)", 1, "s")
