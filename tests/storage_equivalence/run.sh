@@ -13,6 +13,8 @@ set -uo pipefail
 cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
+# .tif inputs are gitignored -> generate them if absent (needs rasterio, like the other suites)
+[[ -f inputs/storeq_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/storeq_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-1e-6}"        # metres; machine-precision agreement expected (observed ~1e-12)

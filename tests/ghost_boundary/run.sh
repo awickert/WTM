@@ -18,6 +18,8 @@ cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 NPROCS="${2:-4}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
+# .tif inputs are gitignored -> generate them if absent (needs rasterio, like the other suites)
+[[ -f inputs/ghostbc_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/ghostbc_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-1e-3}"        # metres; cross-scheme + MPI agreement under the ghost boundary
