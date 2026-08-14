@@ -2152,6 +2152,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   AppCtx* user_context = static_cast<AppCtx*>(ctx);
   DM      da           = user_context->da;
   PetscScalar **bb, **xx, **my_starting_wtd, **my_topo, **my_rech, **my_porosity, **my_mask, **gew;
+  PetscScalar **my_fdepth, **my_ksat, **gn, **gs, **my_topo_g;  // for the land-slope-Neumann off-map ghost flux (see below)
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;  // taper 2/3: ET, owe, precip (m/yr)
   const double  cns2 = user_context->cellsize_NS_squared;  // cell area A_j = cns2 / geom_ew (volume form)
 
@@ -2180,6 +2181,14 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));  // for the cell area A_j
+  PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));    // off-map ghost flux geometry
+  PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
+  PetscCall(DMDAVecGetArray(da, user_context->fdepth_local, &my_fdepth));  // off-map ghost flux: centre T_c
+  PetscCall(DMDAVecGetArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecGetArray(da, user_context->topo_local, &my_topo_g));    // ghosted topo for the inward reflection
+  DMDALocalInfo info;
+  PetscCall(DMDAGetLocalInfo(da, &info));  // info.mx/my are GLOBAL dims -> the off-map bounds test
+  const bool smooth_T = (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0);
   if (bdf2) PetscCall(DMDAVecGetArray(da, user_context->starting_wtd_prev, &my_starting_wtd_prev));
   if (g_evap_taper) {
     PetscCall(DMDAVecGetArray(da, user_context->evap_vec, &my_evap));
@@ -2231,6 +2240,28 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           bb[j][i] = A_j * (S_c * h_n + my_rech[j][i]);  // recharge = fixed volume (depth), out of S_c
         }
       }
+
+      // Land-slope-Neumann off-map faces (-wtm_ghost_boundary): the ghost flux across a global-edge LAND
+      // face is e·G·(topo_c − topo_inland) with e = 1/τ_c = T_c (harmonic mean of T_c with itself, since
+      // τ_nbr = τ_c) -- CONSTANT in x, so FormPicardOperator omits it from A and it is supplied here on the
+      // RHS. Only the centre cell's T_c is needed; the reflection reads the ghosted topo one step INWARD, so
+      // it never goes OOB. Inert with the flag off (setEdges makes every edge cell ocean -> no land cell
+      // reaches a global edge). Matches FormFunctionLocal's off-map face and FormPicardOperator's omission.
+      if (my_mask[j][i] != 0) {
+        const double w_c   = xx[j][i] - my_topo[j][i];
+        const double w_old = g_Tbar ? my_starting_wtd[j][i] : 0.0;  // owned centre == starting_wtd_local[j][i]
+        const double T_c   = interblockTransmissivity(w_c, w_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
+        const auto add_offmap = [&](int nj, int ni, double G) {
+          if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {
+            const double topo_inland = my_topo_g[2 * j - nj][2 * i - ni];  // ghosted; inward reflection
+            bb[j][i] += user_context->deltat * T_c * G * (my_topo[j][i] - topo_inland);
+          }
+        };
+        add_offmap(j, i + 1, gew[j][i]);
+        add_offmap(j, i - 1, gew[j][i]);
+        add_offmap(j + 1, i, gn[j][i]);
+        add_offmap(j - 1, i, gs[j][i]);
+      }
     }
   }
 
@@ -2243,6 +2274,11 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
+  PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));
+  PetscCall(DMDAVecRestoreArray(da, user_context->fdepth_local, &my_fdepth));
+  PetscCall(DMDAVecRestoreArray(da, user_context->ksat_local, &my_ksat));
+  PetscCall(DMDAVecRestoreArray(da, user_context->topo_local, &my_topo_g));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
@@ -2374,18 +2410,14 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
             bdf2_on_V ? specificYield(w_k, my_porosity[j][i])
                       : updateEffectiveStorativity(my_starting_wtd[j][i], w_k, my_porosity[j][i]);
 
-        // Harmonic-mean interface transmissivities: 2 / (1/T_c + 1/T_nbr).
-        const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
-        const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
-        const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
-        const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
-
-        // Face conductances G = e * (L_wall/d_centre): E-W uses geom_ew (per row); N/S use the
-        // FACE-centred geom_n/geom_s, so G_N(j) = G_S(j+1) exactly (shared face) -> conservative.
-        const double A_east   = -dt * e_E * gew[j][i];
-        const double A_west   = -dt * e_W * gew[j][i];
-        const double A_north  = -dt * e_N * gn[j][i];
-        const double A_south  = -dt * e_S * gs[j][i];
+        // Harmonic-mean interface transmissivities e = 2/(1/T_c + 1/T_nbr), times the face geometry
+        // G = e * (L_wall/d_centre): E-W uses geom_ew (per row); N/S use the FACE-centred geom_n/geom_s,
+        // so G_N(j) = G_S(j+1) exactly (shared face) -> conservative. An OFF-MAP face (global edge, only
+        // for a LAND edge cell under -wtm_ghost_boundary) carries the land-slope-Neumann ghost flux
+        // e·G·(topo_inland − topo_c), which is CONSTANT in x (the centre head cancels) -> it contributes
+        // NOTHING to the SPD operator (no diagonal, no off-diagonal) and is placed on the RHS instead
+        // (FormPicardRHS). The bounds test reads only in-bounds T (never OOB); inert with the flag off
+        // (setEdges makes every edge cell ocean, so no land cell sits on the global boundary).
         // Storage and sub-surface sink now scale with the cell area A_j (volume form). The sink
         // tangent dt*Q'(w_k)*A_j is >= 0, so the diagonal stays dominant -> SPD-preserving.
         const double sink_diag = (g_surface_sink && bdf2_on_V) ? dt * surfaceSinkTangent(w_k, my_fringe[j][i]) * A_j : 0.0;
@@ -2395,25 +2427,31 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
                                      ? dt * evapRemovalTangent(w_k, my_evap[j][i], my_owe[j][i],
                                                                my_precip[j][i] / SECONDS_IN_A_YEAR) * A_j
                                      : 0.0;
-        const double A_center =
-            a_coeff * S_c * A_j + sink_diag + evap_diag - (A_east + A_west + A_north + A_south);
 
-        // 5-point stencil: east, west, north, south, centre.
-        const MatStencil cols[5] = {
-            {.k = 0, .j = j,     .i = i + 1, .c = 0},  // east
-            {.k = 0, .j = j,     .i = i - 1, .c = 0},  // west
-            {.k = 0, .j = j + 1, .i = i,     .c = 0},  // north
-            {.k = 0, .j = j - 1, .i = i,     .c = 0},  // south
-            {.k = 0, .j = j,     .i = i,     .c = 0},  // centre
-        };
-        const PetscScalar vals[5] = {
-            A_east,
-            A_west,
-            A_north,
-            A_south,
-            A_center,
-        };
-        PetscCall(MatSetValuesStencil(A, 1, &row, 5, cols, vals, INSERT_VALUES));
+        // Variable-length stencil: one off-diagonal dt*G conductance per IN-BOUNDS face (E,W,N,S order),
+        // then the centre. An OFF-MAP face emits NO column (its constant ghost flux is on the RHS) -- an
+        // out-of-range stencil column makes MatSetValuesStencil error, it is NOT dropped. With the flag off
+        // every land cell is interior (nc = 5) -> FP- and sparsity-identical to the fixed 5-point stencil.
+        const int    fdj[4] = {0, 0, 1, -1};
+        const int    fdi[4] = {1, -1, 0, 0};
+        const double fG[4]  = {gew[j][i], gew[j][i], gn[j][i], gs[j][i]};
+        MatStencil  cols[5];
+        PetscScalar vals[5];
+        int    nc       = 0;
+        double face_sum = 0.0;  // Σ off-diagonals (= −Σ conductances), for the diagonal
+        for (int fi = 0; fi < 4; ++fi) {
+          const int nj = j + fdj[fi], ni = i + fdi[fi];
+          if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) continue;  // off-map -> RHS (constant flux)
+          const double A_x = -dt * (2.0 / (my_T[j][i] + my_T[nj][ni])) * fG[fi];
+          cols[nc] = {.k = 0, .j = nj, .i = ni, .c = 0};
+          vals[nc] = A_x;
+          face_sum += A_x;
+          ++nc;
+        }
+        cols[nc] = {.k = 0, .j = j, .i = i, .c = 0};                          // centre
+        vals[nc] = a_coeff * S_c * A_j + sink_diag + evap_diag - face_sum;    // diagonal (strictly dominant)
+        ++nc;
+        PetscCall(MatSetValuesStencil(A, 1, &row, nc, cols, vals, INSERT_VALUES));
       }
     }
   }
