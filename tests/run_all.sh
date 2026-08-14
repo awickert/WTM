@@ -30,6 +30,7 @@ run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" 2 4 6 8
 run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" 2 4 6 8
 run "golden (expected results)" ./golden/run.sh "$WTM"
 run "taper determinism+smooth"  ./taper/run.sh "$WTM" 4 8
+run "ghost-boundary (#96)"      ./ghost_boundary/run.sh "$WTM" 4
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
