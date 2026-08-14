@@ -574,10 +574,12 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
       const double h_c = xx[j][i];
       // Volume flux through each land->ocean face = dt * G * h_c, with the SAME face conductance
       // G = e * (L_wall/d_centre) the operator assembles (E-W uses geom_ew, N/S the face geom_n/s).
-      if (my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i + 1]) * gew[j][i] * h_c;
-      if (my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
-      if (my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
-      if (my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
+      // Off-map faces (global domain edge) are the ghost boundary, not land->ocean -- guard the neighbour
+      // reads so an edge LAND cell (real when -wtm_ghost_boundary skips setEdges) doesn't read out of bounds.
+      if (i + 1 < info.mx && my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i + 1]) * gew[j][i] * h_c;
+      if (i - 1 >= 0      && my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
+      if (j + 1 < info.my && my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
+      if (j - 1 >= 0      && my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
     }
   }
 
@@ -687,17 +689,28 @@ static void compute_tr_explicit(AppCtx& user_context) {
       // topography, not the boundary head -- for a truncation edge cutting high land that is a huge, and
       // scheme-inconsistent, error. Use the Dirichlet head here so the explicit trapezoidal flux sees the
       // SAME boundary as the implicit stages.
-      const auto nhead = [&](int jj, int ii) {
-        return my_mask[jj][ii] == 0 ? 0.0 : (wn[jj][ii] + my_topo[jj][ii]);
+      // Per-face old-state outflow, matching FormFunctionLocal. Off-map faces (global domain edge; reached
+      // only for a real LAND edge cell when -wtm_ghost_boundary skips setEdges) use the land-slope ghost
+      // (head parallels topo via the INWARD reflection, 1/T = centre) -> no out-of-bounds under
+      // DM_BOUNDARY_NONE. Ocean neighbours (mask==0) are Dirichlet head 0 (starting_wtd[ocean]=0 is a
+      // marker, not a head -- see the committed compute_tr_explicit fix).
+      const auto face = [&](int nj, int ni, double G) -> double {
+        double h_nbr, Tinv_nbr;
+        if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {
+          const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
+          h_nbr    = h_c + (my_topo[j][i] - topo_inland);
+          Tinv_nbr = my_T[j][i];
+        } else if (my_mask[nj][ni] == 0) {
+          h_nbr    = 0.0;
+          Tinv_nbr = my_T[nj][ni];
+        } else {
+          h_nbr    = wn[nj][ni] + my_topo[nj][ni];
+          Tinv_nbr = my_T[nj][ni];
+        }
+        return (2.0 / (my_T[j][i] + Tinv_nbr)) * G * (h_c - h_nbr);
       };
-      const double e_E = 2.0 / (my_T[j][i] + my_T[j][i + 1]);
-      const double e_W = 2.0 / (my_T[j][i] + my_T[j][i - 1]);
-      const double e_N = 2.0 / (my_T[j][i] + my_T[j + 1][i]);
-      const double e_S = 2.0 / (my_T[j][i] + my_T[j - 1][i]);
-      const double N   = e_E * gew[j][i] * (h_c - nhead(j, i + 1))
-                       + e_W * gew[j][i] * (h_c - nhead(j, i - 1))
-                       + e_N * gn[j][i] * (h_c - nhead(j + 1, i))
-                       + e_S * gs[j][i] * (h_c - nhead(j - 1, i));
+      const double N = face(j, i + 1, gew[j][i]) + face(j, i - 1, gew[j][i])
+                     + face(j + 1, i, gn[j][i]) + face(j - 1, i, gs[j][i]);
       const double A_j = user_context.cellsize_NS_squared / gew[j][i];
       double removal = 0.0;
       if (g_direct_to_runoff)           removal += directToRunoffRemoval(wn[j][i], dt);
@@ -1769,6 +1782,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
       if (my_mask[j][i] == 0) {
         // Dirichlet condition: ocean head h = 0. In head variables f = x forces x=0 (h=0). In Kirchhoff
         // variables f = x - Φ(wtd=0) forces Φ = Φ(0) i.e. wtd=0; both give a unit Jacobian diagonal.
+        // With -wtm_ghost_boundary this is the sea-level BC (ghost outside = 0), applied at real ocean cells.
         f[j][i] = g_kirchhoff ? (x[j][i] - dischargePotential(0.0, my_fdepth[j][i], my_ksat[j][i])) : x[j][i];
       } else {
         // Conservative finite-volume flux, HEAD form. The volume balance is
@@ -1780,15 +1794,27 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // fluxes cancel (mass conserving) and the E-W/N-S cell sizes are no longer swapped. The
         // Picard OPERATOR keeps the volume form (it needs the exact symmetry). See GRID_CONVENTION.md.
         const double this_x = head(j, i);  // centre head (Kirchhoff: Φ⁻¹(x)+topo)
-        const double this_T = my_T[j][i];
-        const double e_E    = 2. / (this_T + my_T[j][i + 1]);  // harmonic-mean interface transmissivities
-        const double e_W    = 2. / (this_T + my_T[j][i - 1]);
-        const double e_N    = 2. / (this_T + my_T[j + 1][i]);
-        const double e_S    = 2. / (this_T + my_T[j - 1][i]);
-
-        // Net outflow volume-rate = sum of face conductances * (h_c - h_nbr).
-        const double net_outflow = e_E * gew[j][i] * (this_x - head(j, i + 1)) + e_W * gew[j][i] * (this_x - head(j, i - 1))
-                                 + e_N * gn[j][i] * (this_x - head(j + 1, i)) + e_S * gs[j][i] * (this_x - head(j - 1, i));
+        const double this_T = my_T[j][i];  // 1/T at the centre
+        // Per-face outflow = harmonic-mean face T * geom * (h_c - h_nbr). An OFF-MAP face (a global domain
+        // edge; only reached for a LAND edge cell when -wtm_ghost_boundary skips setEdges -- ocean edges are
+        // mask==0 = Dirichlet h=0 above) uses a GHOST node whose water-table SURFACE slope equals the LAND
+        // surface slope: ghost head = this_x + (topo_c - topo_inland), ghost 1/T = this_T. The inland cell is
+        // the reflection (2j-nj, 2i-ni) -- one step toward the interior -- so this reads only inward and never
+        // goes out of bounds under DM_BOUNDARY_NONE. Topo gradient is from FIXED data (stable). See task #96.
+        const auto face_out = [&](int nj, int ni, double G) -> double {
+          double h_nbr, Tinv_nbr;
+          if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map: land-slope ghost
+            const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
+            h_nbr    = this_x + (my_topo[j][i] - topo_inland);
+            Tinv_nbr = this_T;
+          } else {
+            h_nbr    = head(nj, ni);
+            Tinv_nbr = my_T[nj][ni];
+          }
+          return (2. / (this_T + Tinv_nbr)) * G * (this_x - h_nbr);
+        };
+        const double net_outflow = face_out(j, i + 1, gew[j][i]) + face_out(j, i - 1, gew[j][i])
+                                 + face_out(j + 1, i, gn[j][i]) + face_out(j - 1, i, gs[j][i]);
 
         const double A_j = user_context->cellsize_NS_squared / gew[j][i];  // cell area
         const double w_c = this_x - my_topo[j][i];                         // centre-cell wtd
