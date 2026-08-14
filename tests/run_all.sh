@@ -31,6 +31,7 @@ run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" 2 4 6 8
 run "golden (expected results)" ./golden/run.sh "$WTM"
 run "taper determinism+smooth"  ./taper/run.sh "$WTM" 4 8
 run "ghost-boundary (#96)"      ./ghost_boundary/run.sh "$WTM" 4
+run "storage secant≡volume"     ./storage_equivalence/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
