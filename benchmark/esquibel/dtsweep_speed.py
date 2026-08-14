@@ -76,4 +76,4 @@ for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
         else:
             w, dt, st = min(cand)  # least wall meeting the target
             cells.append(f"{f'{w:.0f}s @dt{dt}({st}cyc)':>22}")
-    print(f"  {target:>10.0e} " + "".join(cells))
+    print(f"  {target:>10.3g} " + "".join(cells))
