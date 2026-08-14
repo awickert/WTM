@@ -74,6 +74,12 @@ for m in METHODS:
         emean = float(np.mean(np.abs((a - ref)[fin])))
         rows[(m, dt)] = (steps, ws, emax, emean, it, ipc)
         print(f"  {dt:>8} {steps:>6} {rc:>3} {ws:>7} {str(it):>9} {(f'{ipc:.0f}' if ipc else '?'):>8} {emax:>12.3e} {emean:>13.3e}")
+    # observed convergence order: slope of log(mean_err) vs log(dt) over dts with finite, non-floor error
+    v = [(float(dt), rows[(m, dt)][3]) for dt in DTS
+         if rows.get((m, dt)) and rows[(m, dt)][3] and rows[(m, dt)][3] > 1e-9]
+    if len(v) >= 2:
+        p = float(np.polyfit(np.log([x for x, _ in v]), np.log([e for _, e in v]), 1)[0])
+        print(f"  observed order  p (mean|err| ~ dt^p) = {p:.2f}  [expect ~1 for BE (cc), ~2 for TR-BDF2/BDF2-on-V]")
 
 # TIMING comparison: least wall to reach a MEAN-error target (mean is representative; MAX is dominated by
 # the deep exp-T outliers, the accuracy floor). Targets span cc-reachable (loose) to 2nd-order-only (tight),
