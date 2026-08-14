@@ -36,27 +36,44 @@ def wall_csv(m):  # {dt_wk: (steps, rc, wall_s)} from runs_<ftag>_<m>.csv (forci
                 out[c[2]] = (c[3], c[4], c[5])
     return out
 
+def iters(m, dt):  # total SNES (Anderson) iterations over the run = residual evals -- the node-INDEPENDENT
+    p = os.path.join(d, f"{ftag}_{m}_dt{dt}wk.log")  # cost metric (wall on shared nodes is contention-noisy)
+    if not os.path.exists(p):
+        return None
+    tot = 0
+    for line in open(p, errors="ignore"):
+        k = line.find("Number of nonlinear iterations = ")
+        if k >= 0:
+            try: tot += int(line[k + 33:].split()[0])
+            except Exception: pass
+    return tot
+
 ref = field(ref_m, ref_dt)
 if ref is None:
     print(f"reference {ref_m}@{ref_dt}wk missing in {d}"); sys.exit(1)
 fin0 = np.isfinite(ref)
 print(f"reference = {ref_m} @ dt={ref_dt}wk (2nd-order dt->0), T_end={tend_wk}wk, forcing={ftag}, {int(fin0.sum())} land cells")
 
-rows = {}  # (method, dt) -> (steps, wall_s, emax, emean)
+rows = {}  # (method, dt) -> (steps, wall_s, emax, emean, its, its_per_cyc)
 for m in METHODS:
     W = wall_csv(m)
     print(f"\n{m}:")
-    print(f"  {'dt(wk)':>8} {'steps':>6} {'wall_s':>8} {'max|err|(m)':>12} {'mean|err|(m)':>13}")
+    print(f"  {'dt(wk)':>8} {'steps':>6} {'rc':>3} {'wall_s':>7} {'SNES_its':>9} {'its/cyc':>8} {'max|err|(m)':>12} {'mean|err|(m)':>13}")
     for dt in DTS:
+        steps, rc, ws = W.get(dt, (str(cyc(dt)), "?", "?"))
+        ncyc = int(steps) if str(steps).isdigit() else cyc(dt)
+        it = iters(m, dt)
+        ipc = (it / ncyc) if (it and ncyc) else None
         a = field(m, dt)
         if a is None:
-            print(f"  {dt:>8} {'--':>6} (missing)"); continue
+            rows[(m, dt)] = (steps, ws, None, None, it, ipc)
+            print(f"  {dt:>8} {steps:>6} {rc:>3} {ws:>7} {str(it):>9} {(f'{ipc:.0f}' if ipc else '?'):>8}  (no field: rc={rc})")
+            continue
         fin = fin0 & np.isfinite(a)
         emax = float(np.max(np.abs((a - ref)[fin])))
         emean = float(np.mean(np.abs((a - ref)[fin])))
-        steps, rc, ws = W.get(dt, (str(cyc(dt)), "?", "?"))
-        rows[(m, dt)] = (steps, ws, emax, emean)
-        print(f"  {dt:>8} {steps:>6} {ws:>8} {emax:>12.3e} {emean:>13.3e}")
+        rows[(m, dt)] = (steps, ws, emax, emean, it, ipc)
+        print(f"  {dt:>8} {steps:>6} {rc:>3} {ws:>7} {str(it):>9} {(f'{ipc:.0f}' if ipc else '?'):>8} {emax:>12.3e} {emean:>13.3e}")
 
 # TIMING comparison: least wall to reach a MEAN-error target (mean is representative; MAX is dominated by
 # the deep exp-T outliers, the accuracy floor). Targets span cc-reachable (loose) to 2nd-order-only (tight),
@@ -70,7 +87,7 @@ for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
     cells = []
     for m in METHODS:
         cand = [(wall_num(rows[(m, dt)][1]), dt, rows[(m, dt)][0]) for dt in DTS
-                if (m, dt) in rows and rows[(m, dt)][3] <= target]
+                if (m, dt) in rows and rows[(m, dt)][3] is not None and rows[(m, dt)][3] <= target]
         if not cand:
             cells.append(f"{'--':>22}")
         else:
