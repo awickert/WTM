@@ -32,6 +32,7 @@ run "golden (expected results)" ./golden/run.sh "$WTM"
 run "taper determinism+smooth"  ./taper/run.sh "$WTM" 4 8
 run "ghost-boundary (#96)"      ./ghost_boundary/run.sh "$WTM" 4
 run "storage secant≡volume"     ./storage_equivalence/run.sh "$WTM"
+run "limit cycle (weird golden)" ./limit_cycle/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
