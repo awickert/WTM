@@ -62,11 +62,14 @@ table without bound (verified: +2584 m runaway). The land-slope Neumann sits bet
 - **Verification.** Newton is FD-verified with `-snes_test_jacobian` on a land-edge fixture:
   `‖J−Jfd‖/‖J‖` is 4–7e-5 with the ghost boundary ON, matching the OFF baseline. cc (Anderson), TR-BDF2,
   BDF2-on-V, and Newton all converge to the SAME steady water table under the ghost boundary
-  (max|Δ| ≤ 7e-9 m). Picard converges when warm-started but sits ~0.33 m from the Anderson fixed point --
-  a **pre-existing** Picard-vs-Anderson gap that also appears flag-OFF on an ocean-ringed fixture (both
-  cases sit at the surface, where the taper linearization differs); it is **not** introduced by the ghost
-  boundary. Picard's cold-start non-convergence is likewise pre-existing (fails flag-off too). See
-  `tests/ghost_boundary/`.
+  (max|Δ| ≤ 7e-9 m). **bdf2v-Picard** (`-wtm_picard -wtm_bdf2_on_V`) also matches
+  cc to 5.7e-14, so the Picard operator+RHS off-map handling is consistent. **BE-Picard** (plain
+  `-wtm_picard`) is the outlier: warm-started at cc's converged field it takes one step then DIVERGES
+  (`DIVERGED_MAX_IT`) -- a **pre-existing free-surface contraction failure** (its storage diagonal uses the
+  SECANT storativity, which collapses at surface-pinned cells; the bdf2v tangent-Sy diagonal stays
+  well-conditioned), **not** caused by the ghost boundary and not a wrong fixed point. (An earlier "~0.33 m
+  Picard gap" was retracted as an unconverged-reference artifact -- the reference cc was still relaxing.)
+  See `tests/ghost_boundary/` and the memory note on the BE-Picard divergence.
 - Behavior is **byte-identical with the flag off**. And with the flag **on**, the full golden suite
   still passes (30/30, all rank counts) — because every golden fixture sets explicit ocean edges
   (`mask[0,:]=…=0`), so the ghost boundary applies the same sea-level Dirichlet there that `setEdges`
@@ -88,7 +91,7 @@ mean|Δ| 0.0015 m), and the full golden suite passes with the flag on. **Done si
 the Newton Jacobian and Picard operator+RHS (variable-length stencil), FD-verified; cc/tr/bdf2v/Newton
 confirmed to agree domain-wide (a controlled land-edge fixture, `tests/ghost_boundary/`, stands in for the
 Esquibel cross-scheme check while MSI was unavailable). **Next:** re-run the Esquibel cross-scheme check on
-MSI when it is back; run with FSM; investigate the pre-existing Picard-vs-Anderson fixed-point gap (~0.33 m
-at the surface) separately; then default `-wtm_ghost_boundary` (goldens already pass with it on — no remake
+MSI when it is back; run with FSM; separately, the pre-existing BE-Picard free-surface divergence (secant
+storativity diagonal; task #97) -- not a ghost-boundary issue; then default `-wtm_ghost_boundary` (goldens already pass with it on — no remake
 for ocean-edge fixtures). Complementary committed fixes: volume-based recharge (`777326d`) and the TR-BDF2
 explicit-stage ocean BC (`d8cc249`).
