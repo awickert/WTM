@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # LIMIT-CYCLE ("weird golden") diagnostic test -- the useful BAD result, remembered and turned into a guard.
 #
+# ██ THE BARE FLICKER IS AN EXPECTED *WRONG* SOLUTION -- IT IS NOT A TARGET AND MUST NOT BE "FIXED" HERE. ██
+# It is a non-physical, unconverged limit cycle that we DELIBERATELY PRESERVE because it is a useful
+# DIAGNOSTIC: when the surface OVERSHOOT is unmanaged, different volume-resolving time-integration schemes
+# (backward-Euler cc vs BDF2-on-V, etc.) settle into DIFFERENT flickering wrong states, so their
+# disagreement flags the bad free boundary. The real FIX is the post-solve clamp
+# (-wtm_surface_exfiltration_to_runoff), which this test also verifies. If you make the BARE flicker go
+# away, you have changed the overshoot handling -- update this test on purpose, do not silence it.
+#
 # On a plateau whose interior mound rises to the free boundary (wtd=0), backward Euler + Anderson OVERSHOOT
 # the surface each step (storativity jump + seepage kink), producing a period-2 LIMIT CYCLE. This is the
 # lakeshore flicker. Two facts we want to REMEMBER and monitor:
@@ -72,12 +80,15 @@ mx = lambda a,b: float(np.max(np.abs((a-b)[m])))
 flick, diverge = pcd("cc_bare"), mx(cc_b, bd_b)
 quiet, recon   = pcd("cc_clamp"), mx(cc_c, bd_c)
 FLICK,DIVERGE,QUIET,RECON = (float(os.environ[k]) for k in ("FLICK","DIVERGE","QUIET","RECON"))
-print(f"  BARE:    per-cycle Δ = {flick:.3f} (> {FLICK}?)   cc-vs-bdf2v = {diverge:.3e} m (> {DIVERGE}?)")
-print(f"  CLAMPED: per-cycle Δ = {quiet:.3e} (< {QUIET}?)   cc-vs-bdf2v = {recon:.3e} m (< {RECON}?)")
+print("  NOTE: the BARE flicker below is an EXPECTED *WRONG* (non-physical) solution, kept as a diagnostic.")
+print(f"  BARE (known-WRONG): per-cycle Δ = {flick:.3f} (> {FLICK}?)   cc-vs-bdf2v = {diverge:.3e} m (> {DIVERGE}?)")
+print(f"  CLAMPED (the fix):  per-cycle Δ = {quiet:.3e} (< {QUIET}?)   cc-vs-bdf2v = {recon:.3e} m (< {RECON}?)")
 ok = (flick > FLICK) and (diverge > DIVERGE) and (quiet < QUIET) and (recon < RECON)
 if ok:
-    print("PASS: limit cycle present + methods diagnose it bare; clamp suppresses it and reconciles the schemes")
+    print("PASS: the wrong flicker is present bare (and volume-resolving methods disagree, diagnosing the")
+    print("      surface overshoot); the clamp suppresses the cycle and reconciles the schemes.")
     sys.exit(0)
-print("FAIL: the surface-overshoot limit-cycle signature changed -- investigate (overshoot handling moved)")
+print("FAIL: the surface-overshoot limit-cycle signature CHANGED. This is not a solution regression to")
+print("      silence -- the overshoot handling moved (flicker suppressed, or clamp broken). Update on purpose.")
 sys.exit(1)
 PY
