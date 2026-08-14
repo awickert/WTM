@@ -75,7 +75,7 @@ CFG
   finaltif=$(printf "%s_%09d.tif" "$stem" "$CYC")
   t0=$(date +%s)
   mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $BASE $METHFLAGS \
-    -wtm_fringe_source ksat $CLAMPFLAG -snes_stol 1e-6 > ${stem}.log 2>&1
+    -wtm_fringe_source ksat $CLAMPFLAG ${EXTRA:-} -snes_stol 1e-6 > ${stem}.log 2>&1
   rc=$?; t1=$(date +%s)
   [ -f "$finaltif" ] || finaltif="MISSING"
   echo "$FTAG,$METHOD,$DTWK,$CYC,$rc,$((t1-t0)),$finaltif" | tee -a "$CSV"
