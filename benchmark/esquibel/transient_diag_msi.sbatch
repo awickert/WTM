@@ -19,6 +19,7 @@ FACTOR="${FACTOR:-0.8}"; METHOD="${METHOD:-cc}"; N="${N:-16}"
 TEND_WK="${TEND_WK:-2}"; DTS="${DTS:-0.0625 0.125 0.25 0.5 1 2}"
 SAVEEVERY="${SAVEEVERY:-0}"; TAG="${TAG:-selfconv}"
 CLAMP="${CLAMP:-1}"   # 1 = -wtm_surface_exfiltration_to_runoff (default); 0 = pure GW, no clamp (consistency test)
+FSM="${FSM:-0}"       # 1 = fsm_on (route exfiltrated water as fill-spill-merge lakes, production); 0 = discard
 if awk "BEGIN{exit !($FACTOR < 1.0)}"; then FTAG=dry; else FTAG=wet; fi
 [ "$CLAMP" = 1 ] && CLAMPFLAG="-wtm_surface_exfiltration_to_runoff" || CLAMPFLAG=""
 case "$METHOD" in
@@ -50,7 +51,7 @@ for DTWK in $DTS; do
   stem="$OUT/${FTAG}_${METHOD}_dt${DTWK}wk"
   cat > ${stem}.cfg <<CFG
 run_type transient
-fsm_on 0
+fsm_on $FSM
 evap_mode          1
 infiltration_on    0
 runoff_ratio_on    1
