@@ -242,6 +242,7 @@ static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface cla
 // See benchmark/SURFACE_SINK_DESIGN.md sec 11.
 static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
+static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
@@ -1015,6 +1016,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
   g_direct_to_runoff = (seep == PETSC_TRUE);
 
+  // -wtm_volume_storage: use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
+  // (default Anderson) storage term, instead of the SECANT effective storativity S·Δh. Below the surface
+  // both agree (V is linear, S = porosity), but at a surface CROSSING the secant S·Δh ≠ ΔV, so the secant
+  // BE converges (dt→0) to a different water table than the volume-based TR-BDF2 / BDF2-on-V schemes
+  // (Esquibel: mean ~0.11 m, tails ~19 m). ΔV is the physically exact storage; this flag makes the BE
+  // baseline consistent with the volume schemes. First-order in time like the secant BE (no BDF2 history);
+  // matrix-free Anderson only for now (FormFunctionLocal + zero RHS). Off by default (byte-identical).
+  PetscBool volstore = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_volume_storage", &volstore, nullptr);
+  g_volume_storage = (volstore == PETSC_TRUE);
+
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / seepage). At
   // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
@@ -1660,7 +1672,8 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
   // matrix-free BDF2-on-V path instead folds the FULL 3-level storage (V^{n+1},V^n,V^{n-1}) into the
   // residual itself, so its RHS is zero. The bootstrap step (no history yet) still uses the BE RHS.
   const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
-  const bool zero_rhs = bdf2v || user_context->use_tr_bdf2;  // TR-BDF2 stages are also self-contained (b=0)
+  // -wtm_volume_storage folds the FULL storage ΔV into the residual (like bdf2v), so its RHS is 0 too.
+  const bool zero_rhs = bdf2v || user_context->use_tr_bdf2 || g_volume_storage;
 #pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, zero_rhs) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
@@ -1766,10 +1779,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool sink_on  = g_surface_sink;  // hoisted for the omp default(none) clause below
   const bool dtr_on  = g_direct_to_runoff;
   const bool taper_on = g_evap_taper;
+  const bool vol_storage = g_volume_storage;  // BE with volume-form (ΔV) storage instead of secant S·Δh
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
-           bdf2v, a_c, b_c, c_c, my_starting_wtd_prev,                                                        \
+           bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev,                                           \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
@@ -1859,6 +1873,18 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
           const double Sy   = specificYield(w_c, poro);
           const double storage = (a_c * storedVolume(w_c, poro) - b_c * storedVolume(my_starting_wtd[j][i], poro)
                                   + c_c * storedVolume(my_starting_wtd_prev[j][i], poro)) / Sy;
+          f[j][i] = storage - my_rech[j][i] / Sy + user_context->deltat * net_outflow / (A_j * Sy)
+                    + user_context->deltat * removal / Sy;
+        } else if (vol_storage) {
+          // -wtm_volume_storage: backward Euler (1st-order in time, NO BDF2 history) but with the EXACT
+          // stored-volume change ΔV = V(w^{n+1}) − V(w^n) instead of the secant S·Δh below. Identical in
+          // form to the bdf2v branch with (a_c,b_c,c_c)=(1,1,0). Head-scaled by Sy = dV/dh so the residual
+          // stays O(metres) for Anderson (a positive per-cell scale leaves the root unchanged); RHS b=0
+          // (FormRHS). Converges (dt→0) to the SAME limit as TR-BDF2 / BDF2-on-V, unlike the secant BE,
+          // whose S·Δh ≠ ΔV at surface crossings. See finding_cc_secant_storage_inconsistency.
+          const double poro = my_porosity[j][i];
+          const double Sy   = specificYield(w_c, poro);
+          const double storage = (storedVolume(w_c, poro) - storedVolume(my_starting_wtd[j][i], poro)) / Sy;
           f[j][i] = storage - my_rech[j][i] / Sy + user_context->deltat * net_outflow / (A_j * Sy)
                     + user_context->deltat * removal / Sy;
         } else {
