@@ -8,8 +8,20 @@
 #define OMPI_SKIP_MPICXX 1  // we use the MPI C API only; skip the deprecated C++ bindings
 #include <mpi.h>
 
+#include <petscsys.h>
+
 namespace rd = richdem;
 namespace dh = richdem::dephier;
+
+// -wtm_ghost_boundary: use the mask-aware ghost-node boundary (Dirichlet h=0 at ocean, land-slope Neumann
+// at land edges, computed internally at the true edge). When set we must NOT force the domain edges to
+// ocean (setEdges(0)) -- padding/edge-forcing is incompatible with these BCs (see task #96). Read the
+// PETSc option directly here since irf runs before the solver parses its flags.
+static bool ghost_boundary_on() {
+  PetscBool on = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_ghost_boundary", &on, nullptr);
+  return on == PETSC_TRUE;
+}
 
 // Taper 2 accessor (defined in transient_groundwater.cpp): whether the smooth ET->open-water
 // evaporation transition is on, so the initial recharge below feeds just precip. Forward-declared
@@ -56,7 +68,7 @@ void InitialiseTransient(Parameters& params, ArrayPack& arp) {
   arp.land_mask             = rd::Array2D<float>(params.get_path(params.time_end, "mask"));
 
   // there is land and 0 in the ocean
-  arp.land_mask.setEdges(0);
+  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
 
   arp.precip_end          = rd::Array2D<float>(params.get_path(params.time_end, "precipitation"));
   arp.evap_end            = rd::Array2D<float>(params.get_path(params.time_end, "evaporation"));
@@ -116,7 +128,7 @@ void InitialiseEquilibrium(Parameters& params, ArrayPack& arp) {
   arp.slope     = rd::Array2D<float>(params.get_path(params.time_start, "slope"));
   arp.land_mask = rd::Array2D<float>(
       params.get_path(params.time_start, "mask"));  // A binary mask that is 1 where there is land and 0 in the ocean
-  arp.land_mask.setEdges(0);
+  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
 
   arp.precip = rd::Array2D<float>(params.get_path(params.time_start, "precipitation"));  // Units: m/yr.
   arp.evap   = rd::Array2D<float>(params.get_path(params.time_start, "evaporation"));    // Units: m/yr.
@@ -186,7 +198,7 @@ void InitialiseTest(Parameters& params, ArrayPack& arp) {
       }
     }
   }
-  arp.land_mask.setEdges(0);
+  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
 
   arp.ksat                  = rd::Array2D<float>(arp.topo, 0.0001f);  // Units of ksat are m/s.
   arp.porosity              = rd::Array2D<float>(arp.topo, 0.25);     // Units: unitless
