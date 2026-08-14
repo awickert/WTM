@@ -16,8 +16,8 @@ ftag    = sys.argv[2] if len(sys.argv) > 2 else "dry"
 tend_wk = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
 ref_m   = sys.argv[4] if len(sys.argv) > 4 else "tr"
 ref_dt  = sys.argv[5] if len(sys.argv) > 5 else "0.0625"
-DTS     = ["0.0625", "0.125", "0.25", "0.5", "1", "2"]
-METHODS = ["cc", "tr", "bdf2v"]
+DTS     = os.environ.get("WTM_DTS", "0.0625 0.125 0.25 0.5 1 2").split()  # fine -> coarse
+METHODS = os.environ.get("WTM_METHODS", "cc tr bdf2v").split()
 
 def cyc(dt):  # cycles to T_end at this dt (matches the harness: round(tend/dt))
     return int(tend_wk / float(dt) + 0.5)
@@ -42,7 +42,7 @@ if ref is None:
 fin0 = np.isfinite(ref)
 print(f"reference = {ref_m} @ dt={ref_dt}wk (2nd-order dt->0), T_end={tend_wk}wk, forcing={ftag}, {int(fin0.sum())} land cells")
 
-rows = {}  # (method, dt) -> (steps, wall_s, err)
+rows = {}  # (method, dt) -> (steps, wall_s, emax, emean)
 for m in METHODS:
     W = wall_csv(m)
     print(f"\n{m}:")
@@ -55,21 +55,25 @@ for m in METHODS:
         emax = float(np.max(np.abs((a - ref)[fin])))
         emean = float(np.mean(np.abs((a - ref)[fin])))
         steps, rc, ws = W.get(dt, (str(cyc(dt)), "?", "?"))
-        rows[(m, dt)] = (steps, ws, emax)
+        rows[(m, dt)] = (steps, ws, emax, emean)
         print(f"  {dt:>8} {steps:>6} {ws:>8} {emax:>12.3e} {emean:>13.3e}")
 
-# Headline: wall (and cycles) to reach a target accuracy, per scheme -> the speedup.
-print("\nSpeed-to-accuracy (coarsest dt whose max|err| <= target; its wall):")
-for target in (1e-2, 5e-2, 1e-1):
-    line = f"  target {target:>5.0e} m: "
+# TIMING comparison: least wall to reach a MEAN-error target (mean is representative; MAX is dominated by
+# the deep exp-T outliers, the accuracy floor). Targets span cc-reachable (loose) to 2nd-order-only (tight),
+# so we get a timing comparison where all reach it and a success comparison below cc's floor.
+def wall_num(ws):
+    try: return float(ws)
+    except Exception: return float("inf")
+print("\nSpeed-to-accuracy (least WALL to reach mean|err| <= target; '--' = unreachable at any swept dt):")
+print(f"  {'target(m)':>10} " + "".join(f"{m:>22}" for m in METHODS))
+for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
+    cells = []
     for m in METHODS:
-        best = None  # coarsest dt (largest) meeting target
-        for dt in DTS:  # DTS is fine->coarse; take the LAST (coarsest) that meets target
-            if (m, dt) in rows and rows[(m, dt)][2] <= target:
-                best = dt
-        if best is None:
-            line += f"{m}=none  "
+        cand = [(wall_num(rows[(m, dt)][1]), dt, rows[(m, dt)][0]) for dt in DTS
+                if (m, dt) in rows and rows[(m, dt)][3] <= target]
+        if not cand:
+            cells.append(f"{'--':>22}")
         else:
-            steps, ws, _ = rows[(m, best)]
-            line += f"{m}=dt{best}({ws}s,{steps}cyc)  "
-    print(line)
+            w, dt, st = min(cand)  # least wall meeting the target
+            cells.append(f"{f'{w:.0f}s @dt{dt}({st}cyc)':>22}")
+    print(f"  {target:>10.0e} " + "".join(cells))
