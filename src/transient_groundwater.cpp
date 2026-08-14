@@ -2009,52 +2009,61 @@ static PetscErrorCode FormJacobianLocal(
                            : x[jj][ii] - my_topo[jj][ii];
       };
       const double w_c = wtd_of(j, i);
-      const double w_E = wtd_of(j, i + 1);
-      const double w_W = wtd_of(j, i - 1);
-      const double w_N = wtd_of(j + 1, i);
-      const double w_S = wtd_of(j - 1, i);
 
-      // w^n (ghosted) at centre and neighbours -- the "before" state for the -wtm_Tbar time-average;
-      // ignored (0) off the -wtm_Tbar path (Tinv/tauPrime do not read it there).
+      // w^n (ghosted) at the centre -- the "before" state for the -wtm_Tbar time-average; ignored (0)
+      // off the -wtm_Tbar path (Tinv/tauPrime do not read it there).
       const auto wold_of = [&](int jj, int ii) { return g_Tbar ? my_starting_wtd_local[jj][ii] : 0.0; };
       const double wo_c = wold_of(j, i);
-      const double wo_E = wold_of(j, i + 1);
-      const double wo_W = wold_of(j, i - 1);
-      const double wo_N = wold_of(j + 1, i);
-      const double wo_S = wold_of(j - 1, i);
 
-      // τ = 1/T and its wtd-derivative τ' at centre and neighbours (T̄-aware; see the lambdas above)
-      const double tau_c  = Tinv(w_c, wo_c, my_fdepth[j][i],     my_ksat[j][i]);
-      const double tau_E  = Tinv(w_E, wo_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
-      const double tau_W  = Tinv(w_W, wo_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
-      const double tau_N  = Tinv(w_N, wo_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
-      const double tau_S  = Tinv(w_S, wo_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
-      const double taup_c = tauPrime(w_c, wo_c, my_fdepth[j][i],     my_ksat[j][i]);
-      const double taup_E = tauPrime(w_E, wo_E, my_fdepth[j][i + 1], my_ksat[j][i + 1]);
-      const double taup_W = tauPrime(w_W, wo_W, my_fdepth[j][i - 1], my_ksat[j][i - 1]);
-      const double taup_N = tauPrime(w_N, wo_N, my_fdepth[j + 1][i], my_ksat[j + 1][i]);
-      const double taup_S = tauPrime(w_S, wo_S, my_fdepth[j - 1][i], my_ksat[j - 1][i]);
-
-      // Harmonic-mean face conductances e_X = 2/(τ_c+τ_X) and their geometry factors G_X.
-      const double sumE = tau_c + tau_E, e_E = 2.0 / sumE, G_E = gew[j][i];
-      const double sumW = tau_c + tau_W, e_W = 2.0 / sumW, G_W = gew[j][i];
-      const double sumN = tau_c + tau_N, e_N = 2.0 / sumN, G_N = gn[j][i];
-      const double sumS = tau_c + tau_S, e_S = 2.0 / sumS, G_S = gs[j][i];
-
-      // Head differences h_c − h_nbr (outflow-positive), h = wtd + topo (matches the residual's flux)
-      const double h_c = w_c + my_topo[j][i];
-      const double dE = h_c - (w_E + my_topo[j][i + 1]);
-      const double dW = h_c - (w_W + my_topo[j][i - 1]);
-      const double dN = h_c - (w_N + my_topo[j + 1][i]);
-      const double dS = h_c - (w_S + my_topo[j - 1][i]);
-
-      const double net_outflow = e_E * G_E * dE + e_W * G_W * dW + e_N * G_N * dN + e_S * G_S * dS;
+      // τ = 1/T and its wtd-derivative τ' at the centre (T̄-aware; see the lambdas above)
+      const double tau_c  = Tinv(w_c, wo_c, my_fdepth[j][i], my_ksat[j][i]);
+      const double taup_c = tauPrime(w_c, wo_c, my_fdepth[j][i], my_ksat[j][i]);
+      const double h_c    = w_c + my_topo[j][i];  // centre head, h = wtd + topo
 
       const double A_j = cns2 / gew[j][i];  // cell area (matches the residual)
       const double S   = updateEffectiveStorativity(my_starting_wtd[j][i], w_c, my_porosity[j][i]);
       const double Sp  = dEffectiveStorativityDnew(my_starting_wtd[j][i], w_c, my_porosity[j][i]);
       const double B   = dt / (A_j * S);  // flux prefactor
       const double D   = dt / S;          // removal prefactor
+
+      // Per-face flux, its centre-derivative ∂N/∂x_c, and the off-diagonal ∂f/∂x_X. An OFF-MAP face (a
+      // global domain edge; only reached for a LAND edge cell when -wtm_ghost_boundary skips setEdges)
+      // uses the land-slope ghost of FormFunctionLocal: τ_nbr = τ_c and h_nbr = h_c + (topo_c − topo_inland),
+      // both functions of the CENTRE variable only, so dX = h_c − h_nbr = topo_inland − topo_c is CONSTANT
+      // in x, the face has NO off-diagonal column (τ_nbr = τ_c is not an independent unknown), and its only
+      // Jacobian entry is d(e·G·dX)/dw_c = G·dX·(−τ'_c/τ_c²) with e = 1/τ_c. The inland cell is the inward
+      // reflection (2j−nj, 2i−ni), so this reads only toward the interior -- never out of bounds. For an
+      // in-bounds face the standard 5-point terms are recovered, in E,W,N,S order (FP-identical to before).
+      struct FaceGeom { int dj, di; double G; };
+      const FaceGeom faces[4] = {{0, 1, gew[j][i]}, {0, -1, gew[j][i]}, {1, 0, gn[j][i]}, {-1, 0, gs[j][i]}};
+      double net_outflow = 0.0, dN_dc = 0.0;
+      double J_nbr[4]   = {0.0, 0.0, 0.0, 0.0};                 // off-diagonals (unused for off-map: no column)
+      double tau_nbr[4] = {tau_c, tau_c, tau_c, tau_c};         // for the Kirchhoff column scale (off-map: unused)
+      int    nbr_j[4], nbr_i[4];                                // neighbour stencil (only used when in-bounds)
+      bool   nbr_inb[4];                                        // true = emit an off-diagonal column for this face
+      for (int fi = 0; fi < 4; ++fi) {
+        const int    nj = j + faces[fi].dj, ni = i + faces[fi].di;
+        const double G  = faces[fi].G;
+        nbr_j[fi] = nj; nbr_i[fi] = ni;
+        if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map: land-slope ghost
+          nbr_inb[fi] = false;  // NO stencil column: the ghost is internal to this cell (τ_nbr = τ_c)
+          const double topo_inland = my_topo[j - faces[fi].dj][i - faces[fi].di];
+          const double dX = topo_inland - my_topo[j][i];  // h_c − h_nbr, constant in x
+          net_outflow += (1.0 / tau_c) * G * dX;
+          dN_dc       += G * dX * (-taup_c / (tau_c * tau_c));  // d[(1/τ_c)·G·dX]/dw_c
+        } else {
+          nbr_inb[fi] = true;
+          const double w_X    = wtd_of(nj, ni);
+          const double tau_X  = Tinv(w_X, wold_of(nj, ni), my_fdepth[nj][ni], my_ksat[nj][ni]);
+          const double taup_X = tauPrime(w_X, wold_of(nj, ni), my_fdepth[nj][ni], my_ksat[nj][ni]);
+          const double sumX = tau_c + tau_X, e_X = 2.0 / sumX;
+          const double dX   = h_c - (w_X + my_topo[nj][ni]);
+          net_outflow += e_X * G * dX;
+          dN_dc       += G * (e_X - 2.0 * taup_c / (sumX * sumX) * dX);
+          J_nbr[fi]    = B * G * (-2.0 * taup_X / (sumX * sumX) * dX - e_X);
+          tau_nbr[fi]  = tau_X;
+        }
+      }
 
       double removal = 0.0, rho = 0.0;  // removal [m/s] and its exact (unclamped) wtd-derivative
       if (sink_on) {
@@ -2070,40 +2079,33 @@ static PetscErrorCode FormJacobianLocal(
       const double flux_term    = B * net_outflow;  // dt·N/(A_j·S)   (part of the residual)
       const double removal_term = D * removal;       // dt·removal/S   (part of the residual)
 
-      // Off-diagonals: ∂f/∂x_X = B·G_X·[ −2·τ'_X/sum_X²·dX − e_X ]
-      const double J_east  = B * G_E * (-2.0 * taup_E / (sumE * sumE) * dE - e_E);
-      const double J_west  = B * G_W * (-2.0 * taup_W / (sumW * sumW) * dW - e_W);
-      const double J_north = B * G_N * (-2.0 * taup_N / (sumN * sumN) * dN - e_N);
-      const double J_south = B * G_S * (-2.0 * taup_S / (sumS * sumS) * dS - e_S);
-
-      // ∂N/∂x_c: each face contributes G_X·(e_X − 2·τ'_c/sum_X²·dX)
-      const double dN_dc = G_E * (e_E - 2.0 * taup_c / (sumE * sumE) * dE)
-                         + G_W * (e_W - 2.0 * taup_c / (sumW * sumW) * dW)
-                         + G_N * (e_N - 2.0 * taup_c / (sumN * sumN) * dN)
-                         + G_S * (e_S - 2.0 * taup_c / (sumS * sumS) * dS);
-
       // Recharge is a fixed volume entering the residual as −my_rech/S (a 1/S-scaled term like the
       // flux/removal), so it joins the −(S'/S)·(…) chain-rule group: ∂(−my_rech/S)/∂x_c = +(S'/S)·(my_rech/S).
       const double recharge_term = my_rech[j][i] / S;  // dt-independent; head-form recharge magnitude
       const double J_center =
           1.0 + B * dN_dc - (Sp / S) * (flux_term + removal_term - recharge_term) + D * rho;
 
+      // Assemble a variable-length stencil: one off-diagonal per IN-BOUNDS face (E,W,N,S order), then the
+      // centre. An OFF-MAP face contributes NO column (its land-slope ghost is internal to this cell, so its
+      // whole Jacobian entry already sits on the centre diagonal via dN_dc) -- emitting an out-of-range
+      // stencil column makes MatSetValuesStencil error ("inserting a new nonzero"/out-of-range), it is NOT
+      // silently dropped. With the flag off every land cell is interior (all 4 faces in-bounds -> nc = 5,
+      // identical to the fixed 5-point stencil), so this is FP- and sparsity-identical there.
       MatStencil  cols[5];
       PetscScalar vals[5];
-      cols[0].j = j;     cols[0].i = i + 1; cols[0].c = 0;
-      cols[1].j = j;     cols[1].i = i - 1; cols[1].c = 0;
-      cols[2].j = j + 1; cols[2].i = i;     cols[2].c = 0;
-      cols[3].j = j - 1; cols[3].i = i;     cols[3].c = 0;
-      cols[4].j = j;     cols[4].i = i;     cols[4].c = 0;
-      vals[0] = J_east; vals[1] = J_west; vals[2] = J_north; vals[3] = J_south; vals[4] = J_center;
-      // Kirchhoff chain rule: dF/dΦ = (dF/dh)·(dh/dΦ) = (dF/dh)/T. The entries above are dF/dh (h form);
-      // column-scale each by dwtd_k/dΦ_k = 1/T_k = τ_k to get dF/dΦ (divides the transmissivity range out
-      // of the conditioning). τ_k = 1/T at that column's cell.
-      if (g_kirchhoff) {
-        vals[0] *= tau_E; vals[1] *= tau_W; vals[2] *= tau_N; vals[3] *= tau_S; vals[4] *= tau_c;
+      int nc = 0;
+      for (int fi = 0; fi < 4; ++fi) {
+        if (!nbr_inb[fi]) continue;
+        cols[nc].j = nbr_j[fi]; cols[nc].i = nbr_i[fi]; cols[nc].c = 0;
+        // Kirchhoff chain rule: dF/dΦ = (dF/dh)/T. J_nbr is dF/dh; column-scale by dwtd_k/dΦ_k = 1/T_k = τ_k.
+        vals[nc] = g_kirchhoff ? J_nbr[fi] * tau_nbr[fi] : J_nbr[fi];
+        ++nc;
       }
-      MatSetValuesStencil(Jmat, 1, &row, 5, cols, vals, INSERT_VALUES);
-      if (P != Jmat) MatSetValuesStencil(P, 1, &row, 5, cols, vals, INSERT_VALUES);
+      cols[nc].j = j; cols[nc].i = i; cols[nc].c = 0;
+      vals[nc] = g_kirchhoff ? J_center * tau_c : J_center;  // centre column scaled by τ_c in Kirchhoff form
+      ++nc;
+      MatSetValuesStencil(Jmat, 1, &row, nc, cols, vals, INSERT_VALUES);
+      if (P != Jmat) MatSetValuesStencil(P, 1, &row, nc, cols, vals, INSERT_VALUES);
     }
   }
 
