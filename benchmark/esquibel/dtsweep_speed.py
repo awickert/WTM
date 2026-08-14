@@ -87,7 +87,7 @@ for m in METHODS:
 def wall_num(ws):
     try: return float(ws)
     except Exception: return float("inf")
-def speed_table(title, cost_idx, unit):  # cost_idx: 4=SNES iterations (clean), 1=wall_s (node-noisy)
+def speed_table(title, cost_idx, unit, fmt=".0f"):  # cost_idx: 4=SNES iterations (clean), 1=wall_s (node-noisy)
     print(f"\n{title} ('--' = unreachable at any swept dt):")
     print(f"  {'target(m)':>10} " + "".join(f"{m:>24}" for m in METHODS))
     for target in (2e-1, 1.5e-1, 1.2e-1, 1e-1, 5e-2, 1e-2):
@@ -102,8 +102,8 @@ def speed_table(title, cost_idx, unit):  # cost_idx: 4=SNES iterations (clean), 
                 cells.append(f"{'--':>24}")
             else:
                 c, dt, st = min(cand)  # least cost meeting the target
-                cells.append(f"{f'{c:.0f}{unit} @dt{dt}({st}cyc)':>24}")
+                cells.append(f"{f'{c:{fmt}}{unit} @dt{dt}({st}cyc)':>24}")
         print(f"  {target:>10.3g} " + "".join(cells))
 
 speed_table("Speed-to-accuracy by SNES ITERATIONS (residual evals; node-independent, the honest cost)", 4, "its")
-speed_table("Speed-to-accuracy by WALL seconds (node-noisy on shared nodes -- indicative only)", 1, "s")
+speed_table("Speed-to-accuracy by WALL seconds (fractional; node-noisy on shared nodes -- indicative only)", 1, "s", ".2f")

@@ -74,11 +74,12 @@ outfile_prefix ${stem}_
 CFG
   rm -f ${stem}.txt ${stem}_*.tif
   finaltif=$(printf "%s_%09d.tif" "$stem" "$CYC")
-  t0=$(date +%s)
+  t0=$(date +%s.%N)
   mpiexec -ppn "$N" -n "$N" "$BIN" ${stem}.cfg $BASE $METHFLAGS \
     -wtm_fringe_source ksat $CLAMPFLAG ${EXTRA:-} -snes_stol 1e-6 > ${stem}.log 2>&1
-  rc=$?; t1=$(date +%s)
+  rc=$?; t1=$(date +%s.%N)
   [ -f "$finaltif" ] || finaltif="MISSING"
-  echo "$FTAG,$METHOD,$DTWK,$CYC,$rc,$((t1-t0)),$finaltif" | tee -a "$CSV"
+  wall=$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")   # fractional-second wall (date +%s.%N); integer sec threw away resolution on short jobs
+  echo "$FTAG,$METHOD,$DTWK,$CYC,$rc,$wall,$finaltif" | tee -a "$CSV"
 done
 echo "DONE TAG=$TAG METHOD=$METHOD"
