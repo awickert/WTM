@@ -79,3 +79,13 @@ So the default is **`frac`** (converged when < `-wtm_eq_frac` = 0.1 % of land ce
 only metric that both *fires* and stays precise. `-wtm_eq_metric max` restores the strict worst-cell
 criterion; `rms` is the loose/cheap bulk one. Applies on **every** spin-up pathway (fixed / Newton-
 continuation / adaptive).
+
+## Tbar as an opt-in stiff hammer (composes with adaptive; NOT auto)
+
+`-wtm_Tbar` (time-averaged transmissivity) composes with the adaptive controller
+(`-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_Tbar`) — kept as an **opt-in hammer for stiff / stiff-long time steps**
+(its proven benefit is extending the TR-BDF2 stability ceiling dt8→dt10). It is **not auto-engaged**: a
+measured head-to-head (`tbar_vs_shrink`) found adaptive+Tbar equal (tol 1/20/100) or *worse* (tol 50: +2
+rejects) than adaptive without it — the controller shrinks dt where it's stiff, so it stays out of the
+ceiling regime where Tbar helps. So dt-shrink is the default response to stiffness; reach for `-wtm_Tbar`
+only when deliberately pushing long steps near the stability ceiling.
