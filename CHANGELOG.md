@@ -37,7 +37,11 @@ taper) passes.
   `-wtm_bdf2_on_V` → BDF2-on-V — the error *estimate* being the only method-specific piece (TR-BDF2's
   embedded two-stage estimate, else the generic linear-history predictor) feeding one shared
   grow/shrink/reject controller. Its error norm **includes the free surface** (where stability is set),
-  which is what lets it settle a cold start rather than growing Δt into a surface limit cycle.
+  which is what lets it settle a cold start rather than growing Δt into a surface limit cycle. A **PI
+  step-size controller** damps the Δt "hunting" that otherwise locks into resonance dead-bands, so on an
+  equilibrium/spin-up run the step tolerance is **derived from the convergence target** — `dt_tol =
+  min(50·eq_tol, 0.5 m)` unless `-wtm_dt_tol` is set — making **`eq_tol` the single knob**, with no toxic
+  `dt_tol`/`eq_tol` combination and no fixed dt that can ring on unfamiliar terrain.
   Time-order is decoupled from the solver: **`-wtm_bdf2_on_V` composes with `-wtm_anderson`** to give
   the matrix-free Anderson solver a genuine 2nd-order-in-time residual (no operator/preconditioner),
   so a run can be both fast (Anderson's cheap matrix-free iterations) and 2nd-order in time. It shares

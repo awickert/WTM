@@ -71,6 +71,20 @@
     `-wtm_anderson` → 1st-order backward-Euler (cc, ring-proof), `-wtm_tr_bdf2` → 2nd-order TR-BDF2,
     `-wtm_bdf2_on_V` → 2nd-order BDF2-on-V. History (`wⁿ⁻¹`) is tracked whenever adaptive is on. Island
     cold→eq, all settle: cc 13459 its (1st-order, robust fallback), TR-BDF2 1547, BDF2-on-V 7776.
+  - **PI controller + one-knob `eq_tol` coupling (2026-08-15).** The plain I-controller (hard reject on any
+    overshoot, grow on any undershoot) HUNTS near the tolerance and locks into Δt limit cycles at certain
+    `dt_tol` — a measured resonance dead-band at ~0.2–0.25 m that never settles (84–99 cycles), flanked by
+    fine values at 0.15 and 0.3. Fix (standard stiff-ODE practice): a **PI step-size controller** that damps
+    the oscillation with the previous accepted error, and a PI-damped reject shrink instead of a hard slam —
+    the 0.2–0.25 band drops to 11–21 cycles, no catastrophe anywhere in the 0.1–0.5 operating range. Cost:
+    the nominal point is ~28 % slower than the (hunting-prone) I-controller (island 1547 → 1977) — robustness
+    over speed, still ~2× better than fixed-1-wk cc. With the hunting gone, the step tolerance is **derived
+    from the convergence target** on a spin-up: `dt_tol = min(k·eq_tol, ring_cap)` (k = 50, ring_cap = 0.5 m),
+    unless `-wtm_dt_tol` is set. So **`eq_tol` is the single knob** and no `dt_tol`/`eq_tol` combination is
+    toxic; the ring cap keeps Δt below the physical free-surface overshoot even for a loose `eq_tol`. Verified
+    (island, one knob): `eq_tol` 0.001→0.05 all settle monotonically (7923→1332 its), the loose end capped
+    where the uncapped coupling (`dt_tol` 1.0/2.5) would ring. A transient run has no convergence target, so
+    `dt_tol` is used directly.
   - **Operational home + later work (single source of truth): `benchmark/adaptive_dt/`** (README + tests).
     It carries the MSI benchmark verdict (adaptive = **robustness / spin-up tool**: ties well-chosen
     constant dt on smooth transients, decisively *wins* spin-up — bounded worst-cell error where fixed dt
