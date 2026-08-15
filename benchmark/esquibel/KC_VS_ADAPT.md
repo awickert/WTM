@@ -1,10 +1,15 @@
-# KCallaghan fixed-1-week vs. our adaptive TR-BDF2 — Esquibel spin-up
+# KCallaghan fixed-1-week vs. our adaptive TR-BDF2 — Esquibel
 
-**Experiment type: SPIN-UP** (cold start `wtd = 0` → equilibrium), *not* a transient run. This is
-KCallaghan's fixed-1-week equilibrium workflow, and the regime where the adaptive controller wins
-(the island cold start showed the same ~2.6× before this). The metric is **cost to reach
-equilibrium**; the equilibrium itself is the dt→∞ fixed point, so all arms converge to the same
-water table (each stopped by the same per-cycle `frac` criterion).
+Two regimes, two different boosts (measured below):
+- **Spin-up** (cold `wtd = 0` → equilibrium, KCallaghan's fixed-1-week workflow): the equilibrium is the
+  dt→∞ fixed point, so it is *order-independent* — cc and adaptive reach the **same** steady state, and the
+  boost is **speed only** (~1.5× fewer iterations, one-knob adaptive vs cc).
+- **Transient** (a ±20 % P−ET step over a fixed horizon): 2nd-order TR-BDF2 vs cc's 1st-order backward-Euler
+  gives a large **accuracy** boost (~20× lower RMS error) *and* ~2.4× fewer iterations.
+
+The shipped adaptive is **one-knob and robust** (`eq_tol` only; `dt_tol` auto-derived, PI-damped,
+ring-capped) — its value is not raw speed on a domain where 1 week happens to be a good fixed step, but that
+you need not know the right step in advance.
 
 ## Why this comparison
 
@@ -26,28 +31,55 @@ tolerance on both sides.
 - Harness: [`kc_vs_adapt.sbatch`](kc_vs_adapt.sbatch). Raw per-run record:
   `results/kc_vs_adapt/summary.csv` (git-ignored, regenerable).
 
-## Results (N = 16, job 15833623)
+## Results — spin-up cost (N = 16)
 
 | arm | flags added | SNES iters | wall (s) | stop cycle |
 |---|---|--:|--:|--:|
 | `kcallaghan_cc` (fixed 1-wk BE) | — | 9827 | 36.1 | 14 |
 | `fixed_tr` (2nd-order, no adapt) | `-wtm_tr_bdf2` | 5133 | 37.7 | 19 |
-| `adaptive_tr_0p5` | `-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 0.5` | 4251 | 32.7 | 14 |
-| `adaptive_tr_2`  | `-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 2.0` | never stops | — | 527+ (killed) |
+| **one-knob adaptive (SHIPPED)** | `-wtm_tr_bdf2 -wtm_dt_adaptive` (dt_tol auto = 0.5) | **6458** | 52.5 | 20 |
+| adaptive, *old* I-controller | `… -wtm_dt_tol 0.5` | 4251 | 32.7 | 14 |
+| adaptive, `-wtm_dt_tol 2.0` (too loose) | — | never stops | — | 527+ (killed) |
 
-**`dt_tol=2.0` is too loose for a spin-up:** the steps stay healthy (~25/cycle, few rejects), but the
-looser per-step tolerance leaves a residual per-cycle wobble that keeps >0.1 % of cells above `eq_tol`, so
-the `frac` equilibrium stop **never fires** — it ran 527 cycles (~527 model-years) without settling and was
-cancelled. There is a sweet spot: `dt_tol` must be tight enough that the per-cycle change can fall below the
-stop threshold. `0.5` is near-optimal here (stops at cycle 14, the 2.3× win); `2.0` never converges. (This
-is a *spin-up* constraint — a transient run has a fixed horizon and no eq-stop, so a looser tol is fine
-there.)
+- **The shipped one-knob adaptive beats KCallaghan's fixed-1wk ~1.5×** (9827 → 6458) and settles with no
+  `dt_tol` to pick — `eq_tol` is the only knob (`dt_tol` auto-derived = `min(50·eq_tol, 0.5)`, PI-damped,
+  ring-capped).
+- The `-wtm_dt_tol 0.5` row (4251, ~2.3×) is the **old I-controller**: faster but FRAGILE — a resonance
+  dead-band at `dt_tol` 0.2–0.25 never settled (84–99 cycles), and `dt_tol 2.0` ran 527 cycles without the
+  eq-stop ever firing. Replaced by a **PI step-size controller** (kills the hunting) + the one-knob coupling;
+  the 4251 → 6458 slowdown is the deliberate **price of robustness** on unfamiliar terrain.
+- Decomposition: 1st→2nd order (`cc`→`fixed_tr`) is ~1.9× (9827→5133). On *this* domain a hand-picked
+  fixed-TR-1wk actually beats adaptive — adaptive's value is that **you don't have to know** 1 week is the
+  right step; it auto-finds a stable one anywhere, from one physical knob.
 
-## Verdict
+## Spin-up converges to the same equilibrium as cc
 
-- **Adaptive TR-BDF2 beats KCallaghan's fixed-1-week by ~2.3×** on iterations (9827 → 4251), matching
-  the island's ~2.6×.
-- The decomposition shows where it comes from: going 1st-order → 2nd-order (`cc` → `fixed_tr`) already
-  cuts iterations ~1.9× (9827 → 5133); adaptivity adds the rest.
-- Wall tracks iterations loosely here (shared-node noise); the iteration counts are the trustworthy
-  comparison until an `--exclusive` timing pass on finalized code.
+`adaptive_eq` vs `cc_eq` (both at `eq_tol=0.01`): **RMS = 0.050 m**, max 3.1 m (384 703 cells). The bulk
+agrees to ~5 cm; the 3.1 m max is a few slow deep exp-T cells where *both* stopped short at `eq_tol=0.01`
+(a shared stopping-tolerance artifact, not a disagreement). Equilibrium is the dt→∞ fixed point, so it is
+order-independent: on the **spin-up the boost is speed only** — the same steady state, reached ~1.5× faster.
+
+## Transient (±20 % P−ET step, 100-wk horizon) — where 2nd order pays
+
+The **accuracy** boost is a transient property. Error vs a fine (0.25-wk) TR reference:
+
+| vs fine ref | cc_1wk RMS | adaptive RMS | cc worst | adaptive worst | its cc | its adpt |
+|---|--:|--:|--:|--:|--:|--:|
+| dry −20 % | 0.702 | **0.035** | 52.5 | 0.98 | 1219 | 497 |
+| wet +20 % | 0.664 | **0.035** | 76.3 | 2.19 | 1247 | 542 |
+
+Adaptive-TR is **~20× more accurate in RMS** (and ~50–75× at the worst cell) than cc's fixed-1wk, at
+**~2.4× fewer iterations** — cc's 1st-order backward-Euler smears the transient; 2nd-order TR-BDF2 tracks it
+to centimetres. Combined boost = *a bit of speed + an order of magnitude of accuracy*, in the regime that
+matters for paleo time-evolution.
+
+## Iso-accuracy equilibrium curve (in progress)
+
+`iso_accuracy.sbatch` measures cumulative iterations vs RMS-accuracy (against a tightly-converged truth) for
+cc and adaptive — the honest speedup at each accuracy level (expected bigger at moderate accuracy,
+compressing toward tight as the slow deep cells dominate both). Numbers to be added when the job lands.
+
+## Note on wall time
+
+Wall tracks iterations only loosely here (16-core shared `agsmall` node, co-tenant noise); the iteration
+counts are the trustworthy comparison until an `--exclusive` timing pass on finalized code.
