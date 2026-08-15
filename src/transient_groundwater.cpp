@@ -1304,14 +1304,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // -wtm_dt_adaptive + TR-BDF2: embedded local-error estimate from the two stages (no history needed;
   // valid on step 1). A linear extrapolation through (t_n, h^n) and (t_n+gamma*dt, Y_gamma) to t_n+dt is
   //   h_pred = [Y_gamma - (1-gamma) h^n] / gamma   -- EXACT for linear-in-time, O(dt^2) for curvature,
-  // so |h^{n+1} - h_pred| is the local truncation error. The error norm EXCLUDES surface cells (new
-  // wtd >= -band): the free-surface clamp is non-smooth there and would otherwise spike the estimate and
-  // force dt tiny. est > dt_tol => accuracy REJECT (shrink, retry, no commit); else ACCEPT and grow
-  // toward the tolerance (capped by the step's convergence headroom and dtc_dt_max). ACCURACY (option 2)
-  // on top of the reject/retry CONVERGENCE floor (option 1) above. See BDF2_ADAPTIVE_DESIGN.md.
+  // so |h^{n+1} - h_pred| is the local truncation error. The error norm covers ALL land cells INCLUDING
+  // the free surface: stability is SET at the free surface, so excluding it blinds the controller to the
+  // very overshoot that rings -- it then grows dt into the ring (measured: island cold start rang forever
+  // at 14843 iters with the surface excluded; including it settles monotonically in 1547). A SETTLED
+  // clamped cell has h_pred ~= h^{n+1} => deviation ~= 0, so it costs nothing on a warm transient (measured
+  // byte-identical to the excluded norm at dt_tol 0.5/5/20); only a TRANSITIONING/ringing surface cell
+  // spikes, which correctly shrinks dt. est > dt_tol => accuracy REJECT (shrink, retry, no commit); else
+  // ACCEPT and grow toward the tolerance (capped by the step's convergence headroom and dtc_dt_max).
+  // ACCURACY (option 2) on top of the reject/retry CONVERGENCE floor (option 1) above. See BDF2_ADAPTIVE_DESIGN.md.
   if (user_context.use_dt_adaptive && user_context.use_tr_bdf2) {
     const double TR_G = 2.0 - std::sqrt(2.0);
-    const double band = 0.05;  // metres below surface; shallower cells excluded (clamp non-smoothness)
     PetscScalar **yg, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
@@ -1319,9 +1322,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     long   local_n = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
-        if (dmdapack.mask[j][i] != 0) {  // land only
-          const double wtd_new = dmdapack.x[j][i] - topo_e[j][i];
-          if (wtd_new >= -band) continue;  // skip the surface/clamp zone (non-smooth)
+        if (dmdapack.mask[j][i] != 0) {  // ALL land cells (surface included -- see note above)
           const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
           const double h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
           const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
