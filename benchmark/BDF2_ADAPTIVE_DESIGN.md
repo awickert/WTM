@@ -49,16 +49,28 @@
      linear-in-time, `O(Δt²)` for curvature — so `|hⁿ⁺¹ − h_pred|` is the local truncation error, with no
      ground truth needed. `est > dt_tol` ⇒ accuracy reject (shrink, retry); else accept and grow toward
      `dt_tol`, capped by convergence headroom (`dtc_easy_iters`) and `dtc_dt_max`.
-  - **Free-surface-aware norm — the fix for the near-ocean pinning.** The error norm EXCLUDES surface cells
-    (new `wtd ≥ −band`): the free-surface clamp is non-smooth there and would otherwise spike the estimate
-    and force Δt tiny (exactly what over-refined the forward estimator). The estimate is then governed by
-    the smooth subsurface bulk.
+  - **Surface-inclusive norm (corrected 2026-08-15).** The error norm covers ALL land cells INCLUDING the
+    free surface. An earlier version EXCLUDED surface cells (`wtd ≥ −band`) to keep the clamp's
+    non-smoothness from spiking the estimate — but **stability is SET at the free surface**, so excluding it
+    blinded the controller to the surface overshoot and it grew Δt into a limit cycle that never settled
+    (island cold start: rang forever at 14843 iters excluded vs a monotone settle in 1547 including it). A
+    *settled* clamped cell has `h_pred ≈ hⁿ⁺¹` ⇒ deviation ≈ 0, so inclusion costs nothing on a warm
+    transient (byte-identical iteration counts to the excluded norm at `dt_tol` 0.5/5/20); only a
+    *transitioning / ringing* surface cell spikes, which correctly shrinks Δt. MAX norm (default) or RMS
+    (`-wtm_dt_norm_rms`).
   - **Validated** (Esquibel, dry −20 %, `tests/run_all.sh` green): `-wtm_dt_tol 1/5/20 m` → 33/12/8 steps
     (6/3/1 rejected), all converged — monotone in the tolerance, both mechanisms live. This is the general
     stability route: the controller keeps Δt as large as the *local* terrain/conditions allow and backs off
-    automatically where they don't. See the implementation in `transient_groundwater.cpp` (estimator + reject
-    returns), `WTM.cpp` (reject/retry loop), and `CreateSNES.cpp` (tr+adaptive keeps the self-contained
-    TR-BDF2 residual, no BDF2 history).
+    automatically where they don't. See the implementation in `transient_groundwater.cpp` (estimate +
+    controller split, reject returns), `WTM.cpp` (reject/retry loop), and `CreateSNES.cpp` (flag wiring).
+  - **Detached from the integrator (2026-08-15).** The controller no longer forces TR-BDF2 (or the BDF2
+    residual): the *estimate* is the only method-specific piece — TR-BDF2 uses its embedded two-stage
+    estimate; every other integrator uses the generic linear-history predictor `h_pred = hⁿ + ω(hⁿ − hⁿ⁻¹)`
+    (needs the last two accepted states) — and both feed one **method-agnostic controller**
+    (grow/shrink/reject). So `-wtm_dt_adaptive` now composes with any integrator:
+    `-wtm_anderson` → 1st-order backward-Euler (cc, ring-proof), `-wtm_tr_bdf2` → 2nd-order TR-BDF2,
+    `-wtm_bdf2_on_V` → 2nd-order BDF2-on-V. History (`wⁿ⁻¹`) is tracked whenever adaptive is on. Island
+    cold→eq, all settle: cc 13459 its (1st-order, robust fallback), TR-BDF2 1547, BDF2-on-V 7776.
   - **Operational home + later work (single source of truth): `benchmark/adaptive_dt/`** (README + tests).
     It carries the MSI benchmark verdict (adaptive = **robustness / spin-up tool**: ties well-chosen
     constant dt on smooth transients, decisively *wins* spin-up — bounded worst-cell error where fixed dt

@@ -1,5 +1,12 @@
 # Adaptive-dt benchmark
 
+> **Note (2026-08-15):** the adaptive controller is now **detached from the integrator** — `-wtm_dt_adaptive`
+> composes with any of them (`-wtm_anderson` → 1st-order backward-Euler, `-wtm_tr_bdf2` → TR-BDF2,
+> `-wtm_bdf2_on_V` → BDF2-on-V); the error estimate is the only method-specific piece feeding one shared
+> controller. Its error norm now **includes the free surface** (where stability is set), which is what lets
+> it settle a cold start instead of ringing. This benchmark uses the TR-BDF2 pairing (the efficient choice).
+> See `../BDF2_ADAPTIVE_DESIGN.md`.
+
 Does the TR-BDF2 **adaptive time step** (`-wtm_tr_bdf2 -wtm_dt_adaptive`) buy anything over a well-chosen
 **constant** dt — in SNES iterations (the node-independent cost) and wall — for the two regimes that matter:
 

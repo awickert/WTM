@@ -31,7 +31,13 @@ taper) passes.
   equilibrium stop that is on by default — see "Automatic equilibrium stop" below.)
 - **Second-order transient time integration.** Fixed-step BDF2 (`-wtm_bdf2`), a volume-form
   variant that is genuinely 2nd order under recharge (`-wtm_bdf2_on_V`), variable-step BDF2, and
-  **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/picard/BDF2_ADAPTIVE_DESIGN.md`.
+  **adaptive time stepping** (`-wtm_dt_adaptive`). See `benchmark/BDF2_ADAPTIVE_DESIGN.md`.
+  The **adaptive controller is detached from the integrator**: `-wtm_dt_adaptive` composes with any of
+  them — `-wtm_anderson` → 1st-order backward-Euler (ring-proof), `-wtm_tr_bdf2` → TR-BDF2,
+  `-wtm_bdf2_on_V` → BDF2-on-V — the error *estimate* being the only method-specific piece (TR-BDF2's
+  embedded two-stage estimate, else the generic linear-history predictor) feeding one shared
+  grow/shrink/reject controller. Its error norm **includes the free surface** (where stability is set),
+  which is what lets it settle a cold start rather than growing Δt into a surface limit cycle.
   Time-order is decoupled from the solver: **`-wtm_bdf2_on_V` composes with `-wtm_anderson`** to give
   the matrix-free Anderson solver a genuine 2nd-order-in-time residual (no operator/preconditioner),
   so a run can be both fast (Anderson's cheap matrix-free iterations) and 2nd-order in time. It shares
