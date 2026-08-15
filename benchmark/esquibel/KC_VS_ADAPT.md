@@ -1,9 +1,10 @@
 # KCallaghan fixed-1-week vs. our adaptive TR-BDF2 — Esquibel
 
 Two regimes, two different boosts (measured below):
-- **Spin-up** (cold `wtd = 0` → equilibrium, KCallaghan's fixed-1-week workflow): the equilibrium is the
-  dt→∞ fixed point, so it is *order-independent* — cc and adaptive reach the **same** steady state, and the
-  boost is **speed only** (~1.5× fewer iterations, one-knob adaptive vs cc).
+- **Spin-up** (cold `wtd = 0` → equilibrium, KCallaghan's fixed-1-week workflow): the true equilibrium is the
+  dt→∞ fixed point (order-independent), but at the practical `eq_tol` stop adaptive is both **faster** (2–3×
+  at iso-accuracy) **and lands a more accurate equilibrium** (RMS 0.031 vs cc's 0.081 to truth) — cc's small
+  fixed steps make it stop prematurely-in-accuracy. See the iso-accuracy curve below.
 - **Transient** (a ±20 % P−ET step over a fixed horizon): 2nd-order TR-BDF2 vs cc's 1st-order backward-Euler
   gives a large **accuracy** boost (~20× lower RMS error) *and* ~2.4× fewer iterations.
 
@@ -56,8 +57,9 @@ tolerance on both sides.
 
 `adaptive_eq` vs `cc_eq` (both at `eq_tol=0.01`): **RMS = 0.050 m**, max 3.1 m (384 703 cells). The bulk
 agrees to ~5 cm; the 3.1 m max is a few slow deep exp-T cells where *both* stopped short at `eq_tol=0.01`
-(a shared stopping-tolerance artifact, not a disagreement). Equilibrium is the dt→∞ fixed point, so it is
-order-independent: on the **spin-up the boost is speed only** — the same steady state, reached ~1.5× faster.
+(a shared stopping-tolerance artifact, not a disagreement). The *true* equilibrium is order-independent, but
+at the practical `eq_tol` stop adaptive lands closer to it than cc (RMS 0.031 vs 0.081 to truth) — see the
+iso-accuracy curve below; the spin-up boost is faster **and** more accurate, not speed-only.
 
 ## Transient (±20 % P−ET step, 100-wk horizon) — where 2nd order pays
 
@@ -73,11 +75,26 @@ Adaptive-TR is **~20× more accurate in RMS** (and ~50–75× at the worst cell)
 to centimetres. Combined boost = *a bit of speed + an order of magnitude of accuracy*, in the regime that
 matters for paleo time-evolution.
 
-## Iso-accuracy equilibrium curve (in progress)
+## Iso-accuracy equilibrium curve (`iso_accuracy.sbatch`, job 15845541)
 
-`iso_accuracy.sbatch` measures cumulative iterations vs RMS-accuracy (against a tightly-converged truth) for
-cc and adaptive — the honest speedup at each accuracy level (expected bigger at moderate accuracy,
-compressing toward tight as the slow deep cells dominate both). Numbers to be added when the job lands.
+The `eq_tol` stop is only a proxy — it measures per-cycle *change*, not accuracy-to-truth. Against a
+tightly-converged truth (adaptive, `eq_tol=0.001`), cumulative SNES iters to reach an RMS-accuracy:
+
+| RMS-vs-truth (m) | cc iters | adaptive iters | speedup |
+|---|--:|--:|--:|
+| ≤ 0.20 | 3327 | 1693 | **2.0×** |
+| ≤ 0.10 | 5927 | 1986 | **3.0×** |
+| ≤ 0.05 | **never** | 2878 | cc can't reach |
+| **saturation** | **0.081 @ 9177 its** | **0.0315 @ 6458 its** | — |
+
+- **The equilibrium speedup is 2–3× at iso-accuracy, not 1.5×.** The 1.5× (iso-`eq_tol`) understated it,
+  because cc and adaptive reach *different* accuracies at the same `eq_tol=0.01` stop.
+- **Adaptive reaches a strictly better accuracy** — RMS 0.0315 vs cc's 0.081 (2.6× closer to truth), in
+  fewer iterations. cc *saturates coarse*: its small fixed 1-week steps make the slow deep exp-T cells
+  crawl, so their per-cycle change falls below `eq_tol` while they are still ~0.08 m from truth — cc stops
+  **prematurely in accuracy**. Adaptive's big steps drive those cells to genuine convergence.
+- So on the spin-up the boost is **not** speed-only (an earlier statement, now corrected): it is faster to
+  any accuracy *and* delivers a more accurate equilibrium.
 
 ## Note on wall time
 
