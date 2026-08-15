@@ -39,9 +39,21 @@ Each regime compares three schemes at matched physical horizon:
 - `<regime>_<run>_<param>_*.tif`, `*.cfg`, `*.log`, `pert_*/`, `cold_domain/` — per-run fields and working
   dirs (large / regenerable; git-ignored, see `results/.gitignore`).
 
-## Findings so far (Esquibel, n = 16, MSI)
+## Findings (Esquibel, n = 16, MSI; see `results/adapt_bench_*.csv`)
 
-- **Transient:** constant dt is hard to beat on uniform dynamics. The **RMS norm beats the MAX norm** (~43
-  vs 53 iterations for the same accuracy) and pulls adaptive onto the constant cost-accuracy curve (and
-  below it on max error); MAX-norm adaptive sat above it.
-- **Spin-up:** the decisive test for adaptive — results recorded here as they complete.
+- **Transient:** constant dt is hard to beat on uniform dynamics — adaptive **ties** it. The **RMS norm
+  beats the MAX norm** (43 vs 53 iterations for the same accuracy) and pulls adaptive onto the constant
+  cost-accuracy curve (below it on max error); MAX-norm adaptive sat above it. No decisive win here.
+- **Spin-up: adaptive decisively WINS** — the regime it is for. At matched iterations (~1370), adaptive
+  holds max error **~12 m** while constant dt1 / dt2 blow to **399 m / 1638 m** (the violent cold-start
+  front the fixed dt can't resolve); adaptive reaches the fine-reference accuracy in fewer iterations
+  (1391) than the fine constant needs (2114), and *auto-finds* the safe step without a-priori dt tuning.
+- **Worst-cell safety (RMS vs MAX):** it is the *constant-dt* runs whose worst cells blow up; adaptive
+  *prevents* it, and **RMS bounds the worst cell (12.26 m) as tightly as MAX (12.33 m)** — the reject/retry
+  feasibility floor caps the worst cells regardless of the norm, so the less-conservative RMS norm buys
+  efficiency at no worst-cell (stability) cost. TR-BDF2's L-stability damps stiff-mode error rather than
+  amplifying it, so a relaxed norm affects local *accuracy*, never stability.
+
+**Bottom line:** adaptive dt is a **robustness / spin-up tool** — it ties well-chosen constant dt on smooth
+transients and decisively wins on spin-up (bounded worst-cell error where fixed dt blows up). RMS is the
+more efficient norm at no worst-cell cost.
