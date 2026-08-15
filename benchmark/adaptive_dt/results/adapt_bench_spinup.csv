@@ -1,0 +1,6 @@
+regime,run,param,rc,wall_s,snes_its,nsteps,final_tif
+spinup,const,0.5,0,22.40,2114,520,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/spinup_const_0.5_000000001.tif
+spinup,const,1,0,17.08,1576,260,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/spinup_const_1_000000001.tif
+spinup,const,2,0,14.16,1353,130,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/spinup_const_2_000000001.tif
+spinup,adaptmax,20,0,18.19,1360,132,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/spinup_adaptmax_20_000000001.tif
+spinup,adaptrms,2,0,14.25,1391,139,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/spinup_adaptrms_2_000000001.tif

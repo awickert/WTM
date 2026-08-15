@@ -1,0 +1,9 @@
+regime,run,param,rc,wall_s,snes_its,nsteps,final_tif
+transient,const,0.25,0,3.87,129,32,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_const_0.25_000000001.tif
+transient,const,0.5,0,3.32,77,16,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_const_0.5_000000001.tif
+transient,const,1,0,3.47,53,8,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_const_1_000000001.tif
+transient,const,2,0,2.64,40,4,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_const_2_000000001.tif
+transient,adaptmax,5,0,3.04,77,12,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_adaptmax_5_000000001.tif
+transient,adaptmax,20,0,2.88,53,8,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_adaptmax_20_000000001.tif
+transient,adaptrms,0.5,0,2.71,43,6,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_adaptrms_0.5_000000001.tif
+transient,adaptrms,2,0,2.72,43,6,/users/6/awickert/models/WTM/benchmark/adaptive_dt/results/transient_adaptrms_2_000000001.tif
