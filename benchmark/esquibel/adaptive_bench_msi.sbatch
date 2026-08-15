@@ -75,12 +75,25 @@ if [ "$REGIME" = transient ]; then
   do_run transient adaptrms 0.5  "$PT/" 302400  16 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 0.5"
   do_run transient adaptrms 2    "$PT/" 302400  16 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
 else
-  # SPIN-UP: cold from wtd=0 (base domain, no warm-start tif), normal forcing. Horizon ~5 yr
-  # (maxiter*deltat). Cold start spans a huge dynamic range -> where adaptive should beat a fixed dt.
-  do_run spinup const    0.5 "domain/" 302400  520 1 ""
-  do_run spinup const    1   "domain/" 604800  260 1 ""
-  do_run spinup const    2   "domain/" 1209600 130 1 ""
-  do_run spinup adaptmax 20  "domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_tol 20"
-  do_run spinup adaptrms 2   "domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
+  # SPIN-UP: cold start = water table at the surface (wtd = 0). The base domain/ ships no wtd tif, so
+  # build cold_domain/ = symlinked domain inputs + a zero wtd tif. Normal forcing, horizon ~5 yr
+  # (maxiter*deltat). Cold start spans a huge dynamic range (violent initial drainage -> slow settling),
+  # where adaptive should beat a fixed dt stuck at the cold-start ceiling.
+  mkdir -p cold_domain
+  for f in domain/Esquibel_*.tif; do ln -sf "$PWD/$f" "cold_domain/$(basename "$f")"; done
+  python3 - <<'PYEOF'
+import rasterio, numpy as np
+s = rasterio.open('domain/Esquibel_010000_topography.tif')
+p = s.profile.copy()
+z = np.zeros((s.height, s.width), dtype=p['dtype'])
+with rasterio.open('cold_domain/Esquibel_010000_wtd.tif', 'w', **p) as w:
+    w.write(z, 1)
+print('cold_domain: wtd=0 IC written')
+PYEOF
+  do_run spinup const    0.5 "cold_domain/" 302400  520 1 ""
+  do_run spinup const    1   "cold_domain/" 604800  260 1 ""
+  do_run spinup const    2   "cold_domain/" 1209600 130 1 ""
+  do_run spinup adaptmax 20  "cold_domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_tol 20"
+  do_run spinup adaptrms 2   "cold_domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
 fi
 echo "ADAPT BENCH DONE ($REGIME)"
