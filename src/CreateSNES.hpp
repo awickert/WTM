@@ -164,7 +164,8 @@ struct AppCtx {
   // would double-count the per-step recharge/ocean accumulators); a too-large step is simply
   // followed by a smaller one. See BDF2_ADAPTIVE_DESIGN.md.
   bool   use_dt_adaptive = false;
-  double dt_tol          = 0.1;  // target max |h - linear-extrapolation| per step, metres
+  double dt_tol          = 0.1;    // target |h - linear-extrapolation| per step, metres
+  bool   dt_norm_rms     = false;  // -wtm_dt_norm_rms: RMS error norm (default MAX) on the TR-BDF2 adaptive path
 
   // Modeling options (metres, default 0): round the two C0 kinks in the depth-integrated
   // transmissivity, each independently -- -wtm_ksat_soilbottom_smoothing_width at -1.5 m (the

@@ -249,10 +249,14 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   }
   if (user_context.use_dt_adaptive) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, nullptr);
+    PetscBool norm_rms = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
+    user_context.dt_norm_rms = (norm_rms == PETSC_TRUE);
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "-wtm_dt_adaptive set: BDF2 + adaptive dt (tol=%g m); enabling the Picard solver path.\n",
-        user_context.dt_tol);
+        "-wtm_dt_adaptive set: adaptive dt (tol=%g m, %s norm)%s.\n",
+        user_context.dt_tol, user_context.dt_norm_rms ? "RMS" : "MAX",
+        user_context.use_tr_bdf2 ? " on the TR-BDF2 path" : "; enabling the Picard solver path");
   } else if (user_context.use_bdf2 && force_anderson == PETSC_TRUE) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_anderson + BDF2-on-V: 2nd-order-in-time matrix-free Anderson (BDF2-on-V residual, no\n"

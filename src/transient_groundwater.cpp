@@ -1315,7 +1315,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     PetscScalar **yg, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
-    double local_max = 0.0;
+    double local_max = 0.0, local_sq = 0.0;
+    long   local_n = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
         if (dmdapack.mask[j][i] != 0) {  // land only
@@ -1325,11 +1326,23 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           const double h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
           const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
           if (dev > local_max) local_max = dev;
+          local_sq += dev * dev;
+          local_n++;
         }
     DMDAVecRestoreArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+    // Error norm over the (non-surface) land cells: MAX (default, conservative -- one stiff cell pins dt)
+    // or RMS (-wtm_dt_norm_rms, less worst-cell-sensitive; use a smaller dt_tol accordingly).
     double est = 0.0;
-    MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    if (user_context.dt_norm_rms) {
+      double gsq = 0.0;
+      long   gn  = 0;
+      MPI_Allreduce(&local_sq, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+      MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+      est = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
+    } else {
+      MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    }
 
     const double safety = 0.9;
     const double dt_now = user_context.deltat;
