@@ -75,7 +75,7 @@ run bd_clamp "-wtm_anderson -wtm_bdf2_on_V $CLAMP"
 FLICK="$FLICK" DIVERGE="$DIVERGE" QUIET="$QUIET" RECON="$RECON" "$PY" - "$WORK" <<'PY'
 import sys, os, glob, re, numpy as np, rasterio
 work = sys.argv[1]
-def pcd(s): return float(re.findall(r"per-cycle max\|Δwtd\| = ([0-9.eE+-]+)", open(f"{work}/{s}.log").read())[-1])
+def pcd(s): return float(re.findall(r"per-cycle \|Δwtd\| max=([0-9.eE+-]+)", open(f"{work}/{s}.log").read())[-1])
 def fld(s): return rasterio.open(sorted(glob.glob(f"{work}/{s}_*.tif"))[-1]).read(1).astype(float)
 cc_b, bd_b, cc_c, bd_c = fld("cc_bare"), fld("bd_bare"), fld("cc_clamp"), fld("bd_clamp")
 m = np.ones_like(cc_b, bool); m[0,:]=m[-1,:]=m[:,0]=m[:,-1]=False

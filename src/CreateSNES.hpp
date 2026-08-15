@@ -27,7 +27,9 @@ struct AppCtx {
   Vec porosity_vec        = nullptr;
   Vec fringe_width_vec    = nullptr;  // per-cell sink band width (capillary fringe); see -wtm_fringe_source
   Vec prev_cycle_wtd      = nullptr;  // post-FSM water table at the previous cycle (for the per-CYCLE convergence metric)
-  double last_cycle_dw    = 1e30;     // max|wtd_cycleN - wtd_cycleN-1| over the domain (the honest steady-state metric)
+  double last_cycle_dw       = 1e30;  // MAX |wtd_cycleN - wtd_cycleN-1| over land (worst-cell per-cycle change)
+  double last_cycle_rms      = 1e30;  // RMS |wtd change| over land (robust: bulk convergence, ignores outliers)
+  double last_cycle_fracabove = 1.0;  // fraction of land cells with |wtd change| > eq_tol (for the -wtm_eq_metric frac stop)
   Vec starting_wtd        = nullptr;
 
   // Distributed forcing fields for the recharge computation. Scattered from
@@ -143,6 +145,10 @@ struct AppCtx {
   // transient runs (which must play out in full). Pass -wtm_eq_tol 0 to disable it on an equilibrium run.
   double eq_tol                  = 0.0;  // pre-resolution sentinel; InitialiseSNES sets the run-type default
   int    settled_count           = 0;
+  // -wtm_eq_metric: how the per-cycle change is aggregated for the equilibrium stop. 0=max (worst cell,
+  // strict), 1=rms (bulk, robust to outliers), 2=frac (converged when <eq_frac of cells exceed eq_tol).
+  int    eq_metric               = 0;
+  double eq_frac                 = 0.001;  // -wtm_eq_frac: allowed fraction above eq_tol for eq_metric=frac (0.1%)
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.

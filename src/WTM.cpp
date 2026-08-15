@@ -531,14 +531,30 @@ void update(
     const auto [pxs, pys, pxm, pym] = get_corners(user_context.da);
     PetscScalar **prevw;
     DMDAVecGetArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
-    double dw_local = 0.0;
+    double dw_local = 0.0, sq_local = 0.0;
+    long   n_local = 0, above_local = 0;
     for (int j = pys; j < pys + pym; j++)
       for (int i = pxs; i < pxs + pxm; i++) {
-        if (dmdapack.mask[j][i] != 0)
-          dw_local = std::max(dw_local, std::abs(dmdapack.starting_wtd[j][i] - static_cast<double>(prevw[j][i])));
+        if (dmdapack.mask[j][i] != 0) {
+          const double d = std::abs(dmdapack.starting_wtd[j][i] - static_cast<double>(prevw[j][i]));
+          dw_local = std::max(dw_local, d);
+          sq_local += d * d;
+          n_local++;
+          if (user_context.eq_tol > 0.0 && d > user_context.eq_tol) above_local++;
+        }
         prevw[j][i] = dmdapack.starting_wtd[j][i];
       }
-    MPI_Allreduce(&dw_local, &user_context.last_cycle_dw, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    // Aggregate the per-cycle change three ways so the equilibrium stop (-wtm_eq_metric) can pick: MAX
+    // (worst cell), RMS (bulk), and the fraction of cells still exceeding eq_tol. All are cheap Allreduces.
+    double gmax = 0.0, gsq = 0.0;
+    long   gn = 0, gabove = 0;
+    MPI_Allreduce(&dw_local, &gmax, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    MPI_Allreduce(&sq_local, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+    MPI_Allreduce(&n_local, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    MPI_Allreduce(&above_local, &gabove, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    user_context.last_cycle_dw        = gmax;
+    user_context.last_cycle_rms       = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
+    user_context.last_cycle_fracabove = (gn > 0) ? (double)gabove / (double)gn : 0.0;
     DMDAVecRestoreArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
   }
 
@@ -569,9 +585,9 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
   while (params.cycles_done < params.total_cycles) {
     update(params, arp, user_context, dmdapack, deps);
     PetscPrintf(PETSC_COMM_WORLD,
-                "cycle %d: per-cycle max|Δwtd| = %g m  [within-cycle max|Δw| = %g m, %d cells>1mm]\n",
-                params.cycles_done, user_context.last_cycle_dw, user_context.last_dh_max,
-                user_context.last_dh_nflicker);
+                "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  [within-cycle max|Δw| = %g m, %d cells>1mm]\n",
+                params.cycles_done, user_context.last_cycle_dw, user_context.last_cycle_rms,
+                user_context.last_cycle_fracabove, user_context.last_dh_max, user_context.last_dh_nflicker);
     // Convergence-based early stop (opt-in via -wtm_eq_tol): stop once the PER-CYCLE water-table change
     // stays below eq_tol for two consecutive cycles -- the equilibrium auto-stop, on EVERY spin-up pathway.
     // Uses the per-cycle metric (not the per-sub-step max|Δw|), so the cosmetic within-cycle lake/shore
@@ -585,11 +601,25 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
             ? (user_context.deltat >= 0.5 * user_context.dtc_dt_max)
             : true;
     if (user_context.eq_tol > 0.0 && settle_trustworthy) {
-      if (user_context.last_cycle_dw < user_context.eq_tol) {
+      // -wtm_eq_metric selects how the per-cycle change is judged against eq_tol: max (worst cell, strict),
+      // rms (bulk), or frac (converged when < eq_frac of cells still exceed eq_tol -- robust to a slow
+      // handful of deep cells; see the oscillation diagnosis in benchmark/adaptive_dt).
+      bool        converged;
+      const char* mname;
+      if (user_context.eq_metric == 1) {
+        converged = user_context.last_cycle_rms < user_context.eq_tol;         mname = "rms";
+      } else if (user_context.eq_metric == 2) {
+        converged = user_context.last_cycle_fracabove < user_context.eq_frac;  mname = "frac";
+      } else {
+        converged = user_context.last_cycle_dw < user_context.eq_tol;          mname = "max";
+      }
+      if (converged) {
         if (++user_context.settled_count >= 2) {
           PetscPrintf(PETSC_COMM_WORLD,
-                      "equilibrium reached: per-cycle max|Δwtd| = %g m < %g for 2 cycles; stopping at cycle %d of %d.\n",
-                      user_context.last_cycle_dw, user_context.eq_tol, params.cycles_done, params.total_cycles);
+                      "equilibrium reached (%s metric): max=%g rms=%g frac>tol=%.4f (eq_tol=%g, eq_frac=%g) for 2 "
+                      "cycles; stopping at cycle %d of %d.\n",
+                      mname, user_context.last_cycle_dw, user_context.last_cycle_rms, user_context.last_cycle_fracabove,
+                      user_context.eq_tol, user_context.eq_frac, params.cycles_done, params.total_cycles);
           break;
         }
       } else {
