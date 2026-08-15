@@ -59,6 +59,12 @@
     automatically where they don't. See the implementation in `transient_groundwater.cpp` (estimator + reject
     returns), `WTM.cpp` (reject/retry loop), and `CreateSNES.cpp` (tr+adaptive keeps the self-contained
     TR-BDF2 residual, no BDF2 history).
+  - **Operational home + later work (single source of truth): `benchmark/adaptive_dt/`** (README + tests).
+    It carries the MSI benchmark verdict (adaptive = **robustness / spin-up tool**: ties well-chosen
+    constant dt on smooth transients, decisively *wins* spin-up — bounded worst-cell error where fixed dt
+    blows up); the **equilibrium auto-stop metric** (`-wtm_eq_metric`, default `frac` = "<0.1 % of cells
+    still exceed `eq_tol`"; the MAX-metric "deep oscillation" was diagnosed a *metric artifact*, not physics —
+    the bulk converges monotonically); and **Tbar as an opt-in stiff hammer** (composes, not auto-engaged).
 - **Bottom line:** for transient accuracy, use BDF2-on-V at a fixed, generous Δt (see §1–§3
   for the measured order and the max-Δt-for-a-target-error table). The smoothing knobs
   (`-wtm_ksat_soilbottom_smoothing_width`, `-wtm_ksat_surface_smoothing_width`,
