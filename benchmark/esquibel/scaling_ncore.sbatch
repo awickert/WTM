@@ -55,6 +55,7 @@ for nc in $CORES; do
       [ -f "${dom}/Esquibel_010000_topography.tif" ] || python3 make_tiled.py "$t" "$t" domain "$R/tiles" >/dev/null 2>&1
     fi
     run "$nc" "$tiles" "$dom" "$cells" cc
+    run "$nc" "$tiles" "$dom" "$cells" fixed_tr -wtm_tr_bdf2
     run "$nc" "$tiles" "$dom" "$cells" adapt -wtm_tr_bdf2 -wtm_dt_adaptive
   done
 done
