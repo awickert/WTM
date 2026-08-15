@@ -178,12 +178,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
-  // -wtm_dt_adaptive normally implies the BDF2 history (needed by the non-TR forward error estimator).
-  // With TR-BDF2 the embedded estimator uses the two stages (no history), so don't force the Picard-BDF2
-  // residual onto the tr+adaptive combo -- it keeps the self-contained matrix-free TR-BDF2 residual.
-  user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE)
-                          || (user_context.use_dt_adaptive && !user_context.use_tr_bdf2)
-                          || user_context.use_bdf2_on_V;
+  // The dt controller is DETACHED from the integrator: -wtm_dt_adaptive no longer forces the 2nd-order
+  // BDF2 residual. The integrator (cc backward-Euler / TR-BDF2 / BDF2-on-V) is selected by its own flags,
+  // and the controller sizes dt for whichever one is active (see the estimate/controller split in
+  // transient_groundwater.cpp update()). So `-wtm_anderson -wtm_dt_adaptive` is 1st-order adaptive-cc,
+  // `-wtm_tr_bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `-wtm_bdf2_on_V -wtm_dt_adaptive` is BDF2-on-V.
+  user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE) || user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: -wtm_anderson
   // -wtm_bdf2_on_V gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.
@@ -264,11 +264,14 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscBool norm_rms = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
     user_context.dt_norm_rms = (norm_rms == PETSC_TRUE);
+    const char* integ = user_context.use_tr_bdf2      ? "TR-BDF2 (2nd-order)"
+                        : user_context.use_bdf2_on_V  ? "BDF2-on-V (2nd-order)"
+                        : user_context.use_picard     ? "backward-Euler Picard (1st-order)"
+                                                      : "backward-Euler cc/Anderson (1st-order)";
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "-wtm_dt_adaptive set: adaptive dt (tol=%g m, %s norm)%s.\n",
-        user_context.dt_tol, user_context.dt_norm_rms ? "RMS" : "MAX",
-        user_context.use_tr_bdf2 ? " on the TR-BDF2 path" : "; enabling the Picard solver path");
+        "-wtm_dt_adaptive set: adaptive dt (tol=%g m, %s norm) on the %s integrator.\n",
+        user_context.dt_tol, user_context.dt_norm_rms ? "RMS" : "MAX", integ);
   } else if (user_context.use_bdf2 && force_anderson == PETSC_TRUE) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_anderson + BDF2-on-V: 2nd-order-in-time matrix-free Anderson (BDF2-on-V residual, no\n"
@@ -277,9 +280,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
-  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- and also by the predictor-seeded guess. Allocate
-  // it whenever BDF2 or the predictor is on, independent of use_picard.
-  if (user_context.use_bdf2 || user_context.use_predict_guess) {
+  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- by the predictor-seeded guess, AND by the detached
+  // adaptive controller's generic linear-history error estimate (any non-TR integrator). Allocate it
+  // whenever BDF2, the predictor, or adaptive dt is on, independent of use_picard.
+  if (user_context.use_bdf2 || user_context.use_predict_guess || user_context.use_dt_adaptive) {
     VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
     VecSet(user_context.starting_wtd_prev, 0.0);
     user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)

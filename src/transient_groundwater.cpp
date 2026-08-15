@@ -1313,7 +1313,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // spikes, which correctly shrinks dt. est > dt_tol => accuracy REJECT (shrink, retry, no commit); else
   // ACCEPT and grow toward the tolerance (capped by the step's convergence headroom and dtc_dt_max).
   // ACCURACY (option 2) on top of the reject/retry CONVERGENCE floor (option 1) above. See BDF2_ADAPTIVE_DESIGN.md.
+  // ESTIMATE (method-specific) -> a single scalar `est`; the CONTROLLER below is method-AGNOSTIC. This is
+  // the detachment: the integrator (cc / TR-BDF2 / BDF2-on-V) is chosen by its own flags and only supplies
+  // the local-error estimate; the grow/shrink/reject logic is identical for all of them.
+  double est      = 0.0;
+  bool   have_est = false;
   if (user_context.use_dt_adaptive && user_context.use_tr_bdf2) {
+    // TR-BDF2 embedded estimate from the two stages (no history needed; valid on step 1):
+    //   h_pred = [Y_gamma - (1-gamma) h^n]/gamma  -- EXACT for linear-in-time, O(dt^2) for curvature.
     const double TR_G = 2.0 - std::sqrt(2.0);
     PetscScalar **yg, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
@@ -1332,9 +1339,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         }
     DMDAVecRestoreArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
-    // Error norm over the (non-surface) land cells: MAX (default, conservative -- one stiff cell pins dt)
-    // or RMS (-wtm_dt_norm_rms, less worst-cell-sensitive; use a smaller dt_tol accordingly).
-    double est = 0.0;
     if (user_context.dt_norm_rms) {
       double gsq = 0.0;
       long   gn  = 0;
@@ -1344,11 +1348,49 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     } else {
       MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
     }
-
+    have_est = true;
+  } else if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
+    // Generic linear-history predictor (ANY non-TR integrator -- cc backward-Euler / BDF2-on-V):
+    //   h_pred = h^n + omega*(h^n - h^{n-1}), omega = dt_n/dt_{n-1}  -- dev ~ O(dt^2). Needs the last two
+    // accepted states (history save below, tracked whenever adaptive). Same surface-inclusive norm and the
+    // same controller as TR-BDF2 -- only the estimate differs. Runs from the 2nd step (once history exists).
+    PetscScalar **swp, **topo_e;
+    DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &swp);
+    DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
+    const double omega = user_context.deltat / user_context.bdf2_prev_dt;
+    double local_max = 0.0, local_sq = 0.0;
+    long   local_n = 0;
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        if (dmdapack.mask[j][i] != 0) {  // ALL land cells (surface included)
+          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
+          const double h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
+          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
+          if (dev > local_max) local_max = dev;
+          local_sq += dev * dev;
+          local_n++;
+        }
+    DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &swp);
+    DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+    if (user_context.dt_norm_rms) {
+      double gsq = 0.0;
+      long   gn  = 0;
+      MPI_Allreduce(&local_sq, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+      MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+      est = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
+    } else {
+      MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    }
+    have_est = true;
+  }
+  // CONTROLLER (method-agnostic): identical grow/shrink/reject for every integrator. est > dt_tol =>
+  // accuracy REJECT (shrink + return -1, state NOT committed below); else ACCEPT and grow toward the
+  // tolerance, capped by convergence headroom (dtc_easy_iters) and dtc_dt_max.
+  if (user_context.use_dt_adaptive && have_est) {
     const double safety = 0.9;
     const double dt_now = user_context.deltat;
     double factor = (est > 0.0) ? safety * std::sqrt(user_context.dt_tol / est) : user_context.dtc_grow;
-    if (est > user_context.dt_tol) {  // accuracy REJECT: shrink and retry (state not committed below)
+    if (est > user_context.dt_tol) {  // accuracy REJECT: shrink and retry
       user_context.deltat = dt_now * std::max(user_context.dtc_shrink, std::min(factor, 1.0));
       return -1;
     }
@@ -1357,33 +1399,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     user_context.deltat = dt_now * factor;
     if (user_context.dtc_dt_max > 0.0 && user_context.deltat > user_context.dtc_dt_max)
       user_context.deltat = user_context.dtc_dt_max;
-  } else if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
-    // Non-TR adaptive (forward, no-reject): local error = max deviation of h^{n+1} from a LINEAR
-    // extrapolation of the history (h_pred = h^n + w(h^n - h^{n-1}), w = dt_n/dt_{n-1}) ~ O(dt^2);
-    // set the NEXT step to hold it near dt_tol. Runs once history exists. See BDF2_ADAPTIVE_DESIGN.md.
-    PetscScalar **swp, **topo_e;
-    DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &swp);
-    DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
-    const double omega = user_context.deltat / user_context.bdf2_prev_dt;
-    double local_max   = 0.0;
-    for (int j = ys; j < ys + ym; j++)
-      for (int i = xs; i < xs + xm; i++)
-        if (dmdapack.mask[j][i] != 0) {  // land only
-          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
-          const double h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
-          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
-          if (dev > local_max) local_max = dev;
-        }
-    DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &swp);
-    DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
-
-    double est = 0.0;
-    MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
-
-    const double safety = 0.9, grow = 1.5, shrink = 0.5;
-    double factor = (est > 0.0) ? safety * std::sqrt(user_context.dt_tol / est) : grow;  // est~O(dt^2)
-    factor        = std::min(grow, std::max(shrink, factor));
-    user_context.deltat *= factor;
   }
 
   // Exact budget-closing accounting (Picard path): the solver's discrete storage + recharge terms,
@@ -1396,7 +1411,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag, so BDF2 /
   // the predictor engage from the second step on (the first bootstraps with backward Euler / w^n guess).
   // (fsm_off / Phase A: history is continuous; Phase B will reset the flag after FSM.)
-  if (user_context.use_bdf2 || user_context.use_predict_guess) {
+  if (user_context.use_bdf2 || user_context.use_predict_guess || user_context.use_dt_adaptive) {
     PetscScalar** my_starting_wtd_prev;
     DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &my_starting_wtd_prev);
     for (int j = ys; j < ys + ym; j++)
