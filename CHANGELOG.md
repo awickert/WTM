@@ -59,6 +59,19 @@ taper) passes.
   cuts nonlinear iterations (~11 % on a 2-week warm transient; ~48 % at 8-week steps; ~34 % on the first
   step) — a **speed** win only: it does **not** change the equilibrium and does **not** raise the stable
   step ceiling (that is set by the operator, not the guess). Off by default.
+- **Adaptive time stepping for TR-BDF2** (`-wtm_tr_bdf2 -wtm_dt_adaptive`, _experimental_): a self-tuning
+  step that stays as large as accuracy and convergence allow — "long enough to be efficient but not so long
+  it fails" on terrain / conditions whose stable-step ceiling varies. Two coupled mechanisms: a
+  **reject/retry feasibility floor** — a non-converged stage or step shrinks `deltat` and retries from the
+  uncommitted state (accumulators rolled back), so a step too large for the local conditions cannot crash
+  the run — and an **embedded error estimator** from TR-BDF2's two stages, `h_pred = [Y_γ − (1−γ)hⁿ]/γ`
+  (exact for linear-in-time, `O(Δt²)` for curvature; needs no history, valid on the first step): `est >
+  -wtm_dt_tol` shrinks and retries, otherwise `deltat` grows toward the tolerance, capped by the step's
+  convergence headroom (`-wtm_dtc_easy_iters`) and `-wtm_dtc_dt_max`. The error norm **excludes surface
+  cells** (`wtd ≥ −band`) so the non-smooth free-surface clamp cannot spike the estimate and force `deltat`
+  tiny (the failure that shelved the earlier history-extrapolation estimator). Measured on Esquibel
+  (dry −20 %): `-wtm_dt_tol 1/5/20 m` → 33/12/8 steps (6/3/1 rejected), all converged — monotone in the
+  tolerance. Off by default. See `benchmark/BDF2_ADAPTIVE_DESIGN.md`.
 - **Extended-soil option** (`-wtm_extended_soil`, _experimental_): continues the aquifer above the
   land surface to remove the water-table-depth = 0 free boundary from the groundwater step.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,

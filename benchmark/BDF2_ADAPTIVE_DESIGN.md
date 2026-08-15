@@ -32,10 +32,33 @@
   kinks; see `BDF2_RECHARGE_ORDER.md`). Still ~2× more accurate than backward Euler at the same
   step and unconditionally stable, but not 2nd-order in production. Restoring 2nd order needs a
   source fix (being instrumented) or Richardson-in-time.
-- **Adaptive Δt — shelved (kept in code, default off).** The forward per-step estimator
-  over-refines: one fast near-ocean cell pins the step, so at matched accuracy it ran ~2×
-  *more* steps than a well-chosen uniform Δt. The uniform BDF2-on-V step is the recommendation;
-  the controller stays available behind `-wtm_dt_adaptive` for later work.
+- **Adaptive Δt (Picard/BDF2, forward) — shelved (kept in code, default off).** The forward per-step
+  history-extrapolation estimator over-refines: one fast near-ocean cell pins the step, so at matched
+  accuracy it ran ~2× *more* steps than a well-chosen uniform Δt. For the Picard/BDF2 path the uniform
+  BDF2-on-V step is the recommendation; the forward controller stays available behind `-wtm_dt_adaptive`.
+- **Adaptive Δt for TR-BDF2 — IMPLEMENTED (2026-08-15, `-wtm_tr_bdf2 -wtm_dt_adaptive`, default off).**
+  This is the "fundamentally different error estimator" §2/§6 called for, and it resolves the near-ocean
+  pinning that shelved the forward version. Two coupled mechanisms (Andy's framing: (2) principled accuracy
+  governor on top of (1) the necessary convergence floor):
+  1. **Reject/retry feasibility floor.** A non-converged TR-BDF2 stage or step returns the `-1` reject
+     sentinel (shrink `deltat` via `dtc_shrink`, retry from the *uncommitted* state); the `use_dt_adaptive`
+     loop in `WTM.cpp` rolls back the step's recharge/ocean accumulators and retries, capped by
+     `dtc_max_retries`. Reuses the dt-continuation plumbing + the recharge-rescale-to-actual-Δt fix.
+  2. **Embedded error estimator from the two stages** (no history, valid on step 1): the linear
+     extrapolation through (tₙ, hⁿ) and (tₙ+γΔt, Y_γ) to tₙ+Δt is `h_pred = [Y_γ − (1−γ)hⁿ]/γ` — EXACT for
+     linear-in-time, `O(Δt²)` for curvature — so `|hⁿ⁺¹ − h_pred|` is the local truncation error, with no
+     ground truth needed. `est > dt_tol` ⇒ accuracy reject (shrink, retry); else accept and grow toward
+     `dt_tol`, capped by convergence headroom (`dtc_easy_iters`) and `dtc_dt_max`.
+  - **Free-surface-aware norm — the fix for the near-ocean pinning.** The error norm EXCLUDES surface cells
+    (new `wtd ≥ −band`): the free-surface clamp is non-smooth there and would otherwise spike the estimate
+    and force Δt tiny (exactly what over-refined the forward estimator). The estimate is then governed by
+    the smooth subsurface bulk.
+  - **Validated** (Esquibel, dry −20 %, `tests/run_all.sh` green): `-wtm_dt_tol 1/5/20 m` → 33/12/8 steps
+    (6/3/1 rejected), all converged — monotone in the tolerance, both mechanisms live. This is the general
+    stability route: the controller keeps Δt as large as the *local* terrain/conditions allow and backs off
+    automatically where they don't. See the implementation in `transient_groundwater.cpp` (estimator + reject
+    returns), `WTM.cpp` (reject/retry loop), and `CreateSNES.cpp` (tr+adaptive keeps the self-contained
+    TR-BDF2 residual, no BDF2 history).
 - **Bottom line:** for transient accuracy, use BDF2-on-V at a fixed, generous Δt (see §1–§3
   for the measured order and the max-Δt-for-a-target-error table). The smoothing knobs
   (`-wtm_ksat_soilbottom_smoothing_width`, `-wtm_ksat_surface_smoothing_width`,
