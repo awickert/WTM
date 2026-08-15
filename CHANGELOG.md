@@ -72,6 +72,15 @@ taper) passes.
   tiny (the failure that shelved the earlier history-extrapolation estimator). Measured on Esquibel
   (dry −20 %): `-wtm_dt_tol 1/5/20 m` → 33/12/8 steps (6/3/1 rejected), all converged — monotone in the
   tolerance. Off by default. See `benchmark/BDF2_ADAPTIVE_DESIGN.md`.
+- **Robust equilibrium auto-stop** (`-wtm_eq_metric`, `-wtm_eq_frac`). The `-wtm_eq_tol` per-cycle early
+  stop now applies on **every** spin-up pathway (fixed-dt, Newton-continuation, and the adaptive-dt
+  controller — previously skipped). Its aggregation of the per-cycle water-table change is selectable:
+  `frac` (**default**: converged when < `-wtm_eq_frac` = 0.1 % of land cells still exceed `eq_tol`), `max`
+  (the old strict worst-cell criterion), or `rms`. The default changed from `max` to `frac` because `max`
+  is worst-cell-hostage — one slow deep lowland cell filling to the surface can keep it from ever firing
+  even though the bulk has converged (diagnosed as a metric artifact, not a physical oscillation). Measured
+  trade at `eq_tol` 0.05 m: `max` never stops, `rms` stops early but loose (14.6 m worst-cell residual),
+  `frac` stops with a 4.3 m worst-cell residual — the robust middle. See `benchmark/adaptive_dt/`.
 - **Extended-soil option** (`-wtm_extended_soil`, _experimental_): continues the aquifer above the
   land surface to remove the water-table-depth = 0 free boundary from the groundwater step.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,

@@ -31,6 +31,10 @@ Each regime compares three schemes at matched physical horizon:
   ```
 - `local_serial_run.sh` — single-run helper for the idle-laptop clean room (n = 1, contention-free), used
   to prototype the comparison; iterations are platform-independent so laptop iteration counts match MSI.
+- `eq_metric_compare.sh` — equilibrium-stop metric test: for `-wtm_eq_metric max|rms|frac`, measures cost
+  (stop cycle, GW solves, wall) vs precision (final field vs a long no-stop reference). Re-run after #108.
+- `diagnose_oscillation.py` — analyzes per-cycle wtd tifs to classify the equilibrium-metric behaviour
+  (metric artifact vs true head oscillation; deep/shore; kink-crossing; adaptive vs constant).
 
 ## Results layout (`results/`)
 
@@ -57,3 +61,21 @@ Each regime compares three schemes at matched physical horizon:
 **Bottom line:** adaptive dt is a **robustness / spin-up tool** — it ties well-chosen constant dt on smooth
 transients and decisively wins on spin-up (bounded worst-cell error where fixed dt blows up). RMS is the
 more efficient norm at no worst-cell cost.
+
+## Equilibrium-stop metric (`-wtm_eq_metric`, default `frac`)
+
+The `-wtm_eq_tol` auto-stop needs a per-cycle "how settled?" number. `diagnose_oscillation.py` showed the
+old MAX metric is **worst-cell-hostage**: staggered deep lowland cells fill-and-pin at the surface at
+different cycles, so max-over-cells never decays even though the bulk converges monotonically (no physical
+oscillation). Measured trade (`eq_metric_compare.sh`; Esquibel warm, eq_tol = 0.05 m, vs a cap-40 ref):
+
+| metric | stops at | GW solves | max \|Δref\| |
+|---|---|--:|--:|
+| max  | never (cap 30) | 303 | 1.4 m |
+| rms  | cycle 8  | 93  | 14.6 m (loose) |
+| **frac (99.9%)** | **cycle 22** | **231** | **4.3 m** |
+
+So the default is **`frac`** (converged when < `-wtm_eq_frac` = 0.1 % of land cells exceed `eq_tol`): the
+only metric that both *fires* and stays precise. `-wtm_eq_metric max` restores the strict worst-cell
+criterion; `rms` is the loose/cheap bulk one. Applies on **every** spin-up pathway (fixed / Newton-
+continuation / adaptive).

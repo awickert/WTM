@@ -146,8 +146,10 @@ struct AppCtx {
   double eq_tol                  = 0.0;  // pre-resolution sentinel; InitialiseSNES sets the run-type default
   int    settled_count           = 0;
   // -wtm_eq_metric: how the per-cycle change is aggregated for the equilibrium stop. 0=max (worst cell,
-  // strict), 1=rms (bulk, robust to outliers), 2=frac (converged when <eq_frac of cells exceed eq_tol).
-  int    eq_metric               = 0;
+  // strict -- but worst-cell-hostage: one slow deep cell can keep it from ever firing), 1=rms (bulk),
+  // 2=frac (DEFAULT: converged when < eq_frac of cells exceed eq_tol; robust + still precise -- the
+  // measured best trade, see benchmark/adaptive_dt).
+  int    eq_metric               = 2;      // frac (99.9% of cells) -- the measured default
   double eq_frac                 = 0.001;  // -wtm_eq_frac: allowed fraction above eq_tol for eq_metric=frac (0.1%)
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---

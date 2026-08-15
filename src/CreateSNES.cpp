@@ -225,14 +225,16 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, &eq_tol_set);  // [m]; 0 = off
   if (!eq_tol_set)
     user_context.eq_tol = (params.run_type == "equilibrium") ? 0.01 : 0.0;
-  // -wtm_eq_metric max|rms|frac: how the per-cycle change is aggregated for the equilibrium stop (default
-  // max = worst cell). See the oscillation diagnosis (benchmark/adaptive_dt): max is worst-cell-sensitive;
-  // rms/frac are robust to a slow-filling handful of deep cells. -wtm_eq_frac sets the frac threshold (0.1%).
-  char eq_metric_str[16] = "max";
+  // -wtm_eq_metric max|rms|frac: how the per-cycle change is aggregated for the equilibrium stop. DEFAULT
+  // frac (converged when < eq_frac of land cells exceed eq_tol) -- the measured best trade: MAX is
+  // worst-cell-hostage (one slow deep cell keeps it from ever firing), RMS is loose (bulk only); frac both
+  // fires and stays precise. See the oscillation diagnosis in benchmark/adaptive_dt. -wtm_eq_frac sets the
+  // fraction threshold (default 0.1%). Pass -wtm_eq_metric max for the old strict worst-cell criterion.
+  char eq_metric_str[16] = "frac";
   PetscOptionsGetString(nullptr, nullptr, "-wtm_eq_metric", eq_metric_str, sizeof(eq_metric_str), nullptr);
   if (std::strcmp(eq_metric_str, "rms") == 0) user_context.eq_metric = 1;
-  else if (std::strcmp(eq_metric_str, "frac") == 0) user_context.eq_metric = 2;
-  else user_context.eq_metric = 0;  // "max"
+  else if (std::strcmp(eq_metric_str, "max") == 0) user_context.eq_metric = 0;
+  else user_context.eq_metric = 2;  // "frac" (default)
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_frac", &user_context.eq_frac, nullptr);
   if (user_context.use_newton_continuation) {
     double dt0 = params.deltat / 200.0;
