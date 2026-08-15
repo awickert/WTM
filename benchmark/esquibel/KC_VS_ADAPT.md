@@ -33,7 +33,15 @@ tolerance on both sides.
 | `kcallaghan_cc` (fixed 1-wk BE) | — | 9827 | 36.1 | 14 |
 | `fixed_tr` (2nd-order, no adapt) | `-wtm_tr_bdf2` | 5133 | 37.7 | 19 |
 | `adaptive_tr_0p5` | `-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 0.5` | 4251 | 32.7 | 14 |
-| `adaptive_tr_2`  | `-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 2.0` | _pending_ | _pending_ | _pending_ |
+| `adaptive_tr_2`  | `-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 2.0` | never stops | — | 527+ (killed) |
+
+**`dt_tol=2.0` is too loose for a spin-up:** the steps stay healthy (~25/cycle, few rejects), but the
+looser per-step tolerance leaves a residual per-cycle wobble that keeps >0.1 % of cells above `eq_tol`, so
+the `frac` equilibrium stop **never fires** — it ran 527 cycles (~527 model-years) without settling and was
+cancelled. There is a sweet spot: `dt_tol` must be tight enough that the per-cycle change can fall below the
+stop threshold. `0.5` is near-optimal here (stops at cycle 14, the 2.3× win); `2.0` never converges. (This
+is a *spin-up* constraint — a transient run has a fixed horizon and no eq-stop, so a looser tol is fine
+there.)
 
 ## Verdict
 
