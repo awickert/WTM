@@ -1,0 +1,7 @@
+# Large / regenerable per-run artifacts: keep only the CSV summaries (the record) in git.
+*.tif
+*.log
+*.cfg
+*.txt
+pert_*/
+cold_domain/

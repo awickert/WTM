@@ -7,19 +7,23 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=adaptbench-%j.out
 #
-# Adaptive-dt vs constant-dt: SNES iterations + wall, for TRANSIENT and SPIN-UP.
-# Runs as a self-contained sbatch job (survives login disconnect). Two regimes via REGIME env:
-#   REGIME=transient sbatch adaptive_bench_msi.sbatch   (warm, -20% dry, 8-week horizon)
-#   REGIME=spinup    sbatch adaptive_bench_msi.sbatch   (cold from wtd=0, normal forcing)
-# Compares: const tr (dt sweep) vs adaptive tr MAX-norm (tol sweep) vs adaptive tr RMS-norm (tol sweep).
+# Adaptive-dt vs constant-dt benchmark: SNES iterations + fractional wall + accuracy, for TRANSIENT and
+# SPIN-UP. Self-contained sbatch (survives login disconnect). See README.md in this directory.
+#   REGIME=transient sbatch adaptive_bench_msi.sbatch   (warm from equilibrium, -20% dry, 8-week horizon)
+#   REGIME=spinup    sbatch adaptive_bench_msi.sbatch   (cold from wtd=0 at surface, normal forcing, ~5 yr)
+# Schemes: const tr (dt sweep) vs adaptive tr MAX-norm (tol sweep) vs adaptive tr RMS-norm (tol sweep).
+# Inputs come from ../esquibel (domain/, w_eq_correct.tif, perturb_pet.py); ALL outputs land under
+# benchmark/adaptive_dt/results/ (this benchmark's own results home). Analyze with analyze_adapt_bench.py.
 set -uo pipefail
 N=16; REGIME="${REGIME:-transient}"
-WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"; ESQ="$WTM_ROOT/benchmark/esquibel"
+WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"
+ESQ="$WTM_ROOT/benchmark/esquibel"                 # Esquibel inputs live here
+OUT="$WTM_ROOT/benchmark/adaptive_dt/results"      # this benchmark's results home
 source "$WTM_ROOT/msi_env.sh" test
 export OMP_NUM_THREADS=1
 export PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/share/proj}"
-cd "$ESQ"
-OUT="results/algo/transient/adapt_bench"; mkdir -p "$OUT"
+cd "$ESQ"                                           # cwd = Esquibel (for domain/, perturb_pet.py)
+mkdir -p "$OUT"
 CSV="$OUT/adapt_bench_${REGIME}.csv"; echo "regime,run,param,rc,wall_s,snes_its,nsteps,final_tif" > "$CSV"
 COMMON="-wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -wtm_ghost_boundary -snes_stol 1e-6"
 BASE="-wtm_anderson -snes_anderson_restart_type none -wtm_tr_bdf2"
@@ -64,7 +68,7 @@ CFG
 
 if [ "$REGIME" = transient ]; then
   # warm from equilibrium, -20% dry step, 8-week horizon (maxiter*deltat = 8wk, tc=1).
-  IC="results/algo/transient/w_eq_correct.tif"; PT="results/algo/transient/pert_adaptbench_dry"
+  IC="results/algo/transient/w_eq_correct.tif"; PT="$OUT/pert_adaptbench_dry"
   python3 perturb_pet.py domain "$PT" "$IC" 0.8
   do_run transient const    0.25 "$PT/" 151200  32 1 ""
   do_run transient const    0.5  "$PT/" 302400  16 1 ""
@@ -75,25 +79,26 @@ if [ "$REGIME" = transient ]; then
   do_run transient adaptrms 0.5  "$PT/" 302400  16 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 0.5"
   do_run transient adaptrms 2    "$PT/" 302400  16 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
 else
-  # SPIN-UP: cold start = water table at the surface (wtd = 0). The base domain/ ships no wtd tif, so
-  # build cold_domain/ = symlinked domain inputs + a zero wtd tif. Normal forcing, horizon ~5 yr
-  # (maxiter*deltat). Cold start spans a huge dynamic range (violent initial drainage -> slow settling),
-  # where adaptive should beat a fixed dt stuck at the cold-start ceiling.
-  mkdir -p cold_domain
-  for f in domain/Esquibel_*.tif; do ln -sf "$PWD/$f" "cold_domain/$(basename "$f")"; done
-  python3 - <<'PYEOF'
-import rasterio, numpy as np
+  # SPIN-UP: cold start = water table at the surface (wtd = 0). The base domain/ ships no wtd tif, so build
+  # a cold_domain/ = symlinked domain inputs + a zero wtd tif. Normal forcing, horizon ~5 yr. Cold start
+  # spans a huge dynamic range (violent initial drainage -> slow settling): where adaptive should beat a
+  # fixed dt stuck at the cold-start ceiling.
+  COLD="$OUT/cold_domain"; mkdir -p "$COLD"
+  for f in domain/Esquibel_*.tif; do ln -sf "$PWD/$f" "$COLD/$(basename "$f")"; done
+  python3 - "$COLD" <<'PYEOF'
+import rasterio, numpy as np, sys
+cold = sys.argv[1]
 s = rasterio.open('domain/Esquibel_010000_topography.tif')
 p = s.profile.copy()
 z = np.zeros((s.height, s.width), dtype=p['dtype'])
-with rasterio.open('cold_domain/Esquibel_010000_wtd.tif', 'w', **p) as w:
+with rasterio.open(cold + '/Esquibel_010000_wtd.tif', 'w', **p) as w:
     w.write(z, 1)
 print('cold_domain: wtd=0 IC written')
 PYEOF
-  do_run spinup const    0.5 "cold_domain/" 302400  520 1 ""
-  do_run spinup const    1   "cold_domain/" 604800  260 1 ""
-  do_run spinup const    2   "cold_domain/" 1209600 130 1 ""
-  do_run spinup adaptmax 20  "cold_domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_tol 20"
-  do_run spinup adaptrms 2   "cold_domain/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
+  do_run spinup const    0.5 "$COLD/" 302400  520 1 ""
+  do_run spinup const    1   "$COLD/" 604800  260 1 ""
+  do_run spinup const    2   "$COLD/" 1209600 130 1 ""
+  do_run spinup adaptmax 20  "$COLD/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_tol 20"
+  do_run spinup adaptrms 2   "$COLD/" 302400  520 1 "-wtm_dt_adaptive -wtm_dt_norm_rms -wtm_dt_tol 2"
 fi
 echo "ADAPT BENCH DONE ($REGIME)"
