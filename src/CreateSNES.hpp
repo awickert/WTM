@@ -174,6 +174,7 @@ struct AppCtx {
   bool   use_dt_adaptive = false;
   double dt_tol          = 0.1;    // target |h - linear-extrapolation| per step, metres
   bool   dt_norm_rms     = false;  // -wtm_dt_norm_rms: RMS error norm (default MAX) on the TR-BDF2 adaptive path
+  double dt_prev_est     = 0.0;    // previous accepted step's error estimate (PI-controller history; 0 = none)
 
   // Modeling options (metres, default 0): round the two C0 kinks in the depth-integrated
   // transmissivity, each independently -- -wtm_ksat_soilbottom_smoothing_width at -1.5 m (the

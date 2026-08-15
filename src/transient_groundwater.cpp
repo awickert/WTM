@@ -1383,19 +1383,33 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
     have_est = true;
   }
-  // CONTROLLER (method-agnostic): identical grow/shrink/reject for every integrator. est > dt_tol =>
-  // accuracy REJECT (shrink + return -1, state NOT committed below); else ACCEPT and grow toward the
-  // tolerance, capped by convergence headroom (dtc_easy_iters) and dtc_dt_max.
+  // CONTROLLER (method-agnostic): a PI step-size controller -- the standard cure for the dt "hunting" that
+  // made the plain I-controller (hard reject on any overshoot, grow on any undershoot) lock into limit
+  // cycles at certain dt_tol (measured dead-band ~0.2-0.25 m, flanked by fine values). The PI term uses the
+  // PREVIOUS accepted error to DAMP the oscillation (a tuned thermostat vs bang-bang), and the reject shrink
+  // is PI-damped rather than a hard slam -- that is what removes the dead-bands (verified: the 0.2-0.25 band
+  // went from 84-99 cycles to 11-21, no catastrophe anywhere in the 0.1-0.5 operating range). reject_margin
+  // keeps the ring firmly REJECTED (est > tol); loosening it to accept mild overshoots let big steps ring at
+  // loose tol, so it stays 1.0. Robustness over speed: the nominal point is ~28% slower than the old
+  // (hunting-prone) I-controller, but adaptive is now trustworthy on unknown terrain. See BDF2_ADAPTIVE_DESIGN.md.
   if (user_context.use_dt_adaptive && have_est) {
-    const double safety = 0.9;
+    const double safety        = 0.9;
+    const double reject_margin = 1.0;   // reject an overshoot (est > tol); the PI-damped shrink below is
+                                        // gentle, so this keeps the ring rejected without the bang-bang hunt
+    const double kI = 0.3, kP = 0.2;    // PI gains (elementary I-exponent ~0.5, split I+P for damping)
     const double dt_now = user_context.deltat;
-    double factor = (est > 0.0) ? safety * std::sqrt(user_context.dt_tol / est) : user_context.dtc_grow;
-    if (est > user_context.dt_tol) {  // accuracy REJECT: shrink and retry
-      user_context.deltat = dt_now * std::max(user_context.dtc_shrink, std::min(factor, 1.0));
+    const double prev   = (user_context.dt_prev_est > 0.0) ? user_context.dt_prev_est : est;  // I-only on step 1
+    double factor = (est > 0.0)
+                      ? safety * std::pow(user_context.dt_tol / est, kI) * std::pow(prev / est, kP)
+                      : user_context.dtc_grow;
+    factor = std::min(user_context.dtc_grow, std::max(user_context.dtc_shrink, factor));
+    if (est > reject_margin * user_context.dt_tol) {  // LARGE overshoot: reject + retry (state NOT committed)
+      user_context.deltat = dt_now * std::min(factor, 1.0);
       return -1;
     }
-    factor = std::min(user_context.dtc_grow, factor);                       // ACCEPT: grow toward the tol
-    if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard step: hold, don't grow
+    // ACCEPT (a mild overshoot is tolerated): commit, remember this error for the PI term, size the next step.
+    user_context.dt_prev_est = est;
+    if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard solve: hold, don't grow
     user_context.deltat = dt_now * factor;
     if (user_context.dtc_dt_max > 0.0 && user_context.deltat > user_context.dtc_dt_max)
       user_context.deltat = user_context.dtc_dt_max;
