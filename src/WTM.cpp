@@ -573,13 +573,17 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
                 params.cycles_done, user_context.last_cycle_dw, user_context.last_dh_max,
                 user_context.last_dh_nflicker);
     // Convergence-based early stop (opt-in via -wtm_eq_tol): stop once the PER-CYCLE water-table change
-    // stays below eq_tol for two consecutive cycles. Uses the per-cycle metric (not the per-sub-step
-    // max|Δw|), so the cosmetic within-cycle lake/shore flicker cannot hold the run hostage. The dt-
-    // continuation ramp still needs dt near its ceiling for a small change to mean "steady" (not "tiny
-    // step"); the fixed-dt march (default Anderson/Picard) is trustworthy directly; adaptive-dt is skipped.
+    // stays below eq_tol for two consecutive cycles -- the equilibrium auto-stop, on EVERY spin-up pathway.
+    // Uses the per-cycle metric (not the per-sub-step max|Δw|), so the cosmetic within-cycle lake/shore
+    // flicker cannot hold the run hostage. Each cycle of the fixed-dt march AND the adaptive-dt controller
+    // spans a FIXED physical time (maxiter*deltat), so a small per-cycle change genuinely means "steady",
+    // not "tiny step" -- both are trustworthy directly. The Newton dt-CONTINUATION path is the sole
+    // exception: one "cycle" there is a single variable-dt step, so a small change is only meaningful once
+    // dt has ramped near its ceiling.
     const bool settle_trustworthy =
-        (user_context.use_newton_continuation && user_context.deltat >= 0.5 * user_context.dtc_dt_max)
-        || (!user_context.use_newton_continuation && !user_context.use_dt_adaptive);
+        user_context.use_newton_continuation
+            ? (user_context.deltat >= 0.5 * user_context.dtc_dt_max)
+            : true;
     if (user_context.eq_tol > 0.0 && settle_trustworthy) {
       if (user_context.last_cycle_dw < user_context.eq_tol) {
         if (++user_context.settled_count >= 2) {
