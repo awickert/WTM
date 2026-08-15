@@ -177,7 +177,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
-  user_context.use_bdf2        = (bdf2_flag == PETSC_TRUE) || user_context.use_dt_adaptive || user_context.use_bdf2_on_V;
+  // -wtm_dt_adaptive normally implies the BDF2 history (needed by the non-TR forward error estimator).
+  // With TR-BDF2 the embedded estimator uses the two stages (no history), so don't force the Picard-BDF2
+  // residual onto the tr+adaptive combo -- it keeps the self-contained matrix-free TR-BDF2 residual.
+  user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE)
+                          || (user_context.use_dt_adaptive && !user_context.use_tr_bdf2)
+                          || user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: -wtm_anderson
   // -wtm_bdf2_on_V gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.

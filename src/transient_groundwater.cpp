@@ -1211,8 +1211,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       SNESSolve(user_context.snes, user_context.b, user_context.x);
       SNESConvergedReason stage1_reason;
       SNESGetConvergedReason(user_context.snes, &stage1_reason);
-      if (stage1_reason < 0)
+      if (stage1_reason < 0) {
+        user_context.tr_stage = 0;
+        // -wtm_dt_adaptive: a non-converged stage is a REJECT (shrink dt, retry from the unchanged
+        // state) not a fatal error. State is not committed until below, so w^n is preserved for the retry.
+        if (user_context.use_dt_adaptive) {
+          user_context.deltat *= user_context.dtc_shrink;
+          return -1;
+        }
         throw std::runtime_error("TR-BDF2 trapezoidal stage (1) did not converge.");
+      }
       VecCopy(user_context.x, user_context.tr_ygamma);  // Y_gamma carried into stage 2
       user_context.tr_stage = 2;  // BDF2 → w^{n+1} (initial guess = Y_gamma, already in x)
       SNESSolve(user_context.snes, user_context.b, user_context.x);
@@ -1284,15 +1292,61 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // committing (the state commit is below, after this check, so starting_wtd is preserved for the
     // retry). Every other path still throws -- their callers do not handle a failure return.
     if (user_context.use_newton_continuation) return -1;
+    // -wtm_dt_adaptive: same reject/retry contract -- shrink dt here and return without committing;
+    // the caller rolls back the step's accumulators and retries the same step at the smaller dt.
+    if (user_context.use_dt_adaptive) {
+      user_context.deltat *= user_context.dtc_shrink;
+      return -1;
+    }
     throw std::runtime_error("The SNES solver has not converged.");
   }
 
-  // Adaptive dt (forward, no-reject): estimate the local error as the max deviation of the
-  // new head h^{n+1} from a LINEAR extrapolation of the history (h_pred = h^n + w(h^n -
-  // h^{n-1}), w = dt_n/dt_{n-1}); this deviation ~ O(dt^2). Set the NEXT step to hold it near
-  // dt_tol via dt_new = dt * clamp(safety*sqrt(tol/est), shrink, grow). Runs once history
-  // exists, and BEFORE starting_wtd_prev is overwritten below. See BDF2_ADAPTIVE_DESIGN.md.
-  if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
+  // -wtm_dt_adaptive + TR-BDF2: embedded local-error estimate from the two stages (no history needed;
+  // valid on step 1). A linear extrapolation through (t_n, h^n) and (t_n+gamma*dt, Y_gamma) to t_n+dt is
+  //   h_pred = [Y_gamma - (1-gamma) h^n] / gamma   -- EXACT for linear-in-time, O(dt^2) for curvature,
+  // so |h^{n+1} - h_pred| is the local truncation error. The error norm EXCLUDES surface cells (new
+  // wtd >= -band): the free-surface clamp is non-smooth there and would otherwise spike the estimate and
+  // force dt tiny. est > dt_tol => accuracy REJECT (shrink, retry, no commit); else ACCEPT and grow
+  // toward the tolerance (capped by the step's convergence headroom and dtc_dt_max). ACCURACY (option 2)
+  // on top of the reject/retry CONVERGENCE floor (option 1) above. See BDF2_ADAPTIVE_DESIGN.md.
+  if (user_context.use_dt_adaptive && user_context.use_tr_bdf2) {
+    const double TR_G = 2.0 - std::sqrt(2.0);
+    const double band = 0.05;  // metres below surface; shallower cells excluded (clamp non-smoothness)
+    PetscScalar **yg, **topo_e;
+    DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
+    DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
+    double local_max = 0.0;
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        if (dmdapack.mask[j][i] != 0) {  // land only
+          const double wtd_new = dmdapack.x[j][i] - topo_e[j][i];
+          if (wtd_new >= -band) continue;  // skip the surface/clamp zone (non-smooth)
+          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
+          const double h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
+          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
+          if (dev > local_max) local_max = dev;
+        }
+    DMDAVecRestoreArray(user_context.da, user_context.tr_ygamma, &yg);
+    DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+    double est = 0.0;
+    MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+
+    const double safety = 0.9;
+    const double dt_now = user_context.deltat;
+    double factor = (est > 0.0) ? safety * std::sqrt(user_context.dt_tol / est) : user_context.dtc_grow;
+    if (est > user_context.dt_tol) {  // accuracy REJECT: shrink and retry (state not committed below)
+      user_context.deltat = dt_now * std::max(user_context.dtc_shrink, std::min(factor, 1.0));
+      return -1;
+    }
+    factor = std::min(user_context.dtc_grow, factor);                       // ACCEPT: grow toward the tol
+    if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard step: hold, don't grow
+    user_context.deltat = dt_now * factor;
+    if (user_context.dtc_dt_max > 0.0 && user_context.deltat > user_context.dtc_dt_max)
+      user_context.deltat = user_context.dtc_dt_max;
+  } else if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
+    // Non-TR adaptive (forward, no-reject): local error = max deviation of h^{n+1} from a LINEAR
+    // extrapolation of the history (h_pred = h^n + w(h^n - h^{n-1}), w = dt_n/dt_{n-1}) ~ O(dt^2);
+    // set the NEXT step to hold it near dt_tol. Runs once history exists. See BDF2_ADAPTIVE_DESIGN.md.
     PetscScalar **swp, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.starting_wtd_prev, &swp);
     DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);

@@ -330,16 +330,30 @@ void update(
     const double cycle_duration = params.maxiter * params.deltat;
     double       t              = 0.0;
     int          nsteps         = 0;
+    int          rejects        = 0;
+    int          retries        = 0;
     while (t < cycle_duration * (1.0 - 1e-9) && nsteps < 1000000) {
       const double remaining = cycle_duration - t;
       if (user_context.deltat > remaining) user_context.deltat = remaining;
-      const double dt_taken = user_context.deltat;
-      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      const double dt_taken   = user_context.deltat;
+      const double rech_snap  = arp.total_added_recharge;    // roll back on a rejected step (non-converged
+      const double ocean_snap = arp.total_loss_to_ocean_gw;  // OR too-inaccurate), as the continuation loop does
+      const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      if (its < 0) {  // REJECT: update() shrank deltat and did NOT commit; retry the same step
+        arp.total_added_recharge   = rech_snap;
+        arp.total_loss_to_ocean_gw = ocean_snap;
+        rejects++;
+        if (++retries > user_context.dtc_max_retries)
+          throw std::runtime_error("adaptive dt: step failed after max retries; -wtm_dt_tol too tight "
+                                   "or the local stability ceiling is below the smallest tried dt.");
+        continue;  // do NOT advance t
+      }
+      retries = 0;
       t += dt_taken;
       nsteps++;
     }
-    PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps to cover %g s (fixed would be %d)\n",
-                nsteps, cycle_duration, params.maxiter);
+    PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
+                nsteps, rejects, cycle_duration, params.maxiter);
   } else if (user_context.use_newton_continuation) {
     // Newton pseudo-transient continuation (equilibrium): march maxiter ACCEPTED steps with a
     // Newton-iteration-controlled dt. Start deltat small so the storage term S/deltat keeps the
