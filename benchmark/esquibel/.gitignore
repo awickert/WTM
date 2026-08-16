@@ -1,3 +1,12 @@
 domain/
-results/
 tiled/
+
+# Ignore results/ contents (not the dir itself, so subpaths can be re-included below).
+results/*
+
+# ...but keep the scaling-benchmark CSVs: precious raw data (hours of MSI compute),
+# not cheaply regenerable. Logs/tifs/cfgs under results/ stay ignored.
+!results/scaling/
+results/scaling/*
+!results/scaling/scaling_ncore.csv
+!results/scaling/scaling_multinode.csv
