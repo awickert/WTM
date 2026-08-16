@@ -100,6 +100,10 @@ carved up.
   seeded with the N=16 rows so the master CSV holds cores {2,4,8,16,32,64}. Idempotent/resumable.
 - `scaling_multinode_kc.sbatch` — **multi-node** harness (msilarge, `mpiexec -ppn`; `srun` is broken for
   PETSc's bundled MPICH). Sweeps `NODES_SWEEP` × `PPN` layouts and `TVALS` tile counts (t=6 → 6×6 = 13.85M).
+- `scaling_weak.sbatch` — **weak scaling**: fixed cells/rank (one Esquibel tile per rank, ranks = t²), so
+  every point carries exactly 384,703 cells/rank. Ideal weak scaling = flat wall as t grows. Default ladder
+  t=1..6 → ranks 1,4,9,16,25,36 (single node); the `--exclusive` pass extends larger t across nodes.
+  cc + fixed_tr by default (adapt is non-deterministic under MPI → no reproducible weak curve).
 - `scaling_report.py` — organizes both CSVs (+ per-run logs) into the single-node and multi-node tables
   above, including fixed_tr and adaptive iso-precision. Regenerates everything here.
 - `iso_prec.py` — the iso-precision crossing (adaptive iters to reach cc's final precision) for the N=16 set.
@@ -118,9 +122,21 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
    over-decomposition metric caveat and the adaptive rank-resonance.
 4. **6×6 (13.85M) seam-cliff de-risk** — **done**. Real clipped-land-meets-ocean cliffs (6×6 Esquibel
    tiling); cc and fixed_tr robust/reproducible, adaptive fragile (finding #3), memory/gather fine at scale.
-5. **`--exclusive` pass** — NOT started (gated to finalized code). Reuse `scaling_ncore.sbatch` /
-   `scaling_multinode_kc.sbatch` with `#SBATCH --exclusive` and whole-node core/node counts, for the clean
-   wall / parallel-efficiency curve. Every correctness, robustness, and de-risk question above is already
-   answered — this pass measures **only wall** (strong + weak scaling).
-6. **`4000²` multi-node** (#82) — the largest-scale publication point, where the FSM all-to-one *gather*
+5. **Weak-scaling dry run** — `scaling_weak.sbatch` on shared agsmall, one tile per rank (t=1..6). Validates
+   the weak-scaling harness/config before the exclusive allocation (iterations flat at fixed cells/rank; wall
+   noise-limited on shared node, as expected).
+6. **`--exclusive` pass** — NOT started (gated to finalized code + explicit go-ahead). Measures **only wall**
+   (strong + weak); every correctness/robustness/de-risk question above is already answered. **Pinned grid
+   (keep cells/rank healthy — the finding-#4 over-decomposition floor):**
+   - *Strong scaling* — reuse `scaling_ncore.sbatch` (single-node, `CORES="16 32 64 128"`) and
+     `scaling_multinode_kc.sbatch` on the **large domains only** (4×4 = 6.16M and 6×6 = 13.85M). 6×6 stays
+     ≥108k cells/rank even at 128 ranks; 4×4 hits ~48k at 128 (borderline — read its 128-rank point with the
+     over-decomposition caveat). **Do NOT** run 1×1/2×2 at ≥64 ranks (that is where the `frac` stop-metric
+     jittered to cyc 843).
+   - *Weak scaling* — reuse `scaling_weak.sbatch` with larger t spanning nodes (e.g. t=8 → 64 ranks,
+     t=11 → 121 ranks), holding 384,703 cells/rank throughout.
+   - *Methods* — cc + fixed_tr for the clean-wall curves; include adapt at only 2–3 points and run each 2–3×
+     to bracket its MPI non-determinism (it is a robustness tool, not a wall competitor — finding #3).
+   - Add `#SBATCH --exclusive` to both harnesses.
+7. **`4000²` multi-node** (#82) — the largest-scale publication point, where the FSM all-to-one *gather*
    (not FSM compute) becomes the real cost (#80).
