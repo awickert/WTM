@@ -93,6 +93,32 @@ Over-decomposition caveat (finding #4), 2×2 (1.54M) on many ranks — watch the
 fixed_tr is the only method whose convergence is indifferent to how the (too-small-for-the-ranks) domain is
 carved up.
 
+## Weak scaling — the geometry trap (single-node dry run)
+
+Weak scaling holds **cells/rank fixed** (here 384,703 = one Esquibel tile per rank) and grows domain and
+ranks together; ideal = flat wall. The first dry run (`scaling_weak.sbatch`) put **all ranks on one node**,
+and the result is *not* flat — but that is the diagnosis confirming itself, not a scaling failure:
+
+| tiles | ranks (1 node) | cc wall | cc weak-eff | fixed_tr wall |
+|---|--:|--:|--:|--:|
+| 1×1 | 1 | 288 s | 100% | 343 s |
+| 2×2 | 4 | 293 s | 98% | 381 s |
+| 3×3 | 9 | 328 s | 88% | 443 s |
+| 4×4 | 16 | 465 s | 62% | 532 s |
+| 5×5 | 25 | 704 s | 41% | 763 s |
+| 6×6 | 36 | 1351 s | **21%** | 1505 s |
+
+Wall rises ~4.7×. The cause is **single-node memory-bandwidth saturation**: piling more ranks on one node's
+16 channels grows the problem *without* growing the bandwidth. Iterations stay ~flat (cc 9827→11035, ~12%
+drift), so it is per-iteration bandwidth cost, not more work. The clean cross-check: the same 13.85M domain
+ran **1351 s on 36 ranks / 1 node** here but **305 s on 128 ranks / 8 nodes** in the strong set — 4.4×
+faster on the same cells. **The lever is bandwidth pools (nodes), not cores.**
+
+So the single-node weak ladder measures saturation, *not* the production question. The weak-scaling result
+that predicts 220M is **16 ranks/node (one per channel) spread across N nodes**, holding cells/rank fixed so
+each added node brings its own bandwidth pool — `scaling_weak_multinode.sbatch`, run in the `--exclusive`
+pass. If *that* wall is flat as nodes grow, it is the direct green light for 220M on ~16–32 nodes.
+
 ## Pieces
 
 - `scaling.sbatch` — the first run: fixed **N=16**, four grid sizes (1×1/2×2/3×3/4×4 = 0.38/1.5/3.5/6.2M).
@@ -100,10 +126,13 @@ carved up.
   seeded with the N=16 rows so the master CSV holds cores {2,4,8,16,32,64}. Idempotent/resumable.
 - `scaling_multinode_kc.sbatch` — **multi-node** harness (msilarge, `mpiexec -ppn`; `srun` is broken for
   PETSc's bundled MPICH). Sweeps `NODES_SWEEP` × `PPN` layouts and `TVALS` tile counts (t=6 → 6×6 = 13.85M).
-- `scaling_weak.sbatch` — **weak scaling**: fixed cells/rank (one Esquibel tile per rank, ranks = t²), so
-  every point carries exactly 384,703 cells/rank. Ideal weak scaling = flat wall as t grows. Default ladder
-  t=1..6 → ranks 1,4,9,16,25,36 (single node); the `--exclusive` pass extends larger t across nodes.
-  cc + fixed_tr by default (adapt is non-deterministic under MPI → no reproducible weak curve).
+- `scaling_weak.sbatch` — **single-node weak scaling**: fixed cells/rank (one Esquibel tile per rank,
+  ranks = t²), all ranks on one node. Measures single-node bandwidth saturation (see the geometry-trap
+  section above), *not* the production weak curve. cc + fixed_tr (adapt non-deterministic under MPI).
+- `scaling_weak_multinode.sbatch` — **multi-node weak scaling** (the production-predictive one): 16 ranks/node
+  (one per memory channel), node sweep `LADDER="1:4:4 2:4:8 4:8:8 8:8:16"` (nodes:ny:nx tiles), holding
+  384,703 cells/rank exactly so each added node brings its own bandwidth pool. Ideal = flat wall vs nodes.
+  Extend toward 220M with `16:16:16` (256 ranks, 98.5M). For the `--exclusive` pass add `#SBATCH --exclusive`.
 - `scaling_report.py` — organizes both CSVs (+ per-run logs) into the single-node and multi-node tables
   above, including fixed_tr and adaptive iso-precision. Regenerates everything here.
 - `iso_prec.py` — the iso-precision crossing (adaptive iters to reach cc's final precision) for the N=16 set.
@@ -122,9 +151,10 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
    over-decomposition metric caveat and the adaptive rank-resonance.
 4. **6×6 (13.85M) seam-cliff de-risk** — **done**. Real clipped-land-meets-ocean cliffs (6×6 Esquibel
    tiling); cc and fixed_tr robust/reproducible, adaptive fragile (finding #3), memory/gather fine at scale.
-5. **Weak-scaling dry run** — `scaling_weak.sbatch` on shared agsmall, one tile per rank (t=1..6). Validates
-   the weak-scaling harness/config before the exclusive allocation (iterations flat at fixed cells/rank; wall
-   noise-limited on shared node, as expected).
+5. **Weak-scaling dry run** — `scaling_weak.sbatch` on shared agsmall, one tile per rank (t=1..6) — **done**.
+   Result: single-node wall rises 4.7× (bandwidth saturation, not weak-scaling failure — see the geometry-trap
+   section). Its lesson: the single-node ladder is the wrong geometry; the production weak curve needs
+   `scaling_weak_multinode.sbatch` (16 ranks/node across nodes), now added to the `--exclusive` pass below.
 6. **`--exclusive` pass** — NOT started (gated to finalized code + explicit go-ahead). Measures **only wall**
    (strong + weak); every correctness/robustness/de-risk question above is already answered. **Pinned grid
    (keep cells/rank healthy — the finding-#4 over-decomposition floor):**
@@ -133,8 +163,9 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
      ≥108k cells/rank even at 128 ranks; 4×4 hits ~48k at 128 (borderline — read its 128-rank point with the
      over-decomposition caveat). **Do NOT** run 1×1/2×2 at ≥64 ranks (that is where the `frac` stop-metric
      jittered to cyc 843).
-   - *Weak scaling* — reuse `scaling_weak.sbatch` with larger t spanning nodes (e.g. t=8 → 64 ranks,
-     t=11 → 121 ranks), holding 384,703 cells/rank throughout.
+   - *Weak scaling* — `scaling_weak_multinode.sbatch`, 16 ranks/node across a node sweep (`1:4:4 2:4:8
+     8:8:16` → 16…128 ranks, 6.16M…49.3M), holding 384,703 cells/rank so each node adds a bandwidth pool.
+     This is the curve that predicts 220M; extend with `16:16:16` (98.5M) toward the production point.
    - *Methods* — cc + fixed_tr for the clean-wall curves; include adapt at only 2–3 points and run each 2–3×
      to bracket its MPI non-determinism (it is a robustness tool, not a wall competitor — finding #3).
    - Add `#SBATCH --exclusive` to both harnesses.
