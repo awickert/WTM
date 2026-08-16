@@ -14,6 +14,8 @@
 # 2x2 + 4x4 (the 4x4/4-node point is the real gather de-risk). Reuses the tiled domains.
 set -uo pipefail
 PPN="${PPN:-16}"   # ranks per node; sweep layouts as (nodes x PPN), e.g. PPN=8 NODES_SWEEP="2 4"
+METHODS="${METHODS:-cc fixed_tr adapt}"   # subset e.g. METHODS="fixed_tr"
+TVALS="${TVALS:-2 4}"                      # tile counts t -> t*t grid (t=6 -> 6x6 = 13.85M)
 NODES_SWEEP="${NODES_SWEEP:-2 4}"
 WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"; ESQ="$WTM_ROOT/benchmark/esquibel"
 source "$WTM_ROOT/msi_env.sh" test
@@ -46,12 +48,13 @@ run() { # nodes ranks tiles dom cells method flags...
 
 for nd in $NODES_SWEEP; do
   ranks=$((nd*PPN))
-  for t in 2 4; do
+  for t in $TVALS; do
     tiles="${t}x${t}"; ny=$((t*451)); nx=$((t*853)); cells=$((ny*nx))
     dom="$R/tiles/${ny}x${nx}"
     [ -f "${dom}/Esquibel_010000_topography.tif" ] || python3 make_tiled.py "$t" "$t" domain "$R/tiles" >/dev/null 2>&1
-    run "$nd" "$ranks" "$tiles" "$dom" "$cells" cc
-    run "$nd" "$ranks" "$tiles" "$dom" "$cells" adapt -wtm_tr_bdf2 -wtm_dt_adaptive
+    case " $METHODS " in *" cc "*)       run "$nd" "$ranks" "$tiles" "$dom" "$cells" cc ;; esac
+    case " $METHODS " in *" fixed_tr "*) run "$nd" "$ranks" "$tiles" "$dom" "$cells" fixed_tr -wtm_tr_bdf2 ;; esac
+    case " $METHODS " in *" adapt "*)    run "$nd" "$ranks" "$tiles" "$dom" "$cells" adapt -wtm_tr_bdf2 -wtm_dt_adaptive ;; esac
   done
 done
 echo "### DONE ###"; cat "$CSV"
