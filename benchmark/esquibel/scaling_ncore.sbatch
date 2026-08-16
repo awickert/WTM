@@ -16,6 +16,8 @@
 # signal); the --exclusive pass provides publication-grade wall.
 set -uo pipefail
 CORES="${CORES:-8 4 2}"
+METHODS="${METHODS:-cc fixed_tr adapt}"   # subset with e.g. METHODS="fixed_tr" to avoid colliding with a
+                                          # concurrent job doing the other methods
 WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"; ESQ="$WTM_ROOT/benchmark/esquibel"
 source "$WTM_ROOT/msi_env.sh" test
 export OMP_NUM_THREADS=1 PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/share/proj}"
@@ -54,9 +56,9 @@ for nc in $CORES; do
       dom="$R/tiles/${ny}x${nx}"
       [ -f "${dom}/Esquibel_010000_topography.tif" ] || python3 make_tiled.py "$t" "$t" domain "$R/tiles" >/dev/null 2>&1
     fi
-    run "$nc" "$tiles" "$dom" "$cells" cc
-    run "$nc" "$tiles" "$dom" "$cells" fixed_tr -wtm_tr_bdf2
-    run "$nc" "$tiles" "$dom" "$cells" adapt -wtm_tr_bdf2 -wtm_dt_adaptive
+    case " $METHODS " in *" cc "*)       run "$nc" "$tiles" "$dom" "$cells" cc ;; esac
+    case " $METHODS " in *" fixed_tr "*) run "$nc" "$tiles" "$dom" "$cells" fixed_tr -wtm_tr_bdf2 ;; esac
+    case " $METHODS " in *" adapt "*)    run "$nc" "$tiles" "$dom" "$cells" adapt -wtm_tr_bdf2 -wtm_dt_adaptive ;; esac
   done
 done
 echo "### DONE ###"; sort -t, -k2,2 -k1,1n "$CSV"
