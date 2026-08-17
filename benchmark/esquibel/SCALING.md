@@ -126,6 +126,7 @@ pass. If *that* wall is flat as nodes grow, it is the direct green light for 220
   seeded with the N=16 rows so the master CSV holds cores {2,4,8,16,32,64}. Idempotent/resumable.
 - `scaling_multinode_kc.sbatch` — **multi-node** harness (msilarge, `mpiexec -ppn`; `srun` is broken for
   PETSc's bundled MPICH). Sweeps `NODES_SWEEP` × `PPN` layouts and `TVALS` tile counts (t=6 → 6×6 = 13.85M).
+  `REPS` repeats each point → rep-columned `scaling_multinode_reps.csv` (dry-run `scaling_multinode.csv` kept).
 - `scaling_weak.sbatch` — **single-node weak scaling**: fixed cells/rank (one Esquibel tile per rank,
   ranks = t²), all ranks on one node. Measures single-node bandwidth saturation (see the geometry-trap
   section above), *not* the production weak curve. cc + fixed_tr (adapt non-deterministic under MPI).
@@ -133,6 +134,7 @@ pass. If *that* wall is flat as nodes grow, it is the direct green light for 220
   (one per memory channel), node sweep `LADDER="1:4:4 2:4:8 4:8:8 8:8:16"` (nodes:ny:nx tiles), holding
   384,703 cells/rank exactly so each added node brings its own bandwidth pool. Ideal = flat wall vs nodes.
   Extend toward 220M with `16:16:16` (256 ranks, 98.5M). For the `--exclusive` pass add `#SBATCH --exclusive`.
+  `REPS` repeats each point → rep-columned `scaling_weak_multinode_reps.csv`.
   `scaling_weak_multinode.csv` currently holds only the **1+2-node shared-node validation** (job 15964419):
   it confirmed cross-node placement, the 4×8 rectangular tiling, and decomposition-invariant convergence
   (iterations bit-stable 10558→10556 / 5534→5534), but its **wall is shared-node noise** (cc falls, fixed_tr
@@ -170,8 +172,10 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
    - *Weak scaling* — `scaling_weak_multinode.sbatch`, 16 ranks/node across a node sweep (`1:4:4 2:4:8
      8:8:16` → 16…128 ranks, 6.16M…49.3M), holding 384,703 cells/rank so each node adds a bandwidth pool.
      This is the curve that predicts 220M; extend with `16:16:16` (98.5M) toward the production point.
-   - *Methods* — cc + fixed_tr for the clean-wall curves; include adapt at only 2–3 points and run each 2–3×
-     to bracket its MPI non-determinism (it is a robustness tool, not a wall competitor — finding #3).
-   - Add `#SBATCH --exclusive` to both harnesses.
+   - *Methods & reps* — **all three (cc, fixed_tr, adapt) at every point, `REPS="1 2 3"`.** The reps
+     **demonstrate** adapt's run-to-run MPI non-determinism directly from the data (rather than asserting it —
+     finding #3) and confirm cc/fixed_tr reproducibility. Rep-columned output goes to the `*_reps.csv` files
+     (kept separate from the shared-node dry-run/validation CSVs).
+   - Add `#SBATCH --exclusive` to both harnesses (via the CLI `--exclusive` flag).
 7. **`4000²` multi-node** (#82) — the largest-scale publication point, where the FSM all-to-one *gather*
    (not FSM compute) becomes the real cost (#80).
