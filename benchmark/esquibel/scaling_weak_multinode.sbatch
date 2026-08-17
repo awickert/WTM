@@ -19,7 +19,9 @@
 set -uo pipefail
 PPN="${PPN:-16}"                                       # ranks/node = memory channels/node (bandwidth-matched)
 LADDER="${LADDER:-1:4:4 2:4:8 4:8:8 8:8:16}"
-METHODS="${METHODS:-cc fixed_tr}"                      # adapt off: no reproducible weak curve under MPI
+METHODS="${METHODS:-cc fixed_tr adapt}"               # adapt INCLUDED to DEMONSTRATE its MPI non-determinism
+REPS="${REPS:-1 2 3}"                                  # repeat each point -> the spread makes adapt's
+                                                       # run-to-run variance visible (and confirms cc/fixed_tr)
 WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"; ESQ="$WTM_ROOT/benchmark/esquibel"
 source "$WTM_ROOT/msi_env.sh" test
 export OMP_NUM_THREADS=1 PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/share/proj}"
@@ -28,26 +30,29 @@ grep -qa "derived from eq_tol" "$BIN" || { echo "FATAL: stale binary."; exit 1; 
 echo "=== placement probe (mpiexec must span $SLURM_JOB_NUM_NODES nodes) ==="
 mpiexec -ppn "$PPN" -n $((PPN*SLURM_JOB_NUM_NODES)) hostname 2>/dev/null | sort | uniq -c | sed 's/^/  /' || echo "  PROBE FAILED"
 R=results/scaling; mkdir -p "$R"
-CSV="$R/scaling_weak_multinode.csv"
-[ -f "$CSV" ] || echo "nodes,ranks,ny,nx,cells,cells_per_rank,method,rc,wall_s,snes_its,stop_cycle" > "$CSV"
+# rep-columned output (separate from the shared-node validation file scaling_weak_multinode.csv)
+CSV="$R/scaling_weak_multinode_reps.csv"
+[ -f "$CSV" ] || echo "nodes,ranks,ny,nx,cells,cells_per_rank,method,rep,rc,wall_s,snes_its,stop_cycle" > "$CSV"
 BASE="-wtm_anderson -wtm_fringe_source ksat -snes_stol 1e-6 -wtm_surface_exfiltration_to_runoff -wtm_eq_tol 0.01 -wtm_eq_metric frac"
 
-have() { awk -F, -v nd="$1" -v m="$2" 'NR>1 && $1==nd && $7==m{f=1} END{exit !f}' "$CSV"; }
+have() { awk -F, -v nd="$1" -v m="$2" -v rp="$3" 'NR>1 && $1==nd && $7==m && $8==rp{f=1} END{exit !f}' "$CSV"; }
 run() { # nodes ranks ny nx dom cells method flags...
   local nd="$1" ranks="$2" ny="$3" nx="$4" dom="$5" cells="$6" meth="$7"; shift 7
-  if have "$nd" "$meth"; then echo "skip nodes=$nd $meth (recorded)"; return; fi
-  local cpr=$((cells/ranks))
-  local stem="$R/wkmn${nd}_${meth}"
-  sed "s#^deltat.*#deltat 604800#;s#^total_cycles.*#total_cycles 200#;s#^cycles_to_save.*#cycles_to_save 200#;s#^supplied_wt.*#supplied_wt 0#;s#^surfdatadir.*#surfdatadir ${dom}/#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#" eq_awickert.cfg > "${stem}.cfg"
-  rm -f "${stem}.txt" "${stem}"_*.tif
-  echo "=== nodes=$nd ranks=$ranks ${ny}x${nx}tiles (${cells}, ~${cpr}/rank) ${meth} ==="
-  local t0=$(date +%s.%N)
-  mpiexec -ppn "$PPN" -n "$ranks" "$BIN" "${stem}.cfg" $BASE "$@" > "${stem}.log" 2>&1
-  local rc=$?; local t1=$(date +%s.%N)
-  local wall=$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")
-  local its=$(grep -o "Number of nonlinear iterations = [0-9]*" "${stem}.log" | awk '{s+=$6} END{print s+0}')
-  local stop=$(awk 'NF>=5&&$1~/^[0-9]+$/{c=$1} END{print c}' "${stem}.txt")
-  echo "${nd},${ranks},${ny},${nx},${cells},${cpr},${meth},${rc},${wall},${its},${stop}" | tee -a "$CSV"
+  local cpr=$((cells/ranks)) rep
+  for rep in $REPS; do
+    if have "$nd" "$meth" "$rep"; then echo "skip nodes=$nd $meth rep$rep (recorded)"; continue; fi
+    local stem="$R/wkmn${nd}_${meth}_rep${rep}"
+    sed "s#^deltat.*#deltat 604800#;s#^total_cycles.*#total_cycles 200#;s#^cycles_to_save.*#cycles_to_save 200#;s#^supplied_wt.*#supplied_wt 0#;s#^surfdatadir.*#surfdatadir ${dom}/#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#" eq_awickert.cfg > "${stem}.cfg"
+    rm -f "${stem}.txt" "${stem}"_*.tif
+    echo "=== nodes=$nd ranks=$ranks ${ny}x${nx}tiles (${cells}, ~${cpr}/rank) ${meth} rep${rep} ==="
+    local t0=$(date +%s.%N)
+    mpiexec -ppn "$PPN" -n "$ranks" "$BIN" "${stem}.cfg" $BASE "$@" > "${stem}.log" 2>&1
+    local rc=$?; local t1=$(date +%s.%N)
+    local wall=$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")
+    local its=$(grep -o "Number of nonlinear iterations = [0-9]*" "${stem}.log" | awk '{s+=$6} END{print s+0}')
+    local stop=$(awk 'NF>=5&&$1~/^[0-9]+$/{c=$1} END{print c}' "${stem}.txt")
+    echo "${nd},${ranks},${ny},${nx},${cells},${cpr},${meth},${rep},${rc},${wall},${its},${stop}" | tee -a "$CSV"
+  done
 }
 
 for entry in $LADDER; do

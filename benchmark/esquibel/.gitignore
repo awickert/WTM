@@ -12,3 +12,5 @@ results/scaling/*
 !results/scaling/scaling_multinode.csv
 !results/scaling/scaling_weak.csv
 !results/scaling/scaling_weak_multinode.csv
+!results/scaling/scaling_multinode_reps.csv
+!results/scaling/scaling_weak_multinode_reps.csv
