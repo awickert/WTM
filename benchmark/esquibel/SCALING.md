@@ -133,6 +133,10 @@ pass. If *that* wall is flat as nodes grow, it is the direct green light for 220
   (one per memory channel), node sweep `LADDER="1:4:4 2:4:8 4:8:8 8:8:16"` (nodes:ny:nx tiles), holding
   384,703 cells/rank exactly so each added node brings its own bandwidth pool. Ideal = flat wall vs nodes.
   Extend toward 220M with `16:16:16` (256 ranks, 98.5M). For the `--exclusive` pass add `#SBATCH --exclusive`.
+  `scaling_weak_multinode.csv` currently holds only the **1+2-node shared-node validation** (job 15964419):
+  it confirmed cross-node placement, the 4×8 rectangular tiling, and decomposition-invariant convergence
+  (iterations bit-stable 10558→10556 / 5534→5534), but its **wall is shared-node noise** (cc falls, fixed_tr
+  rises over the same step) — NOT a weak-scaling measurement. The clean curve is the `--exclusive` run.
 - `scaling_report.py` — organizes both CSVs (+ per-run logs) into the single-node and multi-node tables
   above, including fixed_tr and adaptive iso-precision. Regenerates everything here.
 - `iso_prec.py` — the iso-precision crossing (adaptive iters to reach cc's final precision) for the N=16 set.
