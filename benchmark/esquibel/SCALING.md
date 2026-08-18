@@ -77,13 +77,34 @@ cc is the clean curve (98% efficient to 4 nodes, 70% at 8), fastest on wall at e
 **Near-flat 1→4 nodes (≤1.16×), degrading to ~1.6–1.8× at 8 nodes / 49.3M** — versus the **4.7×** blow-up of
 the single-node ladder. The "each node adds a bandwidth pool" thesis holds; this is the direct 220M evidence.
 
-**adapt — demonstrated, not asserted:** the reps show adapt is **deterministic run-to-run** (iterations
-bit-identical across all 3 reps at every layout; stop-cycle wobbles ≤±1 near threshold), but its cost is
-**pathologically layout-sensitive** — on 6×6 the stop-cycle went **52 → 18 → 42 → 19** across 1/2/4/8 nodes,
-and the 4-node cyc-42 resonance (first seen on shared nodes) **reproduced deterministically in all 3 reps**.
-So the "non-determinism" is precisely *deterministic layout-sensitivity*: change your rank count and adapt
-takes a 2–3× different convergence path. cc/fixed_tr hold constant. (On the weak config's rectangular
-domains adapt stayed well-behaved, cyc 15–19 — the resonance is domain- *and* layout-specific.)
+**adapt — the best-converging method (demonstrated, not asserted).** Running adapt at every point (rather
+than excluding it, as an earlier draft proposed) is what surfaced its real value:
+
+- **It converges the physics that fixed_tr cannot.** Per-cycle wtd rms settles finest of the three —
+  **adapt 1.27 mm vs cc 3.5 mm vs fixed_tr 65 mm** at their stops (8-node 6×6). fixed_tr's rms *plateaus* at
+  ~65 mm because a few deep exp-T cells oscillate ~15 m of head every cycle (≈ zero water, but the head
+  never settles); **adapt's shrinking dt damps exactly those cells.** To 1 cm wtd rms: adapt and cc tie on
+  wall (~129 vs 126 s) but adapt uses ~half the iterations (3,765 vs 8,112); **fixed_tr never reaches 1 cm**
+  (see the convergence-threshold table below). So adapt is not merely a "robustness tool" — it has a
+  measurable convergence-quality advantage at cc-comparable cost.
+- **It is deterministic run-to-run** — iterations bit-identical across all 3 reps at every layout;
+  stop-cycle wobbles ≤±1 near threshold. The earlier "non-deterministic" label was wrong.
+- Its remaining real caveat is **layout-sensitivity of *cost*** (not of the answer): on 6×6 the stop-cycle
+  went 52 → 18 → 42 → 19 across 1/2/4/8 nodes (the 4-node resonance reproduced in all 3 reps), because the
+  MPI reduction order that feeds the controller changes with rank count. This is a secondary tuning issue,
+  not a reason to discount adapt. (On the weak config's rectangular domains it stayed smooth, cyc 15–19.)
+
+**Convergence to a matched head threshold (8-node; iterations node-independent, wall scales per the table):**
+
+| threshold | cc | fixed_tr | adapt |
+|---|---|---|---|
+| 10 cm wtd rms | cyc 6 · 4,475 it · ~70 s | cyc 7 · 2,108 it · ~62 s | cyc 6 · 2,153 it · ~74 s |
+| **1 cm wtd rms** | cyc 11 · 8,112 it · ~126 s | **never** (floor 65 mm) | cyc 11 · 3,765 it · ~129 s |
+| rms floor at stop | 3.5 mm | **65 mm** | **1.27 mm** |
+
+A consistent *head* threshold cannot even rank cc against fixed_tr (fixed_tr's deep cells oscillate in head),
+which is why the FV-consistent **pure-water-depth** metric (`-wtm_eq_metric water`, |S·Δwtd|) was added — in
+water depth the deep-cell swings vanish and all three become comparable. Water-depth trajectory: follow-up.
 
 ## Headline findings
 
@@ -94,11 +115,15 @@ domains adapt stayed well-behaved, cyc 15–19 — the resonance is domain- *and
    every grid size, every core count, single- *and* multi-node, well- or over-decomposed. This is the
    standout robustness result: its 2nd-order per-cycle correction drops the `frac` stop-metric cleanly and
    monotonically, so the stop fires at the same cycle regardless of rank layout.
-3. **The adaptive controller is non-deterministic under MPI, and it bites at scale.** On the hard 6×6
-   seam-cliff domain the stop cycle wandered **18 (2×32) → 42 (4×64) → 20 (8×128)** — the 4×64 layout hit a
-   controller resonance and cost *more* than cc. Same effect on 2×2 (cyc 68 at 2×32). The accept/reject/grow
-   decisions branch on MPI-reduced values, so they are not reproducible across rank counts. This is the
-   controller's cost, paid for the robustness-against-unknown-terrain it buys (see `KC_VS_ADAPT.md`).
+3. **The adaptive controller's *cost* is layout-sensitive — but it is deterministic and the best-converging
+   method** (CORRECTED by the exclusive reps; the earlier "non-deterministic" read here was from single-rep
+   shared-node data and was wrong). On 6×6 the stop cycle varies with rank count — 18 (2×32) → 42 (4×64) →
+   20 (8×128) — because the MPI reduction order feeding the controller changes with the layout; the 4×64
+   resonance is real and reproduces *deterministically* across all 3 exclusive reps (iterations bit-identical
+   per layout). Crucially, this cost-variability is a *secondary* issue: adapt settles the water table finest
+   of the three (1.27 mm rms vs cc 3.5, fixed_tr 65) and damps the deep exp-T cells that fixed_tr leaves
+   oscillating — see the exclusive-results adapt section. Do not read the cost-swing as a reason to discount
+   it.
 4. **cc's `frac` stop-metric jitters under heavy over-decomposition.** 2×2 (1.5M) on 128 ranks (~12k
    cells/rank) ran to **cycle 843** despite a normal iteration count (9,944) — the solve converged, but the
    per-cycle metric never cleanly cleared threshold. This is a **benchmark-hygiene caveat, not a solver
@@ -187,7 +212,8 @@ pass. If *that* wall is flat as nodes grow, it is the direct green light for 220
   `REPS` repeats each point → rep-columned `scaling_multinode_reps.csv` (dry-run `scaling_multinode.csv` kept).
 - `scaling_weak.sbatch` — **single-node weak scaling**: fixed cells/rank (one Esquibel tile per rank,
   ranks = t²), all ranks on one node. Measures single-node bandwidth saturation (see the geometry-trap
-  section above), *not* the production weak curve. cc + fixed_tr (adapt non-deterministic under MPI).
+  section above), *not* the production weak curve. cc + fixed_tr by default here (adapt's cost is
+  layout-sensitive, so its single-node-ladder wall is less directly comparable — but it is deterministic).
 - `scaling_weak_multinode.sbatch` — **multi-node weak scaling** (the production-predictive one): 16 ranks/node
   (one per memory channel), node sweep `LADDER="1:4:4 2:4:8 4:8:8 8:8:16"` (nodes:ny:nx tiles), holding
   384,703 cells/rank exactly so each added node brings its own bandwidth pool. Ideal = flat wall vs nodes.
@@ -214,7 +240,8 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
    at 128 ranks; confirmed multi-node ≡ single-node water table (RMS 3.7e-5 m); surfaced the
    over-decomposition metric caveat and the adaptive rank-resonance.
 4. **6×6 (13.85M) seam-cliff de-risk** — **done**. Real clipped-land-meets-ocean cliffs (6×6 Esquibel
-   tiling); cc and fixed_tr robust/reproducible, adaptive fragile (finding #3), memory/gather fine at scale.
+   tiling); all three reproducible (adapt's cost is layout-sensitive but deterministic — finding #3),
+   memory/gather fine at scale.
 5. **Weak-scaling dry run** — `scaling_weak.sbatch` on shared agsmall, one tile per rank (t=1..6) — **done**.
    Result: single-node wall rises 4.7× (bandwidth saturation, not weak-scaling failure — see the geometry-trap
    section). Its lesson: the single-node ladder is the wrong geometry; the production weak curve needs
@@ -231,8 +258,9 @@ tables above are the committed record). Per-run logs `results/scaling/*.log`.
      8:8:16` → 16…128 ranks, 6.16M…49.3M), holding 384,703 cells/rank so each node adds a bandwidth pool.
      This is the curve that predicts 220M; extend with `16:16:16` (98.5M) toward the production point.
    - *Methods & reps* — **all three (cc, fixed_tr, adapt) at every point, `REPS="1 2 3"`.** The reps
-     **demonstrate** adapt's run-to-run MPI non-determinism directly from the data (rather than asserting it —
-     finding #3) and confirm cc/fixed_tr reproducibility. Rep-columned output goes to the `*_reps.csv` files
+     let the data speak on adapt directly (rather than asserting): they showed adapt is **deterministic**
+     run-to-run and the **best-converging** method (finding #3 / the exclusive-results adapt section), and
+     confirm cc/fixed_tr reproducibility. Rep-columned output goes to the `*_reps.csv` files
      (kept separate from the shared-node dry-run/validation CSVs).
    - Add `#SBATCH --exclusive` to both harnesses (via the CLI `--exclusive` flag).
 7. **`4000²` multi-node** (#82) — the largest-scale publication point, where the FSM all-to-one *gather*
