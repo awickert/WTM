@@ -15,7 +15,7 @@ replaces it). iso-prec = the cycle at which adaptive's per-cycle RMS(dwtd) first
 
     scaling_report.py [results/scaling]
 """
-import sys, os, re, csv
+import sys, os, re, csv, statistics
 from collections import defaultdict
 R = sys.argv[1] if len(sys.argv) > 1 else "results/scaling"
 
@@ -119,3 +119,53 @@ if mn:
     print("\n  layout = nodes x total-ranks.  cyc = stop_cycle (eq_metric frac).  NB over-decomposition")
     print("  (small domain, many ranks) jitters the per-cycle stop metric -> inflated cc/adapt cycles;")
     print("  fixed_tr's cycle count stays decomposition-invariant. See SCALING.md.")
+
+# --------------------------------------------------------- exclusive rep runs (median +/- spread)
+def load_reps(path):
+    rows = []
+    if not os.path.exists(path): return rows
+    with open(path) as f:
+        for r in csv.DictReader(f):
+            r["nodes"] = int(r["nodes"]); r["ranks"] = int(r["ranks"]); r["cells"] = int(r["cells"])
+            r["wall_s"] = float(r["wall_s"]); r["snes_its"] = int(r["snes_its"]); r["stop_cycle"] = int(r["stop_cycle"])
+            rows.append(r)
+    return rows
+
+def rng(vals):
+    """'v' if all equal else 'lo-hi' -- exposes rep-to-rep spread (adapt's stop-cycle wobble)."""
+    lo, hi = min(vals), max(vals)
+    return f"{lo}" if lo == hi else f"{lo}-{hi}"
+
+def rep_table(rows, title, weak):
+    """One block per method: per node-count, median wall [lo-hi], scaling factor, iters & cyc ranges.
+    strong -> factor = speedup base/med (ideal = n_nodes); weak -> factor = growth med/base (ideal = 1.0)."""
+    if not rows: return
+    print("\n" + "=" * 104); print(title); print("=" * 104)
+    by = defaultdict(list)                 # (nodes, method) -> [rows]
+    for r in rows: by[(r["nodes"], r["method"])].append(r)
+    nodes_list = sorted({n for (n, m) in by})
+    label = "growth" if weak else "speedup"
+    for meth in METHODS:
+        if not any((n, meth) in by for n in nodes_list): continue
+        base = None
+        print(f"\n  {meth}:")
+        print(f"    {'nodes':>5} {'ranks':>5} {'cells':>11} {'med_wall':>9} {'[lo-hi]':>13} "
+              f"{label:>9} {'iters':>13} {'cyc':>7} {'reps':>5}")
+        for n in nodes_list:
+            g = by.get((n, meth))
+            if not g: continue
+            walls = sorted(x["wall_s"] for x in g)
+            med = statistics.median(walls)
+            if base is None: base = med
+            factor = (med / base) if weak else (base / med if med else float("nan"))
+            print(f"    {n:>5} {g[0]['ranks']:>5} {g[0]['cells']:>11,} {med:>8.1f}s "
+                  f"{f'[{walls[0]:.0f}-{walls[-1]:.0f}]':>13} {factor:>8.2f}x "
+                  f"{rng([x['snes_its'] for x in g]):>13} {rng([x['stop_cycle'] for x in g]):>7} {len(g):>5}")
+
+rep_table(load_reps(os.path.join(R, "scaling_multinode_reps.csv")),
+          "EXCLUSIVE STRONG SCALING (fixed 6x6 = 13.85M; median of reps; speedup vs 1 node, ideal = n_nodes)", False)
+rep_table(load_reps(os.path.join(R, "scaling_weak_multinode_reps.csv")),
+          "EXCLUSIVE WEAK SCALING (fixed 384,703 cells/rank; median of reps; wall growth vs 1 node, ideal = 1.0)", True)
+print("\n  iters column '17388' = identical across reps (deterministic run-to-run); 'a-b' = rep spread.")
+print("  cyc 'a-b' = stop-cycle wobble. adapt: iters constant per layout but swings ACROSS node counts")
+print("  (layout-sensitivity), while cc/fixed_tr hold constant. See SCALING.md.")
