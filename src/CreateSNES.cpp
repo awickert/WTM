@@ -230,10 +230,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // worst-cell-hostage (one slow deep cell keeps it from ever firing), RMS is loose (bulk only); frac both
   // fires and stays precise. See the oscillation diagnosis in benchmark/adaptive_dt. -wtm_eq_frac sets the
   // fraction threshold (default 0.1%). Pass -wtm_eq_metric max for the old strict worst-cell criterion.
+  // "water"/"water-rms": judge the per-cycle change in PURE-WATER DEPTH (|S*Δwtd|, m of water) rather than
+  // head -- deep low-storativity cells (huge head swing, ~zero water) can no longer pin the metric, so it is
+  // FV-consistent and comparable across cc and tr. With these, -wtm_eq_tol is a WATER depth (e.g. 0.001 = 1 mm).
   char eq_metric_str[16] = "frac";
   PetscOptionsGetString(nullptr, nullptr, "-wtm_eq_metric", eq_metric_str, sizeof(eq_metric_str), nullptr);
   if (std::strcmp(eq_metric_str, "rms") == 0) user_context.eq_metric = 1;
   else if (std::strcmp(eq_metric_str, "max") == 0) user_context.eq_metric = 0;
+  else if (std::strcmp(eq_metric_str, "water") == 0 || std::strcmp(eq_metric_str, "water-max") == 0) user_context.eq_metric = 3;
+  else if (std::strcmp(eq_metric_str, "water-rms") == 0) user_context.eq_metric = 4;
   else user_context.eq_metric = 2;  // "frac" (default)
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_frac", &user_context.eq_frac, nullptr);
   if (user_context.use_newton_continuation) {

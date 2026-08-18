@@ -30,6 +30,11 @@ struct AppCtx {
   double last_cycle_dw       = 1e30;  // MAX |wtd_cycleN - wtd_cycleN-1| over land (worst-cell per-cycle change)
   double last_cycle_rms      = 1e30;  // RMS |wtd change| over land (robust: bulk convergence, ignores outliers)
   double last_cycle_fracabove = 1.0;  // fraction of land cells with |wtd change| > eq_tol (for the -wtm_eq_metric frac stop)
+  // PURE-WATER-DEPTH per-cycle change = |S*Δwtd| = |ΔV|/area (secant S makes S*Δh ≡ the water volume moved).
+  // Weighting head change by storativity collapses deep low-S cells (huge head swing, ~zero water) so they
+  // cannot dominate the metric -- the FV-consistent convergence measure. Reported/threshold-able in m of water.
+  double last_cycle_dw_water  = 1e30;  // MAX |S*Δwtd| over land (worst-cell per-cycle water depth, m water)
+  double last_cycle_rms_water = 1e30;  // RMS |S*Δwtd| over land (bulk per-cycle water depth, m water)
   Vec starting_wtd        = nullptr;
 
   // Distributed forcing fields for the recharge computation. Scattered from

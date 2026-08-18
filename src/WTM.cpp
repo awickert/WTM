@@ -1,6 +1,7 @@
 #include "fill_spill_merge.hpp"
 #include "irf.hpp"
 #include "transient_groundwater.hpp"
+#include "update_effective_storativity.hpp"  // per-cycle pure-water-depth metric (S*Δwtd)
 
 #include "CreateSNES.cpp"
 #include "DMDA_array_pack.cpp"
@@ -532,6 +533,7 @@ void update(
     PetscScalar **prevw;
     DMDAVecGetArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
     double dw_local = 0.0, sq_local = 0.0;
+    double dv_local = 0.0, sqv_local = 0.0;   // pure-water-depth (|S*Δwtd|) analogues, in m of water
     long   n_local = 0, above_local = 0;
     for (int j = pys; j < pys + pym; j++)
       for (int i = pxs; i < pxs + pxm; i++) {
@@ -539,6 +541,14 @@ void update(
           const double d = std::abs(dmdapack.starting_wtd[j][i] - static_cast<double>(prevw[j][i]));
           dw_local = std::max(dw_local, d);
           sq_local += d * d;
+          // Pure-water depth = |ΔV|/area = S*|Δh| with the SECANT effective storativity (S*Δh ≡ water moved).
+          // Deep low-S cells contribute ~0 even when their head swings metres -- the FV-consistent measure.
+          const double S  = updateEffectiveStorativity(static_cast<double>(prevw[j][i]),
+                                                        dmdapack.starting_wtd[j][i],
+                                                        dmdapack.porosity_vec[j][i]);
+          const double dv = d * S;
+          dv_local = std::max(dv_local, dv);
+          sqv_local += dv * dv;
           n_local++;
           if (user_context.eq_tol > 0.0 && d > user_context.eq_tol) above_local++;
         }
@@ -546,15 +556,19 @@ void update(
       }
     // Aggregate the per-cycle change three ways so the equilibrium stop (-wtm_eq_metric) can pick: MAX
     // (worst cell), RMS (bulk), and the fraction of cells still exceeding eq_tol. All are cheap Allreduces.
-    double gmax = 0.0, gsq = 0.0;
+    double gmax = 0.0, gsq = 0.0, gvmax = 0.0, gvsq = 0.0;
     long   gn = 0, gabove = 0;
     MPI_Allreduce(&dw_local, &gmax, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
     MPI_Allreduce(&sq_local, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+    MPI_Allreduce(&dv_local, &gvmax, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+    MPI_Allreduce(&sqv_local, &gvsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
     MPI_Allreduce(&n_local, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
     MPI_Allreduce(&above_local, &gabove, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
     user_context.last_cycle_dw        = gmax;
     user_context.last_cycle_rms       = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
     user_context.last_cycle_fracabove = (gn > 0) ? (double)gabove / (double)gn : 0.0;
+    user_context.last_cycle_dw_water  = gvmax;
+    user_context.last_cycle_rms_water = (gn > 0) ? std::sqrt(gvsq / (double)gn) : 0.0;
     DMDAVecRestoreArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
   }
 
@@ -585,9 +599,12 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
   while (params.cycles_done < params.total_cycles) {
     update(params, arp, user_context, dmdapack, deps);
     PetscPrintf(PETSC_COMM_WORLD,
-                "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  [within-cycle max|Δw| = %g m, %d cells>1mm]\n",
+                "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  |S·Δwtd| max=%.4g rms=%.4g mm-water  "
+                "[within-cycle max|Δw| = %g m, %d cells>1mm]\n",
                 params.cycles_done, user_context.last_cycle_dw, user_context.last_cycle_rms,
-                user_context.last_cycle_fracabove, user_context.last_dh_max, user_context.last_dh_nflicker);
+                user_context.last_cycle_fracabove,
+                1000.0 * user_context.last_cycle_dw_water, 1000.0 * user_context.last_cycle_rms_water,
+                user_context.last_dh_max, user_context.last_dh_nflicker);
     // Convergence-based early stop (opt-in via -wtm_eq_tol): stop once the PER-CYCLE water-table change
     // stays below eq_tol for two consecutive cycles -- the equilibrium auto-stop, on EVERY spin-up pathway.
     // Uses the per-cycle metric (not the per-sub-step max|Δw|), so the cosmetic within-cycle lake/shore
@@ -610,15 +627,22 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
         converged = user_context.last_cycle_rms < user_context.eq_tol;         mname = "rms";
       } else if (user_context.eq_metric == 2) {
         converged = user_context.last_cycle_fracabove < user_context.eq_frac;  mname = "frac";
+      } else if (user_context.eq_metric == 3) {
+        // pure-water depth (m of water): eq_tol is a WATER depth here (e.g. 0.001 = 1 mm water). Deep low-S
+        // cells cannot pin this, so the strict worst-cell (max) metric is safe and honest across cc and tr.
+        converged = user_context.last_cycle_dw_water < user_context.eq_tol;    mname = "water-max";
+      } else if (user_context.eq_metric == 4) {
+        converged = user_context.last_cycle_rms_water < user_context.eq_tol;   mname = "water-rms";
       } else {
         converged = user_context.last_cycle_dw < user_context.eq_tol;          mname = "max";
       }
       if (converged) {
         if (++user_context.settled_count >= 2) {
           PetscPrintf(PETSC_COMM_WORLD,
-                      "equilibrium reached (%s metric): max=%g rms=%g frac>tol=%.4f (eq_tol=%g, eq_frac=%g) for 2 "
-                      "cycles; stopping at cycle %d of %d.\n",
+                      "equilibrium reached (%s metric): max=%g rms=%g frac>tol=%.4f water(max/rms)=%.4g/%.4g mm "
+                      "(eq_tol=%g, eq_frac=%g) for 2 cycles; stopping at cycle %d of %d.\n",
                       mname, user_context.last_cycle_dw, user_context.last_cycle_rms, user_context.last_cycle_fracabove,
+                      1000.0 * user_context.last_cycle_dw_water, 1000.0 * user_context.last_cycle_rms_water,
                       user_context.eq_tol, user_context.eq_frac, params.cycles_done, params.total_cycles);
           break;
         }
