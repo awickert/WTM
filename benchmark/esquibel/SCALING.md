@@ -9,9 +9,28 @@ cold-start spin-up. Integrators:
 - **fixed_tr** — fixed-dt TR-BDF2 (`-wtm_tr_bdf2`), 2nd order.
 - **adapt** — TR-BDF2 with the one-knob adaptive-dt controller (`-wtm_tr_bdf2 -wtm_dt_adaptive`).
 
-Everything below is the **pre-dedicated (shared-node) set** — the dry run that validated the harness, the
-data organization, correctness across ranks, and the hard-domain robustness. The only remaining piece is
-the `--exclusive` pass for publication-grade wall (see *Sequencing*).
+## Strong vs weak scaling — definitions
+
+Two distinct parallel-scaling questions, measured separately here:
+
+- **Strong scaling** — **fix the problem size, add processors.** The domain is held constant (here 6×6 =
+  13.85M cells) while ranks grow 16→128 (1→8 nodes at 16 ranks/node); cells/rank *shrinks* (866k→108k).
+  Ideal = wall falls in inverse proportion to processors (2× ranks → ½ wall), i.e. **speedup = wall(1)/wall(n)
+  approaches n**. Answers: *"I have this domain — how much faster does throwing more cores make it?"* It is
+  bounded by the serial fraction (Amdahl) and by the subdomain becoming too small (comm/bandwidth dominate).
+- **Weak scaling** — **fix the work per processor, grow the problem and the processors together.** Here
+  cells/rank is held at exactly 384,703 (one Esquibel tile per rank) while both the domain (6.16M→49.3M) and
+  ranks (16→128) grow in lockstep. Ideal = **wall stays constant (growth factor 1.0)** as the system grows.
+  Answers: *"If I scale up to a continental/global domain on proportionally more nodes, does it stay
+  tractable?"* — the question that predicts the 220M production run. It is bounded by cross-node
+  communication and any serial/gather term that grows with total size rather than with per-rank work.
+
+Rule of thumb: **strong = same problem, more cores, want it faster; weak = bigger problem, more cores, want
+it no slower.**
+
+The `--exclusive` (dedicated-node) results below are the clean-wall answer; the earlier
+**pre-dedicated (shared-node) set** (further down) validated the harness, data organization, cross-rank
+correctness, and hard-domain robustness, but its wall was noise-limited.
 
 ## Metrics — read this first
 
@@ -26,6 +45,45 @@ the `--exclusive` pass for publication-grade wall (see *Sequencing*).
 - **Precision is not matched at the `eq_tol` stop**: adaptive overshoots to a finer per-cycle settledness
   than cc, so iso-precision (adaptive iters to reach cc's *final* per-cycle RMS) is reported separately —
   it lands at **~2× fewer iterations** than cc across every size (again, iterations, not wall).
+
+## Exclusive (dedicated-node) results — the clean-wall answer
+
+Jobs 16006880 (strong) + 16006881 (weak), 8 exclusive nodes each, 16 ranks/node, cc + fixed_tr + adapt ×
+**3 reps**, `-wtm_eq_tol 0.01 -wtm_eq_metric frac`. Medians below; regenerate with `scaling_report.py`
+(reads `*_reps.csv`). NB — these stops use the current per-cycle metric; a **matched water-volume
+convergence threshold** (ΔV = storativity·Δwtd, not head change, so deep low-storativity cells cannot blow
+up the metric — the FV-consistent choice) is the honest cross-method basis and is tracked as follow-up.
+
+**Strong scaling — fixed 6×6 (13.85M), speedup vs 1 node (ideal = n):**
+
+| nodes | ranks | cc: wall / spd / eff | fixed_tr: wall / spd | adapt: wall / cyc |
+|--:|--:|---|---|---|
+| 1 | 16 | 961 s / 1.0× / 100% | 1113 s / 1.0× | 3287 s / **52** |
+| 2 | 32 | 454 s / 2.12× / 106% | 638 s / 1.74× | 645 s / **18** |
+| 4 | 64 | 246 s / 3.91× / 98% | 411 s / 2.71× | 963 s / **42** |
+| 8 | 128 | 172 s / **5.60×** / 70% | 202 s / 5.51× | 241 s / **19** |
+
+cc is the clean curve (98% efficient to 4 nodes, 70% at 8), fastest on wall at every point. fixed_tr tracks it.
+
+**Weak scaling — fixed 384,703 cells/rank, wall growth vs 1 node (ideal = 1.0):**
+
+| nodes | ranks | cells | cc: wall / growth | fixed_tr | adapt |
+|--:|--:|--:|---|---|---|
+| 1 | 16 | 6.16M | 325 s / 1.00× | 467 s / 1.00× | 493 s / 1.00× |
+| 2 | 32 | 12.3M | 356 s / 1.10× | 445 s / 0.95× | 441 s / 0.90× |
+| 4 | 64 | 24.6M | 376 s / 1.16× | 532 s / 1.14× | 499 s / 1.01× |
+| 8 | 128 | 49.3M | 587 s / **1.81×** | 725 s / 1.55× | 783 s / 1.59× |
+
+**Near-flat 1→4 nodes (≤1.16×), degrading to ~1.6–1.8× at 8 nodes / 49.3M** — versus the **4.7×** blow-up of
+the single-node ladder. The "each node adds a bandwidth pool" thesis holds; this is the direct 220M evidence.
+
+**adapt — demonstrated, not asserted:** the reps show adapt is **deterministic run-to-run** (iterations
+bit-identical across all 3 reps at every layout; stop-cycle wobbles ≤±1 near threshold), but its cost is
+**pathologically layout-sensitive** — on 6×6 the stop-cycle went **52 → 18 → 42 → 19** across 1/2/4/8 nodes,
+and the 4-node cyc-42 resonance (first seen on shared nodes) **reproduced deterministically in all 3 reps**.
+So the "non-determinism" is precisely *deterministic layout-sensitivity*: change your rank count and adapt
+takes a 2–3× different convergence path. cc/fixed_tr hold constant. (On the weak config's rectangular
+domains adapt stayed well-behaved, cyc 15–19 — the resonance is domain- *and* layout-specific.)
 
 ## Headline findings
 
