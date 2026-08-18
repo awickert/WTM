@@ -23,6 +23,16 @@ namespace rd = richdem;
 
 constexpr double seconds_in_a_year = 31536000.;
 
+// Snapshot output filename: cycle number _ elapsed simulated years, underscore-separated (e.g.
+// "<prefix>000000015_1yr.tif"). Each cycle spans a fixed maxiter*deltat of simulated time -- true even
+// under adaptive dt (the controller varies the sub-step, not the cycle duration) -- so elapsed years is
+// well-defined. Cycle keeps the files uniquely ordered; the year is the physically meaningful label
+// (essential for transient runs, informative for spin-up progress).
+static std::string snapshot_filename(const Parameters& params) {
+  const double years = params.cycles_done * static_cast<double>(params.maxiter) * params.deltat / seconds_in_a_year;
+  return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
+}
+
 std::string get_current_time_and_date_as_str() {
   const auto now       = std::chrono::system_clock::now();
   const auto in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -275,7 +285,7 @@ void update(
     MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
     if (rank == 0) {
       arp.wtd.setNoData(-9999);
-      arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+      arp.wtd.saveGDAL(snapshot_filename(params));
     }
   }
 
@@ -662,7 +672,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
   if (rank == 0) {
     arp.wtd.setNoData(-9999);
-    arp.wtd.saveGDAL(fmt::format("{}{:09}.tif", params.outfile_prefix, params.cycles_done));
+    arp.wtd.saveGDAL(snapshot_filename(params));
   }
 
   textfile.close();

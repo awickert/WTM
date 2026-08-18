@@ -25,7 +25,7 @@ penalty capping fine-Δt convergence at ~order 1, but only at sub-0.02 mm error.
 Prereq:  python3 make_equil.py            # writes $WTM_WORK/equil128_inputs
 Usage:   python3 bdf2_on_v_order.py
 """
-import os, subprocess
+import glob, os, subprocess
 import numpy as np, rasterio
 import paths  # noqa: F401
 from paths import WTM, WORK
@@ -50,8 +50,8 @@ def run(dt_yr, T_yr, tag, supplied_wt):
         f"textfilename {WORK}/{tag}_log.txt\noutfile_prefix {WORK}/{tag}_out_\ncycles_to_save 9999999\n")
     subprocess.run(["mpiexec", "-n", "1", WTM, cfg, "-wtm_bdf2_on_V"],
                    capture_output=True, text=True, env=env)
-    tif = os.path.join(WORK, f"{tag}_out_{steps:09d}.tif")
-    return rasterio.open(tif).read(1) if os.path.exists(tif) else None
+    tifs = sorted(glob.glob(os.path.join(WORK, f"{tag}_out_*.tif")))  # output name now carries a _<yr>yr suffix; take the final
+    return rasterio.open(tifs[-1]).read(1) if tifs else None
 
 
 def order_table(label, supplied_wt):

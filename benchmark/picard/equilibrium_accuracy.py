@@ -12,7 +12,7 @@ Compares final water-table rasters.
 Prereq:  python3 make_equil.py
 Usage:   python3 equilibrium_accuracy.py
 """
-import os, subprocess
+import glob, os, subprocess
 import numpy as np, rasterio
 import paths  # noqa: F401
 from paths import WTM, WORK
@@ -32,8 +32,8 @@ def run(tag, dt_yr, cycles, picard):
         f"textfilename {WORK}/ea_{tag}_log.txt\noutfile_prefix {WORK}/ea_{tag}_out_\ncycles_to_save 9999999\n")
     extra = ["-wtm_picard"] if picard else []
     subprocess.run(["mpiexec", "-n", "1", WTM, cfg, *extra], capture_output=True, text=True, env=env)
-    tif = os.path.join(WORK, f"ea_{tag}_out_{cycles:09d}.tif")
-    return rasterio.open(tif).read(1) if os.path.exists(tif) else None
+    tifs = sorted(glob.glob(os.path.join(WORK, f"ea_{tag}_out_*.tif")))  # output name now carries a _<yr>yr suffix; take the final
+    return rasterio.open(tifs[-1]).read(1) if tifs else None
 
 
 runs = [("picard_dt1000", 1000, 60, True),

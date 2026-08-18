@@ -13,7 +13,7 @@ timescale -- and thus the ideal step count -- is grid-independent), runs
 Prereq: build wtm.x; rasterio available. Fixtures are generated here.
 Usage:  python3 adaptive_sweep.py
 """
-import os, re, subprocess, sys, time
+import glob, os, re, subprocess, sys, time
 import numpy as np, rasterio
 import paths  # noqa: F401
 from paths import WTM, WORK
@@ -61,8 +61,8 @@ def run(grid, n, tol, fixed=False):
     gw = max((float(x) for x in GW_RE.findall(out)), default=None)
     # total_cycles is 1 for both paths (the maxiter/adaptive loop is inside one cycle), so the
     # final field is saved at cycles_done = 1 -> out_000000001.tif (NOT the step count).
-    tif = os.path.join(WORK, f"asw_{tag}_out_000000001.tif")
-    field = rasterio.open(tif).read(1) if os.path.exists(tif) else None
+    tifs = sorted(glob.glob(os.path.join(WORK, f"asw_{tag}_out_*.tif")))  # output name now carries a _<yr>yr suffix; take the final
+    field = rasterio.open(tifs[-1]).read(1) if tifs else None
     return {"rc": p.returncode, "wall": wall, "gw": gw, "steps": steps, "field": field}
 
 
