@@ -228,7 +228,10 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   to a flail arriving at an unknown iteration — robustness for scales beyond those tested (the road to
   global). Confirmed at 139M: converges, and slightly faster than the periodic default (~112 s vs ~140 s,
   by restarting only when needed). Off by default; tunable via `-wtm_ar_rho / _patience / _max_it /
-  _max_restarts`.
+  _max_restarts`. Robust finish: near equilibrium the Anderson step floors just above the relative step
+  tolerance, so true convergence is never formally declared — the controller now returns the tracked best
+  iterate (and a phase that diverges after a good iterate falls back to it, with a warning) instead of
+  aborting once restarts are exhausted. Regression: `tests/adaptive_restart/`.
 
 ### Removed
 - The `-wtm_const_storativity` diagnostic path.

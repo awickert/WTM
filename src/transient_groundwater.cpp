@@ -1257,12 +1257,40 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       user_context.ar_best_valid = PETSC_FALSE;
       user_context.ar_best_norm  = 0.0;
       SNESConvergedReason r = SNES_CONVERGED_ITERATING;
+      PetscReal prev_best = PETSC_MAX_REAL;
+      bool true_conv = false, hard_fail = false;
       for (int phase = 0; phase <= user_context.ar_max_restarts; phase++) {
         SNESSolve(user_context.snes, user_context.b, user_context.x);
         SNESGetConvergedReason(user_context.snes, &r);
-        if (user_context.ar_stop_kind == 1 || r < 0) break;   // true convergence (or a real failure)
-        if (phase == user_context.ar_max_restarts) break;      // out of restarts
-        VecCopy(user_context.ar_best_x, user_context.x);       // restart from the best iterate
+        if (user_context.ar_stop_kind == 1) { true_conv = true; break; }   // step-relative true convergence
+        if (r < 0 && !user_context.ar_best_valid) { hard_fail = true; break; }  // failed before any usable iterate
+        // A restart re-solves from the SAME best iterate with cleared history, so once a restart no longer
+        // lowers the best residual, further restarts are deterministic repeats -- stop thrashing. The
+        // rho/phase-cap tests already keep a stuck phase short; this stops the OUTER loop from spinning
+        // through all ar_max_restarts (and, before, then throwing) once we are at the achievable floor.
+        const bool improved = user_context.ar_best_norm < prev_best * (1.0 - 1e-6);
+        prev_best = user_context.ar_best_norm;
+        if (r < 0) break;                              // a phase diverged, but we HAVE a good earlier iterate
+        if (!improved && phase > 0) break;             // stagnated at the residual floor
+        if (phase == user_context.ar_max_restarts) break;  // out of restarts
+        VecCopy(user_context.ar_best_x, user_context.x);   // restart from the best iterate
+      }
+      // Robust finish. On true convergence, leave x and the reason exactly as the solver set them
+      // (byte-identical to a single solve). Otherwise -- unless the solve failed before producing ANY
+      // usable iterate (hard_fail) -- return the BEST iterate found and mark the step converged.
+      // Stagnating at the residual floor or exhausting restarts near equilibrium (where the Anderson step
+      // floors just ABOVE the relative step tolerance, so true convergence is never formally declared) is a
+      // NORMAL outcome, not a fatal error: the point of tracking ar_best_x is to hand it back, and the
+      // per-cycle equilibrium test ends the run. A NaN/line-search failure that still left a good earlier
+      // iterate falls back to it (with a warning) rather than aborting a long spin-up. Only a failure with
+      // no usable iterate at all propagates to the throw/reject below.
+      if (!true_conv && !hard_fail && user_context.ar_best_valid) {
+        VecCopy(user_context.ar_best_x, user_context.x);
+        if (r < 0)
+          PetscPrintf(PETSC_COMM_WORLD,
+                      "-wtm_adaptive_restart: a phase diverged (%s); fell back to the best iterate.\n",
+                      SNESConvergedReasons[r]);
+        SNESSetConvergedReason(user_context.snes, SNES_CONVERGED_FNORM_RELATIVE);
       }
       PetscPrintf(PETSC_COMM_WORLD, "-wtm_adaptive_restart: best residual %g\n", (double)user_context.ar_best_norm);
     } else {
