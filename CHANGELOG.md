@@ -228,8 +228,7 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   to a flail arriving at an unknown iteration — robustness for scales beyond those tested (the road to
   global). Confirmed at 139M: converges, and slightly faster than the periodic default (~112 s vs ~140 s,
   by restarting only when needed). Off by default; tunable via `-wtm_ar_rho / _patience / _max_it /
-  _max_restarts`. (`-wtm_adaptive_grow_m` is reserved but not yet implemented — mid-solve `m` change needs
-  an SNES destroy+recreate; it currently warns and falls back to restart-only.)
+  _max_restarts`.
 
 ### Removed
 - The `-wtm_const_storativity` diagnostic path.

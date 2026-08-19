@@ -101,9 +101,8 @@ struct AppCtx {
   // actually rises (unlike PETSc's difference-restart, which fires on the rise itself, too late).
   // This generalizes the fixed-period restart to scales where the flail arrives at an unknown
   // iteration (the road to global). Each restart re-runs Anderson from the best iterate (a fresh
-  // SNESSolve resets the history); with -wtm_adaptive_grow_m it also widens the window. See #87.
+  // SNESSolve resets the history). See #87.
   bool      use_adaptive_restart = false;
-  bool      adaptive_grow_m      = false;
   Vec       ar_best_x            = nullptr;   // global best (lowest-residual) iterate across restarts
   PetscReal ar_best_norm         = 0.0;
   PetscReal ar_prev_norm         = 0.0;       // previous iter's residual (per phase), for rho
@@ -113,7 +112,6 @@ struct AppCtx {
   PetscInt  ar_rho_bad           = 0;
   PetscInt  ar_max_it            = 40;        // cap per Anderson phase before a forced restart
   PetscInt  ar_max_restarts      = 30;        // outer restart cap
-  PetscInt  ar_current_m         = 10;        // window; grows on restart if adaptive_grow_m
   PetscInt  ar_stop_kind         = 0;         // set by the test: 0=iterating 1=converged 2=restart 3=maxed
   PetscBool ar_best_valid        = PETSC_FALSE;
 
