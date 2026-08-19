@@ -21,6 +21,8 @@ div, cyc_run, settle, final_swt, raster, solver, weeks`.
 
 The `.out` files are the human-readable run logs. `raster` paths in the JSON point at the (volatile)
 scratchpad tif outputs that existed at run time; the numeric metrics in the JSON are self-contained.
+Those run-time scratch paths are shown as the placeholder `<SCRATCH>` in the committed JSON/logs; the
+drivers (`suite.py`, `esq_headline.py`) honor `$WTM_SCRATCH` (default `/tmp/wtm_scratch`) for re-runs.
 
 ## Provenance / reproduction
 

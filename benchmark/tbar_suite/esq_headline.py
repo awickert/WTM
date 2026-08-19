@@ -10,7 +10,8 @@ DOWN = os.path.expanduser("~/Downloads/Esquibel_Data-20260801T205621Z-1-001/Esqu
 def esq_cfg_template(domain):
     # reuse Kerry's cfg as the template; the driver rewrites dt/cycles/maxiter/output
     import shutil
-    src = "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/esq_kerry/anderson.cfg"
+    src = os.environ.get("WTM_ESQ_CFG",
+                         os.path.join(os.environ.get("WTM_SCRATCH", "/tmp/wtm_scratch"), "esq_kerry", "anderson.cfg"))
     dst = os.path.join(domain, "eq_anderson.cfg")
     if not os.path.exists(dst):
         shutil.copy(src, dst)

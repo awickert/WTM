@@ -143,7 +143,7 @@ def suite_cold(domain, tag, weeks=(1, 2, 4, 8, 16), cycles=40, maxiter=20, timeo
 if __name__ == "__main__":
     suite = sys.argv[1] if len(sys.argv) > 1 else "cold"
     domain = sys.argv[2] if len(sys.argv) > 2 else \
-        "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/esq_island"
+        os.path.join(os.environ.get("WTM_SCRATCH", "/tmp/wtm_scratch"), "esq_island")
     tag = sys.argv[3] if len(sys.argv) > 3 else "s1"
     print(f"SUITE={suite} DOMAIN={domain} TAG={tag}", flush=True)
     if suite == "cold":

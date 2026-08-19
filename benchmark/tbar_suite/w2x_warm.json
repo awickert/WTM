@@ -10,7 +10,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -56113300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_1wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_1wk_000000003.tif",
   "solver": "anderson",
   "weeks": 1
  },
@@ -25,7 +25,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -49618300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_2wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_2wk_000000003.tif",
   "solver": "anderson",
   "weeks": 2
  },
@@ -40,7 +40,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -44761100.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_4wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_4wk_000000003.tif",
   "solver": "anderson",
   "weeks": 4
  },
@@ -55,7 +55,7 @@
   "cyc_run": 0,
   "settle": null,
   "final_swt": -44955400.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_8wk_000000000.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_8wk_000000000.tif",
   "solver": "anderson",
   "weeks": 8
  },
@@ -70,7 +70,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -55946000.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_tbar_1wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_tbar_1wk_000000003.tif",
   "solver": "anderson_tbar",
   "weeks": 1
  },
@@ -85,7 +85,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -49343300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_tbar_2wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_tbar_2wk_000000003.tif",
   "solver": "anderson_tbar",
   "weeks": 2
  },
@@ -100,7 +100,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -44512300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_tbar_4wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_tbar_4wk_000000003.tif",
   "solver": "anderson_tbar",
   "weeks": 4
  },
@@ -115,7 +115,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -41277100.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_tbar_8wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_tbar_8wk_000000003.tif",
   "solver": "anderson_tbar",
   "weeks": 8
  },
@@ -130,7 +130,7 @@
   "cyc_run": 0,
   "settle": null,
   "final_swt": NaN,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_anderson_tbar_16wk_000000000.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_anderson_tbar_16wk_000000000.tif",
   "solver": "anderson_tbar",
   "weeks": 16
  },
@@ -145,7 +145,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -56383200.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_1wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_1wk_000000003.tif",
   "solver": "picard",
   "weeks": 1
  },
@@ -160,7 +160,7 @@
   "cyc_run": 0,
   "settle": null,
   "final_swt": -58187400.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_2wk_000000000.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_2wk_000000000.tif",
   "solver": "picard",
   "weeks": 2
  },
@@ -175,7 +175,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -56213800.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_tbar_1wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_tbar_1wk_000000003.tif",
   "solver": "picard_tbar",
   "weeks": 1
  },
@@ -190,7 +190,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -49892300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_tbar_2wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_tbar_2wk_000000003.tif",
   "solver": "picard_tbar",
   "weeks": 2
  },
@@ -205,7 +205,7 @@
   "cyc_run": 2,
   "settle": null,
   "final_swt": -45600300.0,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_tbar_4wk_000000003.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_tbar_4wk_000000003.tif",
   "solver": "picard_tbar",
   "weeks": 4
  },
@@ -220,7 +220,7 @@
   "cyc_run": 0,
   "settle": null,
   "final_swt": NaN,
-  "raster": "/tmp/claude-1000/-home-awickert-models-WTM/ff1a9122-d3f3-4054-acc7-66b5a35ca781/scratchpad/warm_w2x/w2x_warm_picard_tbar_8wk_000000000.tif",
+  "raster": "<SCRATCH>/warm_w2x/w2x_warm_picard_tbar_8wk_000000000.tif",
   "solver": "picard_tbar",
   "weeks": 8
  }
