@@ -34,6 +34,7 @@ run "ghost-boundary (#96)"      ./ghost_boundary/run.sh "$WTM" 4
 run "storage secant≡volume"     ./storage_equivalence/run.sh "$WTM"
 run "recharge consistency (#93)" ./recharge_consistency/run.sh "$WTM"
 run "adaptive dt + water metric" ./adaptive_water/run.sh "$WTM"
+run "snapshot name + restart"    ./snapshot_restart/run.sh "$WTM"
 run "limit cycle (weird golden)" ./limit_cycle/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
