@@ -26,8 +26,9 @@ Parameters::Parameters(const std::string& config_file) {
     std::string key;
     ss >> key;
 
-    // Dummy key to make it easier to alphabetize list below
-    if (key.empty()) {
+    // Skip blank lines and '#' comment lines (so a self-documenting config like Config_file.cfg parses).
+    // Dummy key to make it easier to alphabetize list below.
+    if (key.empty() || key[0] == '#') {
     } else if (key == "cells_per_degree") {
       ss >> cells_per_degree;
     } else if (key == "cycles_to_save") {
