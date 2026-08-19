@@ -230,7 +230,7 @@ static double interblockTransmissivity(
 static double g_ksat_soilbottom_smoothing_width = 0.0;  // eps1: -1.5 m conductivity transition
 static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface clamp
 
-// --- Sub-surface surface-water sink (-wtm_surface_sink; WIP prototype) ---------------------------
+// --- Sub-surface surface-water sink (-wtm_surface_sink; taper 1, on by default) -------------------
 // A smooth, compact-support removal in a band just BELOW the land surface that holds the water
 // table strictly sub-surface (wtd < 0) while shunting the removed water on (to FSM, or discarded).
 // Because no cell crosses wtd = 0, the model never engages the storativity jump / T-clamp free
@@ -1096,7 +1096,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     DMDAVecRestoreArray(user_context.da, user_context.porosity_vec, &fpo);
   }
 
-  // Taper 2 [WIP]: implicit demand-identity evaporation (ET -> owe). Read here AND early in
+  // Taper 2 (on by default): implicit demand-identity evaporation (ET -> owe). Read here AND early in
   // WTM.cpp::initialise() (before the initial recharge) via the same call, so the explicit-recharge
   // sites -- including irf.cpp's initial pass -- all see a consistent flag. See SURFACE_SINK_DESIGN.md 14.
   read_evap_taper_options(params);
