@@ -160,6 +160,13 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **Snapshot output filenames now carry the simulated year.** Water-table rasters are written as
+  `{outfile_prefix}{cycle:09}_{years}yr.tif` (was `{outfile_prefix}{cycle:09}.tif`), so each periodic
+  snapshot is self-describing by simulated time — essential for transient runs, informative for spin-up
+  progress. `years = cycles_done · maxiter · deltat / seconds_in_a_year` (a cycle spans a fixed
+  `maxiter·deltat` even under adaptive dt). The zero-padded cycle stays the leading field, so any
+  `glob(prefix + "*.tif")` + sort still orders by cycle (the golden suite is unaffected). Downstream
+  analysis scripts that constructed the exact old name now glob for the final output.
 - **Default surface-water / evaporation model is now the smooth transition** (surface-transition
   tapers 1–3 on). This replaces the hard `wtd = 0` ET↔open-water switch — which made FillSpillMerge
   lake formation rank-dependent (non-deterministic across MPI rank counts) and applied no phreatic ET —
