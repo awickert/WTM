@@ -90,9 +90,9 @@ Ensure that all of the data files are located appropriately in a folder together
 * cells_per_degree   {How many cells per degree in your data. E.g. One-degree resolution will be 1. 5 arcsecond resolution will be 12.}
 
 time_start, surfdatadir, and region are all to help you name your input files or place them in a specific folder. The code will look for data files in the following format:
-surfdatadir + region + time_start + "\_suffix.nc",
+surfdatadir + region + time_start + "\_suffix.tif",
 where the suffix refers to the specific file (topography, mask, precipitation, evaporation, winter_temperature, slope, open_water_evaporation, porosity, or ksat).
-An example of a file path would be: "surfdata/North_America_10000_topography.nc".
+An example of a file path would be: "surfdata/North_America_10000_topography.tif".
 In this case, you would set:
 
 * surfdatadir        surfdata/
@@ -161,7 +161,7 @@ There will be some on-screen outputs to indicate the first steps through the cod
 ## Example of a full config file:
 ```
 textfilename       my_model_run.txt     #The name of the output textfile, which will include printed values describing change in the water table.
-outfile_prefix     my_model_run_        #An output file after 10 time steps will be named "my_model_run_0010.tif".
+outfile_prefix     my_model_run_        #Output rasters are named "<prefix><cycle:09>_<year>yr.tif", e.g. my_model_run_000000010_10yr.tif.
 cells_per_degree   60                   #how many cells in one degree. This example for 1 arcminute cells.
 #the below parameters are used in import file names. The code searches for files in the format:
 #surfdatadir + region + time_start + input_type.tif,
@@ -218,12 +218,139 @@ Running with any combination other than all three on prints a warning explaining
 `evap_mode 0` the taper governs evaporation in place of the hard "remove all surface water" step. See
 `benchmark/SURFACE_SINK_DESIGN.md` for the full derivation.
 
+## Command-line flag reference
+
+Every runtime option below is a PETSc-style flag passed **after** the config file, not a config-file key:
+
+```
+./build/wtm.x Config_file.cfg -wtm_anderson -wtm_tr_bdf2 -wtm_eq_tol 0.001
+```
+
+The model runs correctly with **no flags at all** (the default column marks what is active out of the box).
+Standard PETSc `-snes_*` / `-ksp_*` / `-pc_*` options are also accepted and override the WTM defaults. Boolean
+tapers that are on by default are disabled by passing the flag with a `0` argument (e.g. `-wtm_surface_sink 0`).
+
+The **Status** column is a guide to intended audience:
+*default* = active unless switched off · *opt-in* = production-supported, off by default · *tuning* = a numeric
+knob for another flag · *experimental* = works but not validated for production · *developer* = diagnostic or
+deliberately nonphysical (prints a runtime warning).
+
+### Solver selection
+Exactly one solver runs. If none is named, the default (BDF2-on-V / Picard) is used; an explicit path flag wins,
+and Newton is mutually exclusive with Picard/Anderson.
+
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_bdf2_on_V` | **on** | default | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time. |
+| `-wtm_anderson` | off | opt-in | Matrix-free Anderson mixing. Cheap per step and bit-exact across MPI ranks, but stiffness-limited (no preconditioner). Best for small `deltat`. |
+| `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, usually with `-wtm_dt_continuation`. |
+| `-wtm_picard` | off | opt-in | Force the frozen-coefficient backward-Euler Picard operator explicitly (it is also the operator behind the default). |
+| `-wtm_bdf2` | off | opt-in | Bare backward-looking BDF2 in head form (secant storativity), Picard operator. |
+| `-wtm_tr_bdf2` | off | opt-in | L-stable TR-BDF2 (two staged solves per step) on the matrix-free residual; larger stable step, no ringing. |
+| `-wtm_stiff` | off | opt-in | Convenience bundle for hard cold starts: shorthand for `-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01`. |
+| `-wtm_predict_guess` | off | experimental | Seed each step's initial guess by 2nd-order history extrapolation. |
+| `-wtm_aa_picard` | off | experimental | Anderson-accelerated Picard via nonlinear preconditioning. |
+
+### Time integration and step control
+The dt controller is detached from the integrator: `-wtm_dt_adaptive` sizes `deltat` for whichever solver is
+active. The `-wtm_dtc_*` knobs are read only when continuation is on, but also parameterize the adaptive controller.
+
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_dt_adaptive` | off | opt-in | Error-controlled variable substeps (accept / reject / grow / shrink) around each step. |
+| `-wtm_dt_continuation` | off | opt-in | Newton pseudo-transient ramp: start `deltat` small, grow after easy steps (requires `-wtm_newton`). |
+| `-wtm_dt_tol` | 0.1 m (or `min(50·eq_tol, 0.5)`) | tuning | Target per-step error the adaptive controller holds `deltat` to. |
+| `-wtm_dt_norm_rms` | off (MAX norm) | tuning | Use the RMS rather than max-cell norm for the adaptive error estimate. |
+| `-wtm_dtc_dt0` | `deltat/200` | tuning | Starting step for the continuation ramp. |
+| `-wtm_dtc_dt_max` | `1000·deltat` | tuning | Cap on `deltat` in the ramp and the adaptive controller. |
+| `-wtm_dtc_grow` | 1.5 | tuning | Growth factor after an easy / accepted step. |
+| `-wtm_dtc_shrink` | 0.25 | tuning | Shrink factor after a rejected step. |
+| `-wtm_dtc_easy_iters` | 8 | tuning | "Easy step" threshold (converged in ≤ this many iterations) that permits growth. |
+| `-wtm_dtc_max_retries` | 15 | tuning | Consecutive rejects allowed before the step is a hard failure. |
+
+### Equilibrium detection (equilibrium runs)
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_eq_tol` | 0.01 m (equilibrium); 0 (transient) | default | Per-cycle change threshold; the run stops after two consecutive settled cycles. `0` disables early stop. |
+| `-wtm_eq_metric` | `frac` | default | How the per-cycle change is judged: `frac`, `max`, `rms`, or the pure-water-depth `water`/`water-max`/`water-rms` (weights head change by storativity: `\|S·Δwtd\|`, so deep low-storativity cells cannot dominate). |
+| `-wtm_eq_frac` | 0.001 | tuning | For `-wtm_eq_metric frac`: allowed fraction of land cells still changing by more than `eq_tol`. |
+
+### At-scale Anderson robustness
+Aids for very large / stiff Anderson solves, where the mixing least-squares can go ill-conditioned near
+convergence (the "flail"). All force the Anderson path.
+
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_adaptive_restart` | off | opt-in | Restart Anderson's history proactively when the convergence *rate* degrades (ρ → 1), re-running from the best iterate; returns the best iterate near equilibrium rather than aborting. |
+| `-wtm_ar_rho` | 0.9 | tuning | ρ = ‖F_k‖/‖F_{k-1}‖ threshold that flags rate degradation. |
+| `-wtm_ar_patience` | 2 | tuning | Consecutive high-ρ iterations before a restart. |
+| `-wtm_ar_max_it` | 40 | tuning | Iteration cap per Anderson phase before a forced restart. |
+| `-wtm_ar_max_restarts` | 30 | tuning | Cap on the number of restart phases. |
+| `-wtm_handoff` | off | opt-in | Run Anderson until it stalls, then hand the best iterate to a Newton finisher (nonlinear preconditioning). |
+| `-wtm_handoff_picard` | off | opt-in | Use a Picard (CG + multigrid) finisher instead of Newton; implies `-wtm_handoff`. |
+| `-wtm_handoff_patience` | 3 | tuning | Stalled Anderson iterations before the hand-off fires. |
+| `-wtm_handoff_max_it` | 60 | tuning | Hard cap on phase-1 Anderson iterations before hand-off. |
+
+### Transmissivity and storativity conditioning
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_storativity_surface_smoothing_width` | 0.01 m | default | Rounds the storativity jump at the land surface (sub-grid roughness); always on. |
+| `-wtm_ksat_surface_smoothing_width` | 0 (sharp) | opt-in | Rounds the **transmissivity** kink at the surface (`wtd = 0`). *(Named "ksat" for history; it smooths T, not raw conductivity.)* |
+| `-wtm_ksat_soilbottom_smoothing_width` | 0 (sharp) | opt-in | Rounds the **transmissivity** kink at the soil bottom (−1.5 m). *(Same naming note.)* |
+| `-wtm_Tbar` | off | experimental | Use each cell's step-time-averaged transmissivity (Kirchhoff-potential difference over the step) for interblock flux; damps stiff-step oscillation. Requires piecewise T (refused with the smoothing / extended-soil / Kirchhoff options). |
+| `-wtm_T_bedrock` | 0 | opt-in | Additive background transmissivity floor (Manning–Ingebritsen); collapses the deep exponential-T range. |
+| `-wtm_kirchhoff` | off | experimental | Solve in the discharge-potential variable Φ = ∫T dwtd on the Newton path. Retained for study; it worsens conditioning in practice. |
+| `-wtm_volume_storage` | off | experimental | Anderson-only: use the exact volume change ΔV for backward-Euler storage instead of secant `S·Δh`. Identical below the surface; differs at a surface crossing. |
+| `-wtm_relax` | 1.0 (off) | tuning | Post-solve under-relaxation `w ← a·w_solved + (1−a)·w_prev` (all solver paths); damps free-surface flicker. |
+
+### Surface-water handling
+Above-surface water is managed by the three default tapers (see the "Surface-water transition" section above)
+plus optional routing modes. `-wtm_direct_to_runoff` supersedes the taper-1 sink; `-wtm_allow_surface_ponding`
+switches both off.
+
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_surface_sink` | **on** | default | Taper 1: smoothly holds the table at/below the surface, handing exfiltrated water to Fill-Spill-Merge. |
+| `-wtm_surface_sink_qmax` | 1 m/yr | tuning | Peak removal rate of the taper-1 sink (also sets its default band width). |
+| `-wtm_surface_sink_width` | auto (`2·qmax·deltat`) | tuning | Override the sink's band width below the surface. |
+| `-wtm_evap_taper` | **on** | default | Taper 2: single smooth land-ET ↔ open-water-evaporation transition (makes lakes rank-count-independent). |
+| `-wtm_evap_taper_wtdc` | 0.05 m | tuning | Half-rate depth of the ET transition. |
+| `-wtm_evap_taper_s` | 0.1 m | tuning | Width of the ET transition. |
+| `-wtm_extinction` | **on** | default | Taper 3: limits arid draw-down to within the extinction depth (requires taper 2). |
+| `-wtm_extinction_depth` | 8 m | tuning | Depth below which phreatic ET is inaccessible. |
+| `-wtm_direct_to_runoff` | off | opt-in | In-residual seepage face: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
+| `-wtm_surface_exfiltration_to_runoff` | on (Anderson path) | opt-in | Post-solve clamp: route exact above-surface water to the runoff accumulator, keeping T clamped. |
+| `-wtm_allow_surface_ponding` | off | developer | Leave above-surface water unmanaged (nonphysical; limit-cycles). Switches the two runoff clamps off; prints a warning. |
+
+### Capillary fringe (taper-1 sink band width)
+The `-wtm_fringe_*` knobs only take effect when `-wtm_fringe_source` is set to `fixed` or `ksat`.
+
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_fringe_source` | `none` | opt-in | Per-cell sink band width: `none` (uniform `surface_sink_width`), `fixed` (uniform `fringe_length`), or `ksat` (capillary height from a pedotransfer estimate). |
+| `-wtm_fringe_length` | 0.1 m | tuning | Uniform fringe height for `fringe_source fixed`. |
+| `-wtm_fringe_ksat_coef` | 5e-4 | tuning | Coefficient in the `ksat` capillary-height estimate ψ_a = C·√(n/ksat). |
+| `-wtm_fringe_cap` | 2 m | tuning | Upper cap on the `ksat` capillary height. |
+
+### Boundary conditions and developer modes
+| Flag | Default | Status | Effect |
+|---|---|---|---|
+| `-wtm_ghost_boundary` | off | opt-in | Mask-aware domain edges: Dirichlet `h = 0` at the ocean, no-flow (Neumann) at land edges, without padding the array. |
+| `-wtm_extended_soil` | off | developer | Let transmissivity keep growing above the surface (skips the `wtd > 0` clamp). Testing only; prints a warning; refused with `-wtm_Tbar` / `-wtm_kirchhoff`. |
+
 ## Outputs
 The program outputs a text file that provides information on the current minimum and maximum water table elevation, the changes in surface water and groundwater within the past iteration, and the number of iterations passed.
 The main output is a geoTiff file that supplies the depth to/elevation of the water table. Negative values indicate a water table below the surface, while positive values indicate a water table above the surface (i.e. a lake).
 
 ## Completing a model run
-A satisfactory method of detecting whether the model has reached equilibrium is still under construction. For now, it is at the discretion of the user whether he output after a given number of iterations is appropriate to use. The code will automatically complete after the number of iterations selected in the total_cycles parameter have been performed.
+A run always stops after `total_cycles` cycles. Equilibrium runs also stop *early*, on their own, once the
+water table settles: after each cycle WTM measures the per-cycle change and, when it stays below a tolerance
+for two consecutive cycles, declares equilibrium and stops. The tolerance is `-wtm_eq_tol` (default 0.01 m for
+equilibrium runs; set to 0 to disable and run the full `total_cycles`), and `-wtm_eq_metric` selects how the
+change is judged (default `frac`; see the flag reference below). To watch the settling without stopping early,
+set `-wtm_eq_tol 0` and read the per-cycle change reported in the text output. Snapshots are written every
+`cycles_to_save` cycles as `<outfile_prefix><cycle:09>_<year>yr.tif`, and any of them can seed a restart via
+`supplied_wt 1` (point `region`/`time_start` at the snapshot).
 
 ## Development status and upstream porting
 
