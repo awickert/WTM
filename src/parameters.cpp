@@ -139,9 +139,9 @@ void Parameters::check() const {
   check_string_init("time_end", time_end);
   check_positive("total_cycles", total_cycles);
   if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
-        || runoff_collector == "off")) {
-    throw std::runtime_error("runoff_collector must be one of: implicit, explicit, off (or omitted to keep the "
-                             "legacy flag defaults). Got: '" + runoff_collector + "'");
+        || runoff_collector == "off" || runoff_collector == "legacy")) {
+    throw std::runtime_error("runoff_collector must be one of: implicit, explicit, off, legacy. Got: '"
+                             + runoff_collector + "'");
   }
 }
 

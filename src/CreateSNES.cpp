@@ -164,13 +164,19 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
   bool default_picard = false;
   if (!force_anderson && !newton_flag && !any_path_flag) {
-    bdf2v_flag     = PETSC_TRUE;
-    default_picard = true;
+    // Default solver: matrix-free Anderson -- the production worker. It is robust across regimes and
+    // converges where the Picard/Newton free-boundary solve struggles, and it carries the exact
+    // in-residual seepage face (runoff_collector=implicit). No flag is set here: Anderson is simply the
+    // path taken when neither Picard nor Newton is selected. It is 1st-order-in-time (backward-Euler cc,
+    // the right choice for equilibrium, where a 2nd-order step oscillates at the free surface). Opt into
+    // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with -wtm_bdf2_on_V,
+    // matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with -wtm_newton.
+    (void)default_picard;
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "Defaulting to the semi-implicit BDF2-on-V (Picard) solver: large stable time steps (fast to\n"
-        "  equilibrium) and 2nd-order-in-time accuracy. Override with -wtm_anderson for the matrix-free\n"
-        "  Anderson solver (rare: small-dt / fast-science / bit-exact-across-ranks cases).\n");
+        "Defaulting to the matrix-free Anderson solver (robust across regimes; the production worker;\n"
+        "  1st-order-in-time). Opt into BDF2-on-V/Picard (2nd-order, large steps) with -wtm_bdf2_on_V,\n"
+        "  or Newton with -wtm_newton.\n");
   }
 
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);

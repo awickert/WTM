@@ -1112,8 +1112,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // NOTE the sub-surface band sink (taper 1, -wtm_surface_sink) is a SEPARATE strategy (keep wtd<0, dodge
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
-  if (!params.runoff_collector.empty()) {
-    const std::string& rc = params.runoff_collector;
+  std::string rc = params.runoff_collector;
+  if (rc.empty()) {
+    // AUTO default: the exact in-residual seepage (implicit) normally, but the post-solve clamp (explicit)
+    // under adaptive-dt -- implicit's discontinuous seepage kink blows up the TR-BDF2 embedded error estimate
+    // the -wtm_dt_adaptive controller sizes steps from, so it cannot be adaptively stepped (fixed-dt cc and
+    // BDF2-on-V handle it fine). Any explicit runoff_collector value overrides this.
+    rc = user_context.use_dt_adaptive ? "explicit" : "implicit";
+  }
+  if (rc != "legacy") {
     g_surface_sink = false;  // selector supersedes the band sink in every mode
     if (rc == "implicit") {
       g_direct_to_runoff                     = true;

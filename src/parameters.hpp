@@ -24,10 +24,12 @@ struct Parameters {
   std::string textfilename   = UNINIT_STR;
   std::string time_start     = UNINIT_STR;
   std::string time_end       = UNINIT_STR;
-  // Surface-water routing selector (optional). "" = unset -> keep the legacy -wtm_ flag defaults
-  // (behaviour-preserving). Otherwise one of: "implicit" (in-residual seepage face, dt-independent,
-  // pins wtd=0; Anderson today, Picard/Newton pending active-set), "explicit" (post-solve clamp;
-  // robust on all solvers), "off" (no collection -- NONPHYSICAL, warns). See README / SURFACE_WATER_ROUTING.md.
+  // Surface-water routing selector. DEFAULT "" = AUTO: "implicit" normally (the exact, dt-independent
+  // in-residual seepage face -- Anderson residual + Picard operator), but "explicit" when -wtm_dt_adaptive is
+  // on, because the implicit seepage's discontinuous kink breaks the TR-BDF2 embedded error estimator that
+  // the adaptive-dt controller sizes steps from. Set explicitly to one of: "implicit", "explicit" (post-solve
+  // clamp -- robust on all solvers/regimes, ~1 cm from implicit), "off" (no collection -- NONPHYSICAL, warns),
+  // or "legacy" (the old -wtm_ surface-flag band-sink defaults). See README / SURFACE_WATER_ROUTING.md.
   std::string runoff_collector = "";
 
   double cells_per_degree = -1;
