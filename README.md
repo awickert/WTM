@@ -191,6 +191,9 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 #Is water allowed to gather in lakes, with lake evaporation removing some portion of it?
 #If this is set to 0, all surface water will be removed from the domain.
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
+#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; omit to keep the legacy
+#surface-taper defaults. See "Surface-water routing" below and benchmark/SURFACE_WATER_ROUTING.md.
+runoff_collector   explicit              # implicit (in-residual, exact, Anderson) | explicit (post-solve clamp, all solvers) | off (nonphysical, warns)
 ```
 
 ## Surface-water transition (smooth tapers, on by default)
@@ -217,6 +220,21 @@ Running with any combination other than all three on prints a warning explaining
 (arid-unsafe, no-effect, or the legacy hard-switch model). The tapers work with either `evap_mode`; in
 `evap_mode 0` the taper governs evaporation in place of the hard "remove all surface water" step. See
 `benchmark/SURFACE_SINK_DESIGN.md` for the full derivation.
+
+## Surface-water routing (`runoff_collector`)
+Above-surface water leaves the subsurface at a seepage face (`wtd = 0`) and is routed to runoff /
+Fill-Spill-Merge. The optional config-file key `runoff_collector` selects **how** that one boundary condition
+is enforced (omit it to keep the legacy taper defaults above):
+
+- **`implicit`** — the seepage face is solved *inside* the groundwater equation (`-wtm_direct_to_runoff`):
+  exact, dt-independent, pins `wtd = 0`. Matrix-free (Anderson) today; it warns on Picard/Newton, whose
+  operator/Jacobian do not yet carry its (discontinuous) tangent.
+- **`explicit`** — a post-solve clamp (`-wtm_surface_exfiltration_to_runoff`): robust on every solver, within
+  ~1 cm of `implicit` and converging to it as `dt → 0`.
+- **`off`** — no collection; above-surface water piles up. **Nonphysical**, for testing only (warns loudly).
+
+The modes are mutually exclusive (no hidden backstop), so a misbehaving `implicit` shows visibly rather than
+being masked. See `benchmark/SURFACE_WATER_ROUTING.md`.
 
 ## Command-line flag reference
 

@@ -16,6 +16,18 @@ taper) passes.
 
 ### Added
 
+#### Surface-water routing
+- **`runoff_collector` config-file selector** (`implicit` | `explicit` | `off`) unifies how the `wtd = 0`
+  seepage face — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced. `implicit` is
+  the in-residual seepage (`-wtm_direct_to_runoff`): exact, dt-independent, pins `wtd = 0`, matrix-free
+  (Anderson) today (warns on Picard/Newton, whose Jacobian/operator lack its discontinuous tangent).
+  `explicit` is the post-solve clamp (`-wtm_surface_exfiltration_to_runoff`): robust on every solver and within
+  ~1 cm of `implicit`, converging as `dt → 0`. `off` collects nothing (above-surface water piles up —
+  nonphysical, warns; supersedes `-wtm_dev_allow_aboveground_water_columns`). The modes are mutually exclusive
+  (no hidden clamp backstop under `implicit`, so its misbehaviour stays visible) and each turns the legacy
+  sub-surface band sink (taper 1) off. The key is optional: omitting it keeps the legacy `-wtm_` flag defaults,
+  so this is additive and behaviour-neutral. See `benchmark/SURFACE_WATER_ROUTING.md`.
+
 #### Boundary conditions
 - **Selectable land-edge boundary condition** (`-wtm_land_boundary neumann_toposlope|dirichlet`): ocean edges
   are always Dirichlet `h = 0`; land edges default to terrain-following no-flow (`neumann_toposlope`) but can be
