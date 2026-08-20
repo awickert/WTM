@@ -41,6 +41,7 @@ run "boundary: analytic parabola" ./boundary_analytic/run.sh "$WTM"
 run "adaptive-restart robustness" ./adaptive_restart/run.sh "$WTM"
 run "flicker 1: storativity jump" ./limit_cycle/run.sh "$WTM"
 run "flicker 2: evap discontinuity" ./flicker_evap/run.sh "$WTM"
+run "runoff gathering (wtd=0)"     ./direct_to_runoff/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
