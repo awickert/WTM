@@ -160,6 +160,22 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **The mask-aware ghost boundary is now the default** (`-wtm_ghost_boundary`, on; disable with
+  `-wtm_ghost_boundary false`). It applies Dirichlet `h = 0` (constant head) at ocean edges and land-slope
+  Neumann (constant flux) at land edges, computed at the true domain edge, and replaces the legacy
+  edge-padding (`setEdges(0)`). Behaviour-neutral on ocean-ringed domains (where padding and the ghost BC
+  coincide); it changes results only where real land meets a domain edge. See task #96 and
+  `benchmark/BOUNDARY_CONDITIONS.md`.
+- **The surface-water exfiltration clamp is now the default on every solver path**
+  (`-wtm_surface_exfiltration_to_runoff`, on; disable with `-wtm_surface_exfiltration_to_runoff false`).
+  It pins the water table at/below the surface and routes above-surface water to Fill-Spill-Merge (or to
+  runoff when FSM is off), the physical Fan & Miguez-Macho behaviour, so physical runs never leave water
+  ponded above ground as a raised water table and never flicker at the free surface. Previously default-on
+  only for the matrix-free Anderson path; now also on for the default Picard/Newton paths (a post-solve
+  clamp there, complementing the in-residual taper-1 sink; the operator-consistent in-residual seepage
+  `-wtm_direct_to_runoff` is task #100). Golden references were regenerated: the subsurface case is
+  unchanged, and cases that generated above-surface water shifted (fsm cases up to ~9.4 m, the 4-cycle
+  cold-start transient up to ~24.9 m as routing early surface water changes the trajectory).
 - **Snapshot output filenames now carry the simulated year.** Water-table rasters are written as
   `{outfile_prefix}{cycle:09}_{years}yr.tif` (was `{outfile_prefix}{cycle:09}.tif`), so each periodic
   snapshot is self-describing by simulated time — essential for transient runs, informative for spin-up

@@ -957,13 +957,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                 "not for model runs.\n");
   const bool anderson_path = !user_context.use_picard && !user_context.use_newton;
 
-  // Surface-water CLAMP (Fan & Miguez-Macho) -- DEFAULT ON so physical runs pin wtd<=0 and never flicker.
-  // "Route vs discard" is the fsm_on choice ON TOP of this (fsm_on routes the exfiltrated water as lakes;
-  // fsm off discards it to runoff -- both keep the clamp). SOLVER-PATH-AWARE: the Anderson path uses this
-  // POST-SOLVE exfiltration clamp; the Picard/Newton paths use the IN-RESIDUAL seepage (-wtm_direct_to_runoff,
-  // below), since they build an operator/Jacobian and need the removal in the residual. Override per flag
-  // (e.g. -wtm_surface_exfiltration_to_runoff false) or, for the nonphysical regime, -wtm_allow_surface_ponding.
-  PetscBool surfexfil = anderson_path ? PETSC_TRUE : PETSC_FALSE;  // default ON for the Anderson path
+  // Surface-water CLAMP (Fan & Miguez-Macho) -- DEFAULT ON (all solver paths) so physical runs pin wtd<=0
+  // and never flicker. "Route vs discard" is the fsm_on choice ON TOP of this (fsm_on routes the exfiltrated
+  // water as lakes; fsm off discards it to runoff -- both keep the clamp). This is a POST-SOLVE clamp: it
+  // truncates any residual wtd>0 to the surface and routes the excess, and fires only when a cell ends above
+  // the surface. On every path the in-residual taper-1 sink (-wtm_surface_sink, on by default) is the primary
+  // manager that already holds wtd<=0, so this is a safety net (a no-op when the sink holds; the corrective
+  // truncation when a step overshoots). The Picard/Newton IN-RESIDUAL seepage (-wtm_direct_to_runoff) remains
+  // the operator-consistent alternative (its Jacobian tangent is task #100). Disable with
+  // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime -wtm_allow_surface_ponding.
+  (void)anderson_path;
+  PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, nullptr);
   g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_ponding != PETSC_TRUE);
 
