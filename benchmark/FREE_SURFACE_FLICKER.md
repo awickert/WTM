@@ -60,8 +60,14 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
   (`extinction`) bounds arid draw-down.
 - **Principled cure:** the smooth taper *is* the principled regularization here (a mollified sink). Verify
   it holds where a hard ET/owe switch would flicker.
-- **Test:** [NEW] `tests/flicker_evap` — a surface-crossing fixture with evaporation on and FSM off;
-  assert the water table settles (per-cycle change decays) with the smooth taper.
+- **Test:** `tests/flicker_evap` — an ocean-ringed plateau with `ET < P < owe`, so below the surface the
+  cell fills toward `wtd = 0` while open-water evaporation drains it back above (opposite pushes across the
+  surface); ponding allowed (`-wtm_dev_allow_aboveground_water_columns`) so the owe branch fires with FSM
+  off. **Confirmed managed:** under the legacy hard switch it limit-cycles (per-cycle `|Δwtd| ≈ 357 m`); the
+  default smooth taper SETTLES it (`≈ 4e-6 m`), drives the table back to/below the surface (no ponding
+  remains), and the water budget closes *including evaporation* (`Δrecharge = Δevap + Δsurface_removed +
+  Δocean`, rel residual `2e-5`). So mechanism 2 needs **no new code** — taper 2 already handles it; the test
+  asserts the settle (positive) and that the taper-off run flickers (bite).
 
 ## Mechanism 3 — FSM single-cell concentration + evaporation (outer GW↔FSM coupling)
 
@@ -91,7 +97,7 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
 | mechanism | isolate with | management | test |
 |---|---|---|---|
 | 1 storativity/seepage | fsm 0, evap 0 | exfiltration clamp (default) | `tests/limit_cycle` -> positive |
-| 2 evap discontinuity | evap on, fsm 0 | smooth evap taper (taper 2) | `tests/flicker_evap` [NEW] |
+| 2 evap discontinuity | evap on, fsm 0 | smooth evap taper (taper 2) | `tests/flicker_evap` ✓ (managed) |
 | 3 FSM concentration + evap | fsm 1, evap 1, depression | couple-convergence / tighter split / damp | `tests/flicker_fsm_evap` [NEW] |
 
 Each test is **positive** (assert the managed system *settles* — per-cycle change decays and, where two

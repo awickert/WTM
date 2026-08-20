@@ -39,7 +39,8 @@ run "solver consistency (A≡P≡N)" ./solver_consistency/run.sh "$WTM"
 run "boundary: dirichlet≡padding" ./boundary_consistency/run.sh "$WTM"
 run "boundary: analytic parabola" ./boundary_analytic/run.sh "$WTM"
 run "adaptive-restart robustness" ./adaptive_restart/run.sh "$WTM"
-run "limit cycle (weird golden)" ./limit_cycle/run.sh "$WTM"
+run "flicker 1: storativity jump" ./limit_cycle/run.sh "$WTM"
+run "flicker 2: evap discontinuity" ./flicker_evap/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
