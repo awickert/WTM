@@ -253,6 +253,14 @@ static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface cla
 // Qmax by the surface). Qmax must exceed the peak recharge rate to guarantee no breach.
 // See benchmark/SURFACE_SINK_DESIGN.md sec 11.
 static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
+// SEEP_EST note (adaptive-dt error estimate with the implicit seepage face): the head is constrained to
+// wtd<=0 (h<=topo), excess routed to runoff. A linear step-predictor that overshoots ABOVE the surface would
+// spike the per-cell error |x-h_pred| at that kink -- a projection artifact that does NOT shrink with dt, so
+// the controller would reject to the floor (crash). Fix: CLAMP the predictor into the feasible set
+// (h_pred = min(h_pred, topo)) in the error norm, so the estimate measures real truncation error -- a cell
+// rising to the surface still contributes its true rise (bounding dt in Anderson's stable range), a pinned
+// cell contributes ~0. Keeps ALL cells in the norm (excluding them would unbound dt -> Anderson can't take the
+// huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
@@ -1113,13 +1121,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
   std::string rc = params.runoff_collector;
-  if (rc.empty()) {
-    // AUTO default: the exact in-residual seepage (implicit) normally, but the post-solve clamp (explicit)
-    // under adaptive-dt -- implicit's discontinuous seepage kink blows up the TR-BDF2 embedded error estimate
-    // the -wtm_dt_adaptive controller sizes steps from, so it cannot be adaptively stepped (fixed-dt cc and
-    // BDF2-on-V handle it fine). Any explicit runoff_collector value overrides this.
-    rc = user_context.use_dt_adaptive ? "explicit" : "implicit";
-  }
+  if (rc.empty()) rc = "implicit";  // "" = the default; adaptive-dt handles implicit via the predictor clamp
   if (rc != "legacy") {
     g_surface_sink = false;  // selector supersedes the band sink in every mode
     if (rc == "implicit") {
@@ -1452,10 +1454,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     long   local_n = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
-        if (dmdapack.mask[j][i] != 0) {  // ALL land cells (surface included -- see note above)
-          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
-          const double h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
-          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
+        if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see below)
+          const double h_n = dmdapack.starting_wtd[j][i] + topo_e[j][i];
+          double       h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
+          // Implicit seepage face: the head is constrained to wtd<=0 (h<=topo). A linear predictor that
+          // overshoots ABOVE the surface would spike |x-h_pred| at the kink (a projection artifact that does
+          // NOT shrink with dt -> the controller would reject to the floor). Clamp the predictor into the
+          // feasible set so the estimate measures real truncation error: a cell RISING to the surface still
+          // contributes its true rise (bounding dt), a cell already pinned contributes ~0. See SEEP_EST note.
+          if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);
+          const double dev = std::abs(dmdapack.x[j][i] - h_pred);
           if (dev > local_max) local_max = dev;
           local_sq += dev * dev;
           local_n++;
@@ -1485,10 +1493,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     long   local_n = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
-        if (dmdapack.mask[j][i] != 0) {  // ALL land cells (surface included)
-          const double h_n    = dmdapack.starting_wtd[j][i] + topo_e[j][i];
-          const double h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
-          const double dev    = std::abs(dmdapack.x[j][i] - h_pred);
+        if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see SEEP_EST note)
+          const double h_n = dmdapack.starting_wtd[j][i] + topo_e[j][i];
+          double       h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
+          if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);  // wtd<=0 feasible set (kink-free error)
+          const double dev = std::abs(dmdapack.x[j][i] - h_pred);
           if (dev > local_max) local_max = dev;
           local_sq += dev * dev;
           local_n++;

@@ -37,7 +37,6 @@ time_end tb
 surfdatadir $INP
 region adwater
 supplied_wt 0
-runoff_collector explicit
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF

@@ -24,13 +24,12 @@ struct Parameters {
   std::string textfilename   = UNINIT_STR;
   std::string time_start     = UNINIT_STR;
   std::string time_end       = UNINIT_STR;
-  // Surface-water routing selector. DEFAULT "" = AUTO: "implicit" normally (the exact, dt-independent
-  // in-residual seepage face -- Anderson residual + Picard operator), but "explicit" when -wtm_dt_adaptive is
-  // on, because the implicit seepage's discontinuous kink breaks the TR-BDF2 embedded error estimator that
-  // the adaptive-dt controller sizes steps from. Set explicitly to one of: "implicit", "explicit" (post-solve
-  // clamp -- robust on all solvers/regimes, ~1 cm from implicit), "off" (no collection -- NONPHYSICAL, warns),
-  // or "legacy" (the old -wtm_ surface-flag band-sink defaults). See README / SURFACE_WATER_ROUTING.md.
-  std::string runoff_collector = "";
+  // Surface-water routing selector. DEFAULT "implicit": the exact, dt-independent in-residual seepage face
+  // (wired into the Anderson residual and the Picard operator; adaptive-dt handles it via the feasible-set
+  // predictor clamp in the error estimate). Alternatives: "explicit" (post-solve clamp -- robust everywhere,
+  // ~1 cm from implicit), "off" (no collection -- NONPHYSICAL, warns), "legacy" (the old -wtm_ surface-flag
+  // band-sink defaults). "" is accepted as a synonym for the default. See README / SURFACE_WATER_ROUTING.md.
+  std::string runoff_collector = "implicit";
 
   double cells_per_degree = -1;
 
