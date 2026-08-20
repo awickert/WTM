@@ -24,6 +24,11 @@ struct Parameters {
   std::string textfilename   = UNINIT_STR;
   std::string time_start     = UNINIT_STR;
   std::string time_end       = UNINIT_STR;
+  // Surface-water routing selector (optional). "" = unset -> keep the legacy -wtm_ flag defaults
+  // (behaviour-preserving). Otherwise one of: "implicit" (in-residual seepage face, dt-independent,
+  // pins wtd=0; Anderson today, Picard/Newton pending active-set), "explicit" (post-solve clamp;
+  // robust on all solvers), "off" (no collection -- NONPHYSICAL, warns). See README / SURFACE_WATER_ROUTING.md.
+  std::string runoff_collector = "";
 
   double cells_per_degree = -1;
 

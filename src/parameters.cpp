@@ -57,6 +57,8 @@ Parameters::Parameters(const std::string& config_file) {
       ss >> run_type;
     } else if (key == "runoff_ratio_on") {
       ss >> runoff_ratio_on;
+    } else if (key == "runoff_collector") {
+      ss >> runoff_collector;
     } else if (key == "southern_edge") {
       ss >> southern_edge;
     } else if (key == "supplied_wt") {
@@ -136,6 +138,11 @@ void Parameters::check() const {
   check_string_init("time_start", time_start);
   check_string_init("time_end", time_end);
   check_positive("total_cycles", total_cycles);
+  if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
+        || runoff_collector == "off")) {
+    throw std::runtime_error("runoff_collector must be one of: implicit, explicit, off (or omitted to keep the "
+                             "legacy flag defaults). Got: '" + runoff_collector + "'");
+  }
 }
 
 std::string Parameters::get_path(const std::string& time, const std::string& layer_name) const {
@@ -163,6 +170,7 @@ void Parameters::print() const {
   std::cout << "c region                 = " << region << std::endl;
   std::cout << "c run_type               = " << run_type << std::endl;
   std::cout << "c runoff_ratio_on        = " << runoff_ratio_on << std::endl;
+  std::cout << "c runoff_collector       = " << (runoff_collector.empty() ? "(unset: legacy flags)" : runoff_collector) << std::endl;
   std::cout << "c southern_edge          = " << southern_edge << std::endl;
   std::cout << "c supplied_wt            = " << supplied_wt << std::endl;
   std::cout << "c surfdatadir            = " << surfdatadir << std::endl;

@@ -1094,6 +1094,46 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
   g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
+  // Surface-water routing selector (config key `runoff_collector`, optional). When set it OVERRIDES the
+  // legacy -wtm_ flags above with one coherent choice; unset ("") keeps the legacy defaults
+  // (behaviour-preserving). See benchmark/SURFACE_WATER_ROUTING.md. All modes share one destination
+  // (above-surface excess -> total_surface_removed + arp.runoff -> FSM); they differ in HOW the wtd<=0
+  // seepage face is enforced:
+  //   implicit : in-residual seepage (-wtm_direct_to_runoff) ALONE, pins wtd=0, dt-INDEPENDENT and exact. Its
+  //              seepage kink is matrix-free only for now (Anderson); on Picard/Newton it is inconsistent
+  //              (needs active-set Newton), so WARN there. NO explicit backstop: mixing the two would let the
+  //              post-solve clamp silently mop up any implicit overshoot and HIDE an implicit bug, so the modes
+  //              are mutually exclusive -- if implicit misbehaves the water visibly piles.
+  //   explicit : post-solve clamp only (-wtm_surface_exfiltration_to_runoff). Robust on every solver; the
+  //              lateral flow does not see the pin during the solve, so it is a lower-order (dt-lagged) form
+  //              (~1 cm from implicit here, converging as dt->0).
+  //   off      : no collection -- above-surface water piles up. NONPHYSICAL; warn loudly.
+  // NOTE the sub-surface band sink (taper 1, -wtm_surface_sink) is a SEPARATE strategy (keep wtd<0, dodge
+  // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
+  // a mode the default) is a later, regold-bearing step.
+  if (!params.runoff_collector.empty()) {
+    const std::string& rc      = params.runoff_collector;
+    const bool         anderson = !user_context.use_picard && !user_context.use_newton;
+    g_surface_sink = false;  // selector supersedes the band sink in every mode
+    if (rc == "implicit") {
+      g_direct_to_runoff                     = true;
+      g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
+      if (!anderson)
+        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the in-residual seepage face is "
+                    "matrix-free (Anderson) only; on Picard/Newton its kink is not in the operator/Jacobian, so "
+                    "the solve is inconsistent (Picard ~0.1 m off; Newton may diverge). Use "
+                    "runoff_collector=explicit on those solvers until active-set Newton lands.\n");
+    } else if (rc == "explicit") {
+      g_direct_to_runoff                     = false;
+      g_surface_exfiltration_to_runoff_array = true;
+    } else {  // "off"
+      g_direct_to_runoff                     = false;
+      g_surface_exfiltration_to_runoff_array = false;
+      PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=off]: NONPHYSICAL -- above-surface water is NOT "
+                  "collected; it piles up and the free surface will limit-cycle. Testing/diagnostics only.\n");
+    }
+  }
+
   // -wtm_volume_storage: use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
   // (default Anderson) storage term, instead of the SECANT effective storativity S·Δh. Below the surface
   // both agree (V is linear, S = porosity), but at a surface CROSSING the secant S·Δh ≠ ΔV, so the secant
