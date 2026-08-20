@@ -37,6 +37,7 @@ run "adaptive dt + water metric" ./adaptive_water/run.sh "$WTM"
 run "snapshot name + restart"    ./snapshot_restart/run.sh "$WTM"
 run "solver consistency (A≡P≡N)" ./solver_consistency/run.sh "$WTM"
 run "boundary: dirichlet≡padding" ./boundary_consistency/run.sh "$WTM"
+run "boundary: analytic parabola" ./boundary_analytic/run.sh "$WTM"
 run "adaptive-restart robustness" ./adaptive_restart/run.sh "$WTM"
 run "limit cycle (weird golden)" ./limit_cycle/run.sh "$WTM"
 
