@@ -1036,15 +1036,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   else
     throw std::runtime_error(std::string("-wtm_land_boundary: unknown value '") + land_bc +
                              "' (expected 'neumann_toposlope' or 'dirichlet').");
-  // Land Dirichlet is wired into the matrix-free residual (Anderson path, incl. TR-BDF2 which forces
-  // Anderson). The Picard operator and the Newton analytic Jacobian still carry only the neumann_toposlope
-  // off-map tangent, so land Dirichlet on those paths would make the operator/Jacobian inconsistent with the
-  // residual. Guard until those off-map branches are extended (the Dirichlet tangent dX = h_c - 0 depends on
-  // the centre head, unlike Neumann's constant dX, so the Jacobian change needs its own FD-verified pass).
-  if (g_land_boundary_dirichlet && (user_context.use_picard || user_context.use_newton))
-    throw std::runtime_error("-wtm_land_boundary dirichlet is currently supported on the matrix-free Anderson "
-                             "path only (add -wtm_anderson). Picard/Newton support is pending the off-map "
-                             "Dirichlet operator/Jacobian tangent.");
+  // Land Dirichlet is wired into the matrix-free residual (Anderson/TR-BDF2) and the Newton analytic Jacobian
+  // (FD-verified). The Picard OPERATOR still carries only the neumann_toposlope off-map term (its Dirichlet
+  // form is a diagonal conductance, not an RHS constant), so land Dirichlet on the Picard path would make the
+  // operator inconsistent with the residual -- guarded until that is added. Kirchhoff is also forbidden with
+  // land Dirichlet (the potential change-of-variable at a fixed-head ghost is not yet handled).
+  if (g_land_boundary_dirichlet && user_context.use_picard)
+    throw std::runtime_error("-wtm_land_boundary dirichlet is not yet supported on the Picard path; use "
+                             "-wtm_anderson or -wtm_newton (the Picard operator's off-map Dirichlet diagonal "
+                             "is pending).");
+  if (g_land_boundary_dirichlet && g_kirchhoff)
+    throw std::runtime_error("-wtm_land_boundary dirichlet is incompatible with -wtm_kirchhoff.");
 
   // Taper 1 -- sub-surface sink: a smooth, order-preserving near-surface removal that holds the water
   // table at/below the land surface and hands the exfiltrated water to FillSpillMerge (it stays in the
@@ -2260,12 +2262,23 @@ static PetscErrorCode FormJacobianLocal(
         const int    nj = j + faces[fi].dj, ni = i + faces[fi].di;
         const double G  = faces[fi].G;
         nbr_j[fi] = nj; nbr_i[fi] = ni;
-        if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map: land-slope ghost
-          nbr_inb[fi] = false;  // NO stencil column: the ghost is internal to this cell (τ_nbr = τ_c)
-          const double topo_inland = my_topo[j - faces[fi].dj][i - faces[fi].di];
-          const double dX = topo_inland - my_topo[j][i];  // h_c − h_nbr, constant in x
-          net_outflow += (1.0 / tau_c) * G * dX;
-          dN_dc       += G * dX * (-taup_c / (tau_c * tau_c));  // d[(1/τ_c)·G·dX]/dw_c
+        if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map land edge: ghost node
+          nbr_inb[fi] = false;  // NO stencil column either way: the ghost is not an independent unknown
+          if (g_land_boundary_dirichlet) {  // dirichlet: ghost = ocean neighbour (head 0, surface τ)
+            // Structurally the in-bounds case with τ_nbr = τ_surf (constant in x, so taup_nbr = 0) and
+            // h_nbr = 0 (dX = h_c). No column because the ghost is not an unknown. Mirrors the residual's
+            // surface-T ghost, so the Jacobian matches finite differences.
+            const double tau_s = Tinv(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i]);  // surface 1/T(0), constant in x
+            const double sumS  = tau_c + tau_s, e_S = 2.0 / sumS;
+            const double dX    = h_c;  // h_c − 0
+            net_outflow += e_S * G * dX;
+            dN_dc       += G * (e_S - 2.0 * taup_c / (sumS * sumS) * dX);
+          } else {  // neumann_toposlope (default): terrain-following no-flow (τ_nbr = τ_c, dX constant in x)
+            const double topo_inland = my_topo[j - faces[fi].dj][i - faces[fi].di];
+            const double dX = topo_inland - my_topo[j][i];  // h_c − h_nbr, constant in x
+            net_outflow += (1.0 / tau_c) * G * dX;
+            dN_dc       += G * dX * (-taup_c / (tau_c * tau_c));  // d[(1/τ_c)·G·dX]/dw_c
+          }
         } else {
           nbr_inb[fi] = true;
           const double w_X    = wtd_of(nj, ni);

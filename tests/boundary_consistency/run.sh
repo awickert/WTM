@@ -54,25 +54,31 @@ EOF
 BB="-wtm_anderson -wtm_eq_metric rms -wtm_eq_tol 1e-8"
 SE_PAD=$("$PY" -c "print(-1.0/$CPD)")   # padded grid one cell further south
 
-emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.cfg" $BB -wtm_land_boundary dirichlet         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
-emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.cfg" $BB                                      > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
-emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.cfg" $BB -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
+emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.cfg" -wtm_anderson $BB -wtm_land_boundary dirichlet         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }
+emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.cfg" -wtm_anderson $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
+emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.cfg" -wtm_anderson $BB -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
+# Newton (analytic Jacobian, dt-continuation) must reach the SAME land-Dirichlet water table -> its off-map
+# Dirichlet Jacobian tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary).
+emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.cfg" -wtm_newton -wtm_dt_continuation $BB -wtm_land_boundary dirichlet > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
-DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1)
-MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" <<'PY'
+DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
+MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
 import sys, os, numpy as np, rasterio
-dir_, pad, neu = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
+dir_, pad, neu, nwt = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 padi = pad[1:-1, 1:-1]                       # padded interior == the land-edge domain
 mtol = float(os.environ["MATCH_TOL"]); dmin = float(os.environ["DIFF_MIN"])
-match = float(np.max(np.abs(dir_ - padi)))   # dirichlet vs old padding
-diff  = float(np.max(np.abs(dir_ - neu)))    # dirichlet vs neumann
-print(f"  dirichlet ghost vs old padding: max|Δwtd| = {match:.3e} m  (tol {mtol})")
-print(f"  dirichlet vs neumann_toposlope: max|Δwtd| = {diff:.3e} m  (must exceed {dmin})")
-ok = match <= mtol and diff >= dmin
+match  = float(np.max(np.abs(dir_ - padi)))  # anderson dirichlet vs old padding
+diff   = float(np.max(np.abs(dir_ - neu)))   # dirichlet vs neumann
+newton = float(np.max(np.abs(nwt - dir_)))   # newton dirichlet vs anderson dirichlet
+print(f"  dirichlet ghost vs old padding:  max|Δwtd| = {match:.3e} m  (tol {mtol})")
+print(f"  dirichlet vs neumann_toposlope:  max|Δwtd| = {diff:.3e} m  (must exceed {dmin})")
+print(f"  newton vs anderson (dirichlet):  max|Δwtd| = {newton:.3e} m  (tol 1e-6)")
+ok = match <= mtol and diff >= dmin and newton <= 1e-6
 if ok:
-    print("PASS: land-edge ghost Dirichlet reproduces the old sea-level padding, and is distinct from Neumann")
+    print("PASS: land-edge ghost Dirichlet == old sea-level padding, distinct from Neumann, and Newton agrees")
     sys.exit(0)
-if match > mtol: print(f"FAIL: dirichlet vs padding {match:.3e} m > tol {mtol} m (the two should be the same BC)")
-if diff < dmin:  print(f"FAIL: dirichlet vs neumann {diff:.3e} m < {dmin} m (selector had no effect?)")
+if match > mtol:  print(f"FAIL: dirichlet vs padding {match:.3e} m > tol {mtol} m (the two should be the same BC)")
+if diff < dmin:   print(f"FAIL: dirichlet vs neumann {diff:.3e} m < {dmin} m (selector had no effect?)")
+if newton > 1e-6: print(f"FAIL: newton vs anderson {newton:.3e} m > 1e-6 m (Jacobian off-map Dirichlet tangent inconsistent?)")
 sys.exit(1)
 PY
