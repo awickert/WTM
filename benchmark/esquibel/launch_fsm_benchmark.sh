@@ -19,7 +19,7 @@
 set -eu
 cd "$(dirname "$0")"
 
-export FACTOR=0.8 FSM=1 CLAMP=1 EXTRA="-wtm_ghost_boundary" N=16   # dry step, FSM on, clamp on, corrected domain
+export FACTOR=0.8 FSM=1 CLAMP=1 EXTRA="" N=16   # dry step, FSM on, clamp on (mask-aware boundary is the default)
 
 for M in cc tr trtbar bdf2v; do
   METHOD=$M TEND_WK=2  DTS="0.0625 0.125 0.25 0.5 1 2" TAG=bench_fsm sbatch transient_diag_msi.sbatch

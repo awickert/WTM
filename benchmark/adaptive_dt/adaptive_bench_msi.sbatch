@@ -25,7 +25,7 @@ export PROJ_DATA="${PROJ_DATA:-/usr/share/proj}" PROJ_LIB="${PROJ_LIB:-/usr/shar
 cd "$ESQ"                                           # cwd = Esquibel (for domain/, perturb_pet.py)
 mkdir -p "$OUT"
 CSV="$OUT/adapt_bench_${REGIME}.csv"; echo "regime,run,param,rc,wall_s,snes_its,nsteps,final_tif" > "$CSV"
-COMMON="-wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -wtm_ghost_boundary -snes_stol 1e-6"
+COMMON="-wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -snes_stol 1e-6"
 BASE="-wtm_anderson -snes_anderson_restart_type none -wtm_tr_bdf2"
 
 do_run() {  # reg lbl param surfdatadir deltat_s maxiter total_cycles extra-flags

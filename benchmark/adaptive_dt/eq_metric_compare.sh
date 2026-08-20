@@ -9,7 +9,7 @@ WTM_ROOT="$(cd "$HOME/models/WTM" && pwd)"; BIN="$WTM_ROOT/build/wtm.x"; ESQ="$W
 OUT="$WTM_ROOT/benchmark/adaptive_dt/results/eqmetric"; mkdir -p "$OUT"
 cd "$ESQ"
 PERT="$OUT/pert_dry"; python3 perturb_pet.py domain "$PERT" results/algo/transient/w_eq_correct.tif 0.8 >/dev/null 2>&1
-BASE="-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 5 -wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -wtm_ghost_boundary -snes_stol 1e-6"
+BASE="-wtm_tr_bdf2 -wtm_dt_adaptive -wtm_dt_tol 5 -wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -snes_stol 1e-6"
 CSV="$OUT/eq_metric_compare.csv"; echo "run,rc,stop_cycle,solves,wall_s" > "$CSV"
 
 run() {  # label cap extra-flags

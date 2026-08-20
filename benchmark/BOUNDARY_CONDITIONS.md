@@ -1,7 +1,17 @@
 # WTM domain boundary conditions: padding+setEdges → mask-aware ghost nodes
 
-**Date:** 2026-08-14 · **Branch:** `bdf2-adaptive-dt` · **Status:** implemented behind `-wtm_ghost_boundary`
-(off by default); cc-validated on Esquibel; goldens to be remade when defaulted. Task #96.
+**Date:** 2026-08-14 (updated 2026-08-20) · **Branch:** `bdf2-adaptive-dt` · **Status:** the mask-aware
+ghost-node boundary is now the **unconditional default** (no flag). The land-edge condition is selectable via
+`-wtm_land_boundary neumann_toposlope|dirichlet` (default `neumann_toposlope`); the legacy padding method is
+retained for verification behind `-wtm_dev_padded_dirichlet` (see below). cc-validated on Esquibel; validated
+against closed-form parabola solutions in `tests/boundary_analytic/` and against the legacy padding in
+`tests/boundary_consistency/`. Tasks #96, and the land-Dirichlet selector.
+
+> **Flag history:** this was originally gated behind `-wtm_ghost_boundary` (off by default). That toggle is
+> retired: the mask-aware boundary is the default, and `-wtm_ghost_boundary false` is replaced by
+> `-wtm_dev_padded_dirichlet` (which forces every edge to sea-level ocean and *fails loudly* unless the domain
+> boundary is already all ocean, so it cannot silently discard edge land). References to `-wtm_ghost_boundary`
+> below describe the now-default behavior.
 
 ## The problem with padding + `setEdges(0)`
 

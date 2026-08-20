@@ -46,7 +46,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-# -wtm_ghost_boundary: use the mask-aware ghost boundary so edge land cells are not forced against a
+# mask-aware ghost boundary (now the default) so edge land cells are not forced against a
 # hard-draining topo-0 ocean pad. Under the old padding, boundary-adjacent SURFACE cells drain so hard that
 # the ÷S (secant) vs ÷Sy (tangent) residual scaling leaves a ~1e-4 convergence-region difference there --
 # a scaling/conditioning artifact, NOT the identity failing. The ghost boundary removes that edge stress so

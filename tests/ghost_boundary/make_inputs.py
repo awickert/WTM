@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Land-edge fixture for the mask-aware ghost boundary (-wtm_ghost_boundary, task #96).
+"""Land-edge fixture for the mask-aware ghost boundary (now the default; task #96).
 
 A coastal wedge: an ocean strip on the WEST (i=0, mask=0 -> Dirichlet h=0), LAND everywhere else, so the
 NORTH, SOUTH, and EAST domain edges are all LAND edges. Topography rises eastward, so the boundary

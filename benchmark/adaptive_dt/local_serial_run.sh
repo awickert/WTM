@@ -44,7 +44,7 @@ CFG
 rm -f ${stem}.txt ${stem}_*.tif
 t0=$(date +%s.%N)
 mpiexec -n 1 "$BIN" ${stem}.cfg -wtm_anderson -snes_anderson_restart_type none $FLAGS \
-  -wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff -wtm_ghost_boundary \
+  -wtm_fringe_source ksat -wtm_surface_exfiltration_to_runoff \
   -snes_stol 1e-6 > ${stem}.log 2>&1
 rc=$?; t1=$(date +%s.%N)
 wall=$(awk "BEGIN{printf \"%.2f\", $t1-$t0}")

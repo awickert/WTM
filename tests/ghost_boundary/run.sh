@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mask-aware ghost-boundary test (-wtm_ghost_boundary, task #96). On a domain with REAL LAND at the N/S/E
+# Mask-aware ghost-boundary test (now the default; task #96). On a domain with REAL LAND at the N/S/E
 # edges and ocean at the west (see make_inputs.py), verify that the off-map land-slope Neumann ghost is
 # implemented consistently across every solver assembly site:
 #
