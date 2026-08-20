@@ -17,16 +17,17 @@ taper) passes.
 ### Added
 
 #### Surface-water routing
-- **`runoff_collector` config-file selector** (`implicit` | `explicit` | `off`) unifies how the `wtd = 0`
-  seepage face — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced. `implicit` is
-  the in-residual seepage (`-wtm_direct_to_runoff`): exact, dt-independent, pins `wtd = 0`, matrix-free
-  (Anderson) today (warns on Picard/Newton, whose Jacobian/operator lack its discontinuous tangent).
-  `explicit` is the post-solve clamp (`-wtm_surface_exfiltration_to_runoff`): robust on every solver and within
-  ~1 cm of `implicit`, converging as `dt → 0`. `off` collects nothing (above-surface water piles up —
-  nonphysical, warns; supersedes `-wtm_dev_allow_aboveground_water_columns`). The modes are mutually exclusive
-  (no hidden clamp backstop under `implicit`, so its misbehaviour stays visible) and each turns the legacy
-  sub-surface band sink (taper 1) off. The key is optional: omitting it keeps the legacy `-wtm_` flag defaults,
-  so this is additive and behaviour-neutral. See `benchmark/SURFACE_WATER_ROUTING.md`.
+- **`runoff_collector` config-file selector** (`implicit` | `explicit` | `off` | `legacy`) unifies how the
+  `wtd = 0` seepage face — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced.
+  `implicit` is the in-residual seepage: exact, dt-independent, pins `wtd = 0`, wired into the Anderson
+  residual **and** the Picard operator (a frozen active-set diagonal); Newton still warns (its Jacobian needs a
+  semismooth/active-set treatment of the discontinuous kink). `explicit` is the post-solve clamp: robust on
+  every solver *and* under adaptive-dt, within ~1 cm of `implicit` and converging as `dt → 0`. `off` collects
+  nothing (above-surface water piles up — nonphysical, warns; supersedes
+  `-wtm_dev_allow_aboveground_water_columns`). `legacy` keeps the old `-wtm_surface_sink` band-sink defaults.
+  The modes are mutually exclusive (no hidden clamp backstop under `implicit`, so its misbehaviour stays
+  visible). **Default is AUTO** (key omitted): `implicit` normally, but `explicit` under `-wtm_dt_adaptive`
+  (the implicit kink can't be adaptively step-sized). See `benchmark/SURFACE_WATER_ROUTING.md`.
 
 #### Boundary conditions
 - **Selectable land-edge boundary condition** (`-wtm_land_boundary neumann_toposlope|dirichlet`): ocean edges
@@ -181,6 +182,17 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **The default solver is now matrix-free Anderson** (was semi-implicit BDF2-on-V/Picard). Anderson is the
+  robust production worker, carries the exact in-residual seepage face, and is bit-exact across MPI ranks;
+  it is 1st-order-in-time (backward-Euler cc, the right choice for equilibrium). Opt into BDF2-on-V/Picard
+  (large stable steps, 2nd-order) with `-wtm_bdf2_on_V`. Picard is retained as the cross-rank-deterministic
+  **grounding reference** the golden tests hold Anderson against. Combined with the `runoff_collector` AUTO
+  default (implicit surface seepage; explicit under `-wtm_dt_adaptive`), the golden references were
+  regenerated. The old default is exactly reproducible with `runoff_collector legacy -wtm_bdf2_on_V` (verified
+  bit-for-bit against the pre-flip goldens), so every golden delta is the intended change, not a regression:
+  below_ground 4.37 m (solver order over the deliberately short 6-step run), fsm_evap0/1 10.0 m (band sink →
+  implicit seepage face), fsm_runoff/hi 36.5/31.6 m max but 0.28 m mean (a few FSM routing-threshold cells
+  flip), transient unchanged.
 - **The mask-aware ghost boundary is now the default** (no flag needed). It applies Dirichlet `h = 0`
   (constant head) at ocean edges and land-slope Neumann (constant flux) at land edges, computed at the true
   domain edge, and replaces the legacy edge-padding (`setEdges(0)`). Behaviour-neutral on ocean-ringed domains

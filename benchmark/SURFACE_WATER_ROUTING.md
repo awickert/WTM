@@ -8,11 +8,17 @@ at a **seepage face** (`wtd = 0`) and is routed to runoff / FillSpillMerge. This
 `runoff_collector` config key makes that choice explicit.
 
 ```
-runoff_collector implicit    # in-residual seepage face (exact, dt-independent)
-runoff_collector explicit    # post-solve clamp (robust, dt-lagged)
+# (key omitted)             # AUTO: implicit normally; explicit when -wtm_dt_adaptive is on
+runoff_collector implicit    # in-residual seepage face (exact, dt-independent). Anderson + Picard.
+runoff_collector explicit    # post-solve clamp (robust on every solver + adaptive-dt, dt-lagged)
 runoff_collector off         # no collection -- NONPHYSICAL, warns
-# (key omitted)              # keep the legacy -wtm_ flag defaults (behaviour-preserving)
+runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-scaled)
 ```
+
+**Default is AUTO** (key omitted): `implicit` normally, but `explicit` whenever `-wtm_dt_adaptive` is on --
+the implicit seepage's discontinuous kink blows up the TR-BDF2 embedded error estimate the adaptive-dt
+controller sizes steps from, so it cannot be adaptively stepped (fixed-dt cc and BDF2-on-V handle it fine).
+The default *solver* is matrix-free Anderson.
 
 All three modes route the above-surface excess to the **same** destination — `total_surface_removed` (the water
 budget) and `arp.runoff → FillSpillMerge`. They differ only in *when the constraint meets the solver*.

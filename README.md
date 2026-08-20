@@ -121,23 +121,18 @@ Once the configuration file has been set up appropriately, simply open a termina
 Here, N is the number of CPU threads you want the parallel processing for the groundwater-flow step to use. In the above line, you are setting an environment variable that will define this until you exit the terminal window.
 
 The model chooses sensible solver defaults, so no PETSc solver flags are required on the command line.
-The **default solver is the semi-implicit BDF2-on-V (Picard)** path, for both run types:
-* **Equilibrium runs** reach steady state in a handful of *large, stable* time steps — Picard's
-  Newton + algebraic-multigrid solve has a nearly step-size-independent cost, so you can raise `deltat`
-  by orders of magnitude to converge fast.
-* **Transient runs** get genuine 2nd-order-in-time accuracy from the same solver.
+The **default solver is the matrix-free Anderson** path, for both run types: it is robust across regimes,
+bit-exact across MPI ranks, and carries the exact in-residual seepage face (`runoff_collector` implicit).
+It is 1st-order-in-time (backward-Euler cc) — the right choice for equilibrium, where a 2nd-order step
+oscillates at the free surface.
 
-The alternative is the matrix-free **Anderson** solver, opt-in with `-wtm_anderson`. It is faster
-*per step at small `deltat`* and bit-exact across MPI ranks, but it has no preconditioner and so is
-stiffness-limited: it cannot take large time steps (it diverges when `deltat` is raised) and it
-under-converges on stiff transients. Use it only for small-`deltat` / fast-science cases. Any explicit
-PETSc `-snes_*` option (e.g. `-snes_stol`, `-snes_anderson_beta`) still overrides the defaults.
-
-By default Anderson is 1st-order-in-time (backward Euler). For 2nd-order-in-time accuracy *with*
-Anderson's cheap matrix-free iterations, add **`-wtm_bdf2_on_V`**: `-wtm_anderson -wtm_bdf2_on_V` runs
-the same BDF2-on-V discretization the default Picard path uses, but on the matrix-free residual (no
-operator/preconditioner). Time discretization is thus decoupled from the solver, and this leaves
-Anderson's stable time step unchanged. For a more strongly damped (L-stable, non-ringing) 2nd-order
+For **large, stable time steps** (fast equilibrium spin-up) and **2nd-order-in-time transients**, opt into
+the semi-implicit **BDF2-on-V (Picard)** solver with **`-wtm_bdf2_on_V`**: its Newton + algebraic-multigrid
+solve has a nearly step-size-independent cost, so `deltat` can be raised by orders of magnitude. (Picard is
+also cross-rank deterministic to ~1e-9 on FSM-routing-threshold cases, so it is the grounding reference the
+golden tests hold Anderson against.) `-wtm_anderson -wtm_bdf2_on_V` gives the 2nd-order BDF2-on-V
+discretization on the matrix-free residual (time discretization is decoupled from the solver). Any explicit
+PETSc `-snes_*` option (e.g. `-snes_stol`, `-snes_anderson_beta`) still overrides the defaults. For a more strongly damped (L-stable, non-ringing) 2nd-order
 option, **`-wtm_tr_bdf2`** runs TR-BDF2 (two staged solves per step); in testing it took twice the stable
 time step of BDF2-on-V with fewer iterations near the limit, at a modest per-step cost.
 
@@ -191,23 +186,24 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 #Is water allowed to gather in lakes, with lake evaporation removing some portion of it?
 #If this is set to 0, all surface water will be removed from the domain.
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
-#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; omit to keep the legacy
-#surface-taper defaults. See "Surface-water routing" below and benchmark/SURFACE_WATER_ROUTING.md.
-runoff_collector   explicit              # implicit (in-residual, exact, Anderson) | explicit (post-solve clamp, all solvers) | off (nonphysical, warns)
+#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; omit for the AUTO default
+#(implicit normally; explicit under -wtm_dt_adaptive). See "Surface-water routing" below.
+runoff_collector   implicit              # implicit (in-residual seepage, exact) | explicit (post-solve clamp, all solvers/adaptive) | off (nonphysical) | legacy (old band sink)
 ```
 
 ## Surface-water transition (smooth tapers, on by default)
 At the land surface (water-table depth `wtd = 0`) WTM smooths the transition between groundwater and
-surface water with three implicit, order-preserving **tapers**, which replace the old hard `wtd = 0`
-switch. They are **on by default** (this is the recommended model) and are controlled by command-line
-options (PETSc `-wtm_*` flags passed after the config file, not config-file keys). Each is individually
-disabled with `<flag> 0`:
+surface water with implicit, order-preserving **tapers**, which replace the old hard `wtd = 0` switch.
+The **evaporation** tapers (2 & 3) are **on by default** and are controlled by command-line `-wtm_*` flags
+(each disabled with `<flag> 0`). The **seepage** at the surface — taper 1's old job — is now the
+`runoff_collector` config-file selector (see "Surface-water routing" below; default is the exact in-residual
+face). The legacy sub-surface band sink is reached with `runoff_collector legacy`:
 
-- **Taper 1 — sub-surface sink** (`-wtm_surface_sink`): smoothly holds the water table at/below the
-  surface and hands exfiltrated water to Fill-Spill-Merge (it stays in the domain as surface water /
-  runoff). Preserves 2nd-order time accuracy across the surface. Peak removal `-wtm_surface_sink_qmax`
-  (default 1 m/yr); its band width auto-scales with the timestep for stability (`-wtm_surface_sink_width`
-  overrides).
+- **Taper 1 — sub-surface band sink** (`-wtm_surface_sink`; the legacy seepage, off unless
+  `runoff_collector legacy`): a smooth removal in a band that holds the table at/below the surface and hands
+  exfiltrated water to Fill-Spill-Merge. Preserves 2nd-order time accuracy across the surface, but its band
+  width scales with `deltat` (so the equilibrium is dt-dependent — the reason `runoff_collector` replaced it).
+  Peak removal `-wtm_surface_sink_qmax` (default 1 m/yr); band width `-wtm_surface_sink_width`.
 - **Taper 2 — demand-identity evaporation** (`-wtm_evap_taper`): a single smooth transition from
   land-surface evapotranspiration (below the surface) to open-water evaporation (at/above it),
   replacing the hard ET↔open-water switch. This is what makes lake formation identical regardless of
@@ -223,15 +219,17 @@ Running with any combination other than all three on prints a warning explaining
 
 ## Surface-water routing (`runoff_collector`)
 Above-surface water leaves the subsurface at a seepage face (`wtd = 0`) and is routed to runoff /
-Fill-Spill-Merge. The optional config-file key `runoff_collector` selects **how** that one boundary condition
-is enforced (omit it to keep the legacy taper defaults above):
+Fill-Spill-Merge. The config-file key `runoff_collector` selects **how** that one boundary condition is
+enforced. **Default (key omitted) is AUTO:** `implicit` normally, but `explicit` whenever `-wtm_dt_adaptive`
+is on (the implicit kink can't be adaptively step-sized). Set it explicitly to override:
 
-- **`implicit`** — the seepage face is solved *inside* the groundwater equation (`-wtm_direct_to_runoff`):
-  exact, dt-independent, pins `wtd = 0`. Matrix-free (Anderson) today; it warns on Picard/Newton, whose
-  operator/Jacobian do not yet carry its (discontinuous) tangent.
-- **`explicit`** — a post-solve clamp (`-wtm_surface_exfiltration_to_runoff`): robust on every solver, within
-  ~1 cm of `implicit` and converging to it as `dt → 0`.
-- **`off`** — no collection; above-surface water piles up. **Nonphysical**, for testing only (warns loudly).
+- **`implicit`** (the exact face) — solved *inside* the groundwater equation: exact, dt-independent, pins
+  `wtd = 0`. Wired into the Anderson residual **and** the Picard operator; Newton still warns (its Jacobian
+  needs an active-set treatment of the kink). **Incompatible with `-wtm_dt_adaptive`.**
+- **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver and with adaptive-dt,
+  within ~1 cm of `implicit` and converging to it as `dt → 0`.
+- **`off`** — no collection; above-surface water piles up. **Nonphysical**, testing only (warns loudly).
+- **`legacy`** — the pre-selector `-wtm_surface_sink` band-sink defaults (dt-scaled; kept for the taper tests).
 
 The modes are mutually exclusive (no hidden backstop), so a misbehaving `implicit` shows visibly rather than
 being masked. See `benchmark/SURFACE_WATER_ROUTING.md`.
@@ -254,13 +252,13 @@ knob for another flag · *experimental* = works but not validated for production
 deliberately nonphysical (prints a runtime warning).
 
 ### Solver selection
-Exactly one solver runs. If none is named, the default (BDF2-on-V / Picard) is used; an explicit path flag wins,
-and Newton is mutually exclusive with Picard/Anderson.
+Exactly one solver runs. If none is named, the default (matrix-free **Anderson**, 1st-order cc) is used; an
+explicit path flag wins, and Newton is mutually exclusive with Picard/Anderson.
 
 | Flag | Default | Status | Effect |
 |---|---|---|---|
-| `-wtm_bdf2_on_V` | **on** | default | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time. |
-| `-wtm_anderson` | off | opt-in | Matrix-free Anderson mixing. Cheap per step and bit-exact across MPI ranks, but stiffness-limited (no preconditioner). Best for small `deltat`. |
+| `-wtm_anderson` | **on** | default | Matrix-free Anderson mixing. Robust across regimes, bit-exact across MPI ranks, carries the exact in-residual seepage face. 1st-order-in-time unless `-wtm_bdf2_on_V` is added. |
+| `-wtm_bdf2_on_V` | off | opt-in | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time; cross-rank deterministic (the golden reference). |
 | `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, usually with `-wtm_dt_continuation`. |
 | `-wtm_picard` | off | opt-in | Force the frozen-coefficient backward-Euler Picard operator explicitly (it is also the operator behind the default). |
 | `-wtm_bdf2` | off | opt-in | Bare backward-looking BDF2 in head form (secant storativity), Picard operator. |
