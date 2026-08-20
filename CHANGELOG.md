@@ -26,8 +26,10 @@ taper) passes.
   nothing (above-surface water piles up — nonphysical, warns; supersedes
   `-wtm_dev_allow_aboveground_water_columns`). `legacy` keeps the old `-wtm_surface_sink` band-sink defaults.
   The modes are mutually exclusive (no hidden clamp backstop under `implicit`, so its misbehaviour stays
-  visible). **Default is AUTO** (key omitted): `implicit` normally, but `explicit` under `-wtm_dt_adaptive`
-  (the implicit kink can't be adaptively step-sized). See `benchmark/SURFACE_WATER_ROUTING.md`.
+  visible). **Default is `implicit`.** Adaptive-dt (`-wtm_dt_adaptive`) handles `implicit` by clamping the
+  error-estimate predictor to the feasible set (`wtd ≤ 0`), so its discontinuous seepage kink no longer
+  spikes the step-size controller (verified: implicit-adaptive == implicit-fixed-cc to ~1 cm). See
+  `benchmark/SURFACE_WATER_ROUTING.md`.
 
 #### Boundary conditions
 - **Selectable land-edge boundary condition** (`-wtm_land_boundary neumann_toposlope|dirichlet`): ocean edges

@@ -186,9 +186,9 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 #Is water allowed to gather in lakes, with lake evaporation removing some portion of it?
 #If this is set to 0, all surface water will be removed from the domain.
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
-#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; omit for the AUTO default
-#(implicit normally; explicit under -wtm_dt_adaptive). See "Surface-water routing" below.
-runoff_collector   implicit              # implicit (in-residual seepage, exact) | explicit (post-solve clamp, all solvers/adaptive) | off (nonphysical) | legacy (old band sink)
+#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; default is implicit.
+#See "Surface-water routing" below.
+runoff_collector   implicit              # implicit (in-residual seepage, exact; default) | explicit (post-solve clamp) | off (nonphysical) | legacy (old band sink)
 ```
 
 ## Surface-water transition (smooth tapers, on by default)
@@ -220,14 +220,14 @@ Running with any combination other than all three on prints a warning explaining
 ## Surface-water routing (`runoff_collector`)
 Above-surface water leaves the subsurface at a seepage face (`wtd = 0`) and is routed to runoff /
 Fill-Spill-Merge. The config-file key `runoff_collector` selects **how** that one boundary condition is
-enforced. **Default (key omitted) is AUTO:** `implicit` normally, but `explicit` whenever `-wtm_dt_adaptive`
-is on (the implicit kink can't be adaptively step-sized). Set it explicitly to override:
+enforced. **Default is `implicit`.** Set it explicitly to override:
 
-- **`implicit`** (the exact face) — solved *inside* the groundwater equation: exact, dt-independent, pins
-  `wtd = 0`. Wired into the Anderson residual **and** the Picard operator; Newton still warns (its Jacobian
-  needs an active-set treatment of the kink). **Incompatible with `-wtm_dt_adaptive`.**
-- **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver and with adaptive-dt,
-  within ~1 cm of `implicit` and converging to it as `dt → 0`.
+- **`implicit`** (default; the exact face) — solved *inside* the groundwater equation: exact, dt-independent,
+  pins `wtd = 0`. Wired into the Anderson residual **and** the Picard operator; the adaptive-dt controller
+  handles its kink by clamping the error predictor to the feasible set (`wtd ≤ 0`). Newton still warns (its
+  Jacobian needs an active-set treatment of the kink).
+- **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver, within ~1 cm of
+  `implicit` and converging to it as `dt → 0`.
 - **`off`** — no collection; above-surface water piles up. **Nonphysical**, testing only (warns loudly).
 - **`legacy`** — the pre-selector `-wtm_surface_sink` band-sink defaults (dt-scaled; kept for the taper tests).
 

@@ -8,17 +8,21 @@ at a **seepage face** (`wtd = 0`) and is routed to runoff / FillSpillMerge. This
 `runoff_collector` config key makes that choice explicit.
 
 ```
-# (key omitted)             # AUTO: implicit normally; explicit when -wtm_dt_adaptive is on
-runoff_collector implicit    # in-residual seepage face (exact, dt-independent). Anderson + Picard.
-runoff_collector explicit    # post-solve clamp (robust on every solver + adaptive-dt, dt-lagged)
+runoff_collector implicit    # in-residual seepage face (exact, dt-independent). Anderson + Picard. DEFAULT.
+runoff_collector explicit    # post-solve clamp (robust on every solver, dt-lagged)
 runoff_collector off         # no collection -- NONPHYSICAL, warns
 runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-scaled)
 ```
 
-**Default is AUTO** (key omitted): `implicit` normally, but `explicit` whenever `-wtm_dt_adaptive` is on --
-the implicit seepage's discontinuous kink blows up the TR-BDF2 embedded error estimate the adaptive-dt
-controller sizes steps from, so it cannot be adaptively stepped (fixed-dt cc and BDF2-on-V handle it fine).
-The default *solver* is matrix-free Anderson.
+**Default is `implicit`** (the exact face); the default *solver* is matrix-free Anderson.
+
+**Adaptive-dt and the implicit kink.** The implicit seepage's discontinuous `max(0,wtd)/dt` would spike the
+adaptive-dt controller's error estimate at a cell crossing the surface (a projection jump that does not shrink
+with `dt`), so it once could not be adaptively stepped. Fixed by **clamping the error predictor to the
+feasible set** (`h_pred = min(h_pred, topo)`) in the norm: a cell *rising* to the surface still contributes its
+true rise (bounding `dt` in Anderson's stable range), a *pinned* cell contributes ~0. So `implicit` now works
+under `-wtm_dt_adaptive` too (verified: implicit-adaptive == implicit-fixed-cc to ~1 cm). *Excluding* the
+constraint cells instead would unbound `dt` and pile the water — the predictor clamp is the right treatment.
 
 All three modes route the above-surface excess to the **same** destination — `total_surface_removed` (the water
 budget) and `arp.runoff → FillSpillMerge`. They differ only in *when the constraint meets the solver*.
