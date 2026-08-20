@@ -87,6 +87,7 @@ surfdatadir {d}
 region {REGION}
 supplied_wt 1
 cycles_to_save 9999
+runoff_collector legacy
 textfilename {txt}
 outfile_prefix {prefix}
 """
@@ -215,6 +216,7 @@ def _arid_cfg(d, txt, prefix):
             f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_cycles 60\nmaxiter 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\ncycles_to_save 9999\n"
+            f"runoff_collector legacy\n"
             f"textfilename {txt}\noutfile_prefix {prefix}\n")
 
 
