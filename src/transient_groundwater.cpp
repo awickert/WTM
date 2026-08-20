@@ -593,6 +593,15 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
       if (i - 1 >= 0      && my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
       if (j + 1 < info.my && my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
       if (j - 1 >= 0      && my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
+      // Under land-edge Dirichlet, an off-map edge face also drains to the sea-level ghost (surface T);
+      // count it so the water budget closes (neumann_toposlope off-map faces are no-flow -> nothing to add).
+      if (g_land_boundary_dirichlet) {
+        const double e_s = 2.0 / (my_T[j][i] + 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T));
+        if (i + 1 >= info.mx) arp.total_ocean_outflow_gw += dt * e_s * gew[j][i] * h_c;
+        if (i - 1 < 0)        arp.total_ocean_outflow_gw += dt * e_s * gew[j][i] * h_c;
+        if (j + 1 >= info.my) arp.total_ocean_outflow_gw += dt * e_s * gn[j][i] * h_c;
+        if (j - 1 < 0)        arp.total_ocean_outflow_gw += dt * e_s * gs[j][i] * h_c;
+      }
     }
   }
 
@@ -709,10 +718,15 @@ static void compute_tr_explicit(AppCtx& user_context) {
       // marker, not a head -- see the committed compute_tr_explicit fix).
       const auto face = [&](int nj, int ni, double G) -> double {
         double h_nbr, Tinv_nbr;
-        if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {
-          const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
-          h_nbr    = h_c + (my_topo[j][i] - topo_inland);
-          Tinv_nbr = my_T[j][i];
+        if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {  // off-map land edge: ghost node
+          if (g_land_boundary_dirichlet) {  // dirichlet: ghost = ocean neighbour (head 0, surface T)
+            h_nbr    = 0.0;
+            Tinv_nbr = 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T);
+          } else {                          // neumann_toposlope (default): terrain-following no-flow
+            const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
+            h_nbr    = h_c + (my_topo[j][i] - topo_inland);
+            Tinv_nbr = my_T[j][i];
+          }
         } else if (my_mask[nj][ni] == 0) {
           h_nbr    = 0.0;
           Tinv_nbr = my_T[nj][ni];
@@ -1036,15 +1050,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   else
     throw std::runtime_error(std::string("-wtm_land_boundary: unknown value '") + land_bc +
                              "' (expected 'neumann_toposlope' or 'dirichlet').");
-  // Land Dirichlet is wired into the matrix-free residual (Anderson/TR-BDF2) and the Newton analytic Jacobian
-  // (FD-verified). The Picard OPERATOR still carries only the neumann_toposlope off-map term (its Dirichlet
-  // form is a diagonal conductance, not an RHS constant), so land Dirichlet on the Picard path would make the
-  // operator inconsistent with the residual -- guarded until that is added. Kirchhoff is also forbidden with
-  // land Dirichlet (the potential change-of-variable at a fixed-head ghost is not yet handled).
-  if (g_land_boundary_dirichlet && user_context.use_picard)
-    throw std::runtime_error("-wtm_land_boundary dirichlet is not yet supported on the Picard path; use "
-                             "-wtm_anderson or -wtm_newton (the Picard operator's off-map Dirichlet diagonal "
-                             "is pending).");
+  // Land Dirichlet is wired into all three solver paths: the matrix-free residual (Anderson/TR-BDF2), the
+  // Newton analytic Jacobian (FD-verified), and the Picard operator+RHS (diagonal absorbing conductance).
+  // Kirchhoff is forbidden with land Dirichlet (the potential change-of-variable at a fixed-head ghost is
+  // not handled).
   if (g_land_boundary_dirichlet && g_kirchhoff)
     throw std::runtime_error("-wtm_land_boundary dirichlet is incompatible with -wtm_kirchhoff.");
 
@@ -2481,8 +2490,10 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
         const double T_c   = interblockTransmissivity(w_c, w_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
         const auto add_offmap = [&](int nj, int ni, double G) {
           if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {
+            if (g_land_boundary_dirichlet) return;  // dirichlet ghost head = 0: absorbing term is on the
+                                                    // operator diagonal (FormPicardOperator), nothing on the RHS
             const double topo_inland = my_topo_g[2 * j - nj][2 * i - ni];  // ghosted; inward reflection
-            bb[j][i] += user_context->deltat * T_c * G * (my_topo[j][i] - topo_inland);
+            bb[j][i] += user_context->deltat * T_c * G * (my_topo[j][i] - topo_inland);  // neumann constant flux
           }
         };
         add_offmap(j, i + 1, gew[j][i]);
@@ -2669,7 +2680,17 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         double face_sum = 0.0;  // Σ off-diagonals (= −Σ conductances), for the diagonal
         for (int fi = 0; fi < 4; ++fi) {
           const int nj = j + fdj[fi], ni = i + fdi[fi];
-          if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) continue;  // off-map -> RHS (constant flux)
+          if (nj < 0 || nj >= info.my || ni < 0 || ni >= info.mx) {  // off-map land edge
+            if (g_land_boundary_dirichlet) {
+              // Dirichlet ghost = an ocean neighbour (head 0, surface T): its flux e_S·G·h_c is LINEAR in
+              // the centre head, so it goes on the DIAGONAL as an absorbing conductance (+dt·e_S·G, strictly
+              // positive -> SPD-preserving) with NO column and NO RHS term (ghost head = 0). Mirrors an
+              // in-bounds ocean neighbour, whose off-diagonal column is zeroed to the RHS at head 0 anyway.
+              const double tau_s = 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T);
+              face_sum += -dt * (2.0 / (my_T[j][i] + tau_s)) * fG[fi];
+            }
+            continue;  // neumann_toposlope: constant flux -> RHS (FormPicardRHS); dirichlet: handled above
+          }
           const double A_x = -dt * (2.0 / (my_T[j][i] + my_T[nj][ni])) * fG[fi];
           cols[nc] = {.k = 0, .j = nj, .i = ni, .c = 0};
           vals[nc] = A_x;
