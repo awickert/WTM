@@ -12,6 +12,10 @@ problem is 1-D in x):
   anbcD : ocean (Dirichlet h=0) at BOTH x-ends            -> symmetric parabola  h(x) = A x (L-x)   (h=0 at both)
   anbcN : ocean (Dirichlet h=0) at the LEFT, LAND at the  -> half-parabola,  zero gradient (vertex) exactly at
           right x-end (no-flow / neumann_toposlope)          the no-flow face -- the Neumann BC, analytically.
+  anbcS : same as anbcN but on a uniformly-SLOPED terrain  -> the WATER-TABLE DEPTH (wtd = h - topo) is the
+          (topo = s*x). neumann_toposlope imposes constant     half-parabola with its vertex on the no-flow face
+          depth d(wtd)/dx=0 at the no-flow edge.               (so the head gradient there is s, not 0). This is
+                                                               the terrain-following part the flat case can't test.
 
 Regenerate with:  python3 make_inputs.py
 """
@@ -19,18 +23,20 @@ import numpy as np, os, rasterio
 from rasterio.transform import from_bounds
 
 NX, NY = 22, 3
+SLOPE = 0.05          # anbcS terrain slope (m per cell); gentle so the cold drainage stays stable
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
 
-def write(region, mask):
+def write(region, mask, topo=None, precip=0.05):
     tr = from_bounds(0, 0, NX, NY, NX, NY)
     def wr(name, a, dt="float32"):
         with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
                            dtype=dt, crs="EPSG:4326", transform=tr) as d:
             d.write(a.astype(dt), 1)
     zero = np.zeros((NY, NX), np.float32)
-    topo = np.zeros((NY, NX), np.float32)                     # flat, at sea level
-    for lay, a in {"topography":topo,"slope":zero,"mask":mask,"precipitation":np.full((NY,NX),0.05,np.float32),
+    if topo is None:
+        topo = np.zeros((NY, NX), np.float32)                # flat, at sea level
+    for lay, a in {"topography":topo,"slope":zero,"mask":mask,"precipitation":np.full((NY,NX),precip,np.float32),
                    "evaporation":zero,"open_water_evaporation":zero,"winter_temperature":zero}.items():
         wr(f"{region}_ta_{lay}.tif", a); wr(f"{region}_tb_{lay}.tif", a)
     wr(f"{region}_horizontal_ksat.tif", np.full((NY, NX), 1e-4, np.float32))
@@ -40,6 +46,8 @@ def write(region, mask):
 # Dirichlet: ocean at both x-ends (h=0). Neumann: ocean at the left only; the right x-end stays land (no-flow).
 mD = np.ones((NY, NX), np.float32); mD[:, 0] = 0; mD[:, -1] = 0
 mN = np.ones((NY, NX), np.float32); mN[:, 0] = 0
+slope_topo = np.tile((SLOPE * np.arange(NX)).astype(np.float32), (NY, 1))  # rises away from the ocean at the left
 write("anbcD", mD)
 write("anbcN", mN)
-print("wrote", OUT, "-- anbcD (ocean both ends), anbcN (ocean-left, land no-flow right)")
+write("anbcS", mN, topo=slope_topo, precip=0.3)   # more recharge so the table mounds above the sloped surface
+print("wrote", OUT, "-- anbcD (ocean both ends), anbcN (ocean-left, land no-flow right), anbcS (sloped Neumann)")

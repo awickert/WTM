@@ -51,14 +51,17 @@ FL="-wtm_anderson -wtm_allow_surface_ponding -wtm_evap_taper 0 -wtm_surface_sink
 
 emit dir anbcD; "$WTM" "$WORK/dir.cfg" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
 emit neu anbcN; "$WTM" "$WORK/neu.cfg" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }
+emit slp anbcS; "$WTM" "$WORK/slp.cfg" $FL -wtm_land_boundary neumann_toposlope > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
 
-DIR=$(ls "$WORK"/dir_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1)
-FIT_TOL="$FIT_TOL" "$PY" - "$DIR" "$NEU" <<'PY'
+DIR=$(ls "$WORK"/dir_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); SLP=$(ls "$WORK"/slp_*.tif | tail -1)
+FIT_TOL="$FIT_TOL" SLOPE="0.05" "$PY" - "$DIR" "$NEU" "$SLP" <<'PY'
 import sys, os, numpy as np, rasterio
-tol = float(os.environ["FIT_TOL"])
-dirf = rasterio.open(sys.argv[1]).read(1).astype(float)[1]   # middle row (uniform in y)
+tol = float(os.environ["FIT_TOL"]); slope = float(os.environ["SLOPE"])
+dirf = rasterio.open(sys.argv[1]).read(1).astype(float)[1]   # middle row (uniform in y); output is depth-to-wt (wtd)
 neuf = rasterio.open(sys.argv[2]).read(1).astype(float)[1]
+slpf = rasterio.open(sys.argv[3]).read(1).astype(float)[1]
 NX = len(dirf); x = np.arange(NX) + 0.5
+noflow_face = float(x[-1] + 0.5)               # the no-flow boundary face is half a cell beyond the edge centre
 ok = True
 
 # --- DIRICHLET: symmetric parabola h = A (x-x0)(x1-x), h=0 at the ocean cell centres (cols 0 and NX-1) ---
@@ -69,19 +72,28 @@ d_edges = float(max(abs(dirf[0]), abs(dirf[-1])))
 print(f"  DIRICHLET (ocean both ends): parabola residual = {d_resid:.3e} m; |h| at ocean ends = {d_edges:.3e} m")
 if d_resid > tol or d_edges > tol: ok = False
 
-# --- NEUMANN: half-parabola over the land cells (col 0 is ocean h=0); zero-gradient vertex at the no-flow face ---
-xn, hn = x[1:], neuf[1:]                       # land cells, incl. the no-flow right edge
-c = np.polyfit(xn, hn, 2)                      # general parabola a x^2 + b x + c
-n_resid = float(np.max(np.abs(hn - np.polyval(c, xn))))
-vertex = float(-c[1] / (2 * c[0]))             # x where dh/dx = 0
-noflow_face = float(x[-1] + 0.5)               # the no-flow boundary face is half a cell beyond the edge centre
-print(f"  NEUMANN (ocean-left, land no-flow right): parabola residual = {n_resid:.3e} m; "
+# --- NEUMANN (flat): half-parabola over the land cells; zero-gradient vertex at the no-flow face ---
+xn, hn = x[1:], neuf[1:]
+c = np.polyfit(xn, hn, 2); n_resid = float(np.max(np.abs(hn - np.polyval(c, xn)))); vertex = float(-c[1]/(2*c[0]))
+print(f"  NEUMANN flat  (ocean-left, land no-flow right): parabola residual = {n_resid:.3e} m; "
       f"zero-gradient vertex at x = {vertex:.3f} (no-flow face x = {noflow_face:.1f})")
 if n_resid > tol or abs(vertex - noflow_face) > 0.1: ok = False
 
+# --- NEUMANN (sloped): terrain-following. The WATER-TABLE DEPTH wtd (the output) is the half-parabola whose
+#     zero-gradient vertex is on the no-flow face -> d(wtd)/dx = 0 there = CONSTANT DEPTH (parallel to terrain).
+#     Consequently the head gradient at the edge is the terrain slope, not zero -- the topo-following signature. ---
+xs, ws = x[1:], slpf[1:]
+cs = np.polyfit(xs, ws, 2); s_resid = float(np.max(np.abs(ws - np.polyval(cs, xs)))); s_vertex = float(-cs[1]/(2*cs[0]))
+head = slpf + slope * np.arange(NX)            # h = wtd + topo, topo = slope * col
+h_grad_edge = float((head[-1] - head[-2]))     # head gradient at the no-flow edge (should be ~ slope, not 0)
+print(f"  NEUMANN slope (topo={slope}/cell): wtd parabola residual = {s_resid:.3e} m; "
+      f"wtd vertex at x = {s_vertex:.3f}; head gradient at edge = {h_grad_edge:.4f} (~ slope {slope}, not 0)")
+if s_resid > tol or abs(s_vertex - noflow_face) > 0.1 or abs(h_grad_edge - slope) > 0.02: ok = False
+
 if ok:
-    print("PASS: ocean-Dirichlet and land-Neumann match their closed-form parabola solutions")
+    print("PASS: ocean-Dirichlet and land-Neumann (flat + terrain-following) match their closed-form solutions")
     sys.exit(0)
-print(f"FAIL: closed-form match exceeded tol {tol} m, or the Neumann vertex is off the no-flow face")
+print(f"FAIL: a closed-form match exceeded tol {tol} m, a Neumann vertex is off the no-flow face, "
+      f"or the sloped head gradient is not the terrain slope")
 sys.exit(1)
 PY
