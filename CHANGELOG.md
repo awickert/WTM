@@ -16,6 +16,15 @@ taper) passes.
 
 ### Added
 
+#### Boundary conditions
+- **Selectable land-edge boundary condition** (`-wtm_land_boundary neumann_toposlope|dirichlet`): ocean edges
+  are always Dirichlet `h = 0`; land edges default to terrain-following no-flow (`neumann_toposlope`) but can be
+  set to sea-level Dirichlet (`dirichlet`), where a land edge behaves exactly as an ocean neighbour (head 0 and
+  surface transmissivity via ghost nodes). Wired into all solver paths — the matrix-free residual, the Newton
+  analytic Jacobian (FD-verified), and the Picard operator+RHS — and the water budget. The `dirichlet` mode
+  reproduces the legacy sea-level padding to machine precision (7e-12 m). Not compatible with `-wtm_kirchhoff`.
+  Regression: `tests/boundary_consistency/`. See `benchmark/BOUNDARY_CONDITIONS.md`.
+
 #### Solvers and time integration
 - **Semi-implicit Picard groundwater solver** (`-wtm_picard`): builds an SPD operator solved
   with CG + GAMG, as an alternative to the matrix-free default. See `benchmark/picard/PICARD_MATH.md`.
@@ -160,12 +169,13 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
-- **The mask-aware ghost boundary is now the default** (`-wtm_ghost_boundary`, on; disable with
-  `-wtm_ghost_boundary false`). It applies Dirichlet `h = 0` (constant head) at ocean edges and land-slope
-  Neumann (constant flux) at land edges, computed at the true domain edge, and replaces the legacy
-  edge-padding (`setEdges(0)`). Behaviour-neutral on ocean-ringed domains (where padding and the ghost BC
-  coincide); it changes results only where real land meets a domain edge. See task #96 and
-  `benchmark/BOUNDARY_CONDITIONS.md`.
+- **The mask-aware ghost boundary is now the default** (no flag needed). It applies Dirichlet `h = 0`
+  (constant head) at ocean edges and land-slope Neumann (constant flux) at land edges, computed at the true
+  domain edge, and replaces the legacy edge-padding (`setEdges(0)`). Behaviour-neutral on ocean-ringed domains
+  (where padding and the ghost BC coincide); it changes results only where real land meets a domain edge. The
+  legacy sea-level-padding boundary is retained as a verification tool behind `-wtm_dev_padded_dirichlet`
+  (which forces every edge to ocean `h = 0` and **fails loudly** unless the domain boundary is already all
+  ocean, so it cannot silently discard edge land). See task #96 and `benchmark/BOUNDARY_CONDITIONS.md`.
 - **The surface-water exfiltration clamp is now the default on every solver path**
   (`-wtm_surface_exfiltration_to_runoff`, on; disable with `-wtm_surface_exfiltration_to_runoff false`).
   It pins the water table at/below the surface and routes above-surface water to Fill-Spill-Merge (or to

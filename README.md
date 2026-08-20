@@ -319,7 +319,7 @@ switches both off.
 | `-wtm_extinction` | **on** | default | Taper 3: limits arid draw-down to within the extinction depth (requires taper 2). |
 | `-wtm_extinction_depth` | 8 m | tuning | Depth below which phreatic ET is inaccessible. |
 | `-wtm_direct_to_runoff` | off | opt-in | In-residual seepage face: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
-| `-wtm_surface_exfiltration_to_runoff` | on (Anderson path) | opt-in | Post-solve clamp: route exact above-surface water to the runoff accumulator, keeping T clamped. |
+| `-wtm_surface_exfiltration_to_runoff` | **on** (all paths) | default | Post-solve clamp: pin the table at/below the surface and route exact above-surface water to the runoff accumulator, keeping T clamped. Disable with `-wtm_surface_exfiltration_to_runoff false`. |
 | `-wtm_allow_surface_ponding` | off | developer | Leave above-surface water unmanaged (nonphysical; limit-cycles). Switches the two runoff clamps off; prints a warning. |
 
 ### Capillary fringe (taper-1 sink band width)
@@ -333,9 +333,14 @@ The `-wtm_fringe_*` knobs only take effect when `-wtm_fringe_source` is set to `
 | `-wtm_fringe_cap` | 2 m | tuning | Upper cap on the `ksat` capillary height. |
 
 ### Boundary conditions and developer modes
+Domain edges use the **mask-aware ghost-node boundary** by default (no flag needed): ocean edges are always
+Dirichlet `h = 0` (sea level), and land edges default to terrain-following no-flow (Neumann). The land-edge
+condition is selectable; the legacy sea-level-padding method is retained only as a verification tool.
+
 | Flag | Default | Status | Effect |
 |---|---|---|---|
-| `-wtm_ghost_boundary` | off | opt-in | Mask-aware domain edges: Dirichlet `h = 0` at the ocean, no-flow (Neumann) at land edges, without padding the array. |
+| `-wtm_land_boundary` | `neumann_toposlope` | opt-in | Land-edge boundary condition: `neumann_toposlope` (terrain-following no-flow) or `dirichlet` (sea-level `h = 0` via ghost nodes — a land edge behaves as ocean). Ocean edges are always Dirichlet regardless. Works on all solver paths; not compatible with `-wtm_kirchhoff`. |
+| `-wtm_dev_padded_dirichlet` | off | developer | Verification only: reproduce the legacy "1-cell sea-level padding" boundary (force every domain edge to ocean `h = 0`). **Requires an all-ocean domain boundary** and fails otherwise (it would discard edge land). On an ocean-ringed domain it coincides with the default mask-aware boundary — that equivalence is what it verifies. |
 | `-wtm_extended_soil` | off | developer | Let transmissivity keep growing above the surface (skips the `wtd > 0` clamp). Testing only; prints a warning; refused with `-wtm_Tbar` / `-wtm_kirchhoff`. |
 
 ## Outputs
