@@ -971,16 +971,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                 "continues above the land surface (no free boundary, no surface water). Testing/experiments only, "
                 "not for model runs.\n");
 
-  // -wtm_allow_surface_ponding [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp entirely, so
-  // above-surface water is left to POND -- the free boundary is unmanaged and the solve limit-cycles
-  // (lakeshore flicker). For testing/diagnostics only (tests/limit_cycle exercises exactly this); it is NOT
-  // a valid model configuration. See finding_surface_water_management_design.
-  PetscBool allow_ponding = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_allow_surface_ponding", &allow_ponding, nullptr);
-  if (allow_ponding == PETSC_TRUE)
-    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_allow_surface_ponding]: NONPHYSICAL developer mode -- surface "
-                "water is UNMANAGED (no clamp); the free boundary will limit-cycle. Testing/diagnostics only, "
-                "not for model runs.\n");
+  // -wtm_dev_allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp
+  // entirely, so above-surface water is left to stand as nonphysical vertical COLUMNS above the land surface
+  // -- the free boundary is unmanaged and the solve limit-cycles (lakeshore flicker). For testing/diagnostics
+  // only (tests/boundary_analytic uses this to reach the constant-T ponded parabola regime); it is NOT a
+  // valid model configuration. See finding_surface_water_management_design.
+  PetscBool allow_aboveground = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &allow_aboveground, nullptr);
+  if (allow_aboveground == PETSC_TRUE)
+    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_dev_allow_aboveground_water_columns]: NONPHYSICAL developer mode "
+                "-- surface water is UNMANAGED (no clamp); the free boundary will limit-cycle. Testing/diagnostics "
+                "only, not for model runs.\n");
   const bool anderson_path = !user_context.use_picard && !user_context.use_newton;
 
   // Surface-water CLAMP (Fan & Miguez-Macho) -- DEFAULT ON (all solver paths) so physical runs pin wtd<=0
@@ -991,11 +992,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // manager that already holds wtd<=0, so this is a safety net (a no-op when the sink holds; the corrective
   // truncation when a step overshoots). The Picard/Newton IN-RESIDUAL seepage (-wtm_direct_to_runoff) remains
   // the operator-consistent alternative (its Jacobian tangent is task #100). Disable with
-  // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime -wtm_allow_surface_ponding.
+  // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime
+  // -wtm_dev_allow_aboveground_water_columns.
   (void)anderson_path;
   PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, nullptr);
-  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_ponding != PETSC_TRUE);
+  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
   // range out of the Jacobian conditioning; see the transform helpers above). The Φ transform is the
@@ -1086,11 +1088,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // yet wired into the Picard operator / Newton Jacobian (directToRunoffTangent is unused), so defaulting it
   // on for those paths makes their solve inconsistent (Newton diverges/aborts). The Picard/Newton default
   // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
-  // direct_to_runoff tangent so it can default on for those paths is future work. -wtm_allow_surface_ponding
-  // still forces it off.
+  // direct_to_runoff tangent so it can default on for those paths is future work.
+  // -wtm_dev_allow_aboveground_water_columns still forces it off.
   PetscBool seep = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
-  g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_ponding != PETSC_TRUE);
+  g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // -wtm_volume_storage: use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
   // (default Anderson) storage term, instead of the SECANT effective storativity S·Δh. Below the surface

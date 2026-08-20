@@ -305,8 +305,8 @@ convergence (the "flail"). All force the Anderson path.
 
 ### Surface-water handling
 Above-surface water is managed by the three default tapers (see the "Surface-water transition" section above)
-plus optional routing modes. `-wtm_direct_to_runoff` supersedes the taper-1 sink; `-wtm_allow_surface_ponding`
-switches both off.
+plus optional routing modes. `-wtm_direct_to_runoff` supersedes the taper-1 sink;
+`-wtm_dev_allow_aboveground_water_columns` switches both off.
 
 | Flag | Default | Status | Effect |
 |---|---|---|---|
@@ -320,7 +320,7 @@ switches both off.
 | `-wtm_extinction_depth` | 8 m | tuning | Depth below which phreatic ET is inaccessible. |
 | `-wtm_direct_to_runoff` | off | opt-in | In-residual seepage face: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
 | `-wtm_surface_exfiltration_to_runoff` | **on** (all paths) | default | Post-solve clamp: pin the table at/below the surface and route exact above-surface water to the runoff accumulator, keeping T clamped. Disable with `-wtm_surface_exfiltration_to_runoff false`. |
-| `-wtm_allow_surface_ponding` | off | developer | Leave above-surface water unmanaged (nonphysical; limit-cycles). Switches the two runoff clamps off; prints a warning. |
+| `-wtm_dev_allow_aboveground_water_columns` | off | developer | Leave above-surface water unmanaged as nonphysical vertical columns (limit-cycles). Switches the two runoff clamps off; prints a warning. |
 
 ### Capillary fringe (taper-1 sink band width)
 The `-wtm_fringe_*` knobs only take effect when `-wtm_fringe_source` is set to `fixed` or `ksat`.

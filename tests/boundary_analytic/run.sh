@@ -47,7 +47,7 @@ EOF
 }
 # constant-T regime: flat sea-level topo + uniform recharge mounded above the surface (ponding allowed, ALL
 # wtd-dependent removals off) -> the only physics is constant-T diffusion + uniform source -> exact parabola.
-FL="-wtm_anderson -wtm_allow_surface_ponding -wtm_evap_taper 0 -wtm_surface_sink 0 -wtm_extinction 0 -wtm_eq_metric rms -wtm_eq_tol 1e-8"
+FL="-wtm_anderson -wtm_dev_allow_aboveground_water_columns -wtm_evap_taper 0 -wtm_surface_sink 0 -wtm_extinction 0 -wtm_eq_metric rms -wtm_eq_tol 1e-8"
 
 emit dir anbcD; "$WTM" "$WORK/dir.cfg" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
 emit neu anbcN; "$WTM" "$WORK/neu.cfg" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }

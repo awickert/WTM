@@ -3,7 +3,7 @@
 # See benchmark/FREE_SURFACE_FLICKER.md. This is now a POSITIVE test: under the default exfiltration clamp
 # the flicker-prone plateau SETTLES to a physically consistent free boundary, the exfiltrated water is fully
 # accounted by the runoff array (mass balance), and two time-integration schemes agree. (The old negative
-# "assert the bare flicker exists" version + the nonphysical -wtm_allow_surface_ponding switch are retired;
+# "assert the bare flicker exists" version + the nonphysical -wtm_dev_allow_aboveground_water_columns switch are retired;
 # the bare/unmanaged contrast is documented in FREE_SURFACE_FLICKER.md, not asserted here.)
 #
 # Fixture: a high plateau ringed by ocean with strong recharge, so the interior mound rises to the surface

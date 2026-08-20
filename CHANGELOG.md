@@ -186,6 +186,12 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   `-wtm_direct_to_runoff` is task #100). Golden references were regenerated: the subsurface case is
   unchanged, and cases that generated above-surface water shifted (fsm cases up to ~9.4 m, the 4-cycle
   cold-start transient up to ~24.9 m as routing early surface water changes the trajectory).
+- **Renamed the nonphysical developer switch `-wtm_allow_surface_ponding` to
+  `-wtm_dev_allow_aboveground_water_columns`** (the `-wtm_dev_` prefix marks it developer/nonphysical at the
+  point of use, and the new name says what it actually permits — vertical water columns standing above the land
+  surface, not lakes). It still disables both runoff clamps and prints a warning; it is a
+  testing/diagnostics-only regime (used by `tests/boundary_analytic` to reach the constant-transmissivity
+  ponded-parabola solution), never a valid model configuration.
 - **Snapshot output filenames now carry the simulated year.** Water-table rasters are written as
   `{outfile_prefix}{cycle:09}_{years}yr.tif` (was `{outfile_prefix}{cycle:09}.tif`), so each periodic
   snapshot is self-describing by simulated time — essential for transient runs, informative for spin-up

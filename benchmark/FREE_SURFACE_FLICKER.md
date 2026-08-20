@@ -96,4 +96,4 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
 
 Each test is **positive** (assert the managed system *settles* — per-cycle change decays and, where two
 schemes are run, they agree), not a negative "assert the bad flicker exists," so it is robust and needs no
-nonphysical `allow_surface_ponding`. See `finding_lakeshore_flicker` for the original diagnosis.
+nonphysical `-wtm_dev_allow_aboveground_water_columns`. See `finding_lakeshore_flicker` for the original diagnosis.
