@@ -5,6 +5,7 @@
 #include <omp.h>
 #include <array>
 #include <chrono>
+#include <cstring>  // std::strcmp for -wtm_land_boundary parsing
 #include <experimental/source_location>
 
 #include <petscdm.h>
@@ -164,6 +165,17 @@ static double dischargePotentialInverse(const double Phi, const double fdepth, c
   return std::sqrt(std::max(2.0 * (Phi / k - 0.5 * fd * fd), 0.0)) - shallow - fd;          // linear
 }
 static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge potential Φ (Newton path)
+
+// --- Land-edge boundary condition (-wtm_land_boundary) --------------------------------------------
+// Ocean edges are ALWAYS Dirichlet h=0 (sea level; a fixed-head boundary -- not a choice). LAND edges are
+// selectable. Two mechanisms, both applied at the off-map ghost node one cell outside the true edge:
+//   neumann_toposlope (DEFAULT): ghost head = h_edge + (topo_edge - topo_inland) -> zero groundwater flux
+//     RELATIVE TO the sloping land surface (terrain-following no-flow), the physical regional boundary.
+//   dirichlet: ghost head = 0 (sea level) -> the modern ghost-node equivalent of the legacy sea-level
+//     padding, imposed at a LAND edge without converting the cell to ocean. "For now just sea level."
+// This selector is the general-framework hook; more values (plain zero-gradient, specified flux/head) can
+// be added later. See BOUNDARY_CONDITIONS.md.
+static bool g_land_boundary_dirichlet = false;  // -wtm_land_boundary dirichlet (default: neumann_toposlope)
 
 // --- Time-averaged interblock transmissivity (-wtm_Tbar) -----------------------------------------
 // The exponential T(wtd) is the dominant nonlinearity: the frozen-coefficient solvers freeze T at the
@@ -1008,6 +1020,31 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (g_T_bedrock > 0.0 && g_kirchhoff)
     throw std::runtime_error("-wtm_T_bedrock is incompatible with -wtm_kirchhoff: Phi + T_bedrock*wtd has no "
                              "closed-form inverse for the discharge-potential variable.");
+
+  // -wtm_land_boundary: select the LAND-edge boundary condition (ocean is always Dirichlet h=0). Accepts
+  // "neumann_toposlope" (default; terrain-following no-flow) or "dirichlet" (ghost head = sea level, the
+  // modern ghost-node equivalent of the legacy sea-level padding, imposed at land edges without turning them
+  // to ocean). Currently wired into the matrix-free residual (Anderson path); Picard/Newton are guarded off
+  // below until their off-map operator/Jacobian tangents are extended.
+  char land_bc[64] = "neumann_toposlope";
+  PetscBool land_bc_set = PETSC_FALSE;
+  PetscOptionsGetString(nullptr, nullptr, "-wtm_land_boundary", land_bc, sizeof(land_bc), &land_bc_set);
+  if (std::strcmp(land_bc, "dirichlet") == 0)
+    g_land_boundary_dirichlet = true;
+  else if (std::strcmp(land_bc, "neumann_toposlope") == 0)
+    g_land_boundary_dirichlet = false;
+  else
+    throw std::runtime_error(std::string("-wtm_land_boundary: unknown value '") + land_bc +
+                             "' (expected 'neumann_toposlope' or 'dirichlet').");
+  // Land Dirichlet is wired into the matrix-free residual (Anderson path, incl. TR-BDF2 which forces
+  // Anderson). The Picard operator and the Newton analytic Jacobian still carry only the neumann_toposlope
+  // off-map tangent, so land Dirichlet on those paths would make the operator/Jacobian inconsistent with the
+  // residual. Guard until those off-map branches are extended (the Dirichlet tangent dX = h_c - 0 depends on
+  // the centre head, unlike Neumann's constant dX, so the Jacobian change needs its own FD-verified pass).
+  if (g_land_boundary_dirichlet && (user_context.use_picard || user_context.use_newton))
+    throw std::runtime_error("-wtm_land_boundary dirichlet is currently supported on the matrix-free Anderson "
+                             "path only (add -wtm_anderson). Picard/Newton support is pending the off-map "
+                             "Dirichlet operator/Jacobian tangent.");
 
   // Taper 1 -- sub-surface sink: a smooth, order-preserving near-surface removal that holds the water
   // table at/below the land surface and hands the exfiltrated water to FillSpillMerge (it stays in the
@@ -1930,7 +1967,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
-           bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev,                                           \
+           bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev, smooth_T, g_land_boundary_dirichlet,      \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
@@ -1964,10 +2001,15 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // goes out of bounds under DM_BOUNDARY_NONE. Topo gradient is from FIXED data (stable). See task #96.
         const auto face_out = [&](int nj, int ni, double G) -> double {
           double h_nbr, Tinv_nbr;
-          if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map: land-slope ghost
-            const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
-            h_nbr    = this_x + (my_topo[j][i] - topo_inland);
-            Tinv_nbr = this_T;
+          if (nj < 0 || nj >= info->my || ni < 0 || ni >= info->mx) {  // off-map land edge: ghost node
+            if (g_land_boundary_dirichlet) {  // dirichlet: ghost = an ocean neighbour (head 0, surface T),
+              h_nbr    = 0.0;                  // identical to how ocean cells impose Dirichlet -> reproduces
+              Tinv_nbr = 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T);
+            } else {                           // neumann_toposlope (default): terrain-following no-flow
+              const double topo_inland = my_topo[2 * j - nj][2 * i - ni];
+              h_nbr    = this_x + (my_topo[j][i] - topo_inland);
+              Tinv_nbr = this_T;
+            }
           } else {
             h_nbr    = head(nj, ni);
             Tinv_nbr = my_T[nj][ni];
