@@ -16,9 +16,10 @@ namespace dh = richdem::dephier;
 // -wtm_ghost_boundary: use the mask-aware ghost-node boundary (Dirichlet h=0 at ocean, land-slope Neumann
 // at land edges, computed internally at the true edge). When set we must NOT force the domain edges to
 // ocean (setEdges(0)) -- padding/edge-forcing is incompatible with these BCs (see task #96). Read the
-// PETSc option directly here since irf runs before the solver parses its flags.
+// PETSc option directly here since irf runs before the solver parses its flags. ON by default (it replaces
+// the legacy edge-padding); revert to the old zero-edge behaviour with -wtm_ghost_boundary false.
 static bool ghost_boundary_on() {
-  PetscBool on = PETSC_FALSE;
+  PetscBool on = PETSC_TRUE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_ghost_boundary", &on, nullptr);
   return on == PETSC_TRUE;
 }
