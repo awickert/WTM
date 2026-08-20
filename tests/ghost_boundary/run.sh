@@ -54,7 +54,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-GB="-wtm_ghost_boundary"
+GB=""  # mask-aware ghost boundary is now the default (no flag needed)
 BASE="-snes_stol 1e-8"
 fail=0
 

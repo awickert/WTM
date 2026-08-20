@@ -52,9 +52,9 @@ EOF
 # a scaling/conditioning artifact, NOT the identity failing. The ghost boundary removes that edge stress so
 # the S·Δh ≡ ΔV identity shows at machine precision (observed ~1e-15) and the test is a clean invariant check.
 emit secant; emit volume
-"$WTM" "$WORK/secant.cfg" -wtm_anderson                     -wtm_ghost_boundary -snes_stol 1e-10 > "$WORK/secant.log" 2>&1 \
+"$WTM" "$WORK/secant.cfg" -wtm_anderson                     -snes_stol 1e-10 > "$WORK/secant.log" 2>&1 \
   || { echo "RUN FAILED: secant"; tail -3 "$WORK/secant.log"; exit 2; }
-"$WTM" "$WORK/volume.cfg" -wtm_anderson -wtm_volume_storage -wtm_ghost_boundary -snes_stol 1e-10 > "$WORK/volume.log" 2>&1 \
+"$WTM" "$WORK/volume.cfg" -wtm_anderson -wtm_volume_storage -snes_stol 1e-10 > "$WORK/volume.log" 2>&1 \
   || { echo "RUN FAILED: volume"; tail -3 "$WORK/volume.log"; exit 2; }
 
 SEC=$(ls "$WORK"/secant_*.tif | tail -1)

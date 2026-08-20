@@ -50,7 +50,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_ghost_boundary -wtm_eq_metric rms -wtm_eq_tol 0.001"
+BB="-wtm_eq_metric rms -wtm_eq_tol 0.001"
 emit anderson; emit picard; emit newton
 run() { # arm  extra-flags...
   local arm="$1"; shift

@@ -42,7 +42,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_anderson -wtm_ghost_boundary"
+BB="-wtm_anderson"
 emit cc; emit adapt; emit water
 "$WTM" "$WORK/cc.cfg"    $BB -wtm_eq_metric rms       -wtm_eq_tol 0.001  > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }

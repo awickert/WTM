@@ -42,7 +42,7 @@ outfile_prefix $WORK/$1_
 EOF
 }
 stop_cycle() { grep -oE "stopping at cycle [0-9]+" "$1" | grep -oE "[0-9]+$"; }
-BB="-wtm_anderson -wtm_ghost_boundary -wtm_eq_tol 0.001 -wtm_eq_metric rms"
+BB="-wtm_anderson -wtm_eq_tol 0.001 -wtm_eq_metric rms"
 
 # --- cold full run (saves every cycle) ---
 emit cold "$INP" 0

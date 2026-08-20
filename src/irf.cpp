@@ -13,15 +13,33 @@
 namespace rd = richdem;
 namespace dh = richdem::dephier;
 
-// -wtm_ghost_boundary: use the mask-aware ghost-node boundary (Dirichlet h=0 at ocean, land-slope Neumann
-// at land edges, computed internally at the true edge). When set we must NOT force the domain edges to
-// ocean (setEdges(0)) -- padding/edge-forcing is incompatible with these BCs (see task #96). Read the
-// PETSc option directly here since irf runs before the solver parses its flags. ON by default (it replaces
-// the legacy edge-padding); revert to the old zero-edge behaviour with -wtm_ghost_boundary false.
-static bool ghost_boundary_on() {
-  PetscBool on = PETSC_TRUE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_ghost_boundary", &on, nullptr);
+// Boundary conditions default to the mask-aware ghost-node scheme (task #96): Dirichlet h=0 at ocean edges,
+// land-slope Neumann at land edges, computed at the true domain edge. The legacy method -- force every domain
+// edge to sea-level ocean via setEdges(0) ("1-cell sea-level padding, all-Dirichlet") -- is retained ONLY as
+// a verification tool behind -wtm_dev_padded_dirichlet, to check that the ghost scheme reproduces it on an
+// ocean-ringed domain (where the two coincide). Read the PETSc option here since irf runs before the solver
+// parses its flags. Absent (default) => mask-aware ghost boundary; present => legacy padded all-Dirichlet.
+static bool padded_dirichlet_requested() {
+  PetscBool on = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_padded_dirichlet", &on, nullptr);
   return on == PETSC_TRUE;
+}
+
+// The legacy padded-Dirichlet method (setEdges(0)) OVERWRITES the domain-edge ring to ocean. That silently
+// discards a ring of real land data if the boundary is not already ocean, so guard it: require every
+// domain-boundary cell to be ocean (sea level) and FAIL LOUDLY otherwise. Verification runs use an
+// ocean-ringed (or zero-padded) domain, where setEdges is a no-op and this passes. Production land-edge runs
+// must use the default mask-aware boundary (no-flow Neumann at land edges) instead.
+static void require_ocean_boundary(const rd::Array2D<float>& mask) {
+  const int H = mask.height(), W = mask.width();
+  long land = 0;
+  for (int x = 0; x < W; x++) { land += (mask(x, 0) != 0.f); land += (mask(x, H - 1) != 0.f); }
+  for (int y = 0; y < H; y++) { land += (mask(0, y) != 0.f); land += (mask(W - 1, y) != 0.f); }
+  if (land > 0)
+    throw std::runtime_error(
+        "-wtm_dev_padded_dirichlet requires an all-ocean domain boundary; found " + std::to_string(land) +
+        " non-ocean boundary cell(s). Zero-pad the domain with an ocean ring, or drop the flag to use the "
+        "default mask-aware boundary (no-flow at land edges).");
 }
 
 // Taper 2 accessor (defined in transient_groundwater.cpp): whether the smooth ET->open-water
@@ -68,8 +86,9 @@ void InitialiseTransient(Parameters& params, ArrayPack& arp) {
   arp.slope_end             = rd::Array2D<float>(params.get_path(params.time_end, "slope"));
   arp.land_mask             = rd::Array2D<float>(params.get_path(params.time_end, "mask"));
 
-  // there is land and 0 in the ocean
-  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
+  // land_mask: 1 where there is land, 0 in the ocean. Default: keep the real border (mask-aware ghost
+  // boundary). Legacy verification path only: force the border to ocean (guarded to an all-ocean boundary).
+  if (padded_dirichlet_requested()) { require_ocean_boundary(arp.land_mask); arp.land_mask.setEdges(0); }
 
   arp.precip_end          = rd::Array2D<float>(params.get_path(params.time_end, "precipitation"));
   arp.evap_end            = rd::Array2D<float>(params.get_path(params.time_end, "evaporation"));
@@ -129,7 +148,8 @@ void InitialiseEquilibrium(Parameters& params, ArrayPack& arp) {
   arp.slope     = rd::Array2D<float>(params.get_path(params.time_start, "slope"));
   arp.land_mask = rd::Array2D<float>(
       params.get_path(params.time_start, "mask"));  // A binary mask that is 1 where there is land and 0 in the ocean
-  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
+  // Default: keep the real border (mask-aware ghost boundary). Legacy verification path only (guarded).
+  if (padded_dirichlet_requested()) { require_ocean_boundary(arp.land_mask); arp.land_mask.setEdges(0); }
 
   arp.precip = rd::Array2D<float>(params.get_path(params.time_start, "precipitation"));  // Units: m/yr.
   arp.evap   = rd::Array2D<float>(params.get_path(params.time_start, "evaporation"));    // Units: m/yr.
@@ -199,7 +219,8 @@ void InitialiseTest(Parameters& params, ArrayPack& arp) {
       }
     }
   }
-  if (!ghost_boundary_on()) arp.land_mask.setEdges(0);  // no edge-forcing under -wtm_ghost_boundary (task #96)
+  // Default: keep the real border (mask-aware ghost boundary). Legacy verification path only (guarded).
+  if (padded_dirichlet_requested()) { require_ocean_boundary(arp.land_mask); arp.land_mask.setEdges(0); }
 
   arp.ksat                  = rd::Array2D<float>(arp.topo, 0.0001f);  // Units of ksat are m/s.
   arp.porosity              = rd::Array2D<float>(arp.topo, 0.25);     // Units: unitless

@@ -44,7 +44,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_ghost_boundary -wtm_eq_metric rms -wtm_eq_tol 0.001 -wtm_anderson"
+BB="-wtm_eq_metric rms -wtm_eq_tol 0.001 -wtm_anderson"
 emit ar; emit base
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
 "$WTM" "$WORK/ar.cfg" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \
