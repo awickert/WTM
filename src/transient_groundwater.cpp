@@ -328,11 +328,12 @@ static double surfaceSinkTangent(const double wtd, const double w) {
 // pile) and removes nothing below the surface (no depression). The Anderson solve tolerates the hard
 // max fine -- an earlier softplus smoothing was inert (convergence was eps-invariant), so it is gone.
 static double directToRunoffRemoval(const double wtd, const double dt) { return std::max(0.0, wtd) / dt; }
-// The analytic tangent for a FUTURE Newton path. NOT yet wired into the Jacobian: -wtm_direct_to_runoff
-// currently runs only matrix-free (Anderson), which needs no tangent. Kept (marked maybe_unused) because
-// it records the derivative and the design intent -- but note it is a discontinuous step at wtd=0, exactly
-// the seepage kink the coupling-stability literature says a Newton path would need smoothed first.
-[[maybe_unused]] static double directToRunoffTangent(const double wtd, const double dt) {
+// The seepage-face tangent dR/dwtd. Wired into the Picard operator + RHS as a FROZEN ACTIVE-SET diagonal
+// (FormPicardOperator/FormPicardRHS): each Picard sweep fixes which cells seep, so the discontinuous step at
+// wtd=0 is handled by set membership, not a derivative -- and Picard+implicit then matches Anderson to ~1e-11.
+// It is NOT yet in the Newton Jacobian (FormJacobianLocal): a Newton line search would overshoot the same kink,
+// which needs a semismooth / active-set Newton (see the fork enhancement issue).
+static double directToRunoffTangent(const double wtd, const double dt) {
   return (wtd > 0.0 ? 1.0 : 0.0) / dt;
 }
 
@@ -1112,17 +1113,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
   if (!params.runoff_collector.empty()) {
-    const std::string& rc      = params.runoff_collector;
-    const bool         anderson = !user_context.use_picard && !user_context.use_newton;
+    const std::string& rc = params.runoff_collector;
     g_surface_sink = false;  // selector supersedes the band sink in every mode
     if (rc == "implicit") {
       g_direct_to_runoff                     = true;
       g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
-      if (!anderson)
-        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the in-residual seepage face is "
-                    "matrix-free (Anderson) only; on Picard/Newton its kink is not in the operator/Jacobian, so "
-                    "the solve is inconsistent (Picard ~0.1 m off; Newton may diverge). Use "
-                    "runoff_collector=explicit on those solvers until active-set Newton lands.\n");
+      if (user_context.use_newton)
+        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the seepage-face tangent is wired into "
+                    "the Anderson residual and the Picard operator, but NOT the Newton Jacobian (its kink needs "
+                    "active-set Newton). On the Newton path the solve is inconsistent (may diverge); use "
+                    "runoff_collector=explicit there until active-set Newton lands.\n");
     } else if (rc == "explicit") {
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = true;
@@ -2499,6 +2499,15 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           const double dt = user_context->deltat;
           bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k, my_fringe[j][i]) * xx[j][i] - dt * surfaceSink(w_k, my_fringe[j][i]));
         }
+        if (g_direct_to_runoff) {
+          // Seepage face (runoff_collector=implicit): in-residual removal dt*max(0,w)/dt (the above-surface
+          // excess), Picard-linearized about w_k in the SAME form as the sink. The removal is exactly linear
+          // where active (rate w/dt for w>0), so this linearization is exact; it matches the operator's
+          // dt*R'(w_k)*A_j = A_j seeping-cell diagonal below (a frozen active set: the seeping set is fixed
+          // each Picard sweep). Mutually exclusive with the sink under the selector.
+          const double dt = user_context->deltat;
+          bb[j][i] += A_j * (dt * directToRunoffTangent(w_k, dt) * xx[j][i] - dt * directToRunoffRemoval(w_k, dt));
+        }
         if (g_evap_taper) {
           // Taper 2: implicit demand-identity evaporation dt*E_eff(w^{n+1}) (ET -> owe), Picard-
           // linearized about w_k with the SPD-clamped tangent (matches the operator's evap diagonal).
@@ -2708,6 +2717,11 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
                                      ? dt * evapRemovalTangent(w_k, my_evap[j][i], my_owe[j][i],
                                                                my_precip[j][i] / SECONDS_IN_A_YEAR) * A_j
                                      : 0.0;
+        // Seepage face (runoff_collector=implicit): dt*R'(w_k)*A_j = A_j for a seeping cell (w_k > 0), 0 below.
+        // A frozen active-set diagonal (the seeping set is fixed each Picard sweep); >= 0 -> SPD-preserving.
+        // The matching RHS constant is added in FormPicardRHS. Mutually exclusive with the sink.
+        const double dtr_diag = (g_direct_to_runoff && bdf2_on_V)
+                                    ? dt * directToRunoffTangent(w_k, dt) * A_j : 0.0;
 
         // Variable-length stencil: one off-diagonal dt*G conductance per IN-BOUNDS face (E,W,N,S order),
         // then the centre. An OFF-MAP face emits NO column (its constant ghost flux is on the RHS) -- an
@@ -2740,7 +2754,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
           ++nc;
         }
         cols[nc] = {.k = 0, .j = j, .i = i, .c = 0};                          // centre
-        vals[nc] = a_coeff * S_c * A_j + sink_diag + evap_diag - face_sum;    // diagonal (strictly dominant)
+        vals[nc] = a_coeff * S_c * A_j + sink_diag + dtr_diag + evap_diag - face_sum;  // diagonal (strictly dominant)
         ++nc;
         PetscCall(MatSetValuesStencil(A, 1, &row, nc, cols, vals, INSERT_VALUES));
       }
