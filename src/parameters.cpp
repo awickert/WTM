@@ -32,6 +32,11 @@ Parameters::Parameters(const std::string& config_file) {
   } catch (const std::exception& e) {
     throw std::runtime_error("Failed to read config file '" + config_file + "': " + e.what());
   }
+  if (!root.IsMap()) {
+    throw std::runtime_error("config file '" + config_file + "' is not a YAML mapping. The config format is now "
+                             "nested YAML with sections (run/time/grid/physics/surface_water/io) -- see "
+                             "Config_file.yaml. (A legacy 'key value' .cfg will trip this.)");
+  }
 
   // Each key is read only if present; an absent key keeps the member's default, and check() below enforces
   // the ones that must be set (matching the previous parser's behavior). Chained operator[] on an absent
