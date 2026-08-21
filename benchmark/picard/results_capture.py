@@ -16,7 +16,7 @@ COLS = ["experiment", "solver", "grid", "ranks", "dt_yr", "tol_mm", "T_yr", "ste
 rows = []
 def add(**kw): rows.append({c: kw.get(c, "") for c in COLS})
 
-# ---------- core+grid sweep: fixed BDF2 (run_type test, maxiter=10, best-of-3) ----------
+# ---------- core+grid sweep: fixed BDF2 (run_type test, report_interval=10, best-of-3) ----------
 bdf2_sweep = {  # grid: {n: (gw_s, outer, inner)}
  64:{1:(0.100,2.1,3.0),2:(0.100,2.1,3.0),4:(0.064,2.1,3.0),8:(0.052,2.1,3.0)},
  128:{1:(0.300,1.9,3.0),2:(0.200,1.8,3.0),4:(0.100,1.8,3.0),8:(0.100,1.8,3.0)},
@@ -27,7 +27,7 @@ for g, d in bdf2_sweep.items():
     for n,(gw,o,i) in d.items():
         add(experiment="core_sweep", solver="bdf2", grid=g, ranks=n, gw_time_s=gw,
             outer_its=o, inner_its=i, slowed_by_concurrent_processes="yes", run_date="2026-07-26",
-            notes="run_type test maxiter=10 best-of-3; ran concurrently w/ dt-robustness")
+            notes="run_type test report_interval=10 best-of-3; ran concurrently w/ dt-robustness")
 
 # ---------- core+grid sweep: Anderson vs Picard-BE (n=1 comparison points) ----------
 # GWtime (s), outer_avg, inner_avg. Small grids read ~0 (below timer resolution).
@@ -44,9 +44,9 @@ for g,ss in cmp_sweep.items():
             add(experiment="core_sweep", solver=sv, grid=g, ranks=n, gw_time_s=gw,
                 outer_its=("" if o is None else o), inner_its=("" if i is None else i),
                 slowed_by_concurrent_processes="yes", run_date="2026-07-25",
-                notes="run_type test maxiter=10 best-of-3")
+                notes="run_type test report_interval=10 best-of-3")
 
-# ---------- dt robustness (128^2 drainage, maxiter=1): steps to equilibrium ----------
+# ---------- dt robustness (128^2 drainage, report_interval=1): steps to equilibrium ----------
 for dt,conv,seq,inn,fc in [(1,"yes",">399",5,""),(10,"yes",">399",5,""),(100,"yes","341",6,""),
                            (1000,"yes","45",6,""),(10000,"yes","11",7,""),(100000,"yes","6",7,"")]:
     add(experiment="dt_robustness", solver="bdf2", grid=128, ranks=1, dt_yr=dt,

@@ -40,7 +40,7 @@ cells_per_degree   10
 southern_edge      -45
 deltat             31536000
 total_cycles       3
-maxiter            2
+report_interval            2
 fdepth_a           200
 fdepth_b           150
 fdepth_fmin        2
@@ -51,7 +51,7 @@ region             fsm_test
 supplied_wt        1
 textfilename       __TXT__
 outfile_prefix     __OUT__
-cycles_to_save     9999
+save_nreport_interval     9999
 EOF
 }
 

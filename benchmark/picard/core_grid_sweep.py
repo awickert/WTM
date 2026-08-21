@@ -2,7 +2,7 @@
 """Core + grid sweep: matrix-free Anderson vs semi-implicit Picard.
 
 For grids 64..1024 and rank counts 1..8, times the GW solve (run_type test, one
-cycle, `maxiter` GW solves) and records outer (SNES) and inner (CG+GAMG)
+cycle, `report_interval` GW solves) and records outer (SNES) and inner (CG+GAMG)
 iteration counts. Reveals: inner CG flat vs grid (GAMG works), Anderson outer
 count growing with grid, Picard's higher per-solve cost but better strong
 scaling. Uses the synthetic topography from benchmark/scaling.
@@ -31,10 +31,10 @@ def cfg(grid, prefix):
     open(p, "w").write(
         f"run_type test\nfsm_on 0\nevap_mode 0\ninfiltration_on 0\nrunoff_ratio_on 0\n"
         f"cells_per_degree {grid/120.0:.6f}\nsouthern_edge -45\ndeltat 31536000\n"
-        f"total_cycles 1\nmaxiter {MAXITER}\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
+        f"total_cycles 1\nreport_interval {MAXITER}\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
         f"time_start t0\ntime_end t0\nsurfdatadir {sdir}\nregion synth\nsupplied_wt 0\n"
         f"textfilename {WORK}/sweep_{prefix}_log.txt\noutfile_prefix {WORK}/sweep_out_{prefix}_\n"
-        f"cycles_to_save 9999\n")
+        f"save_nreport_interval 9999\n")
     return p
 
 

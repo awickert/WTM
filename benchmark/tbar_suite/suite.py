@@ -24,7 +24,7 @@ def base_cfg(domain):
             return p
     raise SystemExit("no template cfg in " + domain)
 
-def make_cfg(domain, name, deltat, cycles, maxiter, run_type="equilibrium", supplied=0, save_every=None):
+def make_cfg(domain, name, deltat, cycles, report_interval, run_type="equilibrium", supplied=0, save_every=None):
     tmpl = open(base_cfg(domain)).read()
     se = read_se(domain)
     save = save_every if save_every else cycles  # save first + last only by default
@@ -32,10 +32,10 @@ def make_cfg(domain, name, deltat, cycles, maxiter, run_type="equilibrium", supp
         r"^surfdatadir.*":     f"surfdatadir        {domain}",
         r"^deltat.*":          f"deltat             {deltat}",
         r"^total_cycles.*":    f"total_cycles       {cycles}",
-        r"^maxiter.*":         f"maxiter            {maxiter}",
+        r"^report_interval.*":         f"report_interval            {report_interval}",
         r"^run_type.*":        f"run_type           {run_type}",
         r"^supplied_wt.*":     f"supplied_wt        {supplied}",
-        r"^cycles_to_save.*":  f"cycles_to_save     {save}",
+        r"^save_nreport_interval.*":  f"save_nreport_interval     {save}",
         r"^textfilename.*":    f"textfilename       {domain}/{name}.txt",
         r"^outfile_prefix.*":  f"outfile_prefix     {domain}/{name}_",
     }
@@ -80,9 +80,9 @@ def final_raster(domain, name):
     tifs = sorted(glob.glob(os.path.join(domain, name + "_*.tif")))
     return tifs[-1] if tifs else None
 
-def run_one(domain, name, flags, deltat, cycles, maxiter, run_type="equilibrium", supplied=0,
+def run_one(domain, name, flags, deltat, cycles, report_interval, run_type="equilibrium", supplied=0,
             timeout=300, settle_thresh=0.5):
-    make_cfg(domain, name, deltat, cycles, maxiter, run_type, supplied)
+    make_cfg(domain, name, deltat, cycles, report_interval, run_type, supplied)
     cmd = [WTM, os.path.join(domain, name + ".cfg")] + flags
     t0 = time.time()
     try:
@@ -113,26 +113,26 @@ SOLVERS = [
     ("picard_tbar",   ["-wtm_Tbar"]),
 ]
 
-def newton_pair(domain, tag, wk=1, cycles=40, maxiter=20, timeout=400):
+def newton_pair(domain, tag, wk=1, cycles=40, report_interval=20, timeout=400):
     """Newton +/- Tbar at one dt via -wtm_stiff (continuation + eq_tol early-stop). Iteration count and
     wall to equilibrium are the comparison (does Tbar reduce Newton's cost / continuation length?)."""
     out = []
     for sname, flags in (("newton", ["-wtm_stiff"]), ("newton_tbar", ["-wtm_stiff", "-wtm_Tbar"])):
         name = f"{tag}_cold_{sname}_{wk}wk"
-        res = run_one(domain, name, flags, wk * WEEK, cycles, maxiter, "equilibrium", 0, timeout)
+        res = run_one(domain, name, flags, wk * WEEK, cycles, report_interval, "equilibrium", 0, timeout)
         res["solver"] = sname; res["weeks"] = wk
         out.append(res)
         print(f"  {sname:14s} {wk:2d}wk: {res['status']:7s} wall={res['wall']:6.1f}s "
               f"iters={res['tot_iters']:6d} settle@{res['settle']} swt={res['final_swt']:.4g}", flush=True)
     return out
 
-def suite_cold(domain, tag, weeks=(1, 2, 4, 8, 16), cycles=40, maxiter=20, timeout=200):
+def suite_cold(domain, tag, weeks=(1, 2, 4, 8, 16), cycles=40, report_interval=20, timeout=200):
     results = []
     for wk in weeks:
         dt = wk * WEEK
         for sname, flags in SOLVERS:
             name = f"{tag}_cold_{sname}_{wk}wk"
-            res = run_one(domain, name, flags, dt, cycles, maxiter, "equilibrium", 0, timeout)
+            res = run_one(domain, name, flags, dt, cycles, report_interval, "equilibrium", 0, timeout)
             res["solver"] = sname; res["weeks"] = wk
             results.append(res)
             print(f"  {sname:14s} {wk:2d}wk: {res['status']:7s} wall={res['wall']:6.1f}s "

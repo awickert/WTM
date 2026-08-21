@@ -2,7 +2,7 @@
 # Profile the Esquibel groundwater solve BEFORE committing to a long run: per-phase
 # timers (WTM's GW/FSM/recharge) + PETSc -log_view + a scaling curve, over a few cycles.
 # Answers "where does per-cycle time go, and why does it scale as it does" -- without the
-# full equilibrium run. maxiter stays 50 (unchanged).
+# full equilibrium run. report_interval stays 50 (unchanged).
 #
 # Usage: profile.sh [ranks...]        (default "1 2 4 8");  NCYC=3 overridable
 # Findings 2026-08-10 (this laptop): FSM ~= 2e-6 s/cyc (a no-op here); the cost is SNESSolve
@@ -19,7 +19,7 @@ RANKS=${RANKS:-${*:-1 2 4 8}}
 NCYC=${NCYC:-3}
 [ -f domain/Esquibel_010000_topography.tif ] || { echo "domain not staged -- run ./make_esquibel.py"; exit 1; }
 P=results/prof; mkdir -p "$P"
-sed "s/^total_cycles.*/total_cycles $NCYC/;s/^cycles_to_save.*/cycles_to_save $NCYC/;s#results/eq_awickert#$P/p#g" eq_awickert.cfg > "$P/p.cfg"
+sed "s/^total_cycles.*/total_cycles $NCYC/;s/^save_nreport_interval.*/save_nreport_interval $NCYC/;s#results/eq_awickert#$P/p#g" eq_awickert.cfg > "$P/p.cfg"
 
 for n in $RANKS; do
   : > "$P/p.txt"

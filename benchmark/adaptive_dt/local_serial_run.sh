@@ -28,8 +28,8 @@ cells_per_degree   900
 southern_edge      55.338391020555555
 deltat $DT
 total_cycles $CYC
-cycles_to_save $CYC
-maxiter            50
+save_nreport_interval $CYC
+report_interval            50
 fdepth_a           100
 fdepth_b           150
 fdepth_fmin        2.5

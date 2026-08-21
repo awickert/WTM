@@ -135,7 +135,7 @@ def ensure_inputs(grid, root):
     return sdir
 
 
-def write_cfg(path, sdir, grid, maxiter, total_cycles):
+def write_cfg(path, sdir, grid, report_interval, total_cycles):
     # cells_per_degree = grid/120 keeps the -45..+75 band on the globe at any size.
     cpd = grid / 120.0
     with open(path, "w") as f:
@@ -149,7 +149,7 @@ def write_cfg(path, sdir, grid, maxiter, total_cycles):
             f"southern_edge      -45\n"
             f"deltat             31536000\n"
             f"total_cycles       {total_cycles}\n"
-            f"maxiter            {maxiter}\n"
+            f"report_interval            {report_interval}\n"
             f"fdepth_a           200\n"
             f"fdepth_b           150\n"
             f"fdepth_fmin        2\n"
@@ -160,7 +160,7 @@ def write_cfg(path, sdir, grid, maxiter, total_cycles):
             f"supplied_wt        0\n"
             f"textfilename       /tmp/scaling_run.txt\n"
             f"outfile_prefix     /tmp/scaling_out_\n"
-            f"cycles_to_save     9999\n"
+            f"save_nreport_interval     9999\n"
         )
 
 
@@ -217,7 +217,7 @@ def main():
                     help="MPI rank counts (kcallaghan is always run at n=1 only)")
     ap.add_argument("--builds", nargs="+", default=list(BUILD_FOLDERS),
                     choices=list(BUILD_FOLDERS), help="which builds to run")
-    ap.add_argument("--maxiter", type=int, default=5,
+    ap.add_argument("--report_interval", type=int, default=5,
                     help="GW solves per cycle (higher amortizes one-time serial init)")
     ap.add_argument("--reps", type=int, default=1,
                     help="repeat each run N times and keep the best (min-wall); "
@@ -264,7 +264,7 @@ def main():
     print(f"builds      : {', '.join(l for l, _ in builds)}")
     print(f"grids       : {grids}")
     print(f"ranks       : {args.ranks}")
-    print(f"maxiter     : {args.maxiter}   total_cycles: {args.total_cycles}")
+    print(f"report_interval     : {args.report_interval}   total_cycles: {args.total_cycles}")
     print(f"solver args : after={' '.join(FORK_ANDERSON_ARGS)}  |  "
           f"before/kcallaghan={' '.join(ANDERSON_ARGS)}")
     print(f"              (the fork defaults to Picard, so it selects Anderson via -wtm_anderson;")
@@ -286,8 +286,8 @@ def main():
 
     for grid in grids:
         sdir = ensure_inputs(grid, synth_root)
-        cfg = os.path.join(sdir, f"synth_m{args.maxiter}_c{args.total_cycles}.cfg")
-        write_cfg(cfg, sdir, grid, args.maxiter, args.total_cycles)
+        cfg = os.path.join(sdir, f"synth_m{args.report_interval}_c{args.total_cycles}.cfg")
+        write_cfg(cfg, sdir, grid, args.report_interval, args.total_cycles)
         for label, binary in builds:
             for n in args.ranks:
                 # kcallaghan (v2.0.1) is a single-process code: it SEGVs at every

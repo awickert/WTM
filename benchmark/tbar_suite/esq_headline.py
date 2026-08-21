@@ -8,7 +8,7 @@ import suite
 DOWN = os.path.expanduser("~/Downloads/Esquibel_Data-20260801T205621Z-1-001/Esquibel_Data")
 
 def esq_cfg_template(domain):
-    # reuse Kerry's cfg as the template; the driver rewrites dt/cycles/maxiter/output
+    # reuse Kerry's cfg as the template; the driver rewrites dt/cycles/report_interval/output
     import shutil
     src = os.environ.get("WTM_ESQ_CFG",
                          os.path.join(os.environ.get("WTM_SCRATCH", "/tmp/wtm_scratch"), "esq_kerry", "anderson.cfg"))
@@ -27,14 +27,14 @@ if __name__ == "__main__":
     domain = DOWN
     esq_cfg_template(domain)
     cycles = int(sys.argv[1]) if len(sys.argv) > 1 else 12
-    maxiter = int(sys.argv[2]) if len(sys.argv) > 2 else 15
+    report_interval = int(sys.argv[2]) if len(sys.argv) > 2 else 15
     timeout = int(sys.argv[3]) if len(sys.argv) > 3 else 900
-    print(f"ESQUIBEL headline (384k cells) cycles={cycles} maxiter={maxiter} timeout={timeout}", flush=True)
+    print(f"ESQUIBEL headline (384k cells) cycles={cycles} report_interval={report_interval} timeout={timeout}", flush=True)
     results = []
     for sname, flags, weeks in RUNS:
         for wk in weeks:
             name = f"esqh_{sname}_{wk}wk"
-            res = suite.run_one(domain, name, flags, wk * suite.WEEK, cycles, maxiter,
+            res = suite.run_one(domain, name, flags, wk * suite.WEEK, cycles, report_interval,
                                 "equilibrium", 0, timeout, settle_thresh=5.0)
             res["solver"] = sname; res["weeks"] = wk
             results.append(res)

@@ -36,8 +36,8 @@ cells_per_degree 120
 southern_edge 0
 deltat 2419200
 total_cycles 60
-cycles_to_save 60
-maxiter 200
+save_nreport_interval 60
+report_interval 200
 fdepth_a 100
 fdepth_b 150
 fdepth_fmin 2

@@ -46,7 +46,7 @@ declare -A FLAGS=(
 
 mkcfg() {  # mkcfg <stem> <dt> <eq_tol> <cap>
   local stem=$1 dt=$2 eqt=$3 cap=$4
-  sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles $cap#;s#^cycles_to_save.*#cycles_to_save $cap#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
+  sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles $cap#;s#^save_nreport_interval.*#save_nreport_interval $cap#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
   echo "$eqt"
 }
 runit() {  # runit <stem> <flags...>  -> echoes "rc wall lastcycle finaltif"
@@ -68,7 +68,7 @@ REF="$REFD/ref"
 if [ "${FORCE_REF:-0}" = 1 ] || [ ! -s "${REF}_eq.tif" ]; then
   echo "### building reference equilibrium (cc, dt=1wk, eq_tol 1e-3, cap 300)..."
   mkcfg "$REF" "$BASEDT" "0.001" 300 >/dev/null
-  sed -i "s#^maxiter.*#maxiter 50#" "${REF}.cfg"
+  sed -i "s#^report_interval.*#report_interval 50#" "${REF}.cfg"
   read rc wall cyc ftif <<<"$(runit "$REF" ${FLAGS[cc]} $COMMON -wtm_eq_tol 0.001)"
   if [ "$rc" -ne 0 ] || [ "$ftif" = none ]; then echo "REF build failed (rc=$rc). abort."; exit 1; fi
   cp "$ftif" "${REF}_eq.tif"

@@ -16,7 +16,7 @@ crossover() { awk -v t=$THR 'NF>=5&&$1~/^[0-9]+$/{if($5+0<=t){print $1; exit}}' 
 # timed run: base bin ranks ncyc flags...  -> prints "wall_ms finalcyc finalD iters"
 run() {
   local base=$1 bin=$2 nr=$3 nc=$4; shift 4
-  sed "s/^total_cycles.*/total_cycles $nc/;s/^cycles_to_save.*/cycles_to_save $nc/;s#results/eq_[a-z]*#$R/$base#g" \
+  sed "s/^total_cycles.*/total_cycles $nc/;s/^save_nreport_interval.*/save_nreport_interval $nc/;s#results/eq_[a-z]*#$R/$base#g" \
       "$([ "$bin" = "$KC" ] && echo eq_kcallaghan.cfg || echo eq_awickert.cfg)" > "$R/$base.cfg"
   : > "$R/$base.txt"
   local t0=$(date +%s%N); timeout 300 mpirun -n $nr "$bin" "$R/$base.cfg" $* > "$R/$base.log" 2>&1; local rc=$?; local t1=$(date +%s%N)

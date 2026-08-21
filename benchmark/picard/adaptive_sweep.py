@@ -3,12 +3,12 @@
 
 On the fixed-domain drainage fixture (make_equil.py, mesh-refined so the transient
 timescale -- and thus the ideal step count -- is grid-independent), runs
--wtm_dt_adaptive over a target window (maxiter*deltat) and records:
-  * steps taken (vs the fixed maxiter) and GW wall time, over grids x cores;
+-wtm_dt_adaptive over a target window (report_interval*deltat) and records:
+  * steps taken (vs the fixed report_interval) and GW wall time, over grids x cores;
   * whether the step count is INVARIANT to core count (the controller reduces the
     error estimate with MPI_Allreduce, so decisions must be rank-consistent);
   * step count vs tolerance and vs grid (should be ~grid-independent);
-  * accuracy vs a fixed-BDF2 reference (maxiter steps), per grid at n=1.
+  * accuracy vs a fixed-BDF2 reference (report_interval steps), per grid at n=1.
 
 Prereq: build wtm.x; rasterio available. Fixtures are generated here.
 Usage:  python3 adaptive_sweep.py
@@ -43,9 +43,9 @@ def cfg(grid, tag):
     open(p, "w").write(
         f"run_type equilibrium\nfsm_on 0\nevap_mode 0\ninfiltration_on 0\nrunoff_ratio_on 0\n"
         f"cells_per_degree {cpd:.6f}\nsouthern_edge -45\ndeltat {BASE_DT_YR*YEAR}\n"
-        f"total_cycles 1\nmaxiter {MAXITER}\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
+        f"total_cycles 1\nreport_interval {MAXITER}\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
         f"time_start t0\ntime_end t0\nsurfdatadir {inp}\nregion equil{grid}\nsupplied_wt 0\n"
-        f"textfilename {WORK}/asw_{tag}_log.txt\noutfile_prefix {WORK}/asw_{tag}_out_\ncycles_to_save 9999999\n")
+        f"textfilename {WORK}/asw_{tag}_log.txt\noutfile_prefix {WORK}/asw_{tag}_out_\nsave_nreport_interval 9999999\n")
     return p
 
 
@@ -59,7 +59,7 @@ def run(grid, n, tol, fixed=False):
     out = p.stdout + p.stderr
     steps = int(STEP_RE.search(out).group(1)) if STEP_RE.search(out) else (MAXITER if fixed else None)
     gw = max((float(x) for x in GW_RE.findall(out)), default=None)
-    # total_cycles is 1 for both paths (the maxiter/adaptive loop is inside one cycle), so the
+    # total_cycles is 1 for both paths (the report_interval/adaptive loop is inside one cycle), so the
     # final field is saved at cycles_done = 1 -> out_000000001.tif (NOT the step count).
     tifs = sorted(glob.glob(os.path.join(WORK, f"asw_{tag}_out_*.tif")))  # output name now carries a _<yr>yr suffix; take the final
     field = rasterio.open(tifs[-1]).read(1) if tifs else None

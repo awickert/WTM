@@ -45,9 +45,9 @@ def run(dt_yr, T_yr, tag, supplied_wt):
     open(cfg, "w").write(
         f"run_type equilibrium\nfsm_on 0\nevap_mode 0\ninfiltration_on 0\nrunoff_ratio_on 0\n"
         f"cells_per_degree 10\nsouthern_edge -45\ndeltat {int(dt_yr*YEAR)}\n"
-        f"total_cycles {steps}\nmaxiter 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
+        f"total_cycles {steps}\nreport_interval 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
         f"time_start t0\ntime_end t0\nsurfdatadir {INP}\nregion equil128\nsupplied_wt {supplied_wt}\n"
-        f"textfilename {WORK}/{tag}_log.txt\noutfile_prefix {WORK}/{tag}_out_\ncycles_to_save 9999999\n")
+        f"textfilename {WORK}/{tag}_log.txt\noutfile_prefix {WORK}/{tag}_out_\nsave_nreport_interval 9999999\n")
     subprocess.run(["mpiexec", "-n", "1", WTM, cfg, "-wtm_bdf2_on_V"],
                    capture_output=True, text=True, env=env)
     tifs = sorted(glob.glob(os.path.join(WORK, f"{tag}_out_*.tif")))  # output name now carries a _<yr>yr suffix; take the final

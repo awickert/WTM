@@ -37,8 +37,8 @@ cells_per_degree $CPD
 southern_edge $4
 deltat 2419200
 total_cycles 800
-cycles_to_save 800
-maxiter 50
+save_nreport_interval 800
+report_interval 50
 fdepth_a 200
 fdepth_b 150
 fdepth_fmin 2

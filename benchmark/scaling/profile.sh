@@ -77,7 +77,7 @@ cells_per_degree   $CPD
 southern_edge      -45
 deltat             31536000
 total_cycles       1
-maxiter            $MAXITER
+report_interval            $MAXITER
 fdepth_a           200
 fdepth_b           150
 fdepth_fmin        2
@@ -88,7 +88,7 @@ region             synth
 supplied_wt        0
 textfilename       $OUT/prof_run.txt
 outfile_prefix     $OUT/prof_out_
-cycles_to_save     9999
+save_nreport_interval     9999
 EOF
 
 run() {  # label  binary  nranks
@@ -98,7 +98,7 @@ run() {  # label  binary  nranks
         echo "  skip $label (n=$n): binary not found at $bin" >&2
         return
     fi
-    echo "--- profiling $label at n=$n  (${GRID}^2, maxiter=$MAXITER) -> $log"
+    echo "--- profiling $label at n=$n  (${GRID}^2, report_interval=$MAXITER) -> $log"
     # shellcheck disable=SC2086  # $SNES is intentionally word-split into flags
     $MPIEXEC -n "$n" "$bin" "$CFG" $SNES -log_view :"$log"
 }

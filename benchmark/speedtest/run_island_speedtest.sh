@@ -41,8 +41,8 @@ cells_per_degree   900
 southern_edge      $SOUTH
 deltat             $dt
 total_cycles       $ncyc
-cycles_to_save     $ncyc
-maxiter            50
+save_nreport_interval     $ncyc
+report_interval            50
 fdepth_a           100
 fdepth_b           150
 fdepth_fmin        2.5
@@ -87,8 +87,8 @@ cells_per_degree 900
 southern_edge $SOUTH
 deltat $DT
 total_cycles 20
-cycles_to_save 20
-maxiter 50
+save_nreport_interval 20
+report_interval 50
 fdepth_a 100
 fdepth_b 150
 fdepth_fmin 2.5

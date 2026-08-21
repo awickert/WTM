@@ -47,13 +47,13 @@ def setup_warm_domain(src, warm, eq_raster, precip_scale):
             shutil.copy(s, os.path.join(warm, aux))
     return region_time
 
-def suite_warm(warm, tag, weeks=(1, 2, 4, 8, 16, 32, 64, 128), cycles=3, maxiter=6, timeout=200):
+def suite_warm(warm, tag, weeks=(1, 2, 4, 8, 16, 32, 64, 128), cycles=3, report_interval=6, timeout=200):
     results = []
     for sname, flags in suite.SOLVERS:
         ceiling = None
         for wk in weeks:
             name = f"{tag}_warm_{sname}_{wk}wk"
-            res = suite.run_one(warm, name, flags, wk * suite.WEEK, cycles, maxiter,
+            res = suite.run_one(warm, name, flags, wk * suite.WEEK, cycles, report_interval,
                                 "equilibrium", 1, timeout, settle_thresh=0.5)
             res["solver"] = sname; res["weeks"] = wk
             results.append(res)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Snapshot-filename + restart-from-snapshot regression.
-#   FILENAME: output rasters are {prefix}{cycle:09}_{year}yr.tif. With deltat = 1 yr and maxiter = 1, the
+#   FILENAME: output rasters are {prefix}{cycle:09}_{year}yr.tif. With deltat = 1 yr and report_interval = 1, the
 #             simulated year MUST equal the cycle, so we assert e.g. cycle 5 -> ..._000000005_5yr.tif exists.
 #   RESTART:  a warm restart from a mid-run snapshot (supplied_wt 1, starting_wt = that snapshot) must reach
 #             the SAME equilibrium as a cold run AND get there in FEWER cycles -- which only happens if
@@ -27,8 +27,8 @@ cells_per_degree 1
 southern_edge 0
 deltat 31536000
 total_cycles 100
-cycles_to_save 1
-maxiter 1
+save_nreport_interval 1
+report_interval 1
 fdepth_a 200
 fdepth_b 150
 fdepth_fmin 2
@@ -49,7 +49,7 @@ emit cold "$INP" 0
 "$WTM" "$WORK/cold.cfg" $BB > "$WORK/cold.log" 2>&1 || { echo "RUN FAILED: cold"; tail -3 "$WORK/cold.log"; exit 2; }
 C_COLD=$(stop_cycle "$WORK/cold.log")
 
-# --- (1) FILENAME format: year == cycle (deltat 1 yr, maxiter 1) ---
+# --- (1) FILENAME format: year == cycle (deltat 1 yr, report_interval 1) ---
 for k in 1 3 5; do
   f=$(printf "%s/cold_%09d_%dyr.tif" "$WORK" "$k" "$k")
   [[ -f "$f" ]] || { echo "FAIL: expected snapshot $(basename "$f") not found (filename year != cycle?)"; ls "$WORK"/cold_*.tif | sed 's#.*/##' | head; exit 1; }

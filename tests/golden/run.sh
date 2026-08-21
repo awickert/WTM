@@ -44,7 +44,7 @@ cells_per_degree   10
 southern_edge      -45
 deltat             31536000
 total_cycles       3
-maxiter            2
+report_interval            2
 fdepth_a           200
 fdepth_b           150
 fdepth_fmin        2
@@ -53,7 +53,7 @@ time_end           t0
 surfdatadir        $sdir
 region             $region
 supplied_wt        0
-cycles_to_save     9999
+save_nreport_interval     9999
 EOF
     for kv in "$@"; do echo "$kv"; done
 }

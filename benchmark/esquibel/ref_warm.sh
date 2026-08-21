@@ -28,7 +28,7 @@ printf "%-5s %-6s %-5s %-5s %-7s %-16s %-10s %-10s\n" config dt_wk rc cyc wall l
 for cfg in cc tbar; do
   for mult in 8 16 32; do
     dt=$((BASEDT*mult)); stem="$WARM/${cfg}_${mult}"
-    sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles 120#;s#^cycles_to_save.*#cycles_to_save 120#;s#^supplied_wt.*#supplied_wt 1#;s#^surfdatadir.*#surfdatadir $WDOM/#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
+    sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles 120#;s#^save_nreport_interval.*#save_nreport_interval 120#;s#^supplied_wt.*#supplied_wt 1#;s#^surfdatadir.*#surfdatadir $WDOM/#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
     rm -f "${stem}.txt" "${stem}"_*.tif
     t0=$(date +%s.%N)
     timeout 500 mpirun -n "$N" "$BIN" "${stem}.cfg" ${FLAGS[$cfg]} $COMMON -wtm_eq_tol 0.001 > "${stem}.log" 2>&1

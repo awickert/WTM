@@ -14,7 +14,7 @@ declare -A FLAGS=( [cc]="-wtm_anderson -snes_anderson_restart_type none"
 for cfg in cc tbar; do
   for mult in 8 16 32; do
     dt=$((BASEDT*mult)); stem="$WORK/${cfg}_${mult}"
-    sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles 150#;s#^cycles_to_save.*#cycles_to_save 150#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
+    sed "s#^fsm_on.*#fsm_on 0#;s#^total_cycles.*#total_cycles 150#;s#^save_nreport_interval.*#save_nreport_interval 150#;s#^textfilename.*#textfilename ${stem}.txt#;s#^outfile_prefix.*#outfile_prefix ${stem}_#;s#^deltat.*#deltat $dt#" eq_awickert.cfg > "${stem}.cfg"
     rm -f "${stem}.txt" "${stem}"_*.tif
     t0=$(date +%s.%N)
     timeout 500 mpirun -n "$N" "$BIN" "${stem}.cfg" ${FLAGS[$cfg]} $COMMON -wtm_eq_tol 0.001 > "${stem}.log" 2>&1

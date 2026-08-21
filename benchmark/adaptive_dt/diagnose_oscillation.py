@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Diagnose the deep per-cycle oscillation in the equilibrium metric.
 
-Given per-cycle wtd tifs (saved with cycles_to_save 1), answer:
+Given per-cycle wtd tifs (saved with save_nreport_interval 1), answer:
   - Does the per-cycle max|Δwtd| metric oscillate (non-monotone), and for which run(s)?
   - WHICH cells dominate it, and WHERE are they (deep wtd<-1.5 / soil -1.5..0 / near-surface >-0.05)?
   - Does the HEAD at those cells oscillate (sign-flipping Δ = a limit cycle) or decay monotonically?

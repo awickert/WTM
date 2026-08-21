@@ -5,13 +5,13 @@
 # 2*qmax*dt, so a table sitting in the band equilibrates at a dt-dependent depth). (The default `implicit`
 # in-residual siphon is also dt-DEPENDENT at the face -- its finite 1/dt conductance leaves a dt*excess head
 # above the surface -- which is exactly why the active-set face exists.) This test runs one equilibrium
-# problem at two time steps (4x apart), holding maxiter fixed so only dt changes, and asserts:
+# problem at two time steps (4x apart), holding report_interval fixed so only dt changes, and asserts:
 #   DT-INDEPENDENT : under active-set, max|Δwtd| between the two dt is below DT_TOL (measured ~1e-14).
 #   BITES          : under runoff_collector=legacy (the band sink), the SAME comparison is dt-DEPENDENT
 #                    (max|Δwtd| above BITE_MIN) -- proving the fixture exercises the effect and the active-set
 #                    face is what removes it (a regression test that fails without it).
 # Total simulated time is matched across the two dt (total_cycles scales inversely), so both reach the same
-# equilibrium; maxiter is fixed so the FSM/coupling frequency is not a variable here (that is a separate axis).
+# equilibrium; report_interval is fixed so the FSM/coupling frequency is not a variable here (that is a separate axis).
 set -uo pipefail
 cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
@@ -25,7 +25,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
-# sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, maxiter fixed).
+# sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, report_interval fixed).
 emit() { # stem  deltat  total_cycles  collector
   cat > "$WORK/$1.cfg" <<EOF
 run_type equilibrium
@@ -38,8 +38,8 @@ cells_per_degree 120
 southern_edge 0
 deltat $2
 total_cycles $3
-cycles_to_save $3
-maxiter 20
+save_nreport_interval $3
+report_interval 20
 fdepth_a 100
 fdepth_b 150
 fdepth_fmin 2
