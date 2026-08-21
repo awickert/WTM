@@ -53,7 +53,12 @@ struct Parameters {
   double fdepth_b        = -1.;
   double fdepth_fmin     = -1.;
   double southern_edge   = std::numeric_limits<double>::signaling_NaN();
-  int32_t total_cycles   = -1;
+  // total_time: the total simulated time to run. Parsed from an explicit unit ("500yr" or "1000s"); a bare
+  // number is REJECTED (unlike report_interval), to avoid a steps-vs-seconds ambiguity. Must be an integer
+  // multiple of report_seconds (the report span = report_steps*deltat), because the loop advances one whole
+  // report at a time -- resolved to total_reports below. Replaces the old user-facing total_cycles concept.
+  double  total_time    = std::numeric_limits<double>::signaling_NaN();  // seconds
+  int32_t total_reports = -1;  // derived from total_time / report_seconds (validated to be an exact integer)
   int32_t save_nreport_interval = -1;  // save a raster every K reports. Default 1 + a LOUD warning if omitted.
 
   double cellsize_n_s_metres = std::numeric_limits<double>::signaling_NaN();

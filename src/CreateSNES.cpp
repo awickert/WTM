@@ -155,7 +155,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
   // "-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01": the analytic-Jacobian Newton path, dt-continuation
   // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
-  // run terminates at equilibrium without hand-tuning total_cycles. Each piece stays individually
+  // run terminates at equilibrium without hand-tuning total_time. Each piece stays individually
   // overridable; an explicit Picard/Anderson path flag still takes precedence (Newton is exclusive with
   // Picard -- a warning is printed below if that happens). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   PetscBool stiff_flag = PETSC_FALSE;

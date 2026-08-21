@@ -70,8 +70,22 @@ Parameters::Parameters(const std::string& config_file) {
       ss >> time_end;
     } else if (key == "time_start") {
       ss >> time_start;
-    } else if (key == "total_cycles") {
-      ss >> total_cycles;
+    } else if (key == "total_time") {
+      std::string v;
+      ss >> v;
+      // Units: "500yr" (years) or "1000s" (seconds). A bare number DEFAULTS TO YEARS (the near-universal case)
+      // with a loud warning so the assumption is never silent. Resolved against report_seconds below.
+      if (v.size() > 2 && v.substr(v.size() - 2) == "yr") {
+        total_time = std::stod(v.substr(0, v.size() - 2)) * 31536000.0;  // years -> seconds
+      } else if (v.size() > 1 && v.back() == 's'
+                 && std::isdigit(static_cast<unsigned char>(v[v.size() - 2]))) {
+        total_time = std::stod(v.substr(0, v.size() - 1));  // seconds
+      } else {
+        total_time = std::stod(v) * 31536000.0;  // bare number -> years
+        std::cerr << "WARNING [total_time]: no unit given for '" << v
+                  << "' -- ASSUMING YEARS (" << v << "yr). Give an explicit unit to silence this: '" << v
+                  << "yr' for years or '<seconds>s' for seconds.\n";
+      }
     } else if (key == "report_interval") {
       std::string v;
       ss >> v;
@@ -109,6 +123,25 @@ Parameters::Parameters(const std::string& config_file) {
     std::cerr << "WARNING [report_interval]: NOT SET -- defaulting to 100 steps between equilibrium checks / "
                  "reports. Set it explicitly, as steps (e.g. 'report_interval 100') or a time (e.g. "
                  "'report_interval 50yr').\n";
+  }
+  // Resolve the total run length. total_time is the canonical user input; the loop advances one report at a
+  // time, so total_time must be an exact integer number of reports (report_seconds each). Error otherwise --
+  // this is the "integer multiple of the time step" guard, tightened to the report span the loop actually
+  // takes (report_seconds = report_steps*deltat, so an integer number of reports is also an integer number of
+  // timesteps).
+  if (!(total_time > 0.0)) {
+    throw std::runtime_error("total_time must be set to a positive simulated time, e.g. 'total_time 500yr'.");
+  }
+  {
+    const double reports_exact = total_time / report_seconds;
+    const double reports_round = std::round(reports_exact);
+    if (std::abs(reports_exact - reports_round) > 1e-6 * std::max(1.0, reports_round)) {
+      throw std::runtime_error(fmt::format(
+          "total_time ({} s) is not an integer multiple of the report interval ({} s = {} timesteps of {} s): "
+          "{} reports. Adjust total_time, report_interval, or deltat so they divide evenly.",
+          total_time, report_seconds, report_steps, deltat, reports_exact));
+    }
+    total_reports = static_cast<int32_t>(reports_round);
   }
   // Resolve the raster-save cadence (every K reports); default 1 (with a loud warning).
   if (save_nreport_interval <= 0) {
@@ -173,7 +206,8 @@ void Parameters::check() const {
   check_string_init("textfilename", textfilename);
   check_string_init("time_start", time_start);
   check_string_init("time_end", time_end);
-  check_positive("total_cycles", total_cycles);
+  check_positive("total_time", total_time);
+  check_positive("total_reports", total_reports);
   if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
         || runoff_collector == "off" || runoff_collector == "legacy")) {
     throw std::runtime_error("runoff_collector must be one of: implicit, explicit, off, legacy. Got: '"
@@ -214,5 +248,6 @@ void Parameters::print() const {
   std::cout << "c textfilename           = " << textfilename << std::endl;
   std::cout << "c time_end               = " << time_end << std::endl;
   std::cout << "c time_start             = " << time_start << std::endl;
-  std::cout << "c total_cycles           = " << total_cycles << std::endl;
+  std::cout << "c total_time (s)         = " << total_time << std::endl;
+  std::cout << "c total_reports          = " << total_reports << std::endl;
 }

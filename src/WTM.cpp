@@ -580,7 +580,7 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
         arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
   }
 
-  while (params.cycles_done < params.total_cycles) {
+  while (params.cycles_done < params.total_reports) {
     update(params, arp, user_context, dmdapack, deps);
     PetscPrintf(PETSC_COMM_WORLD,
                 "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  |S·Δwtd| max=%.4g rms=%.4g mm-water  "
@@ -627,7 +627,7 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
                       "(eq_tol=%g, eq_frac=%g) for 2 cycles; stopping at cycle %d of %d.\n",
                       mname, user_context.last_cycle_dw, user_context.last_cycle_rms, user_context.last_cycle_fracabove,
                       1000.0 * user_context.last_cycle_dw_water, 1000.0 * user_context.last_cycle_rms_water,
-                      user_context.eq_tol, user_context.eq_frac, params.cycles_done, params.total_cycles);
+                      user_context.eq_tol, user_context.eq_frac, params.cycles_done, params.total_reports);
           break;
         }
       } else {

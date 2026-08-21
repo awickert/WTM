@@ -140,7 +140,7 @@ struct AppCtx {
   int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
   // Convergence-based early stop (-wtm_eq_tol, metres; 0 = off): stop the cycle loop once the PER-CYCLE
   // water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state measure)
-  // stays below eq_tol for two consecutive cycles, instead of always running total_cycles. The per-SUB-STEP
+  // stays below eq_tol for two consecutive cycles, instead of always running the full total_time. The per-SUB-STEP
   // max|Δw| (last_dh_max) is NOT used for the stop: at lake/shore free boundaries it carries a cosmetic
   // within-cycle flicker that returns to the same value each cycle, so gating on it would never settle. The
   // achievable floor is set by that cosmetic lakeshore wiggle, so tighter tolerances need it excluded.

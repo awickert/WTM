@@ -469,7 +469,7 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
 /// recalculated due to the changed topography.
 void UpdateTransientArrays(const Parameters& params, ArrayPack& arp) {
   for (unsigned int i = 0; i < arp.topo.size(); i++) {
-    const double f = static_cast<double>(params.cycles_done) / params.total_cycles;
+    const double f = static_cast<double>(params.cycles_done) / params.total_reports;
 
     arp.topo(i)            = (1 - f) * arp.topo_start(i) + f * arp.topo_end(i);
     arp.slope(i)           = (1 - f) * arp.slope_start(i) + f * arp.slope_end(i);
