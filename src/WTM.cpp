@@ -240,7 +240,8 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   // rank-0 arp.runoff so FillSpillMerge routes it. No-op when all are off (stays 0).
   if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
                         || FanDarcyGroundwater::surface_exfiltration_to_runoff_on()
-                        || FanDarcyGroundwater::direct_to_runoff_on()))
+                        || FanDarcyGroundwater::direct_to_runoff_on()
+                        || FanDarcyGroundwater::active_set_on()))
     FanDarcyGroundwater::gather_sink_removed_to_zero(params, arp, user_context, dmdapack);
 
   if (mpi_rank == 0) arp.wtd_mid = arp.wtd;  // table after GW, before FSM (GW-vs-FSM change diagnostic)

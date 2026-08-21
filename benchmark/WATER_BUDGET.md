@@ -49,8 +49,8 @@ The reported quantities fall in two groups, kept separate on purpose:
 | `total_ocean_outflow` | 13 | **physical** | direct Darcy flux across land→ocean faces, `Sum e\,\tfrac{\Delta t}{(\text{cell})^2} h\, A` |
 | `total_surface_removed` | 12 | **physical** | sub-surface sink removal, `Sum \Delta t\, Q(w^{n+1})\, A` |
 | `stored_volume` | 14 | **physical** | exact stored water, `Sum storedVolume(w)\cdot A` |
-| `ocean_loss_closing` | 15 | **budget-closing** | ocean loss *inferred by difference*: `recharge − sink − \Delta(stored\_volume)` |
-| `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow` (physical-snapshot closure; carries the BDF2 gap) |
+| `ocean_loss_closing` | 15 | **budget-closing** | total ocean loss *inferred by difference*: `recharge − evap − \Delta(stored\_volume)` |
+| `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow − total_loss_to_ocean` (both ocean channels: Darcy + FSM spill; carries the BDF2 gap) |
 | `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance (Picard path) |
 
 - The **physical** quantities are what science uses: how much water entered, where and how fast it
@@ -60,6 +60,15 @@ The reported quantities fall in two groups, kept separate on purpose:
   physical calculation at all — it is whatever value makes the books balance. Comparing it to the
   physical `total_ocean_outflow` gives `budget_residual`: **≈0 means the physical flux is
   conservative**; a nonzero value is the *numerical-consistency gap*, not a leak (§4).
+- **`total_surface_removed` is NOT a budget sink.** It is an *internal* GW→FSM transfer (the sub-surface
+  sink / active-set skim hands above-surface water to FillSpillMerge). Its fate is already captured
+  elsewhere: FSM either keeps it in a lake (counted in `stored_volume`) or routes it to the ocean
+  (`total_loss_to_ocean`). Counting it as a sink double-counts water that FSM recycles into a persistent
+  lake — a closed lake re-skims the same recharge every step, inflating `total_surface_removed` to a large
+  gross flux while the water sits in storage (this surfaced once the active-set skim actually delivered its
+  captured water to FSM; see `tests/fsm_fullness` / `tests/fsm_conservation`). So `total_surface_removed`
+  stays a diagnostic of the gross removal, but the conservation budget uses `stored_volume` + evap + the two
+  ocean channels only.
 
 Reporting ocean loss **both ways** — once physically (direct flux) and once by closure (difference) —
 is the whole point: their agreement is the conservation proof, and their disagreement is a

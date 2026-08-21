@@ -571,11 +571,16 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   // a nonzero value is the discretisation-consistency gap (BDF2 startup term + the specific-yield
   // recharge definition), NOT a leak. See the math in WATER_BUDGET.md.
   const double d_stored            = stored_volume - params.stored_volume_initial;
-  // Include the evaporation sink (taper 2 removes water to the atmosphere; default-on): the physical balance
-  // is recharge = d_stored + surface_removed(->FSM) + evap(->atmosphere) + ocean_outflow. Omitting evap left
-  // budget_residual off by ~the evaporative flux on any run with the taper active.
-  const double ocean_loss_closing  = global_added_recharge - global_surface_removed - global_evap_removed - d_stored;
-  const double budget_residual     = ocean_loss_closing - global_ocean_outflow;
+  // Physical balance: recharge = d_stored + evap(->atmosphere) + ocean_outflow(Darcy) + loss_to_ocean(FSM).
+  // surface_removed (water skimmed / exfiltrated to FSM) is an INTERNAL GW->FSM transfer, NOT a sink -- FSM
+  // either keeps it in a lake (already counted in d_stored) or routes it to the ocean (loss_to_ocean).
+  // Counting it here double-counts water FSM recycles into a persistent lake: a closed lake re-skims the same
+  // recharge every step, inflating surface_removed to ~8% of recharge while the water sits in storage (found
+  // via tests/fsm_fullness + fsm_conservation once the active-set skim delivers its captured water to FSM).
+  // So the inferred TOTAL ocean loss is recharge - evap - d_stored, checked against BOTH ocean channels
+  // (Darcy outflow + FSM spill). evap (taper 2) leaves to the atmosphere. See benchmark/WATER_BUDGET.md.
+  const double ocean_loss_closing  = global_added_recharge - global_evap_removed - d_stored;
+  const double budget_residual     = ocean_loss_closing - global_ocean_outflow - global_loss_to_ocean;
 
   // EXACT (machine-zero) budget residual from the solver's accumulated discrete terms (Picard path):
   // storage_change = solver_recharge - ocean_outflow - surface_removed holds to the SNES tolerance,

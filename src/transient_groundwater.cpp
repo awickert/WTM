@@ -1789,6 +1789,11 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
 bool surface_sink_on() { return g_surface_sink; }
 bool direct_to_runoff_on() { return g_direct_to_runoff; }
+// Whether the lake-aware active-set skim is on. It captures the skimmed above-free-surface water into the
+// same sink accumulator, so the post-solve gather must hand it to arp.runoff for FSM -- otherwise the
+// skimmed water is removed from the aquifer and counted as surface_removed but never delivered to the lake,
+// so lakes cannot fill (bug found via tests/fsm_fullness: skim drained a basin plain filled to its sill).
+bool active_set_on() { return g_active_set; }
 
 // Whether extended-soil surface truncation routes above-surface water to FSM (via the same sink
 // accumulator). Lets the cycle loop gather the accumulator for FSM when extended soil is on, just as
