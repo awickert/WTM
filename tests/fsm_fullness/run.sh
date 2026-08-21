@@ -60,12 +60,18 @@ run() { emit "$1"; "$WTM" "$WORK/$1.yaml" -wtm_anderson $2 -wtm_eq_tol 0 > "$WOR
         || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.err"; exit 2; }; }
 run plain ""
 run skim  "-wtm_dev_active_set"
+# MPI consistency of the skim: n=4 must match n=1 byte-for-byte. The skim reads per-cell starting_wtd and
+# hands its captured water to a rank-0 FillSpillMerge, so this exercises the gather/scatter round-trip.
+emit skim4
+mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson -wtm_dev_active_set -wtm_eq_tol 0 \
+    -da_processors_x 2 -da_processors_y 2 > "$WORK/skim4.err" 2>&1 \
+    || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 
 NDEP=$(grep "FSM fullness" "$WORK/skim.err" | tail -1 | sed 's#.*/ \([0-9]*\) depressions.*#\1#')
-SP=$(ls "$WORK"/plain_*.tif | tail -1); SK=$(ls "$WORK"/skim_*.tif | tail -1)
-NDEP="$NDEP" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" <<'PY'
+SP=$(ls "$WORK"/plain_*.tif | tail -1); SK=$(ls "$WORK"/skim_*.tif | tail -1); SK4=$(ls "$WORK"/skim4_*.tif | tail -1)
+NDEP="$NDEP" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" "$SK4" <<'PY'
 import sys, os, numpy as np, rasterio
-topo, wp, wk = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
+topo, wp, wk, wk4 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 def surfmax(w):
     p = w > 1e-6
     return float((topo + w)[p].max()) if p.any() else -999.0
@@ -80,6 +86,9 @@ check("SPILL LEVEL (skim fills to the 97 m sill)", abs(sk - 97.0) < 0.2,
       f"skim lake surface = {sk:.3f} m (known outlet sill = 97.0)")
 check("SKIM == PLAIN (skim neither drains nor over-fills)", abs(sk - pl) < 0.2,
       f"skim {sk:.3f} vs plain {pl:.3f} m")
+mpi = float(np.abs(wk - wk4).max())
+check("SKIM MPI-CONSISTENT (n=1 == n=4)", mpi < 1e-9,
+      f"max|Δwtd| n1 vs n4 = {mpi:.3e} m")
 print("PASS: nested hierarchy walked; lake-aware skim reaches the correct spill equilibrium"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
