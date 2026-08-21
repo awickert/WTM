@@ -571,7 +571,10 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   // a nonzero value is the discretisation-consistency gap (BDF2 startup term + the specific-yield
   // recharge definition), NOT a leak. See the math in WATER_BUDGET.md.
   const double d_stored            = stored_volume - params.stored_volume_initial;
-  const double ocean_loss_closing  = global_added_recharge - global_surface_removed - d_stored;
+  // Include the evaporation sink (taper 2 removes water to the atmosphere; default-on): the physical balance
+  // is recharge = d_stored + surface_removed(->FSM) + evap(->atmosphere) + ocean_outflow. Omitting evap left
+  // budget_residual off by ~the evaporative flux on any run with the taper active.
+  const double ocean_loss_closing  = global_added_recharge - global_surface_removed - global_evap_removed - d_stored;
   const double budget_residual     = ocean_loss_closing - global_ocean_outflow;
 
   // EXACT (machine-zero) budget residual from the solver's accumulated discrete terms (Picard path):
