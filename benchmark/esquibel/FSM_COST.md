@@ -141,3 +141,39 @@ currently-reachable scale.** This is a positive result for the massive-scale goa
 suspected multi-node serial bottleneck (the gather) is not one in practice; the remaining
 multi-node concern is memory (the full-grid DH build), not gather time. Data (both grids):
 fsmcost_multinode_results.csv.
+
+## FSM-cadence overhead: FSM every sub-step vs every maxiter (2026-08-21, laptop)
+
+**Motivating question.** To kill the marginal-lake / lakeshore N-dependence (Issue #6) we want *tight*
+coupling — run FillSpillMerge every GW sub-step instead of once per cycle (a cycle = `maxiter` sub-steps;
+here `maxiter 50`). Is that affordable?
+
+**Setup.** Esquibel (384,703 cells), WARM start (`results/abl_000000020.tif` as `starting_wt`), n=8,
+`OMP_NUM_THREADS=1`, `-wtm_anderson -wtm_fringe_source ksat -snes_stol 1e-6`. Same 10 simulated sub-steps
+each way: **tight** = `maxiter 1 × 10 cycles` (10 FSM calls) vs **loose** = `maxiter 10 × 1 cycle`
+(1 FSM call). Wall from `date +%s.%N`.
+
+| mode  | FSM cadence            | wall (10 sub-steps) |
+|-------|------------------------|---------------------|
+| loose | every 10 sub-steps     | 2.146 s             |
+| tight | every sub-step         | 2.239 s             |
+
+**Result: ~4% wall overhead for FSM-every-sub-step**, and that ~4% is the per-cycle bookkeeping + gather
+done 10× — the FSM *compute* summed to ~0 (microseconds; a warm state routes almost nothing). Single run
+each, so read it as "small single-digit %," not a precise figure. **Tight coupling is affordable
+single-node.**
+
+**What controls FSM runtime** (the µs→~4 s range seen above): the *volume* of surface water routed and how
+far it cascades up the depression hierarchy (fill→spill→merge). Near-equilibrium/dry → nothing to route →
+early-exit in ~µs; a cold start / wet event / large water body filling and spilling across many hierarchy
+levels → seconds. It is data-dependent, not grid-size-dependent (hence the flat fraction across scales).
+This *reinforces* tight coupling: FSM every sub-step routes ~1/50th the water per call, so each call is more
+likely to early-exit — it stays in the cheap regime.
+
+**Consequence for parallelize-FSM (#80).** Since FSM compute is negligible, parallelizing FSM is not a
+compute-speed play. Combined with the multi-node gather study above (gather stays flat ~0.2–0.3 s and is
+<0.3% of a cycle even at 8 nodes / 55M — *not* a growing Amdahl term), the real driver for parallel FSM at
+global scale is **memory** (the full grid must be replicated on rank 0 for serial FSM+DH), with the
+tight-coupling gather (×`maxiter` more gathers) a secondary factor (~10% at 55M / 8 nodes, vs ~4% laptop).
+Net: tight coupling is free-enough now (regional/single-node); parallel FSM is the enabler for *global*
+tight coupling, driven mainly by the replicated-grid memory ceiling.
