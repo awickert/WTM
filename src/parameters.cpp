@@ -34,8 +34,6 @@ Parameters::Parameters(const std::string& config_file) {
     if (key.empty() || key[0] == '#') {
     } else if (key == "cells_per_degree") {
       ss >> cells_per_degree;
-    } else if (key == "cycles_to_save") {
-      ss >> cycles_to_save;
     } else if (key == "deltat") {
       ss >> deltat;
     } else if (key == "evap_mode") {
@@ -50,8 +48,6 @@ Parameters::Parameters(const std::string& config_file) {
       ss >> fsm_on;
     } else if (key == "infiltration_on") {
       ss >> infiltration_on;
-    } else if (key == "maxiter") {
-      ss >> maxiter;
     } else if (key == "outfile_prefix") {
       ss >> outfile_prefix;
     } else if (key == "region") {
@@ -100,19 +96,13 @@ Parameters::Parameters(const std::string& config_file) {
   std::cout << infiltration_on << std::endl;
 
   // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
-  // equilibrium-check + log/output cadence. Precedence: explicit report_interval (steps or time) > deprecated
-  // maxiter > default 100 steps (with a loud warning).
+  // equilibrium-check + log/output cadence. Explicit report_interval (steps or time), else default 100 steps
+  // (with a loud warning).
   if (report_interval_is_time) {
     report_seconds = report_interval_time;
     report_steps   = std::max<int32_t>(1, static_cast<int32_t>(std::llround(report_seconds / deltat)));
   } else if (report_steps > 0) {
     report_seconds = report_steps * deltat;
-  } else if (maxiter > 0) {
-    report_steps   = maxiter;
-    report_seconds = report_steps * deltat;
-    std::cerr << "WARNING [maxiter]: DEPRECATED and no longer a coupling interval -- FillSpillMerge now runs EVERY "
-                 "timestep. Using maxiter (" << maxiter << ") as report_interval (steps). Please rename to "
-                 "report_interval.\n";
   } else {
     report_steps   = 100;
     report_seconds = report_steps * deltat;
@@ -120,19 +110,11 @@ Parameters::Parameters(const std::string& config_file) {
                  "reports. Set it explicitly, as steps (e.g. 'report_interval 100') or a time (e.g. "
                  "'report_interval 50yr').\n";
   }
-  // Resolve the raster-save cadence (every K reports). Precedence: save_nreport_interval > deprecated
-  // cycles_to_save > default 1 (with a loud warning).
+  // Resolve the raster-save cadence (every K reports); default 1 (with a loud warning).
   if (save_nreport_interval <= 0) {
-    if (cycles_to_save > 0) {
-      save_nreport_interval = cycles_to_save;
-      std::cerr << "WARNING [cycles_to_save]: DEPRECATED -- using its value (" << cycles_to_save
-                << ") as save_nreport_interval (save a raster every K reports). Please rename to "
-                   "save_nreport_interval.\n";
-    } else {
-      save_nreport_interval = 1;
-      std::cerr << "WARNING [save_nreport_interval]: NOT SET -- defaulting to 1 (save a raster every report). "
-                   "Set it explicitly.\n";
-    }
+    save_nreport_interval = 1;
+    std::cerr << "WARNING [save_nreport_interval]: NOT SET -- defaulting to 1 (save a raster every report). "
+                 "Set it explicitly.\n";
   }
 
   check();
@@ -211,7 +193,6 @@ std::string Parameters::get_path(const std::string& layer_name) const {
 
 void Parameters::print() const {
   std::cout << "c cells_per_degree       = " << cells_per_degree << std::endl;
-  std::cout << "c cycles_to_save         = " << cycles_to_save << std::endl;
   std::cout << "c deltat                 = " << deltat << std::endl;
   std::cout << "c evap_mode              = " << evap_mode << std::endl;
   std::cout << "c fdepth_a               = " << fdepth_a << std::endl;
@@ -219,7 +200,6 @@ void Parameters::print() const {
   std::cout << "c fdepth_fmin            = " << fdepth_fmin << std::endl;
   std::cout << "c fsm_on                 = " << fsm_on << std::endl;
   std::cout << "c infiltration_on        = " << infiltration_on << std::endl;
-  std::cout << "c maxiter (deprecated)   = " << maxiter << std::endl;
   std::cout << "c report_steps           = " << report_steps << std::endl;
   std::cout << "c report_seconds         = " << report_seconds << std::endl;
   std::cout << "c save_nreport_interval  = " << save_nreport_interval << std::endl;

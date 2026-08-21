@@ -345,7 +345,7 @@ void update(
 
   // TODO: How should equilibrium know when to exit?
   if ((params.cycles_done % params.save_nreport_interval) == 0) {
-    // Save the output every "cycles_to_save" iterations, under a new filename
+    // Save the output every "save_nreport_interval" reports, under a new filename
     // so we can compare how the water table has changed through time.
     // wtd is fully assembled on all ranks by FanDarcyGroundwater::update; rank 0 writes.
     PetscMPIInt rank;
@@ -372,7 +372,7 @@ void update(
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
   // 2x 6 months GW then FSM.
   // Load the per-cycle solve inputs from rank-0 arp into the distributed carriers:
-  // the wtd carrier (starting_wtd, advanced in place by the maxiter solves) and the
+  // the wtd carrier (starting_wtd, advanced in place by the report's steps) and the
   // recharge source (rech_dist). Sourcing from rank 0 lets arp.wtd/rech be dropped
   // on non-root ranks. 2f-B / 2f-C.
   //
@@ -401,7 +401,7 @@ void update(
 
   if (user_context.use_dt_adaptive) {
     // Adaptive stepping covers the SAME cycle duration as the fixed loop would
-    // (maxiter * base deltat), but with variable, error-controlled sub-steps chosen by
+    // (report_seconds), but with variable, error-controlled sub-steps chosen by
     // the controller in FanDarcyGroundwater::update (which mutates user_context.deltat to
     // the next proposed size). Clamp each step to the time remaining in the cycle so we
     // land exactly on the target. See benchmark/BDF2_ADAPTIVE_DESIGN.md.
@@ -440,7 +440,7 @@ void update(
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
                 nsteps, rejects, cycle_duration, params.report_steps);
   } else if (user_context.use_newton_continuation) {
-    // Newton pseudo-transient continuation (equilibrium): march maxiter ACCEPTED steps with a
+    // Newton pseudo-transient continuation (equilibrium): march report_steps ACCEPTED steps with a
     // Newton-iteration-controlled dt. Start deltat small so the storage term S/deltat keeps the
     // Jacobian diagonally dominant (a large step from a far guess overshoots into a SINGULAR Jacobian,
     // which fails even a direct solve); GROW dt after an easy step (converged in <= dtc_easy_iters),
@@ -593,7 +593,7 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
     // stays below eq_tol for two consecutive cycles -- the equilibrium auto-stop, on EVERY spin-up pathway.
     // Uses the per-cycle metric (not the per-sub-step max|Δw|), so the cosmetic within-cycle lake/shore
     // flicker cannot hold the run hostage. Each cycle of the fixed-dt march AND the adaptive-dt controller
-    // spans a FIXED physical time (maxiter*deltat), so a small per-cycle change genuinely means "steady",
+    // spans a FIXED physical time (report_seconds), so a small per-report change genuinely means "steady",
     // not "tiny step" -- both are trustworthy directly. The Newton dt-CONTINUATION path is the sole
     // exception: one "cycle" there is a single variable-dt step, so a small change is only meaningful once
     // dt has ramped near its ceiling.
