@@ -65,7 +65,9 @@ add_executable(wtm.x
 target_compile_options(wtm.x PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
 target_link_libraries(wtm.x PRIVATE wtm)
 target_compile_features(wtm.x PRIVATE cxx_std_20)
-target_compile_definitions(wtm PRIVATE DOCTEST_CONFIG_DISABLE)
+# RICHDEM_NO_PROGRESS: silence richdem's FillSpillMerge progress bar. FSM now runs every timestep
+# (tight coupling), so the per-call bar would spam stderr and slow runs; the standalone dephier.x keeps it.
+target_compile_definitions(wtm PRIVATE DOCTEST_CONFIG_DISABLE RICHDEM_NO_PROGRESS)
 
 add_sanitizers(wtm.x)
 
