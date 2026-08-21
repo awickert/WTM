@@ -47,6 +47,7 @@ run "dt-sensitivity (active-set)"  ./dt_sensitivity/run.sh "$WTM"
 run "active-set collector-indep"   ./active_set/run.sh "$WTM"
 run "FSM conservation + lake"       ./fsm_conservation/run.sh "$WTM"
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
+run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
