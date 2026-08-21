@@ -104,6 +104,10 @@ class Depression {
   // This is populated only for leaf depressions, since they contain
   // all cells within the grid.
   std::vector<flat_c_idx> my_cells;
+  // FSM fullness walk (WTM, #122): set each FillSpillMerge call by MarkFullness() -- true when the depression
+  // is filled to capacity (water_vol >= wtd_vol, within fp tolerance). Foundation for later skipping the
+  // overflow/fill descent into full subtrees; currently informational only (nothing consumes it yet).
+  bool is_full = false;
 };
 
 // A key part of the algorithm is keeping track of the outlets which connect

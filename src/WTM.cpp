@@ -506,6 +506,9 @@ void update(
                                 fsm_seconds);
   std::cerr << "t GW time (report) = " << gw_seconds << " s;  FSM time (report) = " << fsm_seconds << " s"
             << std::endl;
+  if (params.fsm_on && mpi_rank == 0)
+    std::cerr << "t FSM fullness (last step) = " << arp.fsm_n_full_depressions << " / "
+              << arp.fsm_n_depressions << " depressions full" << std::endl;
 
   // Per-CYCLE convergence metric: max change in the (post-FSM) water table since the previous cycle. This
   // is the HONEST steady-state signal -- unlike the per-sub-step max|Δw|, it excludes the cosmetic within-

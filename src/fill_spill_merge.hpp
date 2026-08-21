@@ -177,6 +177,27 @@ double DetermineWaterLevel(
 ///@return Modifies the depression hierarchy `deps` to indicate the amount of
 ///         water contained in each depression. Modifies `wtd` to indicate how
 ///         saturated a cell is or how much standing surface water it has.
+
+/// FSM FULLNESS WALK (WTM, #122). From OCEAN's children (the highest metadepressions) descend to EVERY leaf
+/// and mark each depression full (water_vol >= wtd_vol, within fp tolerance) or not. The full walk to all
+/// leaves is intentional for correctness -- a single column can drain to the deepest metadepression, so the
+/// descent cannot be pruned yet. Behavior-neutral: it only reads the volumes and sets Depression::is_full;
+/// nothing consumes it yet. Returns the count of (non-ocean) depressions marked full.
+template <class elev_t>
+static int MarkFullness(const int d, DepressionHierarchy<elev_t>& deps) {
+  if (d == NO_VALUE)
+    return 0;
+  auto& dep  = deps.at(d);
+  int   nful = 0;
+  if (d != OCEAN) {
+    dep.is_full = fp_ge(dep.water_vol, dep.wtd_vol);
+    nful        = dep.is_full ? 1 : 0;
+  }
+  nful += MarkFullness(dep.lchild, deps);
+  nful += MarkFullness(dep.rchild, deps);
+  return nful;
+}
+
 template <class elev_t>
 void FillSpillMerge(Parameters& params, DepressionHierarchy<elev_t>& deps, ArrayPack& arp) {
   Timer timer_overall;
@@ -235,6 +256,12 @@ void FillSpillMerge(Parameters& params, DepressionHierarchy<elev_t>& deps, Array
       deps.at(dep.rchild).water_vol = dep.water_vol;
   }
 
+  // FSM fullness walk (#122): now that water_vol (MoveWaterInDepHier) and wtd_vol (CalculateWtdVol) are set,
+  // mark every depression full/not-full via the full walk to all leaves. Behavior-neutral foundation for
+  // later pruning the fill/overflow descent into full subtrees; arp records the census for diagnostics/tests.
+  arp.fsm_n_depressions      = static_cast<int>(deps.size()) - 1;  // exclude the OCEAN root
+  arp.fsm_n_full_depressions = MarkFullness(OCEAN, deps);
+
   RDLOG_PROGRESS << "p Finding filled...";
   Timer timer_filled;
   timer_filled.start();
@@ -242,7 +269,6 @@ void FillSpillMerge(Parameters& params, DepressionHierarchy<elev_t>& deps, Array
   // determine which depressions or metadepressions contain standing water. We
   // then modify `wtd` in order to distribute this water across the cells of the
   // depression which will lie below its surface.
-  std::cout << "find depressions" << std::endl;
   FindDepressionsToFill(OCEAN, deps, arp);
   RDLOG_TIME_USE << "t FlowInDepressionHierarchy: Fill time = " << timer_filled.stop() << " s";
   RDLOG_TIME_USE << "t FlowInDepressionHierarchy = " << timer_overall.stop() << " s";

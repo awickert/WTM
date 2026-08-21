@@ -106,5 +106,11 @@ struct ArrayPack {
   double total_storage_change  = 0;
   double total_solver_recharge = 0;
 
+  // FSM fullness-walk census (#122): set each FillSpillMerge call by MarkFullness() -- how many of the
+  // (non-ocean) depressions are filled to capacity. Diagnostic only for now; the future prune skips the
+  // fill/overflow descent into full subtrees.
+  int fsm_n_depressions      = 0;
+  int fsm_n_full_depressions = 0;
+
   void check() const;
 };
