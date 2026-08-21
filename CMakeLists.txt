@@ -78,7 +78,7 @@ add_executable(dephier.x
   src/ArrayPack.cpp
 )
 target_compile_options(dephier.x PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
-target_link_libraries(dephier.x PRIVATE richdem OpenMP::OpenMP_CXX fmt::fmt)
+target_link_libraries(dephier.x PRIVATE richdem OpenMP::OpenMP_CXX fmt::fmt yaml-cpp::yaml-cpp)
 target_compile_features(dephier.x PRIVATE cxx_std_20)
 add_sanitizers(dephier.x)
 

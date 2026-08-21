@@ -1,0 +1,47 @@
+##################################################
+## CONFIGURATION OF THE WATER TABLE MODEL (WTM) ##
+##################################################
+#
+# YAML format: sections group related settings; one key per line. Booleans are true/false.
+# Times take an explicit unit ("500yr" or "1000s"); a bare number is read as years, with a warning.
+# Solver and numerics choices remain runtime -wtm_* CLI flags for now (e.g. -wtm_anderson).
+
+run:
+  type: equilibrium          # test | equilibrium | transient
+  total_time: 1000yr         # total simulated time; must be an integer number of report intervals
+  supplied_wt: true          # true: start from a supplied water table; false: start at wtd = 0 (equilibrium only)
+
+time:
+  deltat: 31536000           # seconds per timestep (31536000 = 1 year)
+  report_interval: 100       # steps between equilibrium checks / log lines (or a time, e.g. "50yr").
+                             # NOT a coupling interval: Fill-Spill-Merge runs every timestep.
+  save_nreport_interval: 1   # write a water-table raster every N reports
+
+grid:
+  cells_per_degree: 120      # number of cells per degree (120 = 30-arcsecond cells)
+  southern_edge: -52         # southern-most latitude (degrees, -90..90)
+
+physics:
+  fdepth:                    # e-folding-depth parameters for the transmissivity calculation
+    a: 200
+    b: 150
+    fmin: 2
+  infiltration: false        # true: water infiltrates as it flows downslope (high-res input only); false: neglect
+  evaporation:
+    mode: remove             # remove: remove all surface water | lakes: use a potential open-water evaporation grid
+
+surface_water:
+  fsm: false                 # true: enable Fill-Spill-Merge surface-water routing
+  runoff_ratio: false        # true: route (runoff_ratio * precipitation) as runoff; false: all P-ET infiltrates in place
+  runoff_collector: implicit # wtd<=0 seepage-face enforcement: implicit | explicit | off | legacy
+
+io:
+  # Input layer path = surfdatadir/<region><time>_<layer>.tif
+  #   layers: topography, mask, precipitation, evaporation, winter_temperature, slope,
+  #           open_water_evaporation, porosity, ksat
+  surfdatadir: surfdata/
+  region: Australia_         # region prefix (include a trailing separator if your filenames use one)
+  time_start: "021000"       # time component of the input path (quote to preserve leading zeros)
+  time_end: "021000"         # differs from time_start for transient runs
+  outfile_prefix: your_prefix_here       # output water-table file prefix
+  textfilename: your_filename_here.txt   # run-status text log

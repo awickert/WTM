@@ -1,113 +1,98 @@
 #include "parameters.hpp"
 
 #include <fmt/core.h>
+#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <fstream>
 #include <iostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
+namespace {
+// Parse a simulated-time value with an explicit unit ("500yr" / "1000s"); a bare number defaults to YEARS
+// with a loud warning so the assumption is never silent. Returns seconds.
+double parse_time_seconds(const std::string& v, const char* key) {
+  if (v.size() > 2 && v.substr(v.size() - 2) == "yr")
+    return std::stod(v.substr(0, v.size() - 2)) * 31536000.0;
+  if (v.size() > 1 && v.back() == 's' && std::isdigit(static_cast<unsigned char>(v[v.size() - 2])))
+    return std::stod(v.substr(0, v.size() - 1));
+  std::cerr << "WARNING [" << key << "]: no unit for '" << v << "' -- ASSUMING YEARS (" << v
+            << "yr). Set '" << v << "yr' or '<seconds>s' to silence.\n";
+  return std::stod(v) * 31536000.0;
+}
+}  // namespace
+
 // Real initializer
 Parameters::Parameters(const std::string& config_file) {
-  std::ifstream fin(config_file);
-
-  if (!fin.good()) {
-    throw std::runtime_error("Failed to read config file!");
+  YAML::Node root;
+  try {
+    root = YAML::LoadFile(config_file);
+  } catch (const std::exception& e) {
+    throw std::runtime_error("Failed to read config file '" + config_file + "': " + e.what());
   }
 
-  std::string line;
-  while (std::getline(fin, line)) {
-    if (line.empty()) {
-      continue;
-    }
+  // Each key is read only if present; an absent key keeps the member's default, and check() below enforces
+  // the ones that must be set (matching the previous parser's behavior). Chained operator[] on an absent
+  // parent yields an undefined node (no mutation), so root["a"]["b"] is safe even when "a" is missing.
 
-    std::stringstream ss(line);
-    std::string key;
-    ss >> key;
+  // run
+  if (auto n = root["run"]["type"])        run_type    = n.as<std::string>();
+  if (auto n = root["run"]["total_time"])  total_time  = parse_time_seconds(n.as<std::string>(), "total_time");
+  if (auto n = root["run"]["supplied_wt"]) supplied_wt = n.as<bool>() ? 1 : 0;
 
-    // Skip blank lines and '#' comment lines (so a self-documenting config like Config_file.cfg parses).
-    // Dummy key to make it easier to alphabetize list below.
-    if (key.empty() || key[0] == '#') {
-    } else if (key == "cells_per_degree") {
-      ss >> cells_per_degree;
-    } else if (key == "deltat") {
-      ss >> deltat;
-    } else if (key == "evap_mode") {
-      ss >> evap_mode;
-    } else if (key == "fdepth_a") {
-      ss >> fdepth_a;
-    } else if (key == "fdepth_b") {
-      ss >> fdepth_b;
-    } else if (key == "fdepth_fmin") {
-      ss >> fdepth_fmin;
-    } else if (key == "fsm_on") {
-      ss >> fsm_on;
-    } else if (key == "infiltration_on") {
-      ss >> infiltration_on;
-    } else if (key == "outfile_prefix") {
-      ss >> outfile_prefix;
-    } else if (key == "region") {
-      ss >> region;
-    } else if (key == "run_type") {
-      ss >> run_type;
-    } else if (key == "runoff_ratio_on") {
-      ss >> runoff_ratio_on;
-    } else if (key == "runoff_collector") {
-      ss >> runoff_collector;
-    } else if (key == "southern_edge") {
-      ss >> southern_edge;
-    } else if (key == "supplied_wt") {
-      ss >> supplied_wt;
-    } else if (key == "surfdatadir") {
-      ss >> surfdatadir;
-    } else if (key == "textfilename") {
-      ss >> textfilename;
-    } else if (key == "time_end") {
-      ss >> time_end;
-    } else if (key == "time_start") {
-      ss >> time_start;
-    } else if (key == "total_time") {
-      std::string v;
-      ss >> v;
-      // Units: "500yr" (years) or "1000s" (seconds). A bare number DEFAULTS TO YEARS (the near-universal case)
-      // with a loud warning so the assumption is never silent. Resolved against report_seconds below.
-      if (v.size() > 2 && v.substr(v.size() - 2) == "yr") {
-        total_time = std::stod(v.substr(0, v.size() - 2)) * 31536000.0;  // years -> seconds
-      } else if (v.size() > 1 && v.back() == 's'
-                 && std::isdigit(static_cast<unsigned char>(v[v.size() - 2]))) {
-        total_time = std::stod(v.substr(0, v.size() - 1));  // seconds
-      } else {
-        total_time = std::stod(v) * 31536000.0;  // bare number -> years
-        std::cerr << "WARNING [total_time]: no unit given for '" << v
-                  << "' -- ASSUMING YEARS (" << v << "yr). Give an explicit unit to silence this: '" << v
-                  << "yr' for years or '<seconds>s' for seconds.\n";
-      }
-    } else if (key == "report_interval") {
-      std::string v;
-      ss >> v;
-      // Steps (a bare integer) OR a simulated time (value + unit: "50yr" or "1000s"). Resolved to
-      // report_steps / report_seconds at the end of the constructor, once deltat is known.
-      if (v.size() > 2 && v.substr(v.size() - 2) == "yr") {
-        report_interval_is_time = true;
-        report_interval_time    = std::stod(v.substr(0, v.size() - 2)) * 31536000.0;  // years -> seconds
-      } else if (v.size() > 1 && v.back() == 's'
-                 && std::isdigit(static_cast<unsigned char>(v[v.size() - 2]))) {
-        report_interval_is_time = true;
-        report_interval_time    = std::stod(v.substr(0, v.size() - 1));  // seconds
-      } else {
-        report_steps = std::stoi(v);  // bare integer = number of timesteps
-      }
-    } else if (key == "save_nreport_interval") {
-      ss >> save_nreport_interval;
+  // time
+  if (auto n = root["time"]["deltat"]) deltat = n.as<double>();
+  if (auto n = root["time"]["report_interval"]) {
+    // A bare integer = timesteps, or a simulated time ("50yr"/"1000s"). Resolved to report_steps /
+    // report_seconds below, once deltat is known.
+    const std::string v = n.as<std::string>();
+    if (v.size() > 2 && v.substr(v.size() - 2) == "yr") {
+      report_interval_is_time = true;
+      report_interval_time    = std::stod(v.substr(0, v.size() - 2)) * 31536000.0;
+    } else if (v.size() > 1 && v.back() == 's'
+               && std::isdigit(static_cast<unsigned char>(v[v.size() - 2]))) {
+      report_interval_is_time = true;
+      report_interval_time    = std::stod(v.substr(0, v.size() - 1));
     } else {
-      throw std::runtime_error("Unrecognised key: " + key);
+      report_steps = std::stoi(v);
     }
   }
-  std::cout << infiltration_on << std::endl;
+  if (auto n = root["time"]["save_nreport_interval"]) save_nreport_interval = n.as<int32_t>();
+
+  // grid
+  if (auto n = root["grid"]["cells_per_degree"]) cells_per_degree = n.as<double>();
+  if (auto n = root["grid"]["southern_edge"])    southern_edge    = n.as<double>();
+
+  // physics
+  if (auto n = root["physics"]["fdepth"]["a"])    fdepth_a    = n.as<double>();
+  if (auto n = root["physics"]["fdepth"]["b"])    fdepth_b    = n.as<double>();
+  if (auto n = root["physics"]["fdepth"]["fmin"]) fdepth_fmin = n.as<double>();
+  if (auto n = root["physics"]["infiltration"])   infiltration_on = n.as<bool>() ? 1 : 0;
+  if (auto n = root["physics"]["evaporation"]["mode"]) {
+    const std::string m = n.as<std::string>();
+    if (m == "lakes") {
+      evap_mode = 1;
+    } else if (m == "remove") {
+      evap_mode = 0;
+    } else {
+      throw std::runtime_error("config: physics.evaporation.mode must be 'lakes' or 'remove', got '" + m + "'");
+    }
+  }
+
+  // surface_water
+  if (auto n = root["surface_water"]["fsm"])              fsm_on           = n.as<bool>() ? 1 : 0;
+  if (auto n = root["surface_water"]["runoff_ratio"])     runoff_ratio_on  = n.as<bool>() ? 1 : 0;
+  if (auto n = root["surface_water"]["runoff_collector"]) runoff_collector = n.as<std::string>();
+
+  // io
+  if (auto n = root["io"]["surfdatadir"])    surfdatadir    = n.as<std::string>();
+  if (auto n = root["io"]["region"])         region         = n.as<std::string>();
+  if (auto n = root["io"]["time_start"])     time_start     = n.as<std::string>();
+  if (auto n = root["io"]["time_end"])       time_end       = n.as<std::string>();
+  if (auto n = root["io"]["outfile_prefix"]) outfile_prefix = n.as<std::string>();
+  if (auto n = root["io"]["textfilename"])   textfilename   = n.as<std::string>();
 
   // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
   // equilibrium-check + log/output cadence. Explicit report_interval (steps or time), else default 100 steps
