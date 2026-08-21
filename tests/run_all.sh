@@ -45,6 +45,7 @@ run "runoff gathering (wtd=0)"     ./direct_to_runoff/run.sh "$WTM"
 run "runoff_collector selector"    ./runoff_collector/run.sh "$WTM"
 run "dt-sensitivity (active-set)"  ./dt_sensitivity/run.sh "$WTM"
 run "active-set collector-indep"   ./active_set/run.sh "$WTM"
+run "FSM conservation + lake"       ./fsm_conservation/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
