@@ -29,7 +29,7 @@ constexpr double seconds_in_a_year = 31536000.;
 // well-defined. Cycle keeps the files uniquely ordered; the year is the physically meaningful label
 // (essential for transient runs, informative for spin-up progress).
 static std::string snapshot_filename(const Parameters& params) {
-  const double years = params.cycles_done * static_cast<double>(params.maxiter) * params.deltat / seconds_in_a_year;
+  const double years = params.cycles_done * params.report_seconds / seconds_in_a_year;
   return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
 }
 
@@ -277,7 +277,7 @@ void update(
   }
 
   // TODO: How should equilibrium know when to exit?
-  if ((params.cycles_done % params.cycles_to_save) == 0) {
+  if ((params.cycles_done % params.save_nreport_interval) == 0) {
     // Save the output every "cycles_to_save" iterations, under a new filename
     // so we can compare how the water table has changed through time.
     // wtd is fully assembled on all ranks by FanDarcyGroundwater::update; rank 0 writes.
@@ -338,7 +338,7 @@ void update(
     // the controller in FanDarcyGroundwater::update (which mutates user_context.deltat to
     // the next proposed size). Clamp each step to the time remaining in the cycle so we
     // land exactly on the target. See benchmark/BDF2_ADAPTIVE_DESIGN.md.
-    const double cycle_duration = params.maxiter * params.deltat;
+    const double cycle_duration = params.report_seconds;
     double       t              = 0.0;
     int          nsteps         = 0;
     int          rejects        = 0;
@@ -364,7 +364,7 @@ void update(
       nsteps++;
     }
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
-                nsteps, rejects, cycle_duration, params.maxiter);
+                nsteps, rejects, cycle_duration, params.report_steps);
   } else if (user_context.use_newton_continuation) {
     // Newton pseudo-transient continuation (equilibrium): march maxiter ACCEPTED steps with a
     // Newton-iteration-controlled dt. Start deltat small so the storage term S/deltat keeps the
@@ -378,7 +378,7 @@ void update(
     // dt. A rejected step's pre-solve budget accumulators (set_starting_values) are rolled back so a
     // retry does not double-count. See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
     int accepted = 0, retries = 0;
-    while (accepted < params.maxiter) {
+    while (accepted < params.report_steps) {
       const double rech_snap  = arp.total_added_recharge;   // roll back on a rejected step
       const double ocean_snap = arp.total_loss_to_ocean_gw;
       const double dt_try     = user_context.deltat;
@@ -407,7 +407,7 @@ void update(
                 user_context.deltat, user_context.last_dh_max);
   } else {
     int iter_count = 0;
-    while (iter_count++ < params.maxiter) {
+    while (iter_count++ < params.report_steps) {
       FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
     }
   }

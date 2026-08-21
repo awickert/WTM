@@ -2,6 +2,9 @@
 
 #include <fmt/core.h>
 
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -73,11 +76,64 @@ Parameters::Parameters(const std::string& config_file) {
       ss >> time_start;
     } else if (key == "total_cycles") {
       ss >> total_cycles;
+    } else if (key == "report_interval") {
+      std::string v;
+      ss >> v;
+      // Steps (a bare integer) OR a simulated time (value + unit: "50yr" or "1000s"). Resolved to
+      // report_steps / report_seconds at the end of the constructor, once deltat is known.
+      if (v.size() > 2 && v.substr(v.size() - 2) == "yr") {
+        report_interval_is_time = true;
+        report_interval_time    = std::stod(v.substr(0, v.size() - 2)) * 31536000.0;  // years -> seconds
+      } else if (v.size() > 1 && v.back() == 's'
+                 && std::isdigit(static_cast<unsigned char>(v[v.size() - 2]))) {
+        report_interval_is_time = true;
+        report_interval_time    = std::stod(v.substr(0, v.size() - 1));  // seconds
+      } else {
+        report_steps = std::stoi(v);  // bare integer = number of timesteps
+      }
+    } else if (key == "save_nreport_interval") {
+      ss >> save_nreport_interval;
     } else {
       throw std::runtime_error("Unrecognised key: " + key);
     }
   }
   std::cout << infiltration_on << std::endl;
+
+  // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
+  // equilibrium-check + log/output cadence. Precedence: explicit report_interval (steps or time) > deprecated
+  // maxiter > default 100 steps (with a loud warning).
+  if (report_interval_is_time) {
+    report_seconds = report_interval_time;
+    report_steps   = std::max<int32_t>(1, static_cast<int32_t>(std::llround(report_seconds / deltat)));
+  } else if (report_steps > 0) {
+    report_seconds = report_steps * deltat;
+  } else if (maxiter > 0) {
+    report_steps   = maxiter;
+    report_seconds = report_steps * deltat;
+    std::cerr << "WARNING [maxiter]: DEPRECATED and no longer a coupling interval -- FillSpillMerge now runs EVERY "
+                 "timestep. Using maxiter (" << maxiter << ") as report_interval (steps). Please rename to "
+                 "report_interval.\n";
+  } else {
+    report_steps   = 100;
+    report_seconds = report_steps * deltat;
+    std::cerr << "WARNING [report_interval]: NOT SET -- defaulting to 100 steps between equilibrium checks / "
+                 "reports. Set it explicitly, as steps (e.g. 'report_interval 100') or a time (e.g. "
+                 "'report_interval 50yr').\n";
+  }
+  // Resolve the raster-save cadence (every K reports). Precedence: save_nreport_interval > deprecated
+  // cycles_to_save > default 1 (with a loud warning).
+  if (save_nreport_interval <= 0) {
+    if (cycles_to_save > 0) {
+      save_nreport_interval = cycles_to_save;
+      std::cerr << "WARNING [cycles_to_save]: DEPRECATED -- using its value (" << cycles_to_save
+                << ") as save_nreport_interval (save a raster every K reports). Please rename to "
+                   "save_nreport_interval.\n";
+    } else {
+      save_nreport_interval = 1;
+      std::cerr << "WARNING [save_nreport_interval]: NOT SET -- defaulting to 1 (save a raster every report). "
+                   "Set it explicitly.\n";
+    }
+  }
 
   check();
 }
@@ -102,7 +158,7 @@ void Parameters::check() const {
   };
 
   check_positive("cells_per_degree", cells_per_degree);
-  check_positive("cycles_to_save", cycles_to_save);
+  check_positive("save_nreport_interval", save_nreport_interval);
   check_positive("deltat", deltat);
   if (std::isnan(southern_edge) || southern_edge < -90 || southern_edge > 90) {
     throw std::runtime_error("please enter a value between -90 and 90 degrees for the southern_edge!");
@@ -127,9 +183,7 @@ void Parameters::check() const {
       supplied_wt,
       "set supplied_wt to 1 to supply a starting water table, or 0 to set starting water table == 0 (only available "
       "for equilibrium runs).");
-  if (maxiter == -1 || maxiter != static_cast<int32_t>(maxiter)) {
-    throw std::runtime_error("please enter a positive integer value for maxiter!");
-  }
+  check_positive("report_steps", report_steps);
   check_string_init("outfile_prefix", outfile_prefix);
   check_string_init("region", region);
   check_string_init("run_type", run_type);
@@ -165,7 +219,10 @@ void Parameters::print() const {
   std::cout << "c fdepth_fmin            = " << fdepth_fmin << std::endl;
   std::cout << "c fsm_on                 = " << fsm_on << std::endl;
   std::cout << "c infiltration_on        = " << infiltration_on << std::endl;
-  std::cout << "c maxiter                = " << maxiter << std::endl;
+  std::cout << "c maxiter (deprecated)   = " << maxiter << std::endl;
+  std::cout << "c report_steps           = " << report_steps << std::endl;
+  std::cout << "c report_seconds         = " << report_seconds << std::endl;
+  std::cout << "c save_nreport_interval  = " << save_nreport_interval << std::endl;
   std::cout << "c outfile_prefix         = " << outfile_prefix << std::endl;
   std::cout << "c region                 = " << region << std::endl;
   std::cout << "c run_type               = " << run_type << std::endl;
