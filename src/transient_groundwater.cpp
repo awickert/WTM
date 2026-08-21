@@ -941,7 +941,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
   // compute any starting values needed for arrays (owned cells only).
   // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
-  // maxiter loop, then maintained by the copy-back below), not in arp.wtd.
+  // per-report step loop, then maintained by the copy-back below), not in arp.wtd.
   PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
   set_starting_values(
       arp, dmdapack.starting_wtd, dmdapack.rech_dist, dmdapack.mask, dmdapack.porosity_vec, xs, ys, xm, ym);
@@ -1598,7 +1598,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   }
 
   // copy the result back into the distributed wtd carrier (starting_wtd), which
-  // feeds the next solve in the maxiter loop and is assembled to arp.wtd once
+  // feeds the next solve in the per-report step loop and is assembled to arp.wtd once
   // per cycle by gather_wtd_to_all. Read topo/mask/porosity from DMDA arrays
   // (topo_vec is re-scattered each cycle in transient) so arp is not needed here.
   PetscScalar** my_topo;
@@ -1726,7 +1726,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // converged head), the term that closes the water budget against the Dirichlet ocean boundary.
   accumulate_ocean_outflow(user_context, arp);
 
-  // The full wtd field is assembled once per cycle, after the maxiter loop, by
+  // The full wtd field is assembled once per cycle, after the per-report step loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
   // Return the Newton iteration count (>=0) so the dt-continuation controller can grow dt after an
   // easy step; a non-converged continuation step returned -1 above.
