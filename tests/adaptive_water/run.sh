@@ -26,7 +26,7 @@ runoff_ratio_on 0
 cells_per_degree 1
 southern_edge 0
 deltat 2419200
-total_cycles 200
+total_time 24192000000s
 save_nreport_interval 200
 report_interval 50
 fdepth_a 200
@@ -51,7 +51,7 @@ emit cc; emit adapt; emit water
 "$WTM" "$WORK/water.cfg" $BB -wtm_eq_metric water-rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
 
-# (1) adaptive must have actually reached equilibrium (not hit the total_cycles cap)
+# (1) adaptive must have actually reached equilibrium (not hit the total_time cap)
 grep -q "equilibrium reached" "$WORK/adapt.log" || { echo "FAIL: adaptive did not reach equilibrium"; exit 1; }
 # (2) the water arm must have stopped on the WATER-depth metric specifically
 grep -q "equilibrium reached (water-rms metric)" "$WORK/water.log" \

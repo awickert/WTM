@@ -36,7 +36,7 @@ runoff_ratio_on 0
 cells_per_degree $CPD
 southern_edge $4
 deltat 2419200
-total_cycles 800
+total_time 96768000000s
 save_nreport_interval 800
 report_interval 50
 fdepth_a 200

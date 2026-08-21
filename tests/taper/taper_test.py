@@ -76,7 +76,7 @@ runoff_ratio_on 0
 cells_per_degree 10
 southern_edge -45
 deltat 31536000
-total_cycles 5
+total_time 10yr
 report_interval 2
 fdepth_a 200
 fdepth_b 150
@@ -211,9 +211,9 @@ def _arid_fixture(d, ksat=1e-9):
 
 
 def _arid_cfg(d, txt, prefix):
-    # fsm_on 0: a pure groundwater drawdown test (no lakes). 60 yr to equilibrium.
+    # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
     return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
-            f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_cycles 60\nreport_interval 3\n"
+            f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
             f"runoff_collector legacy\n"

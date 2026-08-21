@@ -2,7 +2,7 @@
 """Synthetic inputs for the TRANSIENT golden/consistency test.
 
 Transient runs interpolate the time-varying fields from time 'ta' to 'tb' by
-cycles_done/total_cycles, and rebuild the depression hierarchy every cycle (the
+cycles_done/total_reports, and rebuild the depression hierarchy every cycle (the
 per-cycle dephier path that Phase 2d moves to rank 0). To exercise that path the
 topography must CHANGE between ta and tb, so the depression moves and dephier's
 result differs each cycle. Surface water is supplied (initial wtd above ground)

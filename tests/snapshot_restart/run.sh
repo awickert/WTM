@@ -26,7 +26,7 @@ runoff_ratio_on 0
 cells_per_degree 1
 southern_edge 0
 deltat 31536000
-total_cycles 100
+total_time 100yr
 save_nreport_interval 1
 report_interval 1
 fdepth_a 200

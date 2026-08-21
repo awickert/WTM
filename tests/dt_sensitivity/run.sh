@@ -10,7 +10,7 @@
 #   BITES          : under runoff_collector=legacy (the band sink), the SAME comparison is dt-DEPENDENT
 #                    (max|Δwtd| above BITE_MIN) -- proving the fixture exercises the effect and the active-set
 #                    face is what removes it (a regression test that fails without it).
-# Total simulated time is matched across the two dt (total_cycles scales inversely), so both reach the same
+# Total simulated time is matched across the two dt (total_time is identical; the cycle counts scale inversely), so both reach the same
 # equilibrium; report_interval is fixed so the FSM/coupling frequency is not a variable here (that is a separate axis).
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -37,7 +37,7 @@ runoff_collector $4
 cells_per_degree 120
 southern_edge 0
 deltat $2
-total_cycles $3
+total_time $(( $3 * 20 * $2 ))s
 save_nreport_interval $3
 report_interval 20
 fdepth_a 100

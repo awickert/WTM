@@ -43,7 +43,7 @@ runoff_ratio_on    0
 cells_per_degree   10
 southern_edge      -45
 deltat             31536000
-total_cycles       3
+total_time       6yr
 report_interval            2
 fdepth_a           200
 fdepth_b           150
@@ -71,7 +71,7 @@ case_cfg() {
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
       fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
-      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_cycles 4" ;;
+      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
 }
@@ -93,7 +93,7 @@ run_case() { # name nranks -> sets $PREFIX
     case_cfg "$name" | sed "s|__X__|x|" > "$cfg"
     echo "textfilename       $WORK/${name}_n${n}.txt" >> "$cfg"
     echo "outfile_prefix     $PREFIX" >> "$cfg"
-    # -wtm_eq_tol 0: run the full fixed total_cycles so the reference and the cross-rank checks compare at the
+    # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${name}_n${n}.log" 2>&1 )
 }
