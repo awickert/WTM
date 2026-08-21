@@ -16,6 +16,22 @@ taper) passes.
 
 ### Added
 
+#### Time stepping and surface–subsurface coupling
+- **`report_interval` / `save_nreport_interval` config knobs.** `report_interval` sets the cadence of the
+  equilibrium check + log line + raster output — as a step count (`report_interval 100`) or a simulated time
+  (`report_interval 50yr` / `1000s`, resolved via `deltat`). `save_nreport_interval` saves a raster every K
+  reports. Both **default with a loud warning** if omitted (100 steps / 1). They replace `maxiter` /
+  `cycles_to_save` (deprecated), which are no longer coupling intervals now that FillSpillMerge runs every
+  timestep (see *Changed*). Per-report `t GW time / FSM time` lines are summed from timers around each GW and
+  each FSM step.
+- **`-wtm_dev_active_set` (EXPERIMENTAL, off by default)** — semismooth active-set seepage face: enforces
+  `wtd ≤ 0` as a min-NCP constraint *inside* the matrix-free Anderson solve (`f = max(w_c, f)`), pinning the
+  free surface every iteration rather than via a post-solve clamp (`explicit`) or in-residual siphon
+  (`implicit`). dt-independent to machine precision, mass-conserving (captured seepage → FillSpillMerge), and
+  collector-independent with FSM on. Auto-enables `-wtm_volume_storage` (it needs a `b = 0` residual path) and
+  supersedes the `runoff_collector` removals. Picard/Newton tangents and a full default decision are future
+  work. See `benchmark/FSM_EVERY_STEP_DESIGN.md`.
+
 #### Surface-water routing
 - **`runoff_collector` config-file selector** (`implicit` | `explicit` | `off` | `legacy`) unifies how the
   `wtd = 0` seepage face — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced.
@@ -184,6 +200,18 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **FillSpillMerge now runs EVERY timestep (tight surface–subsurface coupling).** Previously FSM ran once per
+  `maxiter` groundwater sub-steps; it now runs after every accepted step. This removes the coupling-interval
+  (`maxiter` / `niter`) dependence of the marginal-lake / lakeshore equilibria — the free-surface "flicker" and
+  the collector×FSM equilibrium divergence were both artifacts of *batching* FSM. `fsm_off` runs are
+  byte-identical; `fsm_on` equilibria are now report-interval-independent (verified to 0.0 m), and FSM MPI
+  consistency still holds. Affordable at ~4% wall single-node (FSM compute is microseconds; the driver for
+  parallel FSM is memory at global scale, not compute — see `benchmark/esquibel/FSM_COST.md`). The four `fsm_on`
+  golden references were regenerated to the new tight-coupled equilibria (fsm_evap0/1 +3.5 m, fsm_runoff/hi
+  ~+40 m; below_ground / transient unchanged) — the N-independent answers, not a regression. This **supersedes
+  the golden deltas quoted in the solver entry below**, which were the earlier Anderson+implicit intermediate.
+  See `benchmark/FSM_EVERY_STEP_DESIGN.md`. The FillSpillMerge progress bar is silenced in the `wtm` library
+  (`RICHDEM_NO_PROGRESS`) since it would otherwise spam once per step; the standalone `dephier.x` keeps it.
 - **The default solver is now matrix-free Anderson** (was semi-implicit BDF2-on-V/Picard). Anderson is the
   robust production worker, carries the exact in-residual seepage face, and is bit-exact across MPI ranks;
   it is 1st-order-in-time (backward-Euler cc, the right choice for equilibrium). Opt into BDF2-on-V/Picard
@@ -254,6 +282,13 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   coupling permits; a warning is emitted for the configuration that must stay on the serial path
   (`infiltration_on` with FSM on).
 - **CMake defaults to a Release build** when no build type is specified.
+
+### Deprecated
+- **`maxiter`** — no longer a coupling interval (FillSpillMerge runs every timestep). Superseded by
+  `report_interval` (steps or a time). Still parsed and mapped to `report_interval` with a warning; removal is
+  planned.
+- **`cycles_to_save`** — superseded by `save_nreport_interval` (save a raster every K reports). Still parsed and
+  mapped with a warning.
 
 ### Fixed
 - **MPI ghost-cell bug** in the groundwater solve, with a dedicated ghost-cell validation test.
