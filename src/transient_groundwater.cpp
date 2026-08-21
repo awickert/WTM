@@ -264,6 +264,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
+static bool             g_active_set                  = false; // -wtm_dev_active_set [EXPERIMENTAL]: semismooth seepage face pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
@@ -1154,6 +1155,34 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_volume_storage", &volstore, nullptr);
   g_volume_storage = (volstore == PETSC_TRUE);
 
+  // -wtm_dev_active_set [EXPERIMENTAL]: enforce the wtd<=0 seepage face as an ACTIVE-SET / semismooth
+  // constraint INSIDE the matrix-free (Anderson) solve -- a cell whose iterate rises above the land surface
+  // is pinned at wtd=0 by overriding its residual with f = w_c (mirroring the ocean Dirichlet), instead of a
+  // post-solve clamp (`explicit`) or an in-residual siphon (`implicit`). Enforcement-independent: aims to give
+  // ONE seepage BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
+  // for now; the pinned seepage flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
+  PetscBool activeset = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset, nullptr);
+  g_active_set = (activeset == PETSC_TRUE);
+  // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
+  // balance -- the semismooth max(w_c, f) and the captured seepage f*Sy are only meaningful then. The default
+  // secant backward-Euler uses RHS b = h^n (f != residual). If no b=0 scheme is already selected, auto-enable
+  // the exact volume-storage BE (b=0, 1st-order, same limit as TR-BDF2/BDF2-on-V; see finding_cc_secant_...).
+  if (g_active_set && !user_context.use_bdf2_on_V && !user_context.use_tr_bdf2 && !g_volume_storage) {
+    g_volume_storage = true;
+    PetscPrintf(PETSC_COMM_WORLD, "NOTE [-wtm_dev_active_set]: auto-enabled -wtm_volume_storage (a b=0 residual "
+                "path is required for the semismooth seepage face).\n");
+  }
+  // Active-set IS the seepage-face enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
+  // in-residual siphon (implicit) or post-solve clamp (explicit) stack on top of the pin and the result is no
+  // longer enforcement-independent. Disable all collector removals when active-set is on; the pinned-cell
+  // seepage is conserved via the captured-seepage transfer instead.
+  if (g_active_set) {
+    g_direct_to_runoff                     = false;
+    g_surface_sink                         = false;
+    g_surface_exfiltration_to_runoff_array = false;
+  }
+
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / seepage). At
   // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
@@ -1576,6 +1605,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscScalar **my_fdepth_cb = nullptr, **my_ksat_cb = nullptr;  // for the Kirchhoff Φ⁻¹ back-transform
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
+  PetscScalar** my_seepage_post = nullptr;  // -wtm_dev_active_set: captured seepage depth from the converged residual eval
+  if (g_active_set) DMDAVecGetArray(user_context.da, user_context.seepage_vec, &my_seepage_post);
   PetscScalar **my_fringe;
   DMDAVecGetArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
@@ -1617,6 +1648,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         // captured once, at setup, by set_starting_values. Anderson is unaffected (it added 0 here).
         dmdapack.starting_wtd[j][i] = 0.;
         continue;
+      }
+      // -wtm_dev_active_set: the semismooth face removed the seepage INSIDE the solve, so it left no above-
+      // surface water for the collectors below to see. Transfer the captured per-cell seepage depth (from the
+      // converged residual eval) to FSM (sink_removed_dist) and the budget (total_surface_removed). Serial loop.
+      if (g_active_set && my_seepage_post) {
+        const double seep = my_seepage_post[j][i];
+        if (seep > 0.0) {
+          arp.total_surface_removed        += seep * arp.cell_area[j];
+          dmdapack.sink_removed_dist[j][i] += seep;
+        }
       }
       // Land cells: the sink and the evaporation taper can both be active; account each in the same
       // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
@@ -1661,6 +1702,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
+  if (g_active_set) DMDAVecRestoreArray(user_context.da, user_context.seepage_vec, &my_seepage_post);
   DMDAVecRestoreArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
     DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
@@ -1974,6 +2016,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscScalar **my_fringe;
   PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
+  PetscScalar** my_seepage = nullptr;  // -wtm_dev_active_set: per-cell captured seepage depth (m) -> FSM post-solve
+  if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->seepage_vec, &my_seepage));
   // Matrix-free 2nd-order-in-time (-wtm_anderson -wtm_bdf2_on_V): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
   // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
@@ -2033,11 +2077,12 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool dtr_on  = g_direct_to_runoff;
   const bool taper_on = g_evap_taper;
   const bool vol_storage = g_volume_storage;  // BE with volume-form (ΔV) storage instead of secant S·Δh
+  const bool as_on    = g_active_set;         // -wtm_dev_active_set: pin seeping land cells at wtd=0 in-solve
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
            bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev, smooth_T, g_land_boundary_dirichlet,      \
-           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl) collapse(2)
+           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_seepage) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
@@ -2155,6 +2200,22 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         }
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
+        // -wtm_dev_active_set [EXPERIMENTAL]: semismooth seepage face, enforced INSIDE the solve (enforcement-
+        // independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`). The wtd<=0
+        // seepage complementarity is 0 <= (-w_c) ⊥ (seepage flux) >= 0. Written on the mass residual R = f
+        // (head units): the semismooth min-NCP is f <- max(w_c, R). Below the surface the normal residual R
+        // drives mass balance (w_c<0, f=R->0); if the cell overshoots above the surface, the w_c branch pins it
+        // back to wtd=0. The two branches MEET at the surface (both 0), so f is CONTINUOUS -- unlike a hard
+        // switch f=(w_c>0)?w_c:R, whose jump at w_c=0 makes matrix-free Anderson diverge. Pinned-cell seepage
+        // flux (= the residual R(h*) discarded into the max) is captured here for mass conservation: the
+        // depth-form mass residual is f*Sy (the b=0 residual is head-scaled by Sy), so a cell that must seep
+        // (f < 0 = over-supplied) sheds seepage_depth = max(0, -f*Sy). Written per cell every residual eval;
+        // the converged eval leaves the value that the post-solve loop transfers to sink_removed_dist -> FSM
+        // and total_surface_removed (budget). Interior cells have f->0 so their captured seepage is ~0.
+        if (as_on) {
+          if (my_seepage) my_seepage[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
+          f[j][i] = std::max(w_c, f[j][i]);
+        }
       }
     }
   }
@@ -2171,6 +2232,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
+  if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->seepage_vec, &my_seepage));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
