@@ -9,3 +9,6 @@
 [submodule "common/fmt"]
 	path = common/fmt
 	url = https://github.com/fmtlib/fmt.git
+[submodule "common/yaml-cpp"]
+	path = common/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git

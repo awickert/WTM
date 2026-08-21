@@ -45,6 +45,7 @@ message(STATUS "Found PETSc ${PETSC_VERSION}")
 
 add_subdirectory(common/richdem EXCLUDE_FROM_ALL)
 add_subdirectory(common/fmt EXCLUDE_FROM_ALL)
+add_subdirectory(common/yaml-cpp EXCLUDE_FROM_ALL)
 
 # Define a library aggregating all the model componenets that we can use for
 # both running simulations and running tests
@@ -56,7 +57,7 @@ add_library(wtm
   src/update_effective_storativity.cpp
 )
 target_compile_options(wtm PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
-target_link_libraries(wtm PUBLIC richdem OpenMP::OpenMP_CXX fmt::fmt PkgConfig::PETSC)
+target_link_libraries(wtm PUBLIC richdem OpenMP::OpenMP_CXX fmt::fmt PkgConfig::PETSC yaml-cpp::yaml-cpp)
 target_compile_features(wtm PUBLIC cxx_std_20)
 
 add_executable(wtm.x
