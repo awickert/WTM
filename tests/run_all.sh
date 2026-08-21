@@ -43,6 +43,7 @@ run "flicker 1: storativity jump" ./limit_cycle/run.sh "$WTM"
 run "flicker 2: evap discontinuity" ./flicker_evap/run.sh "$WTM"
 run "runoff gathering (wtd=0)"     ./direct_to_runoff/run.sh "$WTM"
 run "runoff_collector selector"    ./runoff_collector/run.sh "$WTM"
+run "dt-sensitivity (active-set)"  ./dt_sensitivity/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
