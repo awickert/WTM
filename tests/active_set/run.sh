@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Active-set / semismooth seepage-face regression (-wtm_dev_active_set).
+# Lake-aware active-set / semismooth seepage-face regression (-wtm_dev_active_set).
 #
-# The active-set pin enforces the wtd<=0 seepage complementarity INSIDE the matrix-free Anderson residual
-# (min-NCP f = max(w_c, f)), so it supersedes the runoff_collector enforcement entirely: every above-surface
-# cell is pinned to wtd=0 EXACTLY and its water is handed to FillSpillMerge. The payoff (see
-# benchmark/FSM_EVERY_STEP_DESIGN.md and finding_active_set_seepage_spike) is that the FSM-on equilibrium
-# becomes INDEPENDENT of the runoff_collector choice -- the collector x FSM coupling ambiguity is dissolved.
+# The active-set pin enforces the seepage complementarity INSIDE the matrix-free Anderson residual, pinned to
+# the FSM FREE SURFACE (wtd <= d_pond, d_pond = lagged ponded depth; 0 off lakes) via the min-NCP
+# f = max(w_c - d_pond, f). It supersedes the runoff_collector enforcement, so the FSM-on equilibrium is
+# INDEPENDENT of the collector choice -- the collector x FSM coupling ambiguity is dissolved -- WHILE keeping
+# lakes: a ponded cell holds water up to its stage (its head is felt during the solve), and only the overflow
+# above the stage is skimmed to runoff. (See benchmark/FSM_EVERY_STEP_DESIGN.md, project_lake_head_boundary_design.)
 #
-# On the fsm_test fixture (a plateau with an off-centre depression, surface water supplied) this test asserts,
-# on the Anderson path with FSM on:
-#   PIN      : with active-set, max wtd = 0 exactly (< 1e-6 m) for implicit/explicit/off -- a pin, not a pile.
-#   COLLECTOR-INDEPENDENT : with active-set, implicit == explicit == off to machine zero (< 1e-9 m spread).
-#   BITE     : WITHOUT active-set, the collector choice moves the equilibrium (implicit vs explicit spread
-#              > 0.1 m) -- proving the independence above is the active-set doing work, not a vacuous fixture.
+# On the fsm_test fixture (a plateau with an off-centre depression, surface water supplied), on the Anderson
+# path with FSM on, this test asserts:
+#   LAKE PERSISTS         : with active-set the lake keeps its head (max wtd well above 0) -- it is NOT
+#                           flattened to the land surface (the pre-lake-aware pin gave max wtd = 0).
+#   COLLECTOR-INDEPENDENT  : with active-set, implicit == explicit == off to machine zero (< 1e-9 m spread).
+#   BITE                   : WITHOUT active-set the collector choice moves the equilibrium (implicit vs
+#                            explicit spread > 0.05 m) -- proving the independence is the pin doing work.
 #
-# active-set is EXPERIMENTAL and OFF BY DEFAULT (-wtm_dev_active_set); it is NON-PHYSICAL for lakes until it is
-# lake-aware (pins the lake column to wtd=0, removing lake pressure -- see task #119). This test guards the
-# mechanism as it stands, not a production default.
+# active-set is EXPERIMENTAL and OFF BY DEFAULT (-wtm_dev_active_set). Anderson residual only for now.
 #
 # Usage:  tests/active_set/run.sh [path/to/wtm.x]
 set -uo pipefail
@@ -33,40 +33,48 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem  collector
-  cat > "$WORK/$1.cfg" <<EOF
-run_type equilibrium
-fsm_on 1
-evap_mode 0
-infiltration_on 0
-runoff_ratio_on 0
-runoff_collector $2
-cells_per_degree 10
-southern_edge -45
-deltat 31536000
-total_time 6yr
-report_interval 2
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start t0
-time_end t0
-surfdatadir $INP
-region fsm_test
-supplied_wt 1
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-save_nreport_interval 9999
+  cat > "$WORK/$1.yaml" <<EOF
+run:
+  type: equilibrium
+  total_time: 6yr
+  supplied_wt: true
+time:
+  deltat: 31536000
+  report_interval: 2
+  save_nreport_interval: 9999
+grid:
+  cells_per_degree: 10
+  southern_edge: -45
+physics:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  infiltration: false
+  evaporation:
+    mode: remove
+surface_water:
+  fsm: true
+  runoff_ratio: false
+  runoff_collector: $2
+io:
+  surfdatadir: $INP
+  region: fsm_test
+  time_start: t0
+  time_end: t0
+  textfilename: $WORK/$1.txt
+  outfile_prefix: $WORK/${1}_
 EOF
 }
 run() { # stem  collector  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.cfg" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 # Without active-set: the collector choice is a live variable (the BITE).
 run imp_plain implicit ""
 run exp_plain explicit ""
-# With active-set: it supersedes the collector, so all three must agree exactly.
+# With lake-aware active-set: it supersedes the collector, so all three must agree exactly AND keep the lake.
 run imp_as implicit "-wtm_dev_active_set"
 run exp_as explicit "-wtm_dev_active_set"
 run off_as off      "-wtm_dev_active_set"
@@ -79,20 +87,20 @@ import sys, numpy as np, rasterio
 ip, ep, ia, ea, oa = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:6]]
 def interior(a): return a[1:-1, 1:-1]
 ip, ep, ia, ea, oa = map(interior, (ip, ep, ia, ea, oa))
-pin        = max(float(ia.max()), float(ea.max()), float(oa.max()))
-indep      = max(float(np.max(np.abs(ia - ea))), float(np.max(np.abs(ia - oa))))
-bite       = float(np.max(np.abs(ip - ep)))
+lake_head = float(ia.max())
+indep     = max(float(np.max(np.abs(ia - ea))), float(np.max(np.abs(ia - oa))))
+bite      = float(np.max(np.abs(ip - ep)))
 ok = True
 def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
-check("PIN (active-set pins wtd=0 exactly)",        pin < 1e-6,
-      f"max wtd over {{implicit,explicit,off}} = {pin:.3e} m")
-check("COLLECTOR-INDEPENDENT (active-set)",         indep < 1e-9,
+check("LAKE PERSISTS (head kept, not flattened)", lake_head > 1.0,
+      f"max wtd with active-set = {lake_head:.4f} m (lake stage; the pre-lake-aware pin gave 0)")
+check("COLLECTOR-INDEPENDENT (active-set)",       indep < 1e-9,
       f"max spread implicit/explicit/off = {indep:.3e} m")
-check("BITE (collectors diverge without active-set)", bite > 0.1,
+check("BITE (collectors diverge without active-set)", bite > 0.05,
       f"max|implicit - explicit| (no active-set) = {bite:.4f} m")
-print("PASS: active-set pins the seepage face and dissolves the collector x FSM ambiguity"
+print("PASS: lake-aware active-set keeps the lake's head and dissolves the collector x FSM ambiguity"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

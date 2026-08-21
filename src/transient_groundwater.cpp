@@ -2200,21 +2200,27 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         }
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
-        // -wtm_dev_active_set [EXPERIMENTAL]: semismooth seepage face, enforced INSIDE the solve (enforcement-
-        // independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`). The wtd<=0
-        // seepage complementarity is 0 <= (-w_c) ⊥ (seepage flux) >= 0. Written on the mass residual R = f
-        // (head units): the semismooth min-NCP is f <- max(w_c, R). Below the surface the normal residual R
-        // drives mass balance (w_c<0, f=R->0); if the cell overshoots above the surface, the w_c branch pins it
-        // back to wtd=0. The two branches MEET at the surface (both 0), so f is CONTINUOUS -- unlike a hard
-        // switch f=(w_c>0)?w_c:R, whose jump at w_c=0 makes matrix-free Anderson diverge. Pinned-cell seepage
-        // flux (= the residual R(h*) discarded into the max) is captured here for mass conservation: the
-        // depth-form mass residual is f*Sy (the b=0 residual is head-scaled by Sy), so a cell that must seep
-        // (f < 0 = over-supplied) sheds seepage_depth = max(0, -f*Sy). Written per cell every residual eval;
-        // the converged eval leaves the value that the post-solve loop transfers to sink_removed_dist -> FSM
-        // and total_surface_removed (budget). Interior cells have f->0 so their captured seepage is ~0.
+        // -wtm_dev_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth seepage face, enforced INSIDE the solve
+        // (enforcement-independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`).
+        // The head is pinned to the FSM FREE SURFACE, not the land surface: wtd <= d_pond, where
+        // d_pond = max(0, starting_wtd) is the ponded depth from the PREVIOUS step's FillSpillMerge (0 off
+        // lakes; the one-step lag). Complementarity 0 <= (d_pond - w_c) ⊥ (seepage flux) >= 0, on the mass
+        // residual R = f (head units): the semismooth min-NCP is f <- max(w_c - d_pond, R). Below the free
+        // surface the normal residual R drives mass balance (f=R->0); if the cell overshoots ABOVE the free
+        // surface the (w_c - d_pond) branch skims the excess to runoff. Off lakes (d_pond=0) this reduces to
+        // the wtd<=0 pin (skim at the land surface = hillslope discharge). On lakes (d_pond>0) the aquifer
+        // keeps water up to the lake stage -- its head is felt DURING the solve -- and only the OVERFLOW above
+        // the stage is skimmed; the lake is a finite reservoir whose level is free to fall (drying). Continuous
+        // at the shore (d_pond->0), so no discrete wet/dry switch. The branches MEET at the free surface (both
+        // 0) so f is CONTINUOUS -- a hard switch's jump makes matrix-free Anderson diverge. Pinned-cell seepage
+        // flux (the residual R discarded into the max) is captured for mass conservation: depth-form residual
+        // is f*Sy, so an over-supplied cell (f<0) sheds seepage_depth = max(0,-f*Sy) to sink_removed_dist ->
+        // FSM and total_surface_removed (budget). At convergence only cells held AT the free surface carry a
+        // nonzero residual, so freely-solving (incl. below-stage lake) cells shed ~0. Anderson residual only.
         if (as_on) {
+          const double d_pond = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
           if (my_seepage) my_seepage[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
-          f[j][i] = std::max(w_c, f[j][i]);
+          f[j][i] = std::max(w_c - d_pond, f[j][i]);
         }
       }
     }
