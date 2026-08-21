@@ -23,11 +23,11 @@ namespace rd = richdem;
 
 constexpr double seconds_in_a_year = 31536000.;
 
-// Snapshot output filename: cycle number _ elapsed simulated years, underscore-separated (e.g.
-// "<prefix>000000015_1yr.tif"). Each cycle spans a fixed maxiter*deltat of simulated time -- true even
-// under adaptive dt (the controller varies the sub-step, not the cycle duration) -- so elapsed years is
-// well-defined. Cycle keeps the files uniquely ordered; the year is the physically meaningful label
-// (essential for transient runs, informative for spin-up progress).
+// Snapshot output filename: report number _ elapsed simulated years, underscore-separated (e.g.
+// "<prefix>000000015_1yr.tif"). Each report spans report_seconds of simulated time (report_steps*deltat, or
+// the user's report_interval time) -- true even under adaptive dt (the controller varies the sub-step, not the
+// report duration) -- so elapsed years is well-defined. The report index keeps the files uniquely ordered; the
+// year is the physically meaningful label (essential for transient runs, informative for spin-up progress).
 static std::string snapshot_filename(const Parameters& params) {
   const double years = params.cycles_done * params.report_seconds / seconds_in_a_year;
   return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
@@ -221,6 +221,73 @@ static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScal
   DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
 }
 
+// Per-timestep surface-water coupling (tight coupling: FillSpillMerge runs EVERY step -- see
+// benchmark/FSM_EVERY_STEP_DESIGN.md). Assemble the water table on rank 0, hand this step's above-surface
+// removal to FSM, run FillSpillMerge (timed into fsm_seconds), scatter the post-FSM table back, then set the
+// recharge for the NEXT step -- which also re-arms arp.runoff (= runoff_ratio*rech) that the next step's FSM
+// consumes (so recharge must run per step, not just per report). With fsm_on this is called after every
+// ACCEPTED groundwater step; with fsm_off it is called once per report and only assembles the table + sets
+// recharge (the FSM/scatter parts are skipped).
+template <class elev_t>
+static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppCtx& user_context,
+                                        DMDA_Array_Pack& dmdapack,
+                                        richdem::dephier::DepressionHierarchy<elev_t>& deps, int mpi_rank,
+                                        bool distribute_recharge, double& fsm_seconds) {
+  // Assemble the full wtd on rank 0 (the intermediate solves only touch each rank's owned cells).
+  FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+
+  // Hand this step's above-surface removal (sink / extended-soil / exfiltration / direct-to-runoff) into
+  // rank-0 arp.runoff so FillSpillMerge routes it. No-op when all are off (stays 0).
+  if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
+                        || FanDarcyGroundwater::surface_exfiltration_to_runoff_on()
+                        || FanDarcyGroundwater::direct_to_runoff_on()))
+    FanDarcyGroundwater::gather_sink_removed_to_zero(params, arp, user_context, dmdapack);
+
+  if (mpi_rank == 0) arp.wtd_mid = arp.wtd;  // table after GW, before FSM (GW-vs-FSM change diagnostic)
+
+  if (params.fsm_on) {
+    richdem::Timer fsm_timer;
+    fsm_timer.start();
+    // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds the full arp.
+    if (mpi_rank == 0) dh::FillSpillMerge(params, deps, arp);
+    fsm_seconds += fsm_timer.lap();
+    // FSM changed rank-0 arp.wtd; resync the distributed carrier so the next solve's recharge reads it.
+    if (distribute_recharge) scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
+  }
+
+  // Set recharge for the NEXT step. Adjust evaporation where there is surface water, and reset
+  // arp.runoff = runoff_ratio*rech (consumed by the next step's FSM). Serial rank-0 form when the recharge is
+  // not distributed; otherwise distributed over owned cells.
+  PetscMPIInt rech_rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
+  if (!distribute_recharge && rech_rank == 0) {
+    const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+#pragma omp parallel for default(none) shared(arp, params, evap_taper)
+    for (unsigned int i = 0; i < arp.topo.size(); i++) {
+      if (evap_taper) {
+        arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
+      } else if (arp.wtd(i) > 0) {  // surface water present
+        if (!params.evap_mode)
+          arp.wtd(i) = 0;  // evap_mode 0: remove all surface water (GW-alone testing)
+        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
+      } else {  // water table below the surface; recharge is always positive
+        arp.rech(i) =
+            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
+      }
+      if (arp.rech(i) > 0) {
+        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
+        arp.rech(i) -= arp.runoff(i);
+      }
+    }
+  }
+  if (distribute_recharge) {
+    distributed_recharge(params, user_context, dmdapack);
+    FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+    if (params.fsm_on && params.runoff_ratio_on)
+      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack);
+  }
+}
+
 template <class elev_t>
 void update(
     Parameters& params,
@@ -300,8 +367,6 @@ void update(
 
   std::cerr << "Before GW time: " << get_current_time_and_date_as_str() << std::endl;
 
-  richdem::Timer time_groundwater;
-  time_groundwater.start();
 
   // These iterations refer to how many times to repeat the time step within the groundwater
   // portion of code before running FSM. For example, 1 year GW then FSM could also be run as
@@ -322,15 +387,17 @@ void update(
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
 
-  // Reset the per-cycle sink-removal accumulator (taper 1): it sums the implicit sink's removed depth
-  // over this cycle's sub-steps, then is gathered into arp.runoff for FSM below. Zeroing here (owned
-  // cells) makes each cycle start fresh; a harmless no-op when the sink is off (it stays 0).
-  {
+  // Reset the per-STEP sink-removal accumulator (taper 1 / seepage): update() sums the removed depth for one
+  // step, then couple_surface_and_recharge hands it to FSM. Zeroed before EACH step (FSM now runs every step),
+  // so every step starts fresh; a harmless no-op when no sink/seepage is active (stays 0).
+  const auto zero_sink = [&]() {
     const auto [xs, ys, xm, ym] = get_corners(user_context.da);
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
         dmdapack.sink_removed_dist[j][i] = 0.0;
-  }
+  };
+  // Per-report wall-time accumulators, summed from the timers around each GW step and each FSM step below.
+  double gw_seconds = 0.0, fsm_seconds = 0.0;
 
   if (user_context.use_dt_adaptive) {
     // Adaptive stepping covers the SAME cycle duration as the fixed loop would
@@ -349,7 +416,11 @@ void update(
       const double dt_taken   = user_context.deltat;
       const double rech_snap  = arp.total_added_recharge;    // roll back on a rejected step (non-converged
       const double ocean_snap = arp.total_loss_to_ocean_gw;  // OR too-inaccurate), as the continuation loop does
+      zero_sink();
+      richdem::Timer tgw_a;
+      tgw_a.start();
       const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      gw_seconds += tgw_a.lap();
       if (its < 0) {  // REJECT: update() shrank deltat and did NOT commit; retry the same step
         arp.total_added_recharge   = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
@@ -362,6 +433,9 @@ void update(
       retries = 0;
       t += dt_taken;
       nsteps++;
+      if (params.fsm_on)
+        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
+                                    fsm_seconds);
     }
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
                 nsteps, rejects, cycle_duration, params.report_steps);
@@ -382,7 +456,11 @@ void update(
       const double rech_snap  = arp.total_added_recharge;   // roll back on a rejected step
       const double ocean_snap = arp.total_loss_to_ocean_gw;
       const double dt_try     = user_context.deltat;
+      zero_sink();
+      richdem::Timer tgw_n;
+      tgw_n.start();
       const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      gw_seconds += tgw_n.lap();
       if (its < 0) {  // rejected (non-converged): restore accumulators, shrink dt, retry same step
         arp.total_added_recharge  = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
@@ -401,6 +479,9 @@ void update(
       // is still tracked (below) as an equilibrium detector, not a step controller.
       if (its <= user_context.dtc_easy_iters) user_context.deltat *= user_context.dtc_grow;  // else HOLD
       if (user_context.deltat > user_context.dtc_dt_max) user_context.deltat = user_context.dtc_dt_max;
+      if (params.fsm_on)
+        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
+                                    fsm_seconds);
     }
     PetscPrintf(PETSC_COMM_WORLD,
                 "dt-continuation: deltat now %g s after this cycle; last max|Δw| = %g m (-> 0 at equilibrium).\n",
@@ -408,130 +489,23 @@ void update(
   } else {
     int iter_count = 0;
     while (iter_count++ < params.report_steps) {
+      zero_sink();
+      richdem::Timer tgw;
+      tgw.start();
       FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      gw_seconds += tgw.lap();
+      if (params.fsm_on)
+        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
+                                    fsm_seconds);
     }
   }
-  // Assemble the full wtd field once, now that the solve loop is done (the
-  // intermediate solves only need each rank's owned cells). Time this all-to-one
-  // gather separately: single-node it is a cheap memory copy, but multi-node it is
-  // an Infiniband transfer to rank 0 every cycle that does NOT shrink with node count
-  // -- the Amdahl term for coupled runs (benchmark/esquibel/FSM_COST.md, task B).
-  richdem::Timer time_gather;
-  time_gather.start();
-  FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
-  std::cerr << "t gather time = " << time_gather.lap() << std::endl;
-
-  // Taper 1 / extended-soil: hand this cycle's above-surface removal to FSM. The sink held wtd<=0 during
-  // the solve (so FSM's own wtd>0->runoff handoff won't fire); extended-soil truncated the above-surface
-  // water into the same accumulator between steps. Either way, gather the accumulated depth into rank-0
-  // arp.runoff (adding) so this cycle's FillSpillMerge routes it. No-op when both are off (stays 0).
-  if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
-                        || FanDarcyGroundwater::surface_exfiltration_to_runoff_on() || FanDarcyGroundwater::direct_to_runoff_on()))
-    FanDarcyGroundwater::gather_sink_removed_to_zero(params, arp, user_context, dmdapack);
-
-  std::cerr << "t GW time = " << time_groundwater.lap() << std::endl;
-  std::cerr << "t After GW time: " << get_current_time_and_date_as_str() << std::endl;
-
-  if (mpi_rank == 0) {
-    arp.wtd_mid = arp.wtd;
-  }
-
-  ////////////////////////
-  // Move surface water //
-  ////////////////////////
-
-  if (params.fsm_on) {
-    richdem::Timer fsm_timer;
-    fsm_timer.start();
-
-    // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds
-    // the full arp. Its wtd output stays on rank 0 (the following serial sections
-    // and the next-cycle scatter all read rank-0 arp.wtd); no broadcast is needed.
-    // See benchmark/DISTRIBUTED_ARP_DESIGN.md.
-    if (mpi_rank == 0) {
-      dh::FillSpillMerge(params, deps, arp);
-    }
-
-    std::cerr << "t FSM time = " << fsm_timer.lap() << std::endl;
-    std::cerr << "t After FSM time: " << get_current_time_and_date_as_str() << std::endl;
-
-    // FSM changed arp.wtd on rank 0. When the recharge is distributed, it reads the
-    // water table from the distributed carrier (starting_wtd), so resync starting_wtd
-    // from the post-FSM arp.wtd. (When the recharge is serial it reads arp.wtd on
-    // rank 0 directly, so no resync is needed.) This is the fsm-on leg of the round
-    // trip: gather wtd -> FSM (rank 0) -> scatter wtd back. See DISTRIBUTED_ARP_DESIGN.md.
-    if (distribute_recharge)
-      scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
-  }
-
-  /////////////////////////
-  // Set recharge values //
-  /////////////////////////
-
-  // Check to see where there is surface water, and adjust how evaporation works
-  // at these locations.
-  richdem::Timer recharge_timer;
-  recharge_timer.start();
-
-  // The serial rank-0 recharge is kept only when the recharge is NOT distributed
-  // (fsm_on && (runoff_ratio_on || infiltration_on)): it writes arp.rech (read by the
-  // next cycle's solve), arp.wtd (evap_mode 0's surface-water removal), and arp.runoff,
-  // which the NEXT cycle's FillSpillMerge consumes -- so it must stay on rank 0
-  // alongside FSM. Otherwise this block is skipped and the recharge is distributed
-  // (below). See DISTRIBUTED_ARP_DESIGN.md.
-  PetscMPIInt rech_rank;
-  MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
-  if (!distribute_recharge && rech_rank == 0) {
-    // The taper (taper 2/3) governs evaporation via the implicit E_eff, so feed just the precip source
-    // regardless of evap_mode -- the smooth removal auto-zeroes standing water, so there is NO
-    // independent wtd=0 under the taper. Otherwise the hard evap_mode split: mode 1 evaporates surface
-    // water at owe (it persists); mode 0 removes all surface water (wtd=0; GW-alone testing, Fan
-    // Reinfelder et al. 2013). Taper-first (not nested in evap_mode 1) so it also works in evap_mode 0.
-    const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
-    std::cout << (evap_taper       ? "p updating the recharge field (taper)"
-                 : params.evap_mode ? "p updating the recharge field"
-                                    : "p removing all surface water")
-              << std::endl;
-#pragma omp parallel for default(none) shared(arp, params, evap_taper)
-    for (unsigned int i = 0; i < arp.topo.size(); i++) {
-      if (evap_taper) {
-        arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
-      } else if (arp.wtd(i) > 0) {  // surface water present
-        if (!params.evap_mode)
-          arp.wtd(i) = 0;  // evap_mode 0: remove all surface water (GW-alone testing)
-        arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
-      } else {  // water table below the surface; recharge is always positive
-        arp.rech(i) =
-            (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
-      }
-      if (arp.rech(i) > 0) {
-        // positive recharge may partly run off (runoff_ratio); subtract it from the recharge.
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
-      }
-    }
-  }
-  // (serial path) rech and wtd stay on rank 0 -- the next cycle re-loads them from
-  // rank-0 arp into the distributed solve carriers, so no broadcast is needed.
-
-  // Distributed recharge: compute over each rank's owned cells (writing rech_dist
-  // and, in evap_mode 0, zeroing surface water in starting_wtd), then assemble the
-  // post-recharge wtd on rank 0 for PrintValues and the next output. starting_wtd and
-  // rech_dist persist to the next cycle (cycle-0-gated load above; fsm-on resyncs
-  // starting_wtd post-FSM), so no per-cycle round-trip through arp for the recharge.
-  if (distribute_recharge) {
-    distributed_recharge(params, user_context, dmdapack);
-    FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
-    // When runoff_ratio_on and FSM is on, the recharge's runoff (runoff_ratio*rech)
-    // feeds the next FSM, which runs on rank 0 -- so gather the distributed runoff to
-    // rank-0 arp.runoff. Otherwise the runoff is 0 and arp.runoff stays at FSM's own 0,
-    // so no gather is needed (fsm-off has no FSM consumer at all).
-    if (params.fsm_on && params.runoff_ratio_on)
-      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack);
-  }
-
-  std::cerr << "t Set recharge time = " << recharge_timer.lap() << std::endl;
-  std::cerr << "After setting recharge values: " << get_current_time_and_date_as_str() << std::endl;
+  // fsm_off: assemble the water table + set recharge ONCE per report (FillSpillMerge is skipped inside the
+  // helper). fsm_on already coupled (gather -> hand-off -> FSM -> scatter -> recharge) after every step above.
+  if (!params.fsm_on)
+    couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
+                                fsm_seconds);
+  std::cerr << "t GW time (report) = " << gw_seconds << " s;  FSM time (report) = " << fsm_seconds << " s"
+            << std::endl;
 
   // Per-CYCLE convergence metric: max change in the (post-FSM) water table since the previous cycle. This
   // is the HONEST steady-state signal -- unlike the per-sub-step max|Δw|, it excludes the cosmetic within-
