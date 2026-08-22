@@ -32,9 +32,7 @@ time:
   deltat: 31536000
   report_interval: 5
   save_nreport_interval: 9999
-grid:
-  cells_per_degree: 10
-  southern_edge: -45
+# grid geometry (cells_per_degree=10, southern_edge=-45) is derived from the input geotransform (#124)
 physics:
   fdepth:
     a: 200
