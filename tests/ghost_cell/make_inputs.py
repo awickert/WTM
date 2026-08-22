@@ -14,8 +14,10 @@ boundary); with the fix, the 2-process result matches the 1-process result.
 
 import numpy as np
 import os
-import rasterio
-from rasterio.transform import from_bounds
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import write_tif as _write_tif  # noqa: E402
 
 NX = 12    # total columns (10 interior + 2 ocean-edge columns)
 NY = 3     # total rows (1 interior row + 2 ocean-edge rows)
@@ -25,21 +27,13 @@ TIME   = "t0"
 OUTDIR = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUTDIR, exist_ok=True)
 
-# Arbitrary geographic extent; richdem only needs dimensions + data values.
-transform = from_bounds(0, 0, NX, NY, NX, NY)
-CRS = "EPSG:4326"
+# Intended grid: WTM derives geometry from the geotransform (#124), which the shared writer encodes.
+CELLS_PER_DEGREE = 10.0
+SOUTHERN_EDGE    = -45.0
 
 
 def write_tif(path, data, dtype="float32"):
-    with rasterio.open(
-        path, "w",
-        driver="GTiff",
-        height=NY, width=NX,
-        count=1, dtype=dtype,
-        crs=CRS,
-        transform=transform,
-    ) as dst:
-        dst.write(data.astype(dtype), 1)
+    _write_tif(path, data, CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
 
 
 # Flat topography at 100 m.  Edge cells will be forced to 0 (ocean) by the
