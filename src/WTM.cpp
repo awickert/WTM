@@ -1,4 +1,5 @@
 #include "fill_spill_merge.hpp"
+#include "git_version.hpp"  // baked-in git commit + clean/dirty state (provenance)
 #include "irf.hpp"
 #include "transient_groundwater.hpp"
 #include "update_effective_storativity.hpp"  // per-cycle pure-water-depth metric (S*Δwtd)
@@ -57,6 +58,18 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   // (full-grid dimension checks) are rank-0 only. See DISTRIBUTED_ARP_DESIGN.md.
   PetscMPIInt rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
+  // Provenance: record which code produced this run -- the git commit + clean/dirty state baked into the
+  // binary at build time. Printed on rank 0; a dirty tree is flagged loudly (results are not reproducible
+  // from the hash alone). Referencing these accessors also keeps git_version in the linked binary.
+  if (rank == 0) {
+    std::cout << "c WTM git commit         = " << wtm_git_commit() << " (" << wtm_git_state() << ")"
+              << std::endl;
+    if (wtm_git_dirty())
+      std::cerr << "WARNING: this WTM binary was built from a DIRTY git tree; its results are not "
+                   "reproducible from the commit hash alone."
+                << std::endl;
+  }
 
   // Taper 2/3: read -wtm_evap_taper / -wtm_extinction now, BEFORE the initial recharge (InitialiseBoth
   // below), so its explicit recharge sees the same flags as the per-cycle path. update() re-reads them

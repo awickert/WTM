@@ -1,0 +1,19 @@
+#pragma once
+// AUTO-GENERATED at build time by cmake/GitStamp.cmake -- DO NOT EDIT.
+// Bakes the git commit hash and clean/dirty state of the source tree into the binary so every run is
+// traceable to the exact code that produced it (provenance). When the tree is DIRTY (uncommitted tracked
+// changes) the compiler is made to warn loudly below, because the hash alone no longer describes the build.
+
+#define WTM_GIT_COMMIT "@WTM_GIT_COMMIT@"
+#define WTM_GIT_DIRTY  @WTM_GIT_DIRTY@
+#define WTM_GIT_STATE  "@WTM_GIT_STATE@"
+
+#if WTM_GIT_DIRTY
+// #pragma GCC warning (not #warning) so -pedantic does not additionally complain that #warning is a
+// pre-C++23 extension; it still emits a real, loud compiler warning. Supported by GCC and Clang.
+#  pragma GCC warning "=============================================================================="
+#  pragma GCC warning "  WTM is being built from a DIRTY git working tree (uncommitted tracked changes)."
+#  pragma GCC warning "  The baked-in commit hash does NOT fully describe this binary; results from it"
+#  pragma GCC warning "  are not reproducible from git alone. Commit your changes for a consistent build."
+#  pragma GCC warning "=============================================================================="
+#endif

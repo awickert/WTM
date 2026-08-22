@@ -47,10 +47,29 @@ add_subdirectory(common/richdem EXCLUDE_FROM_ALL)
 add_subdirectory(common/fmt EXCLUDE_FROM_ALL)
 add_subdirectory(common/yaml-cpp EXCLUDE_FROM_ALL)
 
+# --- Build-time git stamp -------------------------------------------------------------------------
+# Bake the git commit hash + clean/dirty state into the binary (provenance), and make the compiler warn
+# loudly when building from a dirty tree. GitStamp.cmake runs on EVERY build (not cached at configure
+# time) so the hash is always current -- and correct even when the source tree is absent/different at run
+# time (e.g. a binary rsynced to MSI). configure_file inside it only rewrites on change, so clean
+# incremental builds do not churn.
+set(WTM_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated)
+file(MAKE_DIRECTORY ${WTM_GENERATED_DIR})
+add_custom_target(wtm_git_stamp ALL
+  BYPRODUCTS ${WTM_GENERATED_DIR}/wtm_git_version.hpp
+  COMMAND ${CMAKE_COMMAND}
+          -DSRC_DIR=${CMAKE_SOURCE_DIR}
+          -DIN_FILE=${CMAKE_SOURCE_DIR}/cmake/git_version.hpp.in
+          -DOUT_FILE=${WTM_GENERATED_DIR}/wtm_git_version.hpp
+          -P ${CMAKE_SOURCE_DIR}/cmake/GitStamp.cmake
+  COMMENT "Stamping git commit + clean/dirty state into wtm_git_version.hpp"
+  VERBATIM)
+
 # Define a library aggregating all the model componenets that we can use for
 # both running simulations and running tests
 add_library(wtm
   src/ArrayPack.cpp
+  src/git_version.cpp
   src/irf.cpp
   src/parameters.cpp
   src/transient_groundwater.cpp
@@ -59,6 +78,10 @@ add_library(wtm
 target_compile_options(wtm PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
 target_link_libraries(wtm PUBLIC richdem OpenMP::OpenMP_CXX fmt::fmt PkgConfig::PETSC yaml-cpp::yaml-cpp)
 target_compile_features(wtm PUBLIC cxx_std_20)
+# git_version.cpp includes the generated wtm_git_version.hpp; regenerate it (and re-fire the dirty warning)
+# before wtm builds.
+target_include_directories(wtm PRIVATE ${WTM_GENERATED_DIR})
+add_dependencies(wtm wtm_git_stamp)
 
 add_executable(wtm.x
   src/WTM.cpp
