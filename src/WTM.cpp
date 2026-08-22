@@ -84,6 +84,13 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
       InitialiseTransient(params, arp);
     MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    // Grid geometry from the input geotransform (#124), derived on rank 0 (which holds arp.topo's
+    // geotransform), then broadcast like ncells so all ranks build the same 1-D Class-C geometry.
+    if (rank == 0)
+      derive_grid_geometry(params, arp);
+    MPI_Bcast(&params.ns_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ew_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.southern_edge, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
     if (rank == 0)
@@ -94,6 +101,13 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
       InitialiseEquilibrium(params, arp);
     MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    // Grid geometry from the input geotransform (#124), derived on rank 0 (which holds arp.topo's
+    // geotransform), then broadcast like ncells so all ranks build the same 1-D Class-C geometry.
+    if (rank == 0)
+      derive_grid_geometry(params, arp);
+    MPI_Bcast(&params.ns_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ew_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.southern_edge, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
     if (rank == 0)
@@ -104,6 +118,13 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
       InitialiseTest(params, arp);
     MPI_Bcast(&params.ncells_x, 1, MPI_INT, 0, PETSC_COMM_WORLD);
     MPI_Bcast(&params.ncells_y, 1, MPI_INT, 0, PETSC_COMM_WORLD);
+    // Grid geometry from the input geotransform (#124), derived on rank 0 (which holds arp.topo's
+    // geotransform), then broadcast like ncells so all ranks build the same 1-D Class-C geometry.
+    if (rank == 0)
+      derive_grid_geometry(params, arp);
+    MPI_Bcast(&params.ns_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.ew_deg_per_cell, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+    MPI_Bcast(&params.southern_edge, 1, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
     cell_size_area(params, arp);
     textfile << "computed distances, areas, and latitudes" << std::endl;
   } else {

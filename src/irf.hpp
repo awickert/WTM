@@ -9,6 +9,8 @@ void InitialiseEquilibrium(Parameters& params, ArrayPack& arp);
 
 void InitialiseTest(Parameters& params, ArrayPack& arp);
 
+void derive_grid_geometry(Parameters& params, const ArrayPack& arp);
+
 void cell_size_area(Parameters& params, ArrayPack& arp);
 
 void InitialiseBoth(const Parameters& params, ArrayPack& arp);

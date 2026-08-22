@@ -66,7 +66,9 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["time"]["save_nreport_interval"]) save_nreport_interval = n.as<int32_t>();
 
-  // grid
+  // grid: DEPRECATED. Grid geometry is derived from the input topography's GDAL geotransform (#124).
+  // cells_per_degree / southern_edge are honored only as an override for inputs that lack georeferencing;
+  // when a real geotransform is present they are ignored (derive_grid_geometry warns).
   if (auto n = root["grid"]["cells_per_degree"]) cells_per_degree = n.as<double>();
   if (auto n = root["grid"]["southern_edge"])    southern_edge    = n.as<double>();
 
@@ -162,10 +164,14 @@ void Parameters::check() const {
     }
   };
 
-  check_positive("cells_per_degree", cells_per_degree);
   check_positive("save_nreport_interval", save_nreport_interval);
   check_positive("deltat", deltat);
-  if (std::isnan(southern_edge) || southern_edge < -90 || southern_edge > 90) {
+  // Grid geometry (cells_per_degree / southern_edge) is now derived from the geotransform (#124), so it is
+  // no longer required here. Validate only when supplied as the deprecated override.
+  if (cells_per_degree != -1) {
+    check_positive("cells_per_degree", cells_per_degree);
+  }
+  if (!std::isnan(southern_edge) && (southern_edge < -90 || southern_edge > 90)) {
     throw std::runtime_error("please enter a value between -90 and 90 degrees for the southern_edge!");
   }
   check_binary(

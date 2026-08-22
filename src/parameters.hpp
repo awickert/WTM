@@ -38,7 +38,13 @@ struct Parameters {
   // band-sink defaults). "" is accepted as a synonym for the default. See README / SURFACE_WATER_ROUTING.md.
   std::string runoff_collector = "implicit";
 
+  // Grid geometry. cells_per_degree / southern_edge are DEPRECATED config inputs (the `grid:` block),
+  // kept only as an override for inputs that lack georeferencing. By default the geometry is derived from
+  // the input topography's GDAL geotransform (#124): ns_deg_per_cell / ew_deg_per_cell are the true
+  // (possibly non-square) degree spacings, and southern_edge the domain's southern-edge latitude.
   double cells_per_degree = -1;
+  double ns_deg_per_cell  = std::numeric_limits<double>::signaling_NaN();  // N-S degrees per cell (|dy|)
+  double ew_deg_per_cell  = std::numeric_limits<double>::signaling_NaN();  // E-W degrees per cell (dx)
 
   double UNDEF = -1.0e7;
 
