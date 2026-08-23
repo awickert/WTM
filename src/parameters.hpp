@@ -48,11 +48,13 @@ struct Parameters {
 
   double UNDEF = -1.0e7;
 
-  int32_t infiltration_on = -1;
-  int32_t supplied_wt     = -1;
-  int32_t evap_mode       = -1;
-  int32_t fsm_on          = -1;
-  int32_t runoff_ratio_on = -1;
+  // Defaults adopted from the config_flags_prototype.yaml schema (Phase 2 hard cutover): an omitted key takes
+  // the prototype default rather than erroring (the old parser used -1 sentinels + required them all).
+  int32_t infiltration_on = 0;   // surface_water.infiltration_during_flow: false
+  int32_t supplied_wt     = 0;   // run.initial_water_table: omit -> saturated (wtd = 0)   [TODO: folder auto-detect]
+  int32_t evap_mode       = 0;   // dropped from the config (vestigial when the ET sigmoid is on = default); 0 = remove
+  int32_t fsm_on          = 1;   // surface_water.mode: routed
+  int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
 
   double deltat          = std::numeric_limits<double>::signaling_NaN();
   double fdepth_a        = -1.;
@@ -81,5 +83,13 @@ struct Parameters {
 
   void print() const;
 };
+
+// Parse a simulated-time value ("500yr" / "1000s"; a bare number = years, with a warning) into seconds.
+double parse_time_seconds(const std::string& v, const char* key);
+
+// Phase 2b: translate the CLI-flag-backed config sections (solver / dev / boundaries / equilibrium_stop /
+// transmissivity background / parallel.threads_per_rank) into PETSc options + omp_set_num_threads. Call once,
+// AFTER PetscInitialize and before the SNES is built. CLI flags override the config.
+void apply_config_petsc_options(const std::string& config_file);
 
 #endif

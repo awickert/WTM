@@ -10,9 +10,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace {
 // Parse a simulated-time value with an explicit unit ("500yr" / "1000s"); a bare number defaults to YEARS
-// with a loud warning so the assumption is never silent. Returns seconds.
+// with a loud warning so the assumption is never silent. Returns seconds. (Exposed for the Phase-2b config
+// bridge in WTM.cpp.)
 double parse_time_seconds(const std::string& v, const char* key) {
   if (v.size() > 2 && v.substr(v.size() - 2) == "yr")
     return std::stod(v.substr(0, v.size() - 2)) * 31536000.0;
@@ -22,7 +22,6 @@ double parse_time_seconds(const std::string& v, const char* key) {
             << "yr). Set '" << v << "yr' or '<seconds>s' to silence.\n";
   return std::stod(v) * 31536000.0;
 }
-}  // namespace
 
 // Real initializer
 Parameters::Parameters(const std::string& config_file) {
@@ -181,9 +180,8 @@ void Parameters::check() const {
   if (!std::isnan(southern_edge) && (southern_edge < -90 || southern_edge > 90)) {
     throw std::runtime_error("please enter a value between -90 and 90 degrees for the southern_edge!");
   }
-  check_binary(
-      evap_mode,
-      "set evap_mode to 0 to remove all surface water, or 1 to use a grid of potential evaporation for lakes.");
+  // evap_mode is no longer a config key (dropped in the Phase-2 schema; vestigial when the ET sigmoid is on,
+  // which is the default). It keeps its member default and is not validated here.
   check_positive("fdepth_a", fdepth_a);
   check_positive("fdepth_b", fdepth_b);
   check_positive("fdepth_fmin", fdepth_fmin);

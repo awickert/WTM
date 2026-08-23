@@ -19,6 +19,11 @@
 #include <iostream>
 #include <string>
 
+#include <yaml-cpp/yaml.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace dh = richdem::dephier;
 namespace rd = richdem;
 
@@ -741,6 +746,91 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.starting_wtd_prev);  // BDF2 history (nullptr / no-op otherwise)
 }
 
+// Feed a YAML value to a PETSc option ONLY if the user did not already pass that flag on the CLI, so an
+// explicit -flag always wins over the config file (precedence: CLI > YAML config > default). PETSc copies the
+// value into its options DB immediately, so passing a temporary's c_str() is safe.
+static void set_opt_if_unset(const char* flag, const char* val) {
+  PetscBool has = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, flag, &has);
+  if (!has) PetscOptionsSetValue(nullptr, flag, val);
+}
+
+// Phase 2b bridge: translate the CLI-flag-backed config sections (run.equilibrium_stop, boundaries,
+// transmissivity background, solver, dev) into PETSc options, and parallel.threads_per_rank into a direct
+// omp_set_num_threads call -- so the existing -wtm_*/-snes_* parsing (CreateSNES / transient_groundwater)
+// picks them up unchanged. MUST run AFTER PetscInitialize (the options DB must exist) and before the SNES is
+// built. Lives here (not parameters.cpp) so the PETSc-free dephier.x stays PETSc-free. TODO (Phase 2b cont.):
+// evaporation et_sigmoid/extinction_depth, surface_water.collection.sink; output.verbosity/if_exists are NEW
+// behavior (no existing flag).
+void apply_config_petsc_options(const std::string& config_file) {
+  YAML::Node root;
+  try {
+    root = YAML::LoadFile(config_file);
+  } catch (...) {
+    return;
+  }
+  if (!root.IsMap()) return;
+
+  // run.equilibrium_stop -> -wtm_eq_tol / -wtm_eq_metric / -wtm_eq_frac
+  if (auto n = root["run"]["equilibrium_stop"]["tol"])    set_opt_if_unset("-wtm_eq_tol", n.as<std::string>().c_str());
+  if (auto n = root["run"]["equilibrium_stop"]["metric"]) set_opt_if_unset("-wtm_eq_metric", n.as<std::string>().c_str());
+  if (auto n = root["run"]["equilibrium_stop"]["frac"])   set_opt_if_unset("-wtm_eq_frac", n.as<std::string>().c_str());
+
+  // boundaries.land -> -wtm_land_boundary (translate the prototype value)
+  if (auto n = root["boundaries"]["land"]) {
+    const std::string b = n.as<std::string>();
+    set_opt_if_unset("-wtm_land_boundary", (b == "dirichlet_sea_level") ? "dirichlet" : "neumann_toposlope");
+  }
+
+  // transmissivity.additive_background_transmissivity -> -wtm_T_bedrock
+  if (auto n = root["transmissivity"]["additive_background_transmissivity"])
+    set_opt_if_unset("-wtm_T_bedrock", n.as<std::string>().c_str());
+
+  // solver
+  if (auto n = root["solver"]["method"]) {
+    const std::string m = n.as<std::string>();
+    if (m == "picard")      set_opt_if_unset("-wtm_picard", "true");
+    else if (m == "newton") set_opt_if_unset("-wtm_newton", "true");
+    // "anderson" = default (no flag)
+  }
+  if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
+  if (auto n = root["solver"]["max_iterations"]) {
+    const std::string v = n.as<std::string>();
+    if (v != "auto") set_opt_if_unset("-snes_max_it", v.c_str());
+  }
+  if (auto n = root["solver"]["time_integration"]) {
+    const std::string t = n.as<std::string>();
+    if (t == "tr-bdf2")   set_opt_if_unset("-wtm_tr_bdf2", "true");
+    else if (t == "bdf2") set_opt_if_unset("-wtm_bdf2_on_V", "true");
+    // "backward-euler" = default (no flag)
+  }
+  if (auto n = root["solver"]["adaptive_dt"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dt_adaptive", "true"); }
+  if (auto n = root["solver"]["dt_max"]) {
+    const std::string v = n.as<std::string>();
+    if (v != "auto")
+      set_opt_if_unset("-wtm_dtc_dt_max", std::to_string(parse_time_seconds(v, "solver.dt_max")).c_str());
+  }
+  if (auto n = root["solver"]["wtd_step_error_tol"]) {
+    const std::string v = n.as<std::string>();
+    if (v != "auto") set_opt_if_unset("-wtm_dt_tol", v.c_str());
+  }
+  if (auto n = root["solver"]["t_bar"])   { if (n.as<bool>()) set_opt_if_unset("-wtm_Tbar", "true"); }
+  if (auto n = root["solver"]["storage"]) { if (n.as<std::string>() == "volume") set_opt_if_unset("-wtm_volume_storage", "true"); }
+
+  // dev
+  if (auto n = root["dev"]["active_set"])                      { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_active_set", "true"); }
+  if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
+  if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
+
+  // parallel.threads_per_rank -> omp_set_num_threads (item 6; a direct call, not a PETSc option)
+#ifdef _OPENMP
+  if (auto n = root["parallel"]["threads_per_rank"]) {
+    const int t = n.as<int>();
+    if (t > 0) omp_set_num_threads(t);
+  }
+#endif
+}
+
 int main(int argc, char** argv) {
   // if (argc != 2) {
   //   // Make sure that the user is running the code with a configuration file.
@@ -756,6 +846,11 @@ int main(int argc, char** argv) {
   AppCtx user_context;
 
   PetscCall(PetscInitialize(&argc, &argv, (char*)0, help));
+
+  // Phase 2b: fold the CLI-flag-backed config sections (solver / dev / boundaries / equilibrium_stop /
+  // transmissivity background / parallel.threads_per_rank) into the PETSc options DB, so the existing
+  // -wtm_*/-snes_* parsing reads them. Must run after PetscInitialize; explicit CLI flags still override.
+  apply_config_petsc_options(argv[1]);
 
   initialise(params, arp, user_context);
 
