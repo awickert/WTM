@@ -7,14 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Work since v2.0.1. The **default surface-water / evaporation model is now the smooth
-transition** — the surface-transition tapers (1–3, below) are on by default, replacing the
-hard `wtd = 0` switch. Other new capabilities remain experimental and off by default (gated
-behind `-wtm_*` runtime options). The full regression suite (`tests/run_all.sh`: DMDA unit
-tests, ghost-cell, MPI-consistency, mass-balance, FillSpillMerge-consistency, golden, and
-taper) passes.
+Work since v2.0.1. Two headline changes: **configuration is now nested YAML**, and the
+**default surface-water / evaporation model is the smooth transition** (the surface-transition
+tapers, 1–3 below, are on by default, replacing the hard `wtd = 0` switch). Other new
+capabilities remain experimental and off by default.
+
+**Configuration is now nested YAML** (`yaml-cpp`), replacing the legacy `key value` `.cfg`
+format. Settings are grouped into sections — `run` / `time` / `io` / `output` / `boundaries`
+/ `transmissivity` / `evaporation` / `surface_water` / `solver` / `parallel` / `dev` — see the
+annotated `Config_file.yaml`. Grid geometry is derived from the input's GDAL geotransform (the
+`grid` block is deprecated). Solver and numerics choices are now config keys (mapped onto the
+underlying `-wtm_*` / `-snes_*` options; an explicit CLI flag still overrides the config). The
+regression suite is **mid-migration** to the new format and is not currently green end-to-end;
+individual changes are verified with targeted checks.
 
 ### Added
+
+#### Configuration (nested YAML)
+- **Nested-YAML config** (`yaml-cpp`), replacing `key value` `.cfg`. Key moves from the old flat keys:
+  `total_time`→`time.total`, `supplied_wt`→`run.initial_water_table` (`saturated` | a starting-WT path),
+  `save_nreport_interval`→`time.save_every_n_reports`, `physics.fdepth`→`transmissivity.fdepth`,
+  `physics.infiltration`→`surface_water.infiltration_during_flow`, `surface_water.fsm`→`surface_water.mode`
+  (`routed` | `ponded` | `removed`), `runoff_collector`→`surface_water.collection.method`, `surfdatadir`→
+  `io.source`, `outfile_prefix`/`textfilename`→`output.*`. `physics.evaporation.mode` dropped (vestigial once
+  the ET sigmoid — the default — is on). `grid` deprecated (geometry from the GDAL geotransform).
+- **Solver / numerics as config keys**, bridged to the existing `-wtm_*`/`-snes_*` options (an explicit CLI
+  flag still overrides): `solver.{method, tolerance, max_iterations, time_integration, adaptive_dt, dt_max,
+  wtd_step_error_tol, t_bar, storage}`, `run.equilibrium_stop.{tol, metric, frac}`, `boundaries.land`,
+  `transmissivity.additive_background_transmissivity`, `evaporation.{et_sigmoid, extinction_depth}`,
+  `parallel.threads_per_rank`, `dev.*`. The resolved SNES tolerances are logged at start-up.
+- **`surface_water.runoff_ratio`** accepts a uniform number in `[0, 1]`, the string `raster`, or omission (off).
+- **`output` run directories** — each run writes to `output.directory/run<NNN>_<timestamp>/` (never
+  clobbered; `output.if_exists`: `increment` | `overwrite` | `error`), with a `latest` symlink and an
+  auto-written `provenance.yaml` (git commit/state, PETSc version, command line, host / time / MPI ranks).
+- **`output.verbosity`** — `quiet` | `normal` | `verbose` (`verbose` adds the PETSc per-solve monitors).
 
 #### Time stepping and surface–subsurface coupling
 - **`report_interval` / `save_nreport_interval` config knobs.** `report_interval` sets the cadence of the
@@ -200,6 +226,18 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **Equilibrium auto-stop judged on water moved, not head.** The per-cycle convergence metric
+  (`run.equilibrium_stop.metric`: `max` | `rms` | `frac`) now measures the pure-water depth `|S·Δwtd|` (m of
+  water) rather than the head change `|Δwtd|`, so deep low-storativity cells — a metre of head over ~zero water
+  — can no longer hold a run "unconverged" at steady state. `run.equilibrium_stop.tol` is therefore a water
+  depth (default `0.001` = 1 mm of water). The separate `water-max` / `water-rms` metric names are retired (all
+  three metrics are water-based now; the old names map with a deprecation note). Raw head is still printed each
+  cycle as a diagnostic.
+- **`arp.runoff` (the Fill-Spill-Merge input carrier) is assembled additively.** It is zeroed once per step,
+  then every contributor — the runoff-ratio channel, the seepage sink, and FSM's own ponded water — adds into
+  it before the single FSM, replacing a fragile overwrite-vs-add scheme with an order-independent lifecycle.
+  Byte-identical on the FSM tests (conservation closes to 0.0, MPI bit-identical); restores the additive
+  pattern of the upstream FillSpillMerge.
 - **FillSpillMerge now runs EVERY timestep (tight surface–subsurface coupling).** Previously FSM ran once per
   `maxiter` groundwater sub-steps; it now runs after every accepted step. This removes the coupling-interval
   (`maxiter` / `niter`) dependence of the marginal-lake / lakeshore equilibria — the free-surface "flicker" and
