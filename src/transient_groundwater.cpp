@@ -1759,11 +1759,12 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
         arp.wtd(i, j) = full[j * params.ncells_x + i];
 }
 
-// Gather the distributed per-cycle runoff (runoff_dist = runoff_ratio*rech) to rank-0
-// arp.runoff, so the NEXT FillSpillMerge (rank 0) sees the recharge's runoff. Called only
-// when runoff_ratio_on; otherwise the runoff is 0 and arp.runoff stays at FSM's own 0.
-// Reuses the un-held wtd_global as the gather scratch (after gather_wtd_to_all has
-// finished with it -- the two run sequentially). See DISTRIBUTED_ARP_DESIGN.md (2c).
+// Gather the distributed per-cycle runoff (runoff_dist = runoff_ratio*rech) and ADD it to the rank-0
+// arp.runoff carrier (approach B: the carrier is zeroed once per step -- after FSM consumes -- and every
+// contributor then accumulates into it), so the next FillSpillMerge routes the recharge's runoff. Called
+// only when runoff_ratio_on; otherwise this contribution is simply absent. Reuses the un-held wtd_global as
+// the gather scratch (after gather_wtd_to_all has finished with it -- the two run sequentially). See
+// DISTRIBUTED_ARP_DESIGN.md (2c).
 void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** wg;
@@ -1781,7 +1782,7 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
   if (rank == 0)
     for (int j = 0; j < params.ncells_y; j++)
       for (int i = 0; i < params.ncells_x; i++)
-        arp.runoff(i, j) = full[j * params.ncells_x + i];
+        arp.runoff(i, j) += full[j * params.ncells_x + i];
 }
 
 // Whether the implicit sub-surface sink is configured this run (taper 1). Lets the cycle loop
@@ -1881,13 +1882,13 @@ void warn_taper_configuration(const Parameters& params) {
   }
 }
 
-// Gather this cycle's distributed sink removal (sink_removed_dist, depth m) to rank-0 arp.runoff,
-// ADDING to it, so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled
-// out of the solve (taper 1). Because the sink holds wtd<=0, FSM's own wtd>0->runoff handoff never
-// fires -- this is its smooth, order-preserving replacement. It composes with the runoff_ratio
-// channel (gather_runoff_to_zero OVERWRITES arp.runoff a cycle earlier, for the *next* FSM; this ADDS
-// after that FSM has consumed the prior value). Reuses wtd_global as scratch, after gather_wtd_to_all
-// has finished with it (the two run sequentially). See SURFACE_SINK_DESIGN.md sec 14 (taper 1).
+// Gather this cycle's distributed sink removal (sink_removed_dist, depth m) and ADD it to rank-0 arp.runoff,
+// so this cycle's FillSpillMerge routes the exfiltrated water the implicit sink pulled out of the solve
+// (taper 1). Because the sink holds wtd<=0, FSM's own wtd>0->runoff handoff never fires -- this is its
+// smooth, order-preserving replacement. One of several ADDITIVE contributors to the arp.runoff carrier
+// (approach B: the carrier is zeroed once per step after FSM consumes, then runoff-ratio + this sink + FSM's
+// ponded `+= wtd` all accumulate into it before the one FSM). Reuses wtd_global as scratch, after
+// gather_wtd_to_all has finished with it (the two run sequentially). See SURFACE_SINK_DESIGN.md sec 14.
 void gather_sink_removed_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** wg;

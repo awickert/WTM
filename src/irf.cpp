@@ -492,9 +492,11 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
           (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
     }
     if (arp.rech(i) > 0) {
-      // positive recharge may partly run off (runoff_ratio); subtract it from the recharge.
-      arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-      arp.rech(i) -= arp.runoff(i);
+      // positive recharge may partly run off (runoff_ratio); subtract it from the recharge. Additive onto the
+      // freshly-allocated (zeroed) carrier, matching the per-step arm in couple_surface_and_recharge (approach B).
+      const double rr = arp.runoff_ratio(i) * arp.rech(i);
+      arp.runoff(i) += rr;
+      arp.rech(i) -= rr;
     }
   }
 

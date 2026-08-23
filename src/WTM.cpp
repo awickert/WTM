@@ -290,9 +290,18 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     if (distribute_recharge) scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
   }
 
-  // Set recharge for the NEXT step. Adjust evaporation where there is surface water, and reset
-  // arp.runoff = runoff_ratio*rech (consumed by the next step's FSM). Serial rank-0 form when the recharge is
-  // not distributed; otherwise distributed over owned cells.
+  // Carrier reset (approach B). FillSpillMerge has now CONSUMED this step's runoff (routed it to lakes/ocean),
+  // so zero the rank-0 arp.runoff carrier explicitly before the next step's contributors accumulate into it.
+  // Every writer of arp.runoff is ADDITIVE -- the runoff-ratio arm below, the seepage-sink gather
+  // (gather_sink_removed_to_zero), and FSM's own ponded `+= wtd`. So the carrier's lifecycle is one clean loop:
+  // zero here -> += all contributors -> one FSM consumes -> zero. This replaces the prior scheme (the arm
+  // OVERWRITING, relying on FSM to leave exactly 0), which left stale runoff on the runoff_ratio-off / rech<=0
+  // paths where the overwrite was skipped.
+  if (mpi_rank == 0) arp.runoff.setAll(0);
+
+  // Set recharge for the NEXT step. Adjust evaporation where there is surface water, and ADD the runoff-ratio
+  // runoff (runoff_ratio*rech) into the freshly-zeroed carrier for the next step's FSM. Serial rank-0 form when
+  // the recharge is not distributed; otherwise distributed over owned cells.
   PetscMPIInt rech_rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
   if (!distribute_recharge && rech_rank == 0) {
@@ -310,8 +319,9 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
             (std::max(0., static_cast<double>(arp.precip(i)) - arp.evap(i))) / seconds_in_a_year * params.deltat;
       }
       if (arp.rech(i) > 0) {
-        arp.runoff(i) = arp.runoff_ratio(i) * arp.rech(i);
-        arp.rech(i) -= arp.runoff(i);
+        const double rr = arp.runoff_ratio(i) * arp.rech(i);
+        arp.runoff(i) += rr;   // additive onto the zeroed carrier (approach B)
+        arp.rech(i) -= rr;
       }
     }
   }
