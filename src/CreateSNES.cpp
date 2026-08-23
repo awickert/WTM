@@ -103,16 +103,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool bdf2v_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2_on_V", &bdf2v_flag);
 
-  // The DEFAULT solver is the semi-implicit, volume-form BDF2-on-V (Picard) path -- for BOTH run types.
-  // EQUILIBRIUM: Picard's Newton+GAMG takes large, stable time steps whose cost is nearly dt-independent
-  // (Corsica: ~28 SNES iters flat from dt=1 to 1000 yr), so it reaches steady state in a handful of big
-  // steps. The matrix-free Anderson default it replaces has NO preconditioner and is stiffness-limited:
-  // it diverges once dt is raised (Corsica: fails at 10 yr) -- exactly the "10x dt did not converge"
-  // that motivated this. TRANSIENT: BDF2-on-V is genuinely 2nd-order in time; the matrix-free path
-  // silently under-converges (and diverges when pushed) on stiff transient drainage. Anderson is kept
-  // only for the rare small-dt / fast-science case, opt-in via -wtm_anderson (it is also matrix-free ->
-  // bit-exact across ranks). Any explicit path flag (-wtm_picard / -wtm_bdf2 / -wtm_bdf2_on_V /
-  // -wtm_dt_adaptive) takes precedence over this default.
+  // The DEFAULT solver is the matrix-free Anderson path (selected ~60 lines below when no path flag is given):
+  // the production worker -- robust across regimes, no preconditioner to tune, bit-exact across ranks, and it
+  // carries the exact in-residual seepage face (runoff_collector=implicit). It is 1st-order-in-time
+  // (backward-Euler cc), the right choice for equilibrium (a 2nd-order step oscillates at the free surface).
+  // Opt into the semi-implicit volume-form BDF2-on-V/Picard path (large, ~dt-independent, 2nd-order steps) with
+  // -wtm_bdf2_on_V, matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with
+  // -wtm_newton. Any explicit path flag takes precedence.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
   // -wtm_tr_bdf2: L-stable strong-damping 2nd-order on the matrix-free Anderson path (two staged solves
@@ -162,7 +159,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_stiff", &stiff_flag);
   if (stiff_flag) newton_flag = PETSC_TRUE;  // select the Newton path (a Picard/Anderson flag overrides below)
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
-  bool default_picard = false;
   if (!force_anderson && !newton_flag && !any_path_flag) {
     // Default solver: matrix-free Anderson -- the production worker. It is robust across regimes and
     // converges where the Picard/Newton free-boundary solve struggles, and it carries the exact
@@ -171,7 +167,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // the right choice for equilibrium, where a 2nd-order step oscillates at the free surface). Opt into
     // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with -wtm_bdf2_on_V,
     // matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with -wtm_newton.
-    (void)default_picard;
     PetscPrintf(
         PETSC_COMM_WORLD,
         "Defaulting to the matrix-free Anderson solver (robust across regimes; the production worker;\n"
@@ -299,7 +294,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_anderson + BDF2-on-V: 2nd-order-in-time matrix-free Anderson (BDF2-on-V residual, no\n"
                 "  operator/preconditioner). Time-order decoupled from the solver.\n");
-  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE && !default_picard) {
+  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
