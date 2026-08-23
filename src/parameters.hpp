@@ -57,6 +57,7 @@ struct Parameters {
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file
+  std::string verbosity = "normal";     // output.verbosity: quiet | normal | verbose (console/log chatter level)
 
   double deltat          = std::numeric_limits<double>::signaling_NaN();
   double fdepth_a        = -1.;

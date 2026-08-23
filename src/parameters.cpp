@@ -133,6 +133,11 @@ Parameters::Parameters(const std::string& config_file) {
   // -------- output (was io.outfile_prefix / io.textfilename) --------
   if (auto n = root["output"]["outfile_prefix"]) outfile_prefix = n.as<std::string>();
   if (auto n = root["output"]["run_log"])        textfilename   = n.as<std::string>();
+  if (auto n = root["output"]["verbosity"]) {
+    verbosity = n.as<std::string>();
+    if (verbosity != "quiet" && verbosity != "normal" && verbosity != "verbose")
+      throw std::runtime_error("config: output.verbosity must be quiet | normal | verbose, got '" + verbosity + "'");
+  }
 
   // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
   // equilibrium-check + log/output cadence. Explicit report_interval (steps or time), else default 100 steps

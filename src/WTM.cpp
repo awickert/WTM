@@ -636,13 +636,16 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
 
   while (params.cycles_done < params.total_reports) {
     update(params, arp, user_context, dmdapack, deps);
-    PetscPrintf(PETSC_COMM_WORLD,
-                "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  |S·Δwtd| max=%.4g rms=%.4g mm-water  "
-                "[within-cycle max|Δw| = %g m, %d cells>1mm]\n",
-                params.cycles_done, user_context.last_cycle_dw, user_context.last_cycle_rms,
-                user_context.last_cycle_fracabove,
-                1000.0 * user_context.last_cycle_dw_water, 1000.0 * user_context.last_cycle_rms_water,
-                user_context.last_dh_max, user_context.last_dh_nflicker);
+    // output.verbosity: quiet suppresses the per-cycle progress line (the equilibrium-reached line and
+    // warnings/errors still print); normal/verbose show it.
+    if (params.verbosity != "quiet")
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "cycle %d: per-cycle |Δwtd| max=%g rms=%g frac>tol=%.4f m  |S·Δwtd| max=%.4g rms=%.4g mm-water  "
+                  "[within-cycle max|Δw| = %g m, %d cells>1mm]\n",
+                  params.cycles_done, user_context.last_cycle_dw, user_context.last_cycle_rms,
+                  user_context.last_cycle_fracabove,
+                  1000.0 * user_context.last_cycle_dw_water, 1000.0 * user_context.last_cycle_rms_water,
+                  user_context.last_dh_max, user_context.last_dh_nflicker);
     // Convergence-based early stop (opt-in via -wtm_eq_tol): stop once the PER-CYCLE water-table change
     // stays below eq_tol for two consecutive cycles -- the equilibrium auto-stop, on EVERY spin-up pathway.
     // Uses the per-cycle metric (not the per-sub-step max|Δw|), so the cosmetic within-cycle lake/shore
