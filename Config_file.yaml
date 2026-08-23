@@ -2,46 +2,70 @@
 ## CONFIGURATION OF THE WATER TABLE MODEL (WTM) ##
 ##################################################
 #
-# YAML format: sections group related settings; one key per line. Booleans are true/false.
-# Times take an explicit unit ("500yr" or "1000s"); a bare number is read as years, with a warning.
-# Solver and numerics choices remain runtime -wtm_* CLI flags for now (e.g. -wtm_anderson).
+# Nested YAML: sections group related settings. Booleans are true/false. Times take an explicit unit
+# ("500yr" / "1000s"); a bare number is read as years (with a warning). Solver / numerics are config keys now
+# (they map to the -wtm_* / -snes_* flags underneath); an explicit CLI flag still overrides the config.
 
 run:
-  type: equilibrium          # test | equilibrium | transient
-  total_time: 1000yr         # total simulated time; must be an integer number of report intervals
-  supplied_wt: true          # true: start from a supplied water table; false: start at wtd = 0 (equilibrium only)
+  type: equilibrium            # test | equilibrium | transient
+  initial_water_table: saturated   # saturated (start at wtd = 0) | <path to a starting water-table raster>
+  equilibrium_stop:            # end an equilibrium run early once the water table has settled
+    tol: 0.001                 #   stop when the per-cycle WATER moved (|S*Δwtd|) stays below this [m of water]; 0 = never
+    metric: frac               #   how the change is judged (all water-based): max | rms | frac
+    frac: 0.001                #   for metric: frac -- fraction of cells still above tol (0.001 = 0.1%)
 
 time:
-  deltat: 31536000           # seconds per timestep (31536000 = 1 year)
-  report_interval: 100       # steps between equilibrium checks / log lines (or a time, e.g. "50yr").
-                             # NOT a coupling interval: Fill-Spill-Merge runs every timestep.
-  save_nreport_interval: 1   # write a water-table raster every N reports
+  deltat: 31536000             # seconds per timestep (31536000 = 1 year)
+  total: 1000yr                # total simulated time (an integer number of report intervals)
+  report_interval: 100         # steps between equilibrium checks / log lines (or a time, e.g. "50yr")
+  save_every_n_reports: 1      # write a water-table raster every N reports
 
-grid:
-  cells_per_degree: 120      # number of cells per degree (120 = 30-arcsecond cells)
-  southern_edge: -52         # southern-most latitude (degrees, -90..90)
-
-physics:
-  fdepth:                    # e-folding-depth parameters for the transmissivity calculation
-    a: 200
-    b: 150
-    fmin: 2
-  infiltration: false        # true: water infiltrates as it flows downslope (high-res input only); false: neglect
-  evaporation:
-    mode: remove             # remove: remove all surface water | lakes: use a potential open-water evaporation grid
-
-surface_water:
-  fsm: false                 # true: enable Fill-Spill-Merge surface-water routing
-  runoff_ratio: false        # true: route (runoff_ratio * precipitation) as runoff; false: all P-ET infiltrates in place
-  runoff_collector: implicit # wtd<=0 seepage-face enforcement: implicit | explicit | off | legacy
+# grid is DEPRECATED: geometry is derived from the input GDAL geotransform. Override only for ungeoreferenced
+# inputs:  grid: { cells_per_degree: 120, southern_edge: -52 }
 
 io:
-  # Input layer path = surfdatadir/<region><time>_<layer>.tif
-  #   layers: topography, mask, precipitation, evaporation, winter_temperature, slope,
-  #           open_water_evaporation, porosity, ksat
-  surfdatadir: surfdata/
-  region: Australia_         # region prefix (include a trailing separator if your filenames use one)
-  time_start: "021000"       # time component of the input path (quote to preserve leading zeros)
-  time_end: "021000"         # differs from time_start for transient runs
-  outfile_prefix: your_prefix_here       # output water-table file prefix
-  textfilename: your_filename_here.txt   # run-status text log
+  source: surfdata/            # a folder of GeoTIFFs (Callaghan convention) OR a single .nc file
+  region: Australia_           # filename/variable prefix (include any trailing separator; may be blank)
+  time_start: "021000"         # quote to preserve leading zeros
+  time_end: "021000"           # differs from time_start for transient runs
+
+output:
+  directory: results/          # parent dir; each run writes to results/run<NNN>_<timestamp>/ (never clobbered)
+  outfile_prefix: wtd_         # water-table raster prefix within the run subdir
+  run_log: run.log             # per-run status log within the run subdir
+  verbosity: normal            # quiet | normal | verbose
+  if_exists: increment         # increment (new subdir each run) | overwrite | error
+
+boundaries:
+  land: neumann_toposlope      # neumann_toposlope (terrain-following no-flow) | dirichlet_sea_level
+                               # (ocean cells are always Dirichlet h = 0 -- not configurable)
+
+transmissivity:
+  fdepth: { a: 200, b: 150, fmin: 2 }     # e-folding-depth parameters (Fan/Ying)
+  additive_background_transmissivity: 0   # background (bedrock) T added everywhere [m^2/s]; 0 = off
+
+evaporation:
+  et_sigmoid: { wtd_center: 0.05, logistic_width: 0.1 }  # the continuous soil<->open-water ET transition
+  extinction_depth: 8          # depth below which ET can no longer reach the water table [m]
+
+surface_water:
+  mode: routed                 # routed (Fill-Spill-Merge) | ponded | removed (groundwater-only)
+  # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
+  infiltration_during_flow: false
+  collection:
+    method: implicit           # implicit (in-residual seepage) | explicit | off | legacy
+
+solver:
+  method: anderson             # anderson (matrix-free; default) | picard | newton
+  tolerance: 1e-6              # per-solve convergence step tolerance (-> snes_stol)
+  max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
+  time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2
+  adaptive_dt: true            # error-controlled adaptive timestep
+  t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
+  storage: volume              # mass-conserving storage form
+
+parallel:
+  threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
+
+# dev (experimental; off by default):
+# dev: { active_set: false, allow_aboveground_water_columns: false, padded_dirichlet: false }
