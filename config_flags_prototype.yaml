@@ -1,0 +1,159 @@
+# ============================================================================
+# PROTOTYPE: the full WTM configuration surface as nested YAML (#121 / #109).
+# Values shown are the current defaults. Comments describe what each key does;
+# the legacy -wtm_* CLI flags are being retired once this config is complete.
+# Booleans true/false; times bare = seconds, or "500yr" / "1000s". Block style
+# throughout (no flow {} lists).
+# ============================================================================
+
+# ---- orchestration ---------------------------------------------------------
+run:
+  type: equilibrium              # run mode: test | equilibrium | transient  (test = minimal-input diagnostic)
+  # initial_water_table:  (omit) -> read the conventional starting_wt layer from `source` if present, else
+  #   saturated  |  saturated -> water table at the surface (wtd = 0)  |  <path> -> load that file (error if
+  #   missing).  The resolved choice is printed at start-up, so it is never silent.
+  initial_water_table: saturated
+  equilibrium_stop:              # end an equilibrium run early once the water table has settled
+    tol: 0.01                    #   stop when the per-cycle water-table change stays below this [m] (0 = never)
+    metric: max                  #   how the change is judged: max | rms | frac | water-max | water-rms
+    frac: 0.01                   #   for metric: frac -- fraction of cells still above tol
+
+time:
+  # Every TIME value is a DURATION: a bare number is SECONDS; use a suffix ("1yr", "500yr") for other units.
+  deltat: 31536000               # timestep length (WTM year = 31536000 s)
+  report_interval: 100yr         # reporting / equilibrium-check cadence (a duration; converted to steps internally)
+  total: 1000yr                  # total simulated time (must be an integer number of report intervals)
+  save_every_n_reports: 1        # save a water-table raster every N reports (a count of reports, not a time)
+
+grid:                            # DEPRECATED. Positional data + cos-lat cellsize scaling are derived from the
+                                 # input's GDAL geotransform + CRS (#124). Kept only as a transitional override
+                                 # for inputs that lack georeferencing (loadGDAL warns + uses an arbitrary one).
+  # cells_per_degree: 120        #   override: cells per degree of latitude/longitude
+  # southern_edge: -52           #   override: southern-most latitude of the domain [deg]
+
+io:
+  # ONE source, auto-detected: a FOLDER of GeoTIFFs (Callaghan convention) OR a single NetCDF file.
+  #   directory -> source/<region><time_><layer>.tif ; .nc file -> NETCDF:"<file>":<region><time_><layer>
+  #   Layer names are Callaghan's (fixed). Grid geometry comes from each raster's geotransform (#124) --
+  #   no grid: block. NetCDF verified with rd::Array2D (no RichDEM change needed; see finding).
+  source: surfdata/              # a directory (GeoTIFF folder) or a single .nc file
+  region: Australia_             # literal filename/variable prefix; include any trailing separator; may be blank
+  time_start: "021000"           # time component of the input name/variable (quote to keep leading zeros)
+  time_end: "021000"             # differs from time_start for transient runs
+  # Optional per-layer overrides: an explicit path (relative to the current working directory; absolute
+  #   with a leading /), or a NETCDF:"file.nc":variable string. Taken verbatim -- include the extension.
+  # layers:
+  #   topography: /shared/dems/oz_dem.tif
+
+output:
+  # Paths here (like input layer overrides) are relative to the current working directory; absolute wins.
+  # Output rasters are GeoTIFF; a configurable format incl. a single stacked NetCDF is enhancement awickert/WTM#9.
+  directory: results/            # parent directory; each run gets its OWN subdir below (never clobbered)
+  outfile_prefix: wtd_           # water-table raster prefix within the run subdir
+  run_log: run.log               # per-run status log within the run subdir (was: textfilename)
+  verbosity: normal              # console/log chatter: quiet (warnings + errors + final result only) |
+                                 #   normal (per-cycle convergence line) | verbose (+ per-solve PETSc monitor:
+                                 #   -snes_monitor / -snes_converged_reason)
+  if_exists: increment           # increment (new subdir each run) | overwrite (write into directory/) | error
+  # Each run writes to  <directory>/run<NNN>_<timestamp>/  e.g. results/run003_2026-08-22T143012/ ; a `latest`
+  # symlink points at the newest. Each run dir also gets an auto-written provenance.yaml (see below).
+  #
+  # provenance.yaml (auto-written by rank 0):
+  #   run:   started + finished time, hostname, OS, MPI ranks
+  #   build: git commit hash the binary was built from, whether that working tree was clean,
+  #          WTM version, PETSc version           (git stamp is baked into the binary at BUILD time)
+  #   config: the fully-resolved config as run
+  #   command: the exact command line
+
+# ---- the model (each a specific domain, not a broad "physics" bucket) -------
+boundaries:
+  # Ocean cells (mask = 0) are always Dirichlet h = 0 (sea level) -- not configurable.
+  land: neumann_toposlope        # land-edge BC: neumann_toposlope (terrain-following no-flow) | dirichlet_sea_level (ghost head = sea level)
+
+transmissivity:                  # the groundwater diffusion coefficient
+  fdepth:                        #   e-folding-depth parameters (Fan/Ying): T decays with depth over ~fdepth
+    a: 200                       #     e-folding depth scale [m] (depth at zero slope)
+    b: 150                       #     slope sensitivity (fdepth shrinks as slope rises)
+    fmin: 2                      #     minimum e-folding depth [m]
+  additive_background_transmissivity: 0   # background (bedrock) T added everywhere [m^2/s]; 0 = off
+
+evaporation:
+  et_sigmoid:                    # the single continuous ET transition (soil ET <-> open-water) at the surface
+    wtd_center: 0.05             #   depth at which evaporation is the mean of (soil ET, open-water) [m]
+    logistic_width: 0.1          #   width of the transition [m]
+  extinction_depth: 8            # accessibility limit: depth below which ET can't reach the table
+
+surface_water:
+  # How above-ground water is handled (replaces fsm + dev.disable_fsm/permit_surface_water; no invalid combos):
+  mode: routed                   # routed (Fill-Spill-Merge; production) | ponded (kept but not routed; testing) |
+                                 #   removed (instantly removed -- groundwater-only: Fan, Miguez-Macho)
+  # runoff_ratio: fraction of recharge routed immediately to runoff (FSM), bypassing groundwater storage. Forms:
+  #   (omit)  -> use the runoff_ratio raster from `source` if present, else 0 (off); logged
+  #   0..1    -> a uniform runoff ratio everywhere
+  #   raster  -> REQUIRE the raster (error if it is missing)
+  infiltration_during_flow: false  # surface water infiltrates as it flows across cells (routed-overland analogue
+                                   #   of channel "transmission loss"); infiltration where water falls always happens
+  collection:                    # how above-surface water leaves the GW solve to FSM
+    method: active-set           #   active-set (in-solve skim at the free surface) | implicit | explicit |
+                                 #   off | legacy (band sink)
+    sink:                        #   parameters for method: legacy (band sink)
+      qmax: 1.0                  #     peak removal rate [m/yr]
+      width: 1.0                 #     removal band width below the surface [m]
+      fringe_source: none        #     where the band width comes from: none | ksat-pedotransfer | ...
+      fringe_cap: null           #     cap on the fringe (capillary) width [m]
+      fringe_ksat_coef: null     #     coefficient relating ksat to fringe width
+      fringe_length: null        #     fixed fringe length [m]
+
+# ---- how to converge (should not move the equilibrium) ---------------------
+solver:
+  # Defaults are SEEDED by run.type; override any key here (explicit wins; unset = preset; the resolved values
+  # are logged at start-up). equilibrium -> adaptive-TR-BDF2 + T-bar ;  transient -> adaptive-TR-BDF2.
+  # Anderson is the matrix-free nonlinear solver underneath every preset; its LOW-LEVEL dials (Anderson
+  # m / restart / beta, Krylov, preconditioner) stay on the PETSc CLI (-snes_*, -ksp_*) -- not re-invented here.
+  method: anderson               # nonlinear solver: anderson (matrix-free; default) | picard | newton
+  tolerance: 1e-6                # per-solve convergence step tol (-> snes_stol); applied EVERY timestep, both
+                                 #   run types. NOT the equilibrium auto-stop (that is run.equilibrium_stop.tol).
+  max_iterations: auto           # per-solve iteration cap (-> snes_max_it). auto = PETSc's per-method default --
+                                 #   NOT a single number: anderson (default) = 10000, newton = 50 (PETSc 3.19.6).
+                                 #   Set an integer for a firm fail-fast ceiling. The resolved value is printed
+                                 #   live in the start-up log (SNESGetTolerances), so it never goes stale.
+
+  # time integration -- the step, and how it is chosen ------------------------
+  time_integration: tr-bdf2      # backward-euler | bdf2 | tr-bdf2   (preset default = tr-bdf2)
+  adaptive_dt: true              # error-controlled adaptive step (TR-BDF2 embedded estimate + reject/retry).
+                                 #   ON  -> step chosen automatically within [time.deltat (seed) .. dt_max]
+                                 #   OFF -> FIXED step = time.deltat every timestep
+  dt_max: auto                   # adaptive only: largest step; auto = 1000 x time.deltat (or a duration, "500yr")
+  wtd_step_error_tol: auto       # adaptive only: target per-step LOCAL ERROR of the water table [m] -- how far
+                                 #   wtd may land from a linear extrapolation over one timestep (NOT the step's
+                                 #   magnitude); the controller sizes dt to hold it. auto = derived from
+                                 #   run.equilibrium_stop.tol on equilibrium, 0.1 m on transient.
+
+  # transmissivity time-averaging (a convergence aid; answer-preserving) ------
+  t_bar: false                   # time-/log-averaged T over the step (T-bar -> T at equilibrium; cures cold
+                                 #   Picard, ~2x Anderson's stable step). The equilibrium preset turns this ON.
+  storage: volume                # mass-conserving storage form (correct default; secant = comparison only)
+  # newton (advanced cold-start recovery) = method: newton + pseudo-transient continuation; costly, opt-in only.
+
+# ---- how to distribute (co-equal with solver; orthogonal to it) -------------
+parallel:
+  # WTM parallelizes the GROUNDWATER solve by MPI domain decomposition (PETSc DMDA). FillSpillMerge (surface
+  # routing) and the depression hierarchy run SERIALLY on rank 0 -- the serial ceiling -- and the domain is
+  # gathered there (replicated memory is the scaling bottleneck). See awickert/WTM parallel-strategy issue.
+  #
+  # RANK COUNT is set at LAUNCH, not here:   mpirun -n <N> wtm.x <config>   (or the job scheduler).
+  # The processor grid (how ranks tile the domain) is chosen automatically by PETSc; override only via the
+  # PETSc CLI (-da_processors_x/y) in the rare case it is needed.
+  threads_per_rank: 1            # OpenMP threads per MPI rank. 1 = pure MPI (production default; avoids the
+                                 #   MPI x OpenMP oversubscription that hangs multi-rank runs). >1 = hybrid:
+                                 #   fewer ranks, each threaded -- REDUCES the replicated-memory bottleneck on
+                                 #   a node. Keep (ranks x threads_per_rank) <= physical cores. [OpenMP build]
+
+# ---- experimental; stays CLI-only until promoted (shown for placement) ------
+dev:
+  active_set: false              # in-solve free-surface skim (becomes surface_water.collection.method: active-set)
+  allow_aboveground_water_columns: false   # [DEVELOPER, NONPHYSICAL] disable the surface-water clamp so wtd
+                                           #   can stay positive (water above ground) without collection
+  padded_dirichlet: false        # legacy padded-array ocean Dirichlet, KEPT as a validation reference for the
+                                 #   mask-aware ghost BC (the default); to be REMOVED once the ghost method is
+                                 #   proven 100% solid
