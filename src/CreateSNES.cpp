@@ -269,20 +269,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (user_context.use_dt_adaptive) {
     PetscBool dt_tol_set = PETSC_FALSE;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, &dt_tol_set);
-    // ONE-KNOB coupling (equilibrium / spin-up): derive the step tolerance from the convergence target,
-    // dt_tol = min(k*eq_tol, ring_cap), unless the user set -wtm_dt_tol explicitly. The PI controller
-    // (transient_groundwater.cpp) made any operating-range dt_tol robust, so this is safe: eq_tol is the
-    // single knob and no combination is toxic. k=50 places dt_tol at the sweet spot (0.5 m) for the default
-    // eq_tol=0.01; the ring cap (0.5 m) keeps dt_tol below the physical free-surface overshoot even for a
-    // loose eq_tol (a bigger step there would ring). A transient run has no convergence target -> dt_tol is
-    // used directly (default 0.1 m or -wtm_dt_tol). See BDF2_ADAPTIVE_DESIGN.md.
-    const double dt_tol_eq_k = 50.0, dt_tol_ring_cap = 0.5;
-    bool         dt_tol_derived = false;
-    if (!dt_tol_set && params.run_type == "equilibrium" && user_context.eq_tol > 0.0) {
-      const double d      = dt_tol_eq_k * user_context.eq_tol;
-      user_context.dt_tol = (d < dt_tol_ring_cap) ? d : dt_tol_ring_cap;
-      dt_tol_derived      = true;
-    }
+    // The adaptive step tolerance (dt_tol = per-step water-table LOCAL ERROR, metres) is INDEPENDENT of the
+    // equilibrium-stop tolerance (eq_tol): they measure different things -- dt_tol bounds how far the
+    // trajectory may stray from a linear prediction over one step; eq_tol decides when the run is steady.
+    // They were coupled (dt_tol = min(50*eq_tol, 0.5)) back when eq_tol was a HEAD tolerance; eq_tol is now a
+    // WATER depth, so a head-based dt_tol derived from it would mix units. Decoupled: dt_tol has its own
+    // default -- 0.5 m for equilibrium/spin-up (the tuned sweet spot, below the free-surface overshoot that
+    // would ring) and 0.1 m for transient. -wtm_dt_tol overrides either. See BDF2_ADAPTIVE_DESIGN.md.
+    if (!dt_tol_set)
+      user_context.dt_tol = (params.run_type == "equilibrium") ? 0.5 : 0.1;
     PetscBool norm_rms = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
     user_context.dt_norm_rms = (norm_rms == PETSC_TRUE);
@@ -292,8 +287,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                                                       : "backward-Euler cc/Anderson (1st-order)";
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "-wtm_dt_adaptive set: adaptive dt (tol=%g m%s, %s norm) on the %s integrator.\n",
-        user_context.dt_tol, dt_tol_derived ? " derived from eq_tol" : "",
+        "-wtm_dt_adaptive set: adaptive dt (tol=%g m, %s norm) on the %s integrator.\n",
+        user_context.dt_tol,
         user_context.dt_norm_rms ? "RMS" : "MAX", integ);
   } else if (user_context.use_bdf2 && force_anderson == PETSC_TRUE) {
     PetscPrintf(PETSC_COMM_WORLD,
