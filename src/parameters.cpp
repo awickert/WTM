@@ -33,22 +33,32 @@ Parameters::Parameters(const std::string& config_file) {
     throw std::runtime_error("Failed to read config file '" + config_file + "': " + e.what());
   }
   if (!root.IsMap()) {
-    throw std::runtime_error("config file '" + config_file + "' is not a YAML mapping. The config format is now "
-                             "nested YAML with sections (run/time/grid/physics/surface_water/io) -- see "
-                             "Config_file.yaml. (A legacy 'key value' .cfg will trip this.)");
+    throw std::runtime_error("config file '" + config_file + "' is not a YAML mapping. The config format is "
+                             "nested YAML with sections (run / time / io / output / transmissivity / "
+                             "surface_water / solver / ...) -- see Config_file.yaml. (A legacy 'key value' .cfg "
+                             "will trip this.)");
   }
 
   // Each key is read only if present; an absent key keeps the member's default, and check() below enforces
   // the ones that must be set (matching the previous parser's behavior). Chained operator[] on an absent
   // parent yields an undefined node (no mutation), so root["a"]["b"] is safe even when "a" is missing.
 
-  // run
-  if (auto n = root["run"]["type"])        run_type    = n.as<std::string>();
-  if (auto n = root["run"]["total_time"])  total_time  = parse_time_seconds(n.as<std::string>(), "total_time");
-  if (auto n = root["run"]["supplied_wt"]) supplied_wt = n.as<bool>() ? 1 : 0;
+  // NOTE (Phase 2 hard cutover to the config_flags_prototype.yaml schema). This handles the MEMBER-backed
+  // keys (parsed straight into Parameters). The CLI-flag-backed sections -- solver, parallel, dev, boundaries,
+  // transmissivity.additive_background_transmissivity, evaporation (et_sigmoid/extinction_depth),
+  // surface_water.collection.sink, run.equilibrium_stop, output.verbosity/if_exists/directory -- are not read
+  // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
-  // time
+  // -------- run --------
+  if (auto n = root["run"]["type"]) run_type = n.as<std::string>();
+  // initial_water_table: "saturated" -> start at the surface (wtd = 0); any other value names a supplied
+  // starting water table to load. TODO: a literal <path> should load that file, and omitting the key should
+  // auto-detect a starting_wt layer in io.source; for now a non-"saturated" value selects the supplied-WT layer.
+  if (auto n = root["run"]["initial_water_table"]) supplied_wt = (n.as<std::string>() == "saturated") ? 0 : 1;
+
+  // -------- time --------
   if (auto n = root["time"]["deltat"]) deltat = n.as<double>();
+  if (auto n = root["time"]["total"])  total_time = parse_time_seconds(n.as<std::string>(), "time.total");
   if (auto n = root["time"]["report_interval"]) {
     // A bare integer = timesteps, or a simulated time ("50yr"/"1000s"). Resolved to report_steps /
     // report_seconds below, once deltat is known.
@@ -64,42 +74,39 @@ Parameters::Parameters(const std::string& config_file) {
       report_steps = std::stoi(v);
     }
   }
-  if (auto n = root["time"]["save_nreport_interval"]) save_nreport_interval = n.as<int32_t>();
+  if (auto n = root["time"]["save_every_n_reports"]) save_nreport_interval = n.as<int32_t>();
 
-  // grid: DEPRECATED. Grid geometry is derived from the input topography's GDAL geotransform (#124).
-  // cells_per_degree / southern_edge are honored only as an override for inputs that lack georeferencing;
-  // when a real geotransform is present they are ignored (derive_grid_geometry warns).
+  // -------- grid: DEPRECATED (override only; geometry derives from the GDAL geotransform, #124) --------
   if (auto n = root["grid"]["cells_per_degree"]) cells_per_degree = n.as<double>();
   if (auto n = root["grid"]["southern_edge"])    southern_edge    = n.as<double>();
 
-  // physics
-  if (auto n = root["physics"]["fdepth"]["a"])    fdepth_a    = n.as<double>();
-  if (auto n = root["physics"]["fdepth"]["b"])    fdepth_b    = n.as<double>();
-  if (auto n = root["physics"]["fdepth"]["fmin"]) fdepth_fmin = n.as<double>();
-  if (auto n = root["physics"]["infiltration"])   infiltration_on = n.as<bool>() ? 1 : 0;
-  if (auto n = root["physics"]["evaporation"]["mode"]) {
+  // -------- transmissivity (was physics.fdepth) --------
+  if (auto n = root["transmissivity"]["fdepth"]["a"])    fdepth_a    = n.as<double>();
+  if (auto n = root["transmissivity"]["fdepth"]["b"])    fdepth_b    = n.as<double>();
+  if (auto n = root["transmissivity"]["fdepth"]["fmin"]) fdepth_fmin = n.as<double>();
+
+  // -------- surface_water --------
+  // mode: routed = FillSpillMerge routes above-ground water; ponded/removed do not route it. (The ponded-vs-
+  // removed distinction is a dev-flag detail -- TODO.) Replaces the old fsm bool.
+  if (auto n = root["surface_water"]["mode"]) {
     const std::string m = n.as<std::string>();
-    if (m == "lakes") {
-      evap_mode = 1;
-    } else if (m == "remove") {
-      evap_mode = 0;
-    } else {
-      throw std::runtime_error("config: physics.evaporation.mode must be 'lakes' or 'remove', got '" + m + "'");
-    }
+    if (m == "routed")                        fsm_on = 1;
+    else if (m == "ponded" || m == "removed") fsm_on = 0;
+    else throw std::runtime_error("config: surface_water.mode must be 'routed', 'ponded', or 'removed', got '" + m + "'");
   }
+  if (auto n = root["surface_water"]["runoff_ratio"])             runoff_ratio_on = n.as<bool>() ? 1 : 0;  // TODO: 0..1 / raster forms
+  if (auto n = root["surface_water"]["infiltration_during_flow"]) infiltration_on = n.as<bool>() ? 1 : 0;
+  if (auto n = root["surface_water"]["collection"]["method"])     runoff_collector = n.as<std::string>();
 
-  // surface_water
-  if (auto n = root["surface_water"]["fsm"])              fsm_on           = n.as<bool>() ? 1 : 0;
-  if (auto n = root["surface_water"]["runoff_ratio"])     runoff_ratio_on  = n.as<bool>() ? 1 : 0;
-  if (auto n = root["surface_water"]["runoff_collector"]) runoff_collector = n.as<std::string>();
+  // -------- io (source was surfdatadir; outfile/log moved to output) --------
+  if (auto n = root["io"]["source"])     surfdatadir = n.as<std::string>();
+  if (auto n = root["io"]["region"])     region      = n.as<std::string>();
+  if (auto n = root["io"]["time_start"]) time_start  = n.as<std::string>();
+  if (auto n = root["io"]["time_end"])   time_end    = n.as<std::string>();
 
-  // io
-  if (auto n = root["io"]["surfdatadir"])    surfdatadir    = n.as<std::string>();
-  if (auto n = root["io"]["region"])         region         = n.as<std::string>();
-  if (auto n = root["io"]["time_start"])     time_start     = n.as<std::string>();
-  if (auto n = root["io"]["time_end"])       time_end       = n.as<std::string>();
-  if (auto n = root["io"]["outfile_prefix"]) outfile_prefix = n.as<std::string>();
-  if (auto n = root["io"]["textfilename"])   textfilename   = n.as<std::string>();
+  // -------- output (was io.outfile_prefix / io.textfilename) --------
+  if (auto n = root["output"]["outfile_prefix"]) outfile_prefix = n.as<std::string>();
+  if (auto n = root["output"]["run_log"])        textfilename   = n.as<std::string>();
 
   // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
   // equilibrium-check + log/output cadence. Explicit report_interval (steps or time), else default 100 steps
