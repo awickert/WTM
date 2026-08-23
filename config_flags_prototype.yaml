@@ -14,9 +14,10 @@ run:
   #   missing).  The resolved choice is printed at start-up, so it is never silent.
   initial_water_table: saturated
   equilibrium_stop:              # end an equilibrium run early once the water table has settled
-    tol: 0.01                    #   stop when the per-cycle water-table change stays below this [m] (0 = never)
-    metric: max                  #   how the change is judged: max | rms | frac | water-max | water-rms
-    frac: 0.01                   #   for metric: frac -- fraction of cells still above tol
+    tol: 0.001                   #   stop when the per-cycle change in WATER MOVED (|S*Δwtd|) stays below this
+                                 #   [m of water]; default 1 mm of water (0 = never)
+    metric: frac                 #   how the change is judged (ALL water-based): max | rms | frac
+    frac: 0.001                  #   for metric: frac -- fraction of cells still above tol (0.001 = 0.1%)
 
 time:
   # Every TIME value is a DURATION: a bare number is SECONDS; use a suffix ("1yr", "500yr") for other units.
@@ -94,8 +95,11 @@ surface_water:
   infiltration_during_flow: false  # surface water infiltrates as it flows across cells (routed-overland analogue
                                    #   of channel "transmission loss"); infiltration where water falls always happens
   collection:                    # how above-surface water leaves the GW solve to FSM
-    method: active-set           #   active-set (in-solve skim at the free surface) | implicit | explicit |
-                                 #   off | legacy (band sink)
+    # PENDING (parked on the active-set work, #100): the REAL production default is `implicit` (verified in
+    # code); active-set is a SUPERSEDING dev mode (see dev.active_set), NOT a peer collector value here.
+    # Finalize this block only when active-set is un-deferred.
+    method: implicit             #   implicit (in-residual seepage; DEFAULT) | explicit (post-solve clamp) |
+                                 #   off (nonphysical; water piles) | legacy (band sink)
     sink:                        #   parameters for method: legacy (band sink)
       qmax: 1.0                  #     peak removal rate [m/yr]
       width: 1.0                 #     removal band width below the surface [m]
