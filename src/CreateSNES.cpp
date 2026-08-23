@@ -218,29 +218,34 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
   if (stiff_flag) dtc_flag = PETSC_TRUE;  // the bundle enables dt-continuation
   user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
-  // Convergence-based early stop (-wtm_eq_tol, metres). Default ON for equilibrium runs (0.01 m ~ 1 cm of
-  // max water-table change per ~1-yr cycle), OFF for transient runs (a time-evolution run must play out in
-  // full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value to
-  // override. Parsed for ALL solver paths (was previously only inside the Newton block below, so it was
+  // Convergence-based early stop (-wtm_eq_tol, a WATER depth in metres). Default ON for equilibrium runs
+  // (0.001 m = 1 mm of water |S*Δwtd| per cycle), OFF for transient runs (a time-evolution run must play out
+  // in full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value
+  // to override. Parsed for ALL solver paths (was previously only inside the Newton block below, so it was
   // silently ignored on the default Anderson/Picard path). run() checks the PER-CYCLE change against it.
   PetscBool eq_tol_set = PETSC_FALSE;
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, &eq_tol_set);  // [m]; 0 = off
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, &eq_tol_set);  // [m water]; 0 = off
   if (!eq_tol_set)
-    user_context.eq_tol = (params.run_type == "equilibrium") ? 0.01 : 0.0;
-  // -wtm_eq_metric max|rms|frac: how the per-cycle change is aggregated for the equilibrium stop. DEFAULT
-  // frac (converged when < eq_frac of land cells exceed eq_tol) -- the measured best trade: MAX is
-  // worst-cell-hostage (one slow deep cell keeps it from ever firing), RMS is loose (bulk only); frac both
-  // fires and stays precise. See the oscillation diagnosis in benchmark/adaptive_dt. -wtm_eq_frac sets the
-  // fraction threshold (default 0.1%). Pass -wtm_eq_metric max for the old strict worst-cell criterion.
-  // "water"/"water-rms": judge the per-cycle change in PURE-WATER DEPTH (|S*Δwtd|, m of water) rather than
-  // head -- deep low-storativity cells (huge head swing, ~zero water) can no longer pin the metric, so it is
-  // FV-consistent and comparable across cc and tr. With these, -wtm_eq_tol is a WATER depth (e.g. 0.001 = 1 mm).
+    user_context.eq_tol = (params.run_type == "equilibrium") ? 0.001 : 0.0;
+  // -wtm_eq_metric max|rms|frac: how the per-cycle change is aggregated for the equilibrium stop. ALL three
+  // now judge the change in PURE-WATER DEPTH (|S*Δwtd|, m of water), NOT head -- deep low-storativity cells
+  // (huge head swing, ~zero water moved) can no longer pin the stop, so it is FV-consistent and comparable
+  // across cc and tr. eq_tol is therefore a WATER depth (default 0.001 = 1 mm). DEFAULT frac (converged when
+  // < eq_frac of land cells exceed eq_tol) -- the measured best trade: max is worst-cell-hostage, rms is loose
+  // (bulk only), frac both fires and stays precise. -wtm_eq_frac sets the fraction (default 0.1%). Raw head is
+  // still printed each cycle as a diagnostic. See benchmark/adaptive_dt.
   char eq_metric_str[16] = "frac";
   PetscOptionsGetString(nullptr, nullptr, "-wtm_eq_metric", eq_metric_str, sizeof(eq_metric_str), nullptr);
   if (std::strcmp(eq_metric_str, "rms") == 0) user_context.eq_metric = 1;
   else if (std::strcmp(eq_metric_str, "max") == 0) user_context.eq_metric = 0;
-  else if (std::strcmp(eq_metric_str, "water") == 0 || std::strcmp(eq_metric_str, "water-max") == 0) user_context.eq_metric = 3;
-  else if (std::strcmp(eq_metric_str, "water-rms") == 0) user_context.eq_metric = 4;
+  else if (std::strcmp(eq_metric_str, "water") == 0 || std::strcmp(eq_metric_str, "water-max") == 0 ||
+           std::strcmp(eq_metric_str, "water-rms") == 0) {
+    // Retired names: every metric now judges water, so water-max == max and water-rms == rms. Map them (rather
+    // than silently falling through to frac) and note it, so old scripts keep their aggregation.
+    user_context.eq_metric = (std::strcmp(eq_metric_str, "water-rms") == 0) ? 1 : 0;
+    PetscPrintf(PETSC_COMM_WORLD, "NOTE: -wtm_eq_metric %s is retired (all metrics judge water now); using %s.\n",
+                eq_metric_str, user_context.eq_metric == 1 ? "rms" : "max");
+  }
   else user_context.eq_metric = 2;  // "frac" (default)
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_frac", &user_context.eq_frac, nullptr);
   if (user_context.use_newton_continuation) {
@@ -253,9 +258,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
-    // The bundle defaults the early-stop to 1 cm/step (gated on dt in WTM.cpp so it cannot fire during the
-    // ramp); a user -wtm_eq_tol below still wins.
-    if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.01;
+    // The bundle defaults the early-stop to 1 mm-water/step (gated on dt in WTM.cpp so it cannot fire during
+    // the ramp); a user -wtm_eq_tol below still wins.
+    if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.001;
     PetscPrintf(PETSC_COMM_WORLD,
                 "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",

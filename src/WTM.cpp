@@ -572,7 +572,8 @@ void update(
           dv_local = std::max(dv_local, dv);
           sqv_local += dv * dv;
           n_local++;
-          if (user_context.eq_tol > 0.0 && d > user_context.eq_tol) above_local++;
+          // frac metric counts cells by PURE-WATER change (dv = |S*Δwtd|), not head, so eq_tol is a water depth
+          if (user_context.eq_tol > 0.0 && dv > user_context.eq_tol) above_local++;
         }
         prevw[j][i] = dmdapack.starting_wtd[j][i];
       }
@@ -645,18 +646,15 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
       // handful of deep cells; see the oscillation diagnosis in benchmark/adaptive_dt).
       bool        converged;
       const char* mname;
+      // All metrics judge the per-cycle change in PURE-WATER DEPTH (|S*Δwtd|, m of water): deep low-storativity
+      // cells (huge head swing, ~zero water moved) cannot pin the stop, so it is FV-consistent across cc and tr.
+      // eq_tol is a WATER depth (default 0.001 = 1 mm). Raw head (last_cycle_dw/_rms) is still printed below.
       if (user_context.eq_metric == 1) {
-        converged = user_context.last_cycle_rms < user_context.eq_tol;         mname = "rms";
+        converged = user_context.last_cycle_rms_water < user_context.eq_tol;   mname = "rms";
       } else if (user_context.eq_metric == 2) {
         converged = user_context.last_cycle_fracabove < user_context.eq_frac;  mname = "frac";
-      } else if (user_context.eq_metric == 3) {
-        // pure-water depth (m of water): eq_tol is a WATER depth here (e.g. 0.001 = 1 mm water). Deep low-S
-        // cells cannot pin this, so the strict worst-cell (max) metric is safe and honest across cc and tr.
-        converged = user_context.last_cycle_dw_water < user_context.eq_tol;    mname = "water-max";
-      } else if (user_context.eq_metric == 4) {
-        converged = user_context.last_cycle_rms_water < user_context.eq_tol;   mname = "water-rms";
       } else {
-        converged = user_context.last_cycle_dw < user_context.eq_tol;          mname = "max";
+        converged = user_context.last_cycle_dw_water < user_context.eq_tol;    mname = "max";
       }
       if (converged) {
         if (++user_context.settled_count >= 2) {
