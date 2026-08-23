@@ -93,7 +93,26 @@ Parameters::Parameters(const std::string& config_file) {
     else if (m == "ponded" || m == "removed") fsm_on = 0;
     else throw std::runtime_error("config: surface_water.mode must be 'routed', 'ponded', or 'removed', got '" + m + "'");
   }
-  if (auto n = root["surface_water"]["runoff_ratio"])             runoff_ratio_on = n.as<bool>() ? 1 : 0;  // TODO: 0..1 / raster forms
+  // runoff_ratio: a number in [0,1] = a uniform ratio everywhere; the string "raster" = require the
+  // runoff_ratio raster from io.source; omitted = off. (TODO: omit -> auto-detect the raster if present.)
+  if (auto n = root["surface_water"]["runoff_ratio"]) {
+    const std::string v = n.as<std::string>();
+    if (v == "raster") {
+      runoff_ratio_on = 1;  // require the raster (runoff_ratio_uniform stays < 0)
+    } else {
+      double r;
+      try {
+        r = n.as<double>();
+      } catch (...) {
+        throw std::runtime_error(
+            "config: surface_water.runoff_ratio must be a number in [0,1], 'raster', or omitted (got '" + v + "')");
+      }
+      if (r < 0.0 || r > 1.0)
+        throw std::runtime_error("config: surface_water.runoff_ratio must be in [0,1], got " + v);
+      runoff_ratio_on      = (r > 0.0) ? 1 : 0;
+      runoff_ratio_uniform = r;
+    }
+  }
   if (auto n = root["surface_water"]["infiltration_during_flow"]) infiltration_on = n.as<bool>() ? 1 : 0;
   if (auto n = root["surface_water"]["collection"]["method"])     runoff_collector = n.as<std::string>();
 

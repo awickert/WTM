@@ -55,6 +55,7 @@ struct Parameters {
   int32_t evap_mode       = 0;   // dropped from the config (vestigial when the ET sigmoid is on = default); 0 = remove
   int32_t fsm_on          = 1;   // surface_water.mode: routed
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
+  double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
 
   double deltat          = std::numeric_limits<double>::signaling_NaN();
   double fdepth_a        = -1.;

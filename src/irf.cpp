@@ -95,12 +95,13 @@ void InitialiseTransient(Parameters& params, ArrayPack& arp) {
   arp.open_water_evap_end = rd::Array2D<float>(params.get_path(params.time_end, "open_water_evaporation"));
   arp.winter_temp_end     = rd::Array2D<float>(params.get_path(params.time_end, "winter_temperature"));
 
-  if (params.runoff_ratio_on) {
+  if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) {  // raster form
     arp.runoff_ratio_start = rd::Array2D<float>(params.get_path(params.time_start, "runoff_ratio"));
     arp.runoff_ratio_end   = rd::Array2D<float>(params.get_path(params.time_end, "runoff_ratio"));
-  } else {
-    arp.runoff_ratio_start = rd::Array2D<float>(arp.topo_start, 0.0);
-    arp.runoff_ratio_end   = rd::Array2D<float>(arp.topo_start, 0.0);
+  } else {  // uniform value (runoff_ratio_uniform >= 0) or off (0)
+    const float rr = params.runoff_ratio_on ? static_cast<float>(params.runoff_ratio_uniform) : 0.0f;
+    arp.runoff_ratio_start = rd::Array2D<float>(arp.topo_start, rr);
+    arp.runoff_ratio_end   = rd::Array2D<float>(arp.topo_start, rr);
   }
 
   if (params.infiltration_on) {
@@ -158,10 +159,11 @@ void InitialiseEquilibrium(Parameters& params, ArrayPack& arp) {
   arp.winter_temp =
       rd::Array2D<float>(params.get_path(params.time_start, "winter_temperature"));  // Units: degrees Celsius
 
-  if (params.runoff_ratio_on) {
+  if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) {  // raster form
     arp.runoff_ratio = rd::Array2D<float>(params.get_path(params.time_start, "runoff_ratio"));  // Units: m/yr.
-  } else {
-    arp.runoff_ratio = rd::Array2D<float>(arp.topo, 0.0);  // Units: m/yr.
+  } else {  // uniform value (runoff_ratio_uniform >= 0) or off (0)
+    const float rr = params.runoff_ratio_on ? static_cast<float>(params.runoff_ratio_uniform) : 0.0f;
+    arp.runoff_ratio = rd::Array2D<float>(arp.topo, rr);  // Units: m/yr.
   }
 
   if (params.infiltration_on == true) {
