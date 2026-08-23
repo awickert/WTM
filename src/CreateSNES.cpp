@@ -414,6 +414,21 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   SNESSetFromOptions(user_context.snes);
 
+  // Resolved-settings provenance: read the ACTUAL convergence tolerances/caps back from the SNES (after
+  // SNESSetFromOptions) and log them, so the start-up record is authoritative rather than assuming PETSc's
+  // per-type defaults (SNESANDERSON max_it defaults to 10000, NEWTONLS to 50). These map to the config's
+  // solver.tolerance (snes_stol) and solver.max_iterations (snes_max_it).
+  {
+    SNESType  resolved_type;
+    PetscReal r_atol, r_rtol, r_stol;
+    PetscInt  r_maxit, r_maxf;
+    SNESGetType(user_context.snes, &resolved_type);
+    SNESGetTolerances(user_context.snes, &r_atol, &r_rtol, &r_stol, &r_maxit, &r_maxf);
+    PetscPrintf(PETSC_COMM_WORLD,
+                "solver: type=%s  tolerance(snes_stol)=%g  max_iterations(snes_max_it)=%d  (atol=%g rtol=%g)\n",
+                resolved_type, (double)r_stol, (int)r_maxit, (double)r_atol, (double)r_rtol);
+  }
+
   // -wtm_handoff: build the phase-2 finisher SNES. It SHARES the DM (so the DM-registered
   // FormFunctionLocal / FormJacobianLocal / Picard operator in update() are seen automatically)
   // but carries its own prefixed options so it is a Newton (GMRES+GAMG) or Picard (CG+GAMG) solve
