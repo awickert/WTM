@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <unistd.h>  // gethostname (provenance)
 
 namespace dh = richdem::dephier;
 namespace rd = richdem;
@@ -870,9 +871,9 @@ void apply_config_petsc_options(const std::string& config_file) {
 // output.directory is empty the LEGACY behavior is kept (outfile_prefix / run_log are literal paths).
 // Otherwise resolve a run directory per output.if_exists and rewrite params.outfile_prefix / textfilename to
 // live inside it. Rank-0 only (output is gathered to and written by rank 0); must run before any output.
-static void resolve_output_directory(Parameters& params) {
+static std::string resolve_output_directory(Parameters& params) {
   namespace fs = std::filesystem;
-  if (params.output_directory.empty()) return;  // legacy: use outfile_prefix / run_log as-is
+  if (params.output_directory.empty()) return "";  // legacy: use outfile_prefix / run_log as-is
 
   fs::path parent = params.output_directory;
   fs::path run_dir;
@@ -910,6 +911,38 @@ static void resolve_output_directory(Parameters& params) {
   params.outfile_prefix = (run_dir / params.outfile_prefix).string();
   params.textfilename   = (run_dir / params.textfilename).string();
   PetscPrintf(PETSC_COMM_WORLD, "output: run directory = %s\n", run_dir.string().c_str());
+  return run_dir.string();
+}
+
+// Write provenance.yaml into the run directory (rank 0): when + where it ran, the build's git commit/state,
+// PETSc version, and the exact command line. Best-effort; a failure to write is not fatal.
+static void write_provenance(const std::string& run_dir, int argc, char** argv) {
+  std::ofstream p((std::filesystem::path(run_dir) / "provenance.yaml").string());
+  if (!p) return;
+  std::time_t t = std::time(nullptr);
+  char ts[32];
+  std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", std::localtime(&t));
+  char host[256] = {0};
+  gethostname(host, sizeof(host) - 1);
+  PetscMPIInt nranks = 1;
+  MPI_Comm_size(PETSC_COMM_WORLD, &nranks);
+  std::string cmd;
+  for (int i = 0; i < argc; i++) {
+    cmd += argv[i];
+    if (i + 1 < argc) cmd += ' ';
+  }
+  p << "run:\n";
+  p << "  started: " << ts << "\n";
+  p << "  hostname: " << host << "\n";
+  p << "  mpi_ranks: " << nranks << "\n";
+  p << "build:\n";
+  p << "  git_commit: " << wtm_git_commit() << "\n";
+  p << "  git_state: " << wtm_git_state() << "\n";
+  p << "  petsc_version: " << PETSC_VERSION_MAJOR << "." << PETSC_VERSION_MINOR << "." << PETSC_VERSION_SUBMINOR
+    << "\n";
+  p << "command: " << cmd << "\n";
+  p << "config_file: " << (argc > 1 ? argv[1] : "") << "\n";
+  // TODO: also dump the fully-resolved config as run.
 }
 
 int main(int argc, char** argv) {
@@ -938,7 +971,10 @@ int main(int argc, char** argv) {
   {
     PetscMPIInt out_rank;
     MPI_Comm_rank(PETSC_COMM_WORLD, &out_rank);
-    if (out_rank == 0) resolve_output_directory(params);
+    if (out_rank == 0) {
+      const std::string run_dir = resolve_output_directory(params);
+      if (!run_dir.empty()) write_provenance(run_dir, argc, argv);
+    }
   }
 
   initialise(params, arp, user_context);
