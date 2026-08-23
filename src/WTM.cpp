@@ -831,6 +831,25 @@ void apply_config_petsc_options(const std::string& config_file) {
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
 
+  // surface_water.collection.sink (legacy band-sink parameters; effective only with collection.method: legacy)
+  if (auto s = root["surface_water"]["collection"]["sink"]) {
+    if (auto m = s["qmax"])             set_opt_if_unset("-wtm_surface_sink_qmax", m.as<std::string>().c_str());
+    if (auto m = s["width"])            set_opt_if_unset("-wtm_surface_sink_width", m.as<std::string>().c_str());
+    if (auto m = s["fringe_source"])    set_opt_if_unset("-wtm_fringe_source", m.as<std::string>().c_str());
+    if (auto m = s["fringe_cap"])       { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_cap", m.as<std::string>().c_str()); }
+    if (auto m = s["fringe_ksat_coef"]) { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_ksat_coef", m.as<std::string>().c_str()); }
+    if (auto m = s["fringe_length"])    { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_length", m.as<std::string>().c_str()); }
+  }
+
+  // output.verbosity: verbose -> per-solve PETSc monitors. (quiet-level suppression of WTM's own per-cycle
+  // lines is TODO -- it needs gating in run(), not a PETSc flag; normal = the current default.)
+  if (auto n = root["output"]["verbosity"]) {
+    if (n.as<std::string>() == "verbose") {
+      set_opt_if_unset("-snes_monitor", "");
+      set_opt_if_unset("-snes_converged_reason", "");
+    }
+  }
+
   // parallel.threads_per_rank -> omp_set_num_threads (item 6; a direct call, not a PETSc option)
 #ifdef _OPENMP
   if (auto n = root["parallel"]["threads_per_rank"]) {
