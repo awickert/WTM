@@ -138,6 +138,12 @@ Parameters::Parameters(const std::string& config_file) {
     if (verbosity != "quiet" && verbosity != "normal" && verbosity != "verbose")
       throw std::runtime_error("config: output.verbosity must be quiet | normal | verbose, got '" + verbosity + "'");
   }
+  if (auto n = root["output"]["directory"]) output_directory = n.as<std::string>();
+  if (auto n = root["output"]["if_exists"]) {
+    if_exists = n.as<std::string>();
+    if (if_exists != "increment" && if_exists != "overwrite" && if_exists != "error")
+      throw std::runtime_error("config: output.if_exists must be increment | overwrite | error, got '" + if_exists + "'");
+  }
 
   // Resolve the report cadence now that deltat is parsed. FSM runs EVERY timestep; report_interval is ONLY the
   // equilibrium-check + log/output cadence. Explicit report_interval (steps or time), else default 100 steps

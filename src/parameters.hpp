@@ -58,6 +58,9 @@ struct Parameters {
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file
   std::string verbosity = "normal";     // output.verbosity: quiet | normal | verbose (console/log chatter level)
+  std::string output_directory;         // output.directory: parent dir; each run gets its own subdir below.
+                                        //   Empty = legacy (outfile_prefix / run_log used as literal paths).
+  std::string if_exists = "increment";  // output.if_exists: increment (run<NNN>_<ts>/) | overwrite | error
 
   double deltat          = std::numeric_limits<double>::signaling_NaN();
   double fdepth_a        = -1.;

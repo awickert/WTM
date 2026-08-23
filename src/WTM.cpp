@@ -23,6 +23,10 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#include <cctype>
+#include <cstdio>
+#include <ctime>
+#include <filesystem>
 
 namespace dh = richdem::dephier;
 namespace rd = richdem;
@@ -862,6 +866,52 @@ void apply_config_petsc_options(const std::string& config_file) {
 #endif
 }
 
+// output.directory management: give each run its own subdirectory so outputs never clobber. When
+// output.directory is empty the LEGACY behavior is kept (outfile_prefix / run_log are literal paths).
+// Otherwise resolve a run directory per output.if_exists and rewrite params.outfile_prefix / textfilename to
+// live inside it. Rank-0 only (output is gathered to and written by rank 0); must run before any output.
+static void resolve_output_directory(Parameters& params) {
+  namespace fs = std::filesystem;
+  if (params.output_directory.empty()) return;  // legacy: use outfile_prefix / run_log as-is
+
+  fs::path parent = params.output_directory;
+  fs::path run_dir;
+  if (params.if_exists == "overwrite") {
+    run_dir = parent;
+    fs::create_directories(run_dir);
+  } else if (params.if_exists == "error") {
+    if (fs::exists(parent) && !fs::is_empty(parent))
+      throw std::runtime_error("output.directory '" + parent.string() + "' exists and is not empty (if_exists: error)");
+    run_dir = parent;
+    fs::create_directories(run_dir);
+  } else {  // "increment" (default): parent/run<NNN>_<timestamp>/
+    fs::create_directories(parent);
+    int next = 0;
+    for (const auto& e : fs::directory_iterator(parent)) {
+      const std::string name = e.path().filename().string();
+      if (name.rfind("run", 0) == 0 && name.size() > 3 && std::isdigit(static_cast<unsigned char>(name[3]))) {
+        const int n = std::atoi(name.c_str() + 3);
+        if (n >= next) next = n + 1;
+      }
+    }
+    std::time_t t = std::time(nullptr);
+    char ts[32];
+    std::strftime(ts, sizeof(ts), "%Y-%m-%dT%H%M%S", std::localtime(&t));
+    char nnn[8];
+    std::snprintf(nnn, sizeof(nnn), "%03d", next);
+    run_dir = parent / ("run" + std::string(nnn) + "_" + ts);
+    fs::create_directories(run_dir);
+    // 'latest' symlink -> the newest run dir (relative target, best-effort)
+    std::error_code ec;
+    fs::remove(parent / "latest", ec);
+    fs::create_directory_symlink(run_dir.filename(), parent / "latest", ec);
+  }
+
+  params.outfile_prefix = (run_dir / params.outfile_prefix).string();
+  params.textfilename   = (run_dir / params.textfilename).string();
+  PetscPrintf(PETSC_COMM_WORLD, "output: run directory = %s\n", run_dir.string().c_str());
+}
+
 int main(int argc, char** argv) {
   // if (argc != 2) {
   //   // Make sure that the user is running the code with a configuration file.
@@ -882,6 +932,14 @@ int main(int argc, char** argv) {
   // transmissivity background / parallel.threads_per_rank) into the PETSc options DB, so the existing
   // -wtm_*/-snes_* parsing reads them. Must run after PetscInitialize; explicit CLI flags still override.
   apply_config_petsc_options(argv[1]);
+
+  // output.directory: resolve the per-run output subdirectory (rank 0 only; rewrites params.outfile_prefix /
+  // textfilename to live inside it). Must precede any output writing.
+  {
+    PetscMPIInt out_rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &out_rank);
+    if (out_rank == 0) resolve_output_directory(params);
+  }
 
   initialise(params, arp, user_context);
 
