@@ -170,7 +170,9 @@ void InitialiseEquilibrium(Parameters& params, ArrayPack& arp) {
     arp.vert_ksat = rd::Array2D<float>(params.get_path("vertical_ksat"));  // Units of ksat are m/s.
   }
 
-  if (params.supplied_wt == true) {
+  if (!params.initial_wt_path.empty()) {
+    arp.wtd = rd::Array2D<double>(params.initial_wt_path);  // run.initial_water_table: <path>
+  } else if (params.supplied_wt == true) {
     arp.wtd = rd::Array2D<double>(params.get_path(params.time_start, "starting_wt"));
   } else {
     arp.wtd = rd::Array2D<double>(arp.topo, 0.);

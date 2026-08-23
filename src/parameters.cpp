@@ -53,7 +53,15 @@ Parameters::Parameters(const std::string& config_file) {
   // initial_water_table: "saturated" -> start at the surface (wtd = 0); any other value names a supplied
   // starting water table to load. TODO: a literal <path> should load that file, and omitting the key should
   // auto-detect a starting_wt layer in io.source; for now a non-"saturated" value selects the supplied-WT layer.
-  if (auto n = root["run"]["initial_water_table"]) supplied_wt = (n.as<std::string>() == "saturated") ? 0 : 1;
+  if (auto n = root["run"]["initial_water_table"]) {
+    const std::string v = n.as<std::string>();
+    if (v == "saturated") {
+      supplied_wt = 0;  // start at the surface (wtd = 0)
+    } else {
+      supplied_wt     = 1;
+      initial_wt_path = v;  // <path>: load the starting water table from this file directly
+    }
+  }
 
   // -------- time --------
   if (auto n = root["time"]["deltat"]) deltat = n.as<double>();
