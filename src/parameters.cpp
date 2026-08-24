@@ -34,7 +34,7 @@ Parameters::Parameters(const std::string& config_file) {
   if (!root.IsMap()) {
     throw std::runtime_error("config file '" + config_file + "' is not a YAML mapping. The config format is "
                              "nested YAML with sections (run / time / io / output / transmissivity / "
-                             "surface_water / solver / ...) -- see Config_file.yaml. (A legacy 'key value' .cfg "
+                             "surface_water / solver / ...) -- see config.yaml. (A legacy 'key value' .cfg "
                              "will trip this.)");
   }
 

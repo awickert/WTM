@@ -83,7 +83,7 @@ ninja
 For building on HPC clusters (e.g. MSI) with module- or conda-based toolchains, and for running with MPI under Slurm, see [BUILD_HPC.md](BUILD_HPC.md).
 
 ## Running the code
-Ensure that all of the data files are located appropriately in a folder together, then edit `Config_file.yaml`. **The configuration is nested YAML** — settings are grouped into sections (`run`, `time`, `io`, `output`, `boundaries`, `transmissivity`, `evaporation`, `surface_water`, `solver`, `parallel`), and the annotated `Config_file.yaml` is the authoritative reference: copy and edit it. Grid geometry is derived from the input GDAL geotransform. NOTE: the flat variable notes in this section describe the earlier `key value` format — several keys have moved into sections or been removed (`maxiter` / `total_cycles` are gone; `cells_per_degree` / `southern_edge` are now automatic; input naming is `io.source` / `io.region` / `io.time_start`) — so use `Config_file.yaml` as the source of truth. The main settings:
+Ensure that all of the data files are located appropriately in a folder together, then edit `config.yaml`. **The configuration is nested YAML** — settings are grouped into sections (`run`, `time`, `io`, `output`, `boundaries`, `transmissivity`, `evaporation`, `surface_water`, `solver`, `parallel`), and the annotated `config.yaml` is the authoritative reference: copy and edit it. Grid geometry is derived from the input GDAL geotransform. NOTE: the flat variable notes in this section describe the earlier `key value` format — several keys have moved into sections or been removed (`maxiter` / `total_cycles` are gone; `cells_per_degree` / `southern_edge` are now automatic; input naming is `io.source` / `io.region` / `io.time_start`) — so use `config.yaml` as the source of truth. The main settings:
 
 * textfilename       {The name of your output text file.txt}
 * outfile_prefix     {The name of your output depth-to-water-table file in geoTiff format. The code will append the time passed and .tif extension.}
@@ -116,7 +116,7 @@ Once the configuration file has been set up appropriately, simply open a termina
 ```
 # Optionally set the number of CPU threads for the parallel groundwater solve:
 # export OMP_NUM_THREADS=N
-./build/wtm.x Config_file.yaml
+./build/wtm.x config.yaml
 ```
 Here, N is the number of CPU threads you want the parallel processing for the groundwater-flow step to use. In the above line, you are setting an environment variable that will define this until you exit the terminal window.
 
@@ -239,7 +239,7 @@ being masked. See `benchmark/SURFACE_WATER_ROUTING.md`.
 Every runtime option below is a PETSc-style flag passed **after** the config file, not a config-file key:
 
 ```
-./build/wtm.x Config_file.yaml -wtm_anderson -wtm_tr_bdf2 -wtm_eq_tol 0.001
+./build/wtm.x config.yaml -wtm_anderson -wtm_tr_bdf2 -wtm_eq_tol 0.001
 ```
 
 The model runs correctly with **no flags at all** (the default column marks what is active out of the box).

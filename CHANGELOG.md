@@ -15,7 +15,7 @@ capabilities remain experimental and off by default.
 **Configuration is now nested YAML** (`yaml-cpp`), replacing the legacy `key value` `.cfg`
 format. Settings are grouped into sections — `run` / `time` / `io` / `output` / `boundaries`
 / `transmissivity` / `evaporation` / `surface_water` / `solver` / `parallel` / `dev` — see the
-annotated `Config_file.yaml`. Grid geometry is derived from the input's GDAL geotransform (the
+annotated `config.yaml`. Grid geometry is derived from the input's GDAL geotransform (the
 `grid` block is deprecated). Solver and numerics choices are now config keys (mapped onto the
 underlying `-wtm_*` / `-snes_*` options; an explicit CLI flag still overrides the config). The
 regression suite is **mid-migration** to the new format and is not currently green end-to-end;
