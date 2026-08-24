@@ -27,7 +27,7 @@ CPD=100
 export OMP_NUM_THREADS=1
 
 emit() { # stem region surfdir southern_edge
-  cat > "$WORK/$1.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -54,12 +54,12 @@ EOF
 BB="-wtm_anderson -wtm_eq_metric rms -wtm_eq_tol 1e-8"
 SE_PAD=$("$PY" -c "print(-1.0/$CPD)")   # padded grid one cell further south
 
-emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.cfg" -wtm_anderson $BB -wtm_land_boundary dirichlet         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }
-emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.cfg" -wtm_anderson $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
-emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.cfg" -wtm_anderson $BB -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
+emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.yaml" -wtm_anderson $BB -wtm_land_boundary dirichlet         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }
+emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.yaml" -wtm_anderson $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
+emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" -wtm_anderson $BB -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
 # Newton (analytic Jacobian, dt-continuation) must reach the SAME land-Dirichlet water table -> its off-map
 # Dirichlet Jacobian tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary).
-emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.cfg" -wtm_newton -wtm_dt_continuation $BB -wtm_land_boundary dirichlet > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
+emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" -wtm_newton -wtm_dt_continuation $BB -wtm_land_boundary dirichlet > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'

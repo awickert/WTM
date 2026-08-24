@@ -14,7 +14,7 @@ PY="${PY:-python3}"
 
 emit() { # scheme dt_seconds cycles stem
   local flags="$1" dt="$2" cyc="$3" stem="$4"
-  cat > "$WORK/$stem.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -47,7 +47,7 @@ for s in cc tr bdf2v; do
   emit "${FLAG[$s]}" $WK        8  "${s}_coarse"
   emit "${FLAG[$s]}" $((WK/4)) 32  "${s}_fine"
   for d in coarse fine; do
-    "$WTM" "$WORK/${s}_${d}.cfg" $BASE ${FLAG[$s]} > "$WORK/${s}_${d}.log" 2>&1 \
+    "$WTM" "$WORK/${s}_${d}.yaml" $BASE ${FLAG[$s]} > "$WORK/${s}_${d}.log" 2>&1 \
       || { echo "RUN FAILED: $s $d"; tail -3 "$WORK/${s}_${d}.log"; exit 2; }
   done
 done

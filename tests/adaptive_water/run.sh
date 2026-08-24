@@ -17,7 +17,7 @@ TOL="${TOL:-0.05}"       # metres; cross-scheme steady-state agreement
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.cfg" <<EOF
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -44,11 +44,11 @@ EOF
 
 BB="-wtm_anderson"
 emit cc; emit adapt; emit water
-"$WTM" "$WORK/cc.cfg"    $BB -wtm_eq_metric rms       -wtm_eq_tol 0.001  > "$WORK/cc.log"    2>&1 \
+"$WTM" "$WORK/cc.yaml"    $BB -wtm_eq_metric rms       -wtm_eq_tol 0.001  > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
-"$WTM" "$WORK/adapt.cfg" $BB -wtm_tr_bdf2 -wtm_dt_adaptive -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
+"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 -wtm_dt_adaptive -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
   || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
-"$WTM" "$WORK/water.cfg" $BB -wtm_eq_metric water-rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
+"$WTM" "$WORK/water.yaml" $BB -wtm_eq_metric water-rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
 
 # (1) adaptive must have actually reached equilibrium (not hit the total_time cap)

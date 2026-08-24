@@ -21,7 +21,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem region
-  cat > "$WORK/$1.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 1
@@ -51,9 +51,9 @@ EOF
 # parabola. runoff_collector=off is the physical successor to -wtm_dev_allow_aboveground_water_columns.
 FL="-wtm_anderson -wtm_evap_taper 0 -wtm_surface_sink 0 -wtm_extinction 0 -wtm_eq_metric rms -wtm_eq_tol 1e-8"
 
-emit dir anbcD; "$WTM" "$WORK/dir.cfg" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
-emit neu anbcN; "$WTM" "$WORK/neu.cfg" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }
-emit slp anbcS; "$WTM" "$WORK/slp.cfg" $FL -wtm_land_boundary neumann_toposlope > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
+emit dir anbcD; "$WTM" "$WORK/dir.yaml" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
+emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }
+emit slp anbcS; "$WTM" "$WORK/slp.yaml" $FL -wtm_land_boundary neumann_toposlope > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); SLP=$(ls "$WORK"/slp_*.tif | tail -1)
 FIT_TOL="$FIT_TOL" SLOPE="0.05" "$PY" - "$DIR" "$NEU" "$SLP" <<'PY'

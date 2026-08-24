@@ -19,7 +19,7 @@ TOL="${TOL:-0.001}"       # metres; adaptive-restart vs plain-Anderson steady-st
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.cfg" <<EOF
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -47,12 +47,12 @@ EOF
 BB="-wtm_eq_metric rms -wtm_eq_tol 0.001 -wtm_anderson"
 emit ar; emit base
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
-"$WTM" "$WORK/ar.cfg" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \
+"$WTM" "$WORK/ar.yaml" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \
   || { echo "FAIL: -wtm_adaptive_restart aborted (robust-finish regression):"; tail -4 "$WORK/ar.log"; exit 1; }
 grep -q "equilibrium reached" "$WORK/ar.log" \
   || { echo "FAIL: -wtm_adaptive_restart ran but never reached equilibrium"; exit 1; }
 # (2) and it must reach the SAME water table as a plain Anderson solve
-"$WTM" "$WORK/base.cfg" $BB > "$WORK/base.log" 2>&1 \
+"$WTM" "$WORK/base.yaml" $BB > "$WORK/base.log" 2>&1 \
   || { echo "FAIL: plain Anderson reference run failed"; tail -4 "$WORK/base.log"; exit 2; }
 
 AR=$(ls "$WORK"/ar_*.tif | tail -1); BASE=$(ls "$WORK"/base_*.tif | tail -1)

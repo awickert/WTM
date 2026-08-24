@@ -29,7 +29,7 @@ MPIRUN="${MPIRUN:-mpirun}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem cycles
-  cat > "$WORK/$1.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -61,16 +61,16 @@ fail=0
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------
 emit cc_n1 120
 emit cc_nN 120
-"$WTM" "$WORK/cc_n1.cfg" -wtm_anderson $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
+"$WTM" "$WORK/cc_n1.yaml" -wtm_anderson $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
   || { echo "RUN FAILED: cc n=1"; tail -3 "$WORK/cc_n1.log"; exit 2; }
-"$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.cfg" -wtm_anderson $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
+"$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.yaml" -wtm_anderson $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
   || { echo "RUN FAILED: cc n=$NPROCS"; tail -3 "$WORK/cc_nN.log"; exit 2; }
 
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
 declare -A FLAG=( [cc]="-wtm_anderson" [tr]="-wtm_anderson -wtm_tr_bdf2" [bdf2v]="-wtm_anderson -wtm_bdf2_on_V" [newton]="-wtm_newton" )
 for s in tr bdf2v newton; do
   emit "$s" 120
-  "$WTM" "$WORK/$s.cfg" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
+  "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
     || { echo "RUN FAILED: $s"; tail -3 "$WORK/$s.log"; exit 2; }
 done
 
@@ -98,7 +98,7 @@ PY
 
 # ---- 3. Newton Jacobian FD check (ghost boundary ON, smooth T so the tangent is exact) ---------------
 emit jac 1
-JR=$("$WTM" "$WORK/jac.cfg" -wtm_newton $GB \
+JR=$("$WTM" "$WORK/jac.yaml" -wtm_newton $GB \
         -wtm_ksat_surface_smoothing_width 0.5 -wtm_ksat_soilbottom_smoothing_width 0.5 \
         -snes_test_jacobian -snes_max_it 1 2>&1 \
      | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1)

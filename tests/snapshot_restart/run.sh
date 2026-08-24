@@ -17,7 +17,7 @@ TOL="${TOL:-0.05}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem surfdir supplied_wt
-  cat > "$WORK/$1.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -46,7 +46,7 @@ BB="-wtm_anderson -wtm_eq_tol 0.001 -wtm_eq_metric rms"
 
 # --- cold full run (saves every cycle) ---
 emit cold "$INP" 0
-"$WTM" "$WORK/cold.cfg" $BB > "$WORK/cold.log" 2>&1 || { echo "RUN FAILED: cold"; tail -3 "$WORK/cold.log"; exit 2; }
+"$WTM" "$WORK/cold.yaml" $BB > "$WORK/cold.log" 2>&1 || { echo "RUN FAILED: cold"; tail -3 "$WORK/cold.log"; exit 2; }
 C_COLD=$(stop_cycle "$WORK/cold.log")
 
 # --- (1) FILENAME format: year == cycle (deltat 1 yr, report_interval 1) ---
@@ -62,7 +62,7 @@ SNAP=$(printf "%s/cold_%09d_%dyr.tif" "$WORK" "$MID" "$MID")
 [[ -f "$SNAP" ]] || { echo "FAIL: mid snapshot $(basename "$SNAP") missing"; exit 1; }
 mkdir -p "$WORK/rinp"; cp "$INP"/*.tif "$WORK/rinp/"; cp "$SNAP" "$WORK/rinp/snaptest_ta_starting_wt.tif"
 emit restart "$WORK/rinp" 1
-"$WTM" "$WORK/restart.cfg" $BB > "$WORK/restart.log" 2>&1 || { echo "RUN FAILED: restart"; tail -3 "$WORK/restart.log"; exit 2; }
+"$WTM" "$WORK/restart.yaml" $BB > "$WORK/restart.log" 2>&1 || { echo "RUN FAILED: restart"; tail -3 "$WORK/restart.log"; exit 2; }
 C_RST=$(stop_cycle "$WORK/restart.log")
 
 echo "  cold equilibrium: $C_COLD cycles;  warm restart from cycle $MID: $C_RST cycles"

@@ -25,7 +25,7 @@ TOL="${TOL:-0.001}"       # metres; cross-solver steady-state agreement (1 mm on
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.cfg" <<EOF
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -54,7 +54,7 @@ BB="-wtm_eq_metric rms -wtm_eq_tol 0.001"
 emit anderson; emit picard; emit newton
 run() { # arm  extra-flags...
   local arm="$1"; shift
-  "$WTM" "$WORK/$arm.cfg" $BB "$@" > "$WORK/$arm.log" 2>&1 \
+  "$WTM" "$WORK/$arm.yaml" $BB "$@" > "$WORK/$arm.log" 2>&1 \
     || { echo "FAIL: $arm did not run cleanly (diverged?):"; grep -oE "DIVERGED[A-Z_]*" "$WORK/$arm.log" | tail -1; tail -3 "$WORK/$arm.log"; exit 1; }
   grep -q "equilibrium reached" "$WORK/$arm.log" \
     || { echo "FAIL: $arm ran but never reached equilibrium (hit the cycle cap)"; exit 1; }

@@ -26,7 +26,7 @@ PILE_MIN="${PILE_MIN:-1.0}" # metres; without gathering the table piles far abov
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.cfg" <<EOF
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -54,10 +54,10 @@ EOF
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
 # gathered = implicit (in-residual seepage; pins wtd~0 to the SNES tolerance); piled = off (no collection).
 emit gathered implicit
-"$WTM" "$WORK/gathered.cfg" -wtm_anderson -wtm_eq_tol 0 > "$WORK/gathered.log" 2>&1 \
+"$WTM" "$WORK/gathered.yaml" -wtm_anderson -wtm_eq_tol 0 > "$WORK/gathered.log" 2>&1 \
   || { echo "RUN FAILED: gathered"; tail -3 "$WORK/gathered.log"; exit 2; }
 emit piled off
-"$WTM" "$WORK/piled.cfg" -wtm_anderson -wtm_eq_tol 0 > "$WORK/piled.log" 2>&1 \
+"$WTM" "$WORK/piled.yaml" -wtm_anderson -wtm_eq_tol 0 > "$WORK/piled.log" 2>&1 \
   || { echo "RUN FAILED: piled"; tail -3 "$WORK/piled.log"; exit 2; }
 
 # SETTLING (gathered): final per-cycle |Δwtd| (col 5) must be small (data rows only; skip the trailing "p" line).

@@ -29,7 +29,7 @@ BITE_MIN="${BITE_MIN:-1.0}" # metres; the hard-switch limit cycle keeps per-cycl
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.cfg" <<EOF
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 1
@@ -56,10 +56,10 @@ EOF
 POND="-wtm_dev_allow_aboveground_water_columns"   # surface clamp off: let the owe branch fire (FSM off)
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
 emit managed
-"$WTM" "$WORK/managed.cfg" -wtm_anderson $POND -wtm_eq_tol 0 > "$WORK/managed.log" 2>&1 \
+"$WTM" "$WORK/managed.yaml" -wtm_anderson $POND -wtm_eq_tol 0 > "$WORK/managed.log" 2>&1 \
   || { echo "RUN FAILED: managed"; tail -3 "$WORK/managed.log"; exit 2; }
 emit bare
-"$WTM" "$WORK/bare.cfg" -wtm_anderson $POND -wtm_evap_taper 0 -wtm_extinction 0 -wtm_eq_tol 0 > "$WORK/bare.log" 2>&1 \
+"$WTM" "$WORK/bare.yaml" -wtm_anderson $POND -wtm_evap_taper 0 -wtm_extinction 0 -wtm_eq_tol 0 > "$WORK/bare.log" 2>&1 \
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.

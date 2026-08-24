@@ -24,7 +24,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem  collector-line
-  cat > "$WORK/$1.cfg" <<EOF
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -51,7 +51,7 @@ EOF
 }
 run() { # stem  collector-line  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.cfg" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 run implicit "runoff_collector implicit" ""
@@ -60,7 +60,7 @@ run off      "runoff_collector off"      ""
 run unset    ""                          ""
 # explicit on the DEFAULT Picard path (no -wtm_anderson): must converge (no tangent needed)
 emit picard "runoff_collector explicit"
-"$WTM" "$WORK/picard.cfg" -wtm_eq_tol 0 > "$WORK/picard.log" 2>&1 \
+"$WTM" "$WORK/picard.yaml" -wtm_eq_tol 0 > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }
 OFFWARN=$(grep -c "WARNING \[runoff_collector=off\]" "$WORK/off.log" || true)
 
