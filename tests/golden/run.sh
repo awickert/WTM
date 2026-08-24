@@ -16,6 +16,8 @@ cd "$(dirname "$0")"
 GEN=0
 [[ "${1:-}" == "--generate" ]] && { GEN=1; shift; }
 WTM=$(readlink -f "${1:-../../build/wtm.x}")
+shift || true
+RANKS="${*:-1 2 4 6 8}"   # cross-rank check counts (run_all.sh passes the tier's set); default = full sweep
 REFDIR=reference
 mkdir -p "$REFDIR"
 
@@ -115,7 +117,7 @@ for name in "${CASES[@]}"; do
         run_case "$name" 1
         python3 golden.py generate "$PREFIX" "$REFDIR/${name}.txt"
     else
-        for n in 1 2 4 6 8; do
+        for n in $RANKS; do
             run_case "$name" "$n"
             if python3 golden.py check "$PREFIX" "$REFDIR/${name}.txt" $(case_tol "$name"); then
                 printf "  %-14s n=%-2s : PASS\n" "$name" "$n"

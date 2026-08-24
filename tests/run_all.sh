@@ -8,13 +8,27 @@
 #   4. General MPI consistency (config matrix) (tests/mpi_consistency/run.sh)
 #   5. FillSpillMerge MPI consistency        (tests/fsm_consistency/run.sh)
 #
-# Usage:  tests/run_all.sh
+# Two tiers:
+#   tests/run_all.sh              STANDARD (fast pre-push gate): each test's core assertion at n=1 vs n=4.
+#   tests/run_all.sh --extended   EXTENDED (nightly / pre-release): full MPI rank sweeps + the at-scale
+#                                 mass-balance fixture. Every test still runs in both tiers -- only the rank
+#                                 breadth and fixture scale change, so the fast gate keeps full coverage of
+#                                 the assertions while dropping the belt-and-suspenders decomposition sweeps.
 # Requires wtm.x and test_dmda.x built in ../build.
 set -uo pipefail
 cd "$(dirname "$0")"
 ROOT=$(readlink -f ..)
 WTM="$ROOT/build/wtm.x"
 TDMDA="$ROOT/build/test_dmda.x"
+
+TIER=standard
+[[ "${1:-}" == "--extended" ]] && { TIER=extended; shift; }
+if [[ "$TIER" == extended ]]; then
+    MPI_RANKS="2 4 6 8"; GOLDEN_RANKS="1 2 4 6 8"; TAPER_RANKS="4 8"; MASSBAL_N=8
+else
+    MPI_RANKS="4";       GOLDEN_RANKS="1 4";       TAPER_RANKS="4";   MASSBAL_N=4
+fi
+echo "WTM test suite -- tier: $TIER  (MPI ranks: n=1 vs {$MPI_RANKS})"
 
 declare -a NAMES RESULTS
 run() { # name  command...
@@ -25,11 +39,11 @@ run() { # name  command...
 
 run "unit: DMDA gather/scatter" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
-run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" 8
-run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" 2 4 6 8
-run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" 2 4 6 8
-run "golden (expected results)" ./golden/run.sh "$WTM"
-run "taper determinism+smooth"  ./taper/run.sh "$WTM" 4 8
+run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"
+run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" $MPI_RANKS
+run "FSM MPI consistency"      ./fsm_consistency/run.sh "$WTM" $MPI_RANKS
+run "golden (expected results)" ./golden/run.sh "$WTM" $GOLDEN_RANKS
+run "taper determinism+smooth"  ./taper/run.sh "$WTM" $TAPER_RANKS
 run "ghost-boundary (#96)"      ./ghost_boundary/run.sh "$WTM" 4
 run "storage secant≡volume"     ./storage_equivalence/run.sh "$WTM"
 run "recharge consistency (#93)" ./recharge_consistency/run.sh "$WTM"
