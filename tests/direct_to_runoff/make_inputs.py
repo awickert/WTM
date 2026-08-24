@@ -14,12 +14,16 @@ piles hundreds of metres above the surface -- the failure the routing prevents.
 Regenerate with: python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
+# Intended grid: WTM derives geometry from the geotransform (#124); encode the test's cpd/south.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 120, 0
 NX = NY = 12
 REGION = "runoffgather"
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
-tr = from_bounds(0, 0, NX, NY, NX, NY)
+tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
 def w(name, data, dt="float32"):
     with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
                        dtype=dt, crs="EPSG:4326", transform=tr) as d:

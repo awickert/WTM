@@ -20,7 +20,11 @@ problem is 1-D in x):
 Regenerate with:  python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
+# Intended grid: WTM derives geometry from the geotransform (#124); encode the test's cpd/south.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 1000, 0
 
 NX, NY = 22, 3
 SLOPE = 0.05          # anbcS terrain slope (m per cell); gentle so the cold drainage stays stable
@@ -28,7 +32,7 @@ OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
 
 def write(region, mask, topo=None, precip=0.05):
-    tr = from_bounds(0, 0, NX, NY, NX, NY)
+    tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
     def wr(name, a, dt="float32"):
         with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
                            dtype=dt, crs="EPSG:4326", transform=tr) as d:

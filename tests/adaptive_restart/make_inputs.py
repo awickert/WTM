@@ -10,13 +10,17 @@ instead of returning the tracked best iterate. Here the controller must instead 
 as a plain Anderson solve. Regenerate with:  python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
+# Intended grid: WTM derives geometry from the geotransform (#124); encode the test's cpd/south.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 100, 0
 
 NX, NY = 12, 8
 REGION = "arestart"
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
-tr = from_bounds(0, 0, NX, NY, NX, NY)
+tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
 
 def w(name, data, dt="float32"):
     with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
