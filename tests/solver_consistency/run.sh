@@ -50,7 +50,12 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_eq_metric rms -wtm_eq_tol 0.001"
+# Stop 10x TIGHTER than the agreement bound (TOL): each solver only settles to ~eq_tol of the true steady
+# state, and eq_tol is a WATER depth (|S*Δwtd|) while the comparison is in wtd -- so a solver stopped at
+# eq_tol water sits ~eq_tol/S in wtd from truth. Newton's dt-continuation path lands it on the far side of
+# that ball from Anderson (Picard, on a near-identical path, agrees to ~1e-7). eq_tol=1e-4 water puts all
+# three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
+BB="-wtm_eq_metric rms -wtm_eq_tol 0.0001"
 emit anderson; emit picard; emit newton
 run() { # arm  extra-flags...
   local arm="$1"; shift
