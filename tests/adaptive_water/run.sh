@@ -48,14 +48,15 @@ emit cc; emit adapt; emit water
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
 "$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 -wtm_dt_adaptive -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
   || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
-"$WTM" "$WORK/water.yaml" $BB -wtm_eq_metric water-rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
+"$WTM" "$WORK/water.yaml" $BB -wtm_eq_metric rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
 
 # (1) adaptive must have actually reached equilibrium (not hit the total_time cap)
 grep -q "equilibrium reached" "$WORK/adapt.log" || { echo "FAIL: adaptive did not reach equilibrium"; exit 1; }
-# (2) the water arm must have stopped on the WATER-depth metric specifically
-grep -q "equilibrium reached (water-rms metric)" "$WORK/water.log" \
-  || { echo "FAIL: -wtm_eq_metric water-rms did not drive the stop"; grep -i "equilibrium reached" "$WORK/water.log"; exit 1; }
+# (2) the water arm must stop on the (water-based) rms metric at the tighter 0.5 mm tolerance -- every metric
+#     judges water moved |S*Δwtd| now, so this exercises a tighter pure-water-depth stop than cc's 1 mm.
+grep -q "equilibrium reached (rms metric)" "$WORK/water.log" \
+  || { echo "FAIL: the rms (water-depth) metric did not drive the stop"; grep -i "equilibrium reached" "$WORK/water.log"; exit 1; }
 
 CC=$(ls "$WORK"/cc_*.tif | tail -1); AD=$(ls "$WORK"/adapt_*.tif | tail -1); WA=$(ls "$WORK"/water_*.tif | tail -1)
 TOL="$TOL" "$PY" - "$CC" "$AD" "$WA" <<'PY'
