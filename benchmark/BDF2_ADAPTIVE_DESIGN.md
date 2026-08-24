@@ -46,9 +46,13 @@
      `dtc_max_retries`. Reuses the dt-continuation plumbing + the recharge-rescale-to-actual-Δt fix.
   2. **Embedded error estimator from the two stages** (no history, valid on step 1): the linear
      extrapolation through (tₙ, hⁿ) and (tₙ+γΔt, Y_γ) to tₙ+Δt is `h_pred = [Y_γ − (1−γ)hⁿ]/γ` — EXACT for
-     linear-in-time, `O(Δt²)` for curvature — so `|hⁿ⁺¹ − h_pred|` is the local truncation error, with no
-     ground truth needed. `est > dt_tol` ⇒ accuracy reject (shrink, retry); else accept and grow toward
-     `dt_tol`, capped by convergence headroom (`dtc_easy_iters`) and `dtc_dt_max`.
+     linear-in-time, `O(Δt²)` for curvature. **Measured in WATER (volume) (2026-08-24):**
+     `est = |storedVolume(wtdⁿ⁺¹) − storedVolume(wtd_pred)|` = the local truncation error expressed as water
+     moved `|S·Δwtd|` (slope 1 above the surface, porosity below; reuses the storage `V(wtd)`), with no ground
+     truth needed. This puts `est`/`dt_tol` in the SAME units as `eq_tol`, so the per-step accuracy and the
+     equilibrium stop are directly comparable — a time-marching scheme cannot resolve a steady state finer than
+     its own per-step error (symmetry through convergence). `est > dt_tol` ⇒ accuracy reject (shrink, retry);
+     else accept and grow toward `dt_tol`, capped by convergence headroom (`dtc_easy_iters`) and `dtc_dt_max`.
   - **Surface-inclusive norm (corrected 2026-08-15).** The error norm covers ALL land cells INCLUDING the
     free surface. An earlier version EXCLUDED surface cells (`wtd ≥ −band`) to keep the clamp's
     non-smoothness from spiking the estimate — but **stability is SET at the free surface**, so excluding it
@@ -78,13 +82,20 @@
     the oscillation with the previous accepted error, and a PI-damped reject shrink instead of a hard slam —
     the 0.2–0.25 band drops to 11–21 cycles, no catastrophe anywhere in the 0.1–0.5 operating range. Cost:
     the nominal point is ~28 % slower than the (hunting-prone) I-controller (island 1547 → 1977) — robustness
-    over speed, still ~2× better than fixed-1-wk cc. With the hunting gone, the step tolerance is **derived
-    from the convergence target** on a spin-up: `dt_tol = min(k·eq_tol, ring_cap)` (k = 50, ring_cap = 0.5 m),
-    unless `-wtm_dt_tol` is set. So **`eq_tol` is the single knob** and no `dt_tol`/`eq_tol` combination is
-    toxic; the ring cap keeps Δt below the physical free-surface overshoot even for a loose `eq_tol`. Verified
-    (island, one knob): `eq_tol` 0.001→0.05 all settle monotonically (7923→1332 its), the loose end capped
-    where the uncapped coupling (`dt_tol` 1.0/2.5) would ring. A transient run has no convergence target, so
-    `dt_tol` is used directly.
+    over speed, still ~2× better than fixed-1-wk cc.
+  - **`dt_tol` ↔ `eq_tol`: coupled → decoupled → unit-matched (2026-08-24).** The original one-knob coupling
+    `dt_tol = min(k·eq_tol, ring_cap)` (k = 50, ring_cap = 0.5 m) placed the step tol at the sweet spot for the
+    default `eq_tol` and made `eq_tol` the single knob. It was then **decoupled** (5a71e5c) because `eq_tol`
+    became a WATER depth while `dt_tol` was a HEAD error — deriving one from the other mixed units. The
+    volume-norm above **removes that mismatch**: `dt_tol` is now water too, so the two are directly comparable
+    and the default re-tracks `eq_tol` — this time unit-correctly and at **k = 1**: on an equilibrium run
+    `dt_tol = min(eq_tol, ring_cap)` unless `-wtm_dt_tol` is set (integrate to the accuracy you detect; the
+    ring cap still keeps Δt below the free-surface overshoot for a loose `eq_tol`). The coherence is required,
+    not cosmetic: a looser step tol than `eq_tol` cannot converge (the run jitters at the step-error amplitude
+    — the adaptive_water failure that surfaced this). An explicit `-wtm_dt_tol` looser than `eq_tol` on an
+    equilibrium run now warns. **A transient run has no convergence target**, so `dt_tol` is a pure accuracy
+    knob (0.1 m water default, or `-wtm_dt_tol`) — independent of `eq_tol`, which is not a stop criterion there.
+    The config key for this tolerance is `solver.water_volume_timestep_error_tol` (→ `-wtm_dt_tol`).
   - **Operational home + later work (single source of truth): `benchmark/adaptive_dt/`** (README + tests).
     It carries the MSI benchmark verdict (adaptive = **robustness / spin-up tool**: ties well-chosen
     constant dt on smooth transients, decisively *wins* spin-up — bounded worst-cell error where fixed dt
