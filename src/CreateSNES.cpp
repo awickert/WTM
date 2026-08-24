@@ -269,15 +269,30 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (user_context.use_dt_adaptive) {
     PetscBool dt_tol_set = PETSC_FALSE;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, &dt_tol_set);
-    // The adaptive step tolerance (dt_tol = per-step water-table LOCAL ERROR, metres) is INDEPENDENT of the
-    // equilibrium-stop tolerance (eq_tol): they measure different things -- dt_tol bounds how far the
-    // trajectory may stray from a linear prediction over one step; eq_tol decides when the run is steady.
-    // They were coupled (dt_tol = min(50*eq_tol, 0.5)) back when eq_tol was a HEAD tolerance; eq_tol is now a
-    // WATER depth, so a head-based dt_tol derived from it would mix units. Decoupled: dt_tol has its own
-    // default -- 0.5 m for equilibrium/spin-up (the tuned sweet spot, below the free-surface overshoot that
-    // would ring) and 0.1 m for transient. -wtm_dt_tol overrides either. See BDF2_ADAPTIVE_DESIGN.md.
-    if (!dt_tol_set)
-      user_context.dt_tol = (params.run_type == "equilibrium") ? 0.5 : 0.1;
+    // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
+    // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now
+    // volume-weighted (storedVolume difference; see transient_groundwater.cpp). They still measure different
+    // things (dt_tol = how far one step strays from a linear prediction; eq_tol = when the run is steady), but
+    // matched units make them COMPARABLE and coherent -- and coherence is required, since a time-marching scheme
+    // cannot resolve a steady state finer than its own per-step error. SYMMETRY THROUGH CONVERGENCE: on an
+    // equilibrium run the default step tol TRACKS eq_tol (integrate to the accuracy we detect), capped at the
+    // free-surface ring bound so a LOOSE eq_tol still cannot let a big step ring the surface. This re-derivation
+    // is now unit-correct -- the head/water unit-mismatch that forced the earlier decoupling is gone. A transient
+    // run has no stop criterion -> the step tol is a pure accuracy knob (0.1 m water). -wtm_dt_tol overrides.
+    const double dt_tol_ring_cap = 0.5;  // free-surface overshoot bound (m water); a bigger step rings
+    if (!dt_tol_set) {
+      if (params.run_type == "equilibrium" && user_context.eq_tol > 0.0)
+        user_context.dt_tol = (user_context.eq_tol < dt_tol_ring_cap) ? user_context.eq_tol : dt_tol_ring_cap;
+      else
+        user_context.dt_tol = (params.run_type == "equilibrium") ? dt_tol_ring_cap : 0.1;  // never-stop eq | transient
+    } else if (params.run_type == "equilibrium" && user_context.eq_tol > 0.0
+               && user_context.dt_tol > user_context.eq_tol) {
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "WARNING: -wtm_dt_tol %g m (water) is LOOSER than eq_tol %g m: a time-marching scheme cannot\n"
+                  "  settle below its own per-step error, so this run will not reach equilibrium. Set the step\n"
+                  "  tolerance <= eq_tol, or omit it to auto-track eq_tol.\n",
+                  user_context.dt_tol, user_context.eq_tol);
+    }
     PetscBool norm_rms = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
     user_context.dt_norm_rms = (norm_rms == PETSC_TRUE);
@@ -287,7 +302,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                                                       : "backward-Euler cc/Anderson (1st-order)";
     PetscPrintf(
         PETSC_COMM_WORLD,
-        "-wtm_dt_adaptive set: adaptive dt (tol=%g m, %s norm) on the %s integrator.\n",
+        "-wtm_dt_adaptive set: adaptive dt (tol=%g m water, %s norm) on the %s integrator.\n",
         user_context.dt_tol,
         user_context.dt_norm_rms ? "RMS" : "MAX", integ);
   } else if (user_context.use_bdf2 && force_anderson == PETSC_TRUE) {
