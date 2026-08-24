@@ -845,6 +845,77 @@ static void apply_predictor_guess(AppCtx& user_context) {
 // the Newton/Picard finisher. TRUE convergence (small relative step) is honoured too, and signalled
 // distinctly: a stall/cap stop returns SNES_CONVERGED_ITS; a genuine stop returns
 // SNES_CONVERGED_SNORM_RELATIVE (update() then SKIPS the finisher). See CreateSNES.hpp / #87.
+// Volume-weighted per-solve convergence (#127). Judges the SNES step in WATER (|S*Δwtd|) rather than head, so
+// the per-solve gate speaks the same units as eq_tol (equilibrium) and dt_tol (adaptive) -- a deep low-storativity
+// cell (big head step, ~zero water moved) can no longer hold the SOLVE unconverged. The water step is computed
+// EXACTLY as |storedVolume(wtd_new) - storedVolume(wtd_old)| (slope 1 above the surface, porosity below -- the same
+// V(wtd) the storage residual + eq metric use), with the step Δx from SNESGetSolutionUpdate.
+//   DIAGNOSTIC (govern=false): print the head-vs-water step each iteration, and cross-check the reconstructed head
+//   step ||Δx|| against PETSc's snorm to CONFIRM the update vector on the matrix-free Anderson path; then DEFER the
+//   verdict to SNESConvergedDefault -- behaviour is UNCHANGED.
+//   GOVERN (true): swap the head relative-step (stol) test for the water one; atol/rtol/maxit stay with the default.
+// Opt-in via -wtm_snes_volume_conv[_govern]; this function is the full criterion, gated by the govern switch.
+static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
+                                          PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
+  AppCtx* uc = static_cast<AppCtx*>(ctx);
+  // Standard verdict first: atol/rtol/maxit + the head-step stol. Keep all of it except, when governing, the stol.
+  SNESConvergedDefault(snes, it, xnorm, snorm, fnorm, reason, nullptr);
+  // The step is taken vs the PREVIOUS accepted iterate we store ourselves -- SNESGetSolutionUpdate is the raw
+  // pre-mixing Anderson update (measured ~10x the accepted step, near-constant), not the accepted step.
+  Vec x;
+  SNESGetSolution(snes, &x);
+  if (uc->vol_prev_x == nullptr) VecDuplicate(x, &uc->vol_prev_x);
+  if (it == 0) { VecCopy(x, uc->vol_prev_x); return 0; }  // reset the reference at the start of each solve
+
+  const auto [xs, ys, xm, ym] = get_corners(uc->da);
+  PetscScalar **xa, **xpa, **topo, **poro, **msk;
+  DMDAVecGetArray(uc->da, x, &xa);
+  DMDAVecGetArray(uc->da, uc->vol_prev_x, &xpa);
+  DMDAVecGetArray(uc->da, uc->topo_vec, &topo);
+  DMDAVecGetArray(uc->da, uc->porosity_vec, &poro);
+  DMDAVecGetArray(uc->da, uc->mask, &msk);
+  double vmax = 0.0, vsq = 0.0, vnsq = 0.0, hsq = 0.0;  // water max, water L2^2, |V|^2, head-step L2^2 (check)
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      if (msk[j][i] != 0) {
+        const double p     = poro[j][i];
+        const double wtd_n = xa[j][i] - topo[j][i];
+        const double wtd_o = xpa[j][i] - topo[j][i];
+        const double dv    = std::abs(storedVolume(wtd_n, p) - storedVolume(wtd_o, p));
+        const double vn    = storedVolume(wtd_n, p);
+        const double dh    = static_cast<double>(xa[j][i]) - static_cast<double>(xpa[j][i]);
+        if (dv > vmax) vmax = dv;
+        vsq  += dv * dv;
+        vnsq += vn * vn;
+        hsq  += dh * dh;
+      }
+  DMDAVecRestoreArray(uc->da, x, &xa);
+  DMDAVecRestoreArray(uc->da, uc->vol_prev_x, &xpa);
+  DMDAVecRestoreArray(uc->da, uc->topo_vec, &topo);
+  DMDAVecRestoreArray(uc->da, uc->porosity_vec, &poro);
+  DMDAVecRestoreArray(uc->da, uc->mask, &msk);
+  VecCopy(x, uc->vol_prev_x);  // this iterate becomes the reference for the next step
+  double loc[4] = {vmax, vsq, vnsq, hsq}, g[4];
+  MPI_Allreduce(&loc[0], &g[0], 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);        // water max
+  MPI_Allreduce(&loc[1], &g[1], 3, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);        // sums: water L2^2, |V|^2, head L2^2
+  const double water_max = g[0];
+  const double water_L2  = std::sqrt(g[1]);
+  const double water_rel = (g[2] > 0.0) ? std::sqrt(g[1] / g[2]) : 0.0;  // solution-relative water step
+  const double head_L2   = std::sqrt(g[3]);                              // reconstructed ||Δx||; should ≈ snorm
+
+  if (uc->snes_volume_conv && !uc->snes_volume_conv_govern)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "  [vol-conv diag] it=%d  head snorm=%.3e (recon %.3e) rel=%.3e | water max=%.3e L2=%.3e rel=%.3e\n",
+                (int)it, (double)snorm, head_L2, (double)(xnorm > 0.0 ? snorm / xnorm : 0.0),
+                water_max, water_L2, water_rel);
+
+  if (uc->snes_volume_conv_govern) {
+    if (*reason == SNES_CONVERGED_SNORM_RELATIVE) *reason = SNES_CONVERGED_ITERATING;  // drop the head stol verdict
+    if (water_rel < uc->snes_volume_conv_tol)     *reason = SNES_CONVERGED_SNORM_RELATIVE;  // ...use the water one
+  }
+  return 0;
+}
+
 static PetscErrorCode HandoffFlailTest(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
                                        PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
   AppCtx* uc = static_cast<AppCtx*>(ctx);
@@ -1331,6 +1402,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // Evaluate initial guess
     FormInitialGuess(&user_context, user_context.da, user_context.x);
     if (user_context.use_predict_guess) apply_predictor_guess(user_context);
+
+    // Volume-weighted per-solve convergence (#127), opt-in. Registered here so it covers the plain + TR-BDF2
+    // paths; the handoff / adaptive-restart branches below install THEIR own test (so volume-conv applies only
+    // to the ordinary production solve). Diagnostic unless -wtm_snes_volume_conv_govern. See VolumeStepConverged.
+    if (user_context.snes_volume_conv && !user_context.use_handoff && !user_context.use_adaptive_restart)
+      SNESSetConvergenceTest(user_context.snes, VolumeStepConverged, &user_context, nullptr);
 
     // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)
     FormRHS(&user_context, user_context.da, user_context.b);

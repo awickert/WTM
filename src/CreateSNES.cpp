@@ -89,6 +89,21 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-snes_stol", &snes_stol_set);
   if (!snes_stol_set) PetscOptionsSetValue(nullptr, "-snes_stol", "1e-8");
 
+  // Volume-weighted per-solve convergence (#127): judge the SNES step in WATER (|S*Δwtd|) instead of head, so the
+  // per-solve gate matches eq_tol / dt_tol. Opt-in; DIAGNOSTIC unless _govern. The test is registered in
+  // transient_groundwater.cpp::update() (VolumeStepConverged); here we only read the flags into user_context.
+  PetscBool vc = PETSC_FALSE, vcg = PETSC_FALSE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv_govern", &vcg);
+  user_context.snes_volume_conv_govern = (vcg == PETSC_TRUE);
+  user_context.snes_volume_conv        = (vc == PETSC_TRUE) || user_context.snes_volume_conv_govern;  // govern implies on
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_snes_vol_tol", &user_context.snes_volume_conv_tol, nullptr);
+  if (user_context.snes_volume_conv)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "-wtm_snes_volume_conv: per-solve convergence in WATER |S*Δwtd| (rel tol %g) [%s].\n",
+                (double)user_context.snes_volume_conv_tol,
+                user_context.snes_volume_conv_govern ? "GOVERNING" : "DIAGNOSTIC — verdict deferred to snes_stol");
+
   // Semi-implicit Picard path (experimental; PICARD_MG_DESIGN.md / PICARD_MATH.md).
   // Gated behind -wtm_picard so the default Anderson path is untouched. When on,
   // allocate the SPD operator A(x) (also its own GAMG preconditioner) and a residual

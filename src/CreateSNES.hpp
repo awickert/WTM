@@ -95,6 +95,16 @@ struct AppCtx {
   PetscInt  handoff_max_it    = 60;            // hard cap on phase-1 Anderson iters
   PetscBool handoff_best_valid = PETSC_FALSE;  // a best iterate has been stored this solve
 
+  // Volume-weighted per-solve convergence (#127): judge the SNES step in WATER (|S*Δwtd|) instead of head, so
+  // the per-solve gate matches eq_tol / dt_tol (all water). Opt-in. DIAGNOSTIC when !govern (prints head-vs-
+  // water step, defers the verdict to SNESConvergedDefault -- changes nothing); GOVERN swaps the head stol test
+  // for the water one (atol/rtol/maxit unchanged). See transient_groundwater.cpp::VolumeStepConverged.
+  bool      snes_volume_conv        = false;   // -wtm_snes_volume_conv: register the test (diagnostic by default)
+  bool      snes_volume_conv_govern = false;   // -wtm_snes_volume_conv_govern: make the water step authoritative
+  PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
+  Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
+                                               // SNESGetSolutionUpdate is the raw pre-mixing update, not the step)
+
   // --- rho-based proactive adaptive restart (-wtm_adaptive_restart) ---
   // Restart Anderson's history when the CONVERGENCE RATE degrades (rho = |F_k|/|F_{k-1}| climbs
   // toward 1) -- the PRECURSOR to the near-convergence flail -- proactively, BEFORE the residual
