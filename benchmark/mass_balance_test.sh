@@ -28,12 +28,13 @@ fi
 run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     local n="$1" tag="mbtest_n${1}"
     local cfg tf
-    cfg=$(mktemp /tmp/${tag}_XXXX.cfg)
+    cfg=$(mktemp /tmp/${tag}_XXXX.yaml)
     tf="/tmp/${tag}.txt"
     rm -f "$tf" "/tmp/${tag}_"*.tif
+    # config_anderson.cfg is a legacy key-value config; override the per-run keys, then convert to nested YAML.
     sed "s|^outfile_prefix.*|outfile_prefix     /tmp/${tag}_|;
          s|^textfilename.*|textfilename       ${tf}|;
-         s|^fsm_on.*|fsm_on             1|" config_anderson.cfg > "$cfg"
+         s|^fsm_on.*|fsm_on             1|" config_anderson.cfg | ../tests/emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
     OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-6 -wtm_eq_tol 0 >/dev/null 2>&1
     rm -f "$cfg"
