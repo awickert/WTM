@@ -33,37 +33,27 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem  collector
-  cat > "$WORK/$1.yaml" <<EOF
-run:
-  type: equilibrium
-  total_time: 6yr
-  supplied_wt: true
-time:
-  deltat: 31536000
-  report_interval: 2
-  save_nreport_interval: 9999
-grid:
-  cells_per_degree: 10
-  southern_edge: -45
-physics:
-  fdepth:
-    a: 200
-    b: 150
-    fmin: 2
-  infiltration: false
-  evaporation:
-    mode: remove
-surface_water:
-  fsm: true
-  runoff_ratio: false
-  runoff_collector: $2
-io:
-  surfdatadir: $INP
-  region: fsm_test
-  time_start: t0
-  time_end: t0
-  textfilename: $WORK/$1.txt
-  outfile_prefix: $WORK/${1}_
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+run_type equilibrium
+total_time 6yr
+supplied_wt 1
+deltat 31536000
+report_interval 2
+save_nreport_interval 9999
+cells_per_degree 10
+southern_edge -45
+fdepth_a 200
+fdepth_b 150
+fdepth_fmin 2
+infiltration_on 0
+fsm_on 1
+runoff_collector $2
+surfdatadir $INP
+region fsm_test
+time_start t0
+time_end t0
+textfilename $WORK/$1.txt
+outfile_prefix $WORK/${1}_
 EOF
 }
 run() { # stem  collector  extra-flags

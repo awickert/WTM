@@ -21,35 +21,25 @@ INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/casc_XXXX); trap 'rm -rf "$WORK"' EXIT
 PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 
-emit() { cat > "$WORK/$1.yaml" <<EOF
-run:
-  type: equilibrium
-  total_time: 120yr
-  supplied_wt: true
-time:
-  deltat: 31536000
-  report_interval: 5
-  save_nreport_interval: 9999
-# grid geometry (cells_per_degree=10, southern_edge=-45) is derived from the input geotransform (#124)
-physics:
-  fdepth:
-    a: 200
-    b: 150
-    fmin: 2
-  infiltration: false
-  evaporation:
-    mode: lakes
-surface_water:
-  fsm: true
-  runoff_ratio: false
-  runoff_collector: implicit
-io:
-  surfdatadir: $INP
-  region: fsm_cascade
-  time_start: t0
-  time_end: t0
-  textfilename: $WORK/$1.txt
-  outfile_prefix: $WORK/${1}_
+emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+run_type equilibrium
+total_time 120yr
+supplied_wt 1
+deltat 31536000
+report_interval 5
+save_nreport_interval 9999
+fdepth_a 200
+fdepth_b 150
+fdepth_fmin 2
+infiltration_on 0
+fsm_on 1
+runoff_collector implicit
+surfdatadir $INP
+region fsm_cascade
+time_start t0
+time_end t0
+textfilename $WORK/$1.txt
+outfile_prefix $WORK/${1}_
 EOF
 }
 emit skim
