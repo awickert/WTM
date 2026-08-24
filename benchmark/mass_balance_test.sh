@@ -24,6 +24,11 @@ if [[ ! -x "$WTM" ]]; then
     exit 1
 fi
 
+# Small synthetic dome fixture (run_type test synthesizes precip/evap/mask internally). The old fixture was a
+# 1000x1000 global DEM -- ~1000x more cells than this MPI-accounting invariant needs. .tif inputs are gitignored.
+[[ -f mb_inputs/mb_topography.tif ]] || python3 make_mass_balance_inputs.py >/dev/null
+INP=$(readlink -f mb_inputs)
+
 # FSM on so that both accumulation paths (GW ocean loss and FSM ocean loss) are exercised.
 run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     local n="$1" tag="mbtest_n${1}"
@@ -31,17 +36,32 @@ run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     cfg=$(mktemp /tmp/${tag}_XXXX.yaml)
     tf="/tmp/${tag}.txt"
     rm -f "$tf" "/tmp/${tag}_"*.tif
-    # config_anderson.cfg is a legacy key-value config; override the per-run keys, then convert to nested YAML.
-    sed "s|^outfile_prefix.*|outfile_prefix     /tmp/${tag}_|;
-         s|^textfilename.*|textfilename       ${tf}|;
-         s|^fsm_on.*|fsm_on             1|" config_anderson.cfg | ../tests/emit_config.sh > "$cfg"
+    # run_type test: only topography + slope are read; geometry comes from the geotransform (#124).
+    ../tests/emit_config.sh > "$cfg" <<EOF
+run_type test
+fsm_on 1
+deltat 31536000
+total_time 3yr
+report_interval 1
+save_nreport_interval 9999
+fdepth_a 200
+fdepth_b 150
+fdepth_fmin 2
+surfdatadir $INP
+region mb
+time_start t0
+time_end t0
+supplied_wt 0
+textfilename $tf
+outfile_prefix /tmp/${tag}_
+EOF
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
     OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-6 -wtm_eq_tol 0 >/dev/null 2>&1
     rm -f "$cfg"
     awk 'NF>=11 && $1 ~ /^[0-9]+$/ {r=$9; o=$10} END{print r, o}' "$tf"
 }
 
-echo "=== Mass-balance MPI-consistency test (config_anderson, fsm_on=1) ==="
+echo "=== Mass-balance MPI-consistency test (small dome fixture, run_type test, fsm_on=1) ==="
 echo "WTM binary: $WTM   comparing n=1 vs n=$NRANKS"
 echo
 
