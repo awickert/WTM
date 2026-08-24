@@ -226,6 +226,19 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   a solve profiler, publication figure and dataset generators, and design notes.
 
 ### Changed
+- **Grid geometry derived from the input's GDAL geotransform** (#124). The per-cell N–S / E–W degree
+  spacing, southern edge, and cos-latitude cell-size scaling are read from the topography raster's
+  geotransform — the authoritative georeference — rather than the `grid:` config block, which is deprecated
+  to a fallback used only for un-georeferenced inputs (a stray override alongside a real geotransform is
+  ignored with a warning). Test fixtures were migrated to carry correct geotransforms via the shared
+  `tests/wtm_testgrid.py` writer, and the golden suite validates the identical-results swap. Projected
+  (non-lat-lon / metre-CRS) grids are not yet handled — a follow-up on #124.
+- **Adaptive time-step error measured in water (volume), not head.** The TR-BDF2 / history embedded local-error
+  estimate is now `|storedVolume(wtd) − storedVolume(wtd_pred)|` (= `|S·Δwtd|`, water moved), the same units as
+  the equilibrium stop, so the per-step accuracy tolerance and the equilibrium tolerance are directly
+  comparable. On an equilibrium run the step tolerance
+  (`solver.water_volume_timestep_error_tol`, → `-wtm_dt_tol`) defaults to track `run.equilibrium_stop.tol`
+  (capped at the free-surface ring bound); a transient run keeps its own accuracy default.
 - **Equilibrium auto-stop judged on water moved, not head.** The per-cycle convergence metric
   (`run.equilibrium_stop.metric`: `max` | `rms` | `frac`) now measures the pure-water depth `|S·Δwtd|` (m of
   water) rather than the head change `|Δwtd|`, so deep low-storativity cells — a metre of head over ~zero water
