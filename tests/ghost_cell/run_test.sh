@@ -46,7 +46,7 @@ mkdir -p out_1p
 # base config without modifying it.
 CFG_1P=$(mktemp /tmp/ghost_cell_1p_XXXXXX.yaml)
 sed 's|^  outfile_prefix:.*|  outfile_prefix: out_1p/out_|;
-     s|^  textfilename:.*|  textfilename: run_1p.txt|' ghost_cell.yaml > "$CFG_1P"
+     s|^  run_log:.*|  run_log: run_1p.txt|' ghost_cell.yaml > "$CFG_1P"
 mpirun -n 1 "$WTM" "$CFG_1P" \
     -snes_stol 1e-8 -wtm_eq_tol 0 \
     2>&1 | grep -E 'SNES|converged|norm|Error|error' || true
@@ -60,7 +60,7 @@ rm -rf out_2p run_2p.txt
 mkdir -p out_2p
 CFG_2P=$(mktemp /tmp/ghost_cell_2p_XXXXXX.yaml)
 sed 's|^  outfile_prefix:.*|  outfile_prefix: out_2p/out_|;
-     s|^  textfilename:.*|  textfilename: run_2p.txt|' ghost_cell.yaml > "$CFG_2P"
+     s|^  run_log:.*|  run_log: run_2p.txt|' ghost_cell.yaml > "$CFG_2P"
 mpirun -n 2 "$WTM" "$CFG_2P" \
     -snes_stol 1e-8 -wtm_eq_tol 0 \
     -da_processors_x 2 -da_processors_y 1 \

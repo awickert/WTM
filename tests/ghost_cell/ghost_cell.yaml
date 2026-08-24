@@ -1,27 +1,25 @@
 run:
   type: equilibrium
-  total_time: 5yr
-  supplied_wt: false
+  initial_water_table: saturated
 time:
   deltat: 31536000
+  total: 5yr
   report_interval: 1
-  save_nreport_interval: 9999
+  save_every_n_reports: 9999
 # grid geometry (cells_per_degree=10, southern_edge=-45) is derived from the input geotransform (#124)
-physics:
+transmissivity:
   fdepth:
     a: 200
     b: 150
     fmin: 2
-  infiltration: false
-  evaporation:
-    mode: remove
 surface_water:
-  fsm: false
-  runoff_ratio: false
+  mode: ponded
+  infiltration_during_flow: false
 io:
-  surfdatadir: inputs
+  source: inputs
   region: ghost_cell_test
   time_start: t0
   time_end: t0
+output:
   outfile_prefix: out_
-  textfilename: run.txt
+  run_log: run.txt
