@@ -1492,7 +1492,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           // feasible set so the estimate measures real truncation error: a cell RISING to the surface still
           // contributes its true rise (bounding dt), a cell already pinned contributes ~0. See SEEP_EST note.
           if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);
-          const double dev = std::abs(dmdapack.x[j][i] - h_pred);
+          // WATER (volume) local error: the step tolerance lives in the same water units as the equilibrium
+          // stop (|S·Δwtd|). |storedVolume(wtd_actual) - storedVolume(wtd_pred)| IS that water moved (secant
+          // S·Δwtd), reusing the exact V(wtd) the storage residual + eq metric use; slope 1 above the surface
+          // (ponded), porosity below. Symmetric with convergence: integrate to the accuracy we detect.
+          const double poro = dmdapack.porosity_vec[j][i];
+          const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
+                                     - storedVolume(h_pred - topo_e[j][i], poro));
           if (dev > local_max) local_max = dev;
           local_sq += dev * dev;
           local_n++;
@@ -1526,7 +1532,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           const double h_n = dmdapack.starting_wtd[j][i] + topo_e[j][i];
           double       h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
           if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);  // wtd<=0 feasible set (kink-free error)
-          const double dev = std::abs(dmdapack.x[j][i] - h_pred);
+          // WATER (volume) local error -- same water units as the equilibrium stop (see the TR-BDF2 branch above).
+          const double poro = dmdapack.porosity_vec[j][i];
+          const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
+                                     - storedVolume(h_pred - topo_e[j][i], poro));
           if (dev > local_max) local_max = dev;
           local_sq += dev * dev;
           local_n++;
