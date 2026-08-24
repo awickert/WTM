@@ -14,16 +14,21 @@ Two fixtures built from ONE interior terrain so their shared cells are physicall
 The padded grid's southern_edge is set one cell further south (in run.sh) so the shared interior cells sit at
 identical latitudes (identical cell geometry). Regenerate with:  python3 make_inputs.py
 """
-import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import numpy as np, os, sys, rasterio
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
 
 NX, NY = 10, 8
+CPD = 100.0                    # cells_per_degree; WTM reads geometry from the geotransform (#124), not the config
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
 
-def write(region, topo, mask, ksat, poro, precip):
+def write(region, topo, mask, ksat, poro, precip, southern_edge):
+    # Geometry from the geotransform: bconspad is shifted one cell SOUTH so its interior rows sit at the SAME
+    # latitudes as bcons (cos-latitude sets the cell geometry; longitude is translation-invariant). See #124.
     h, w = topo.shape
-    tr = from_bounds(0, 0, w, h, w, h)
+    tr = make_transform(CPD, southern_edge, h)
     def wr(name, a, dt="float32"):
         with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=h, width=w, count=1,
                            dtype=dt, crs="EPSG:4326", transform=tr) as d:
@@ -44,7 +49,7 @@ topo[oj, oi] = 0.0; mask[oj, oi] = 0.0          # interior ocean cell (identical
 ksat = np.full((NY, NX), 1e-3, np.float32)
 poro = np.full((NY, NX), 0.25, np.float32)
 precip = np.full((NY, NX), 0.2, np.float32)
-write("bcons", topo, mask, ksat, poro, precip)
+write("bcons", topo, mask, ksat, poro, precip, 0.0)
 
 # padded: interior = the terrain above; ring = ocean (mask 0) at sea level (topo 0); ring INHERITS edge
 # ksat/porosity so the padded boundary transmissivity equals the ghost's surface-T.
@@ -57,5 +62,5 @@ def pad(a, fill):  # interior=a; ring=scalar `fill`, or edge-replicated when fil
     else:
         b[0, :] = fill; b[-1, :] = fill; b[:, 0] = fill; b[:, -1] = fill
     return b
-write("bconspad", pad(topo, 0.0), pad(mask, 0.0), pad(ksat, "inherit"), pad(poro, "inherit"), pad(precip, "inherit"))
+write("bconspad", pad(topo, 0.0), pad(mask, 0.0), pad(ksat, "inherit"), pad(poro, "inherit"), pad(precip, "inherit"), -1.0 / CPD)
 print("wrote", OUT, "-- bcons", (NY, NX), "bconspad", (NYp, NXp))
