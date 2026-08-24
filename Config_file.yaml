@@ -8,7 +8,7 @@
 
 run:
   type: equilibrium            # test | equilibrium | transient
-  initial_water_table: saturated   # saturated (start at wtd = 0) | <path to a starting water-table raster>
+  initial_water_table: saturated   # saturated (wtd = 0) | supplied (read the starting_wt input layer) | <path to a raster>
   equilibrium_stop:            # end an equilibrium run early once the water table has settled
     tol: 0.001                 #   stop when the per-cycle WATER moved (|S*Δwtd|) stays below this [m of water]; 0 = never
     metric: frac               #   how the change is judged (all water-based): max | rms | frac

@@ -57,6 +57,8 @@ Parameters::Parameters(const std::string& config_file) {
     const std::string v = n.as<std::string>();
     if (v == "saturated") {
       supplied_wt = 0;  // start at the surface (wtd = 0)
+    } else if (v == "supplied") {
+      supplied_wt = 1;  // read the standard starting_wt layer from io.source (initial_wt_path stays empty)
     } else {
       supplied_wt     = 1;
       initial_wt_path = v;  // <path>: load the starting water table from this file directly

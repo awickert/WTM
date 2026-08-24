@@ -9,9 +9,9 @@
 # ---- orchestration ---------------------------------------------------------
 run:
   type: equilibrium              # run mode: test | equilibrium | transient  (test = minimal-input diagnostic)
-  # initial_water_table:  (omit) -> read the conventional starting_wt layer from `source` if present, else
-  #   saturated  |  saturated -> water table at the surface (wtd = 0)  |  <path> -> load that file (error if
-  #   missing).  The resolved choice is printed at start-up, so it is never silent.
+  # initial_water_table:  saturated -> water table at the surface (wtd = 0)  |  supplied -> read the standard
+  #   starting_wt input layer from `source`  |  <path> -> load that file directly. (omit -> saturated for now;
+  #   folder auto-detect is a TODO.) The resolved choice is printed at start-up, so it is never silent.
   initial_water_table: saturated
   equilibrium_stop:              # end an equilibrium run early once the water table has settled
     tol: 0.001                   #   stop when the per-cycle change in WATER MOVED (|S*Δwtd|) stays below this
