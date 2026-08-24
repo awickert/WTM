@@ -29,7 +29,9 @@ import tempfile
 
 import numpy as np
 import rasterio
-from rasterio.transform import from_bounds
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import write_tif as _grid_write_tif  # noqa: E402
 
 NX = NY = 16
 REGION, TIME = "taper_test", "t0"
@@ -37,13 +39,21 @@ PRECIP = 0.1                      # m/yr; the sweep crosses owe = PRECIP
 OWE_SWEEP = [0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
 DET_RTOL = 1e-9                   # cross-rank agreement: tight (a routing flip would be macroscopic)
 
-_TRANSFORM = from_bounds(0, 0, NX, NY, NX, NY)
+# Intended grid: WTM derives geometry from the geotransform (#124), which the shared writer encodes.
+CELLS_PER_DEGREE = 10.0
+SOUTHERN_EDGE    = -45.0
+
+# Emit the nested-YAML config (config.yaml schema) from the legacy key-value bodies below.
+EMIT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "emit_config.sh")
 
 
 def _write_tif(path, data, dtype):
-    with rasterio.open(path, "w", driver="GTiff", height=NY, width=NX, count=1,
-                       dtype=dtype, crs="EPSG:4326", transform=_TRANSFORM) as dst:
-        dst.write(data.astype(dtype), 1)
+    _grid_write_tif(path, np.asarray(data), CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
+
+
+def _write_cfg(path, legacy_text):
+    with open(path, "w") as f:
+        subprocess.run([EMIT], input=legacy_text, text=True, stdout=f, check=True)
 
 
 def write_fixture(d, owe, topo):
@@ -104,9 +114,8 @@ TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink", "-wtm_surface_sink_qmax", "
 def _run(wtm, d, tag, n):
     """Run wtm on n ranks (leaves outputs in d); return the final-cycle summed water table (col 11)."""
     txt = os.path.join(d, f"{tag}_n{n}.txt")
-    cfg = os.path.join(d, f"cfg_{tag}_n{n}")
-    with open(cfg, "w") as f:
-        f.write(_cfg(d, txt, os.path.join(d, f"{tag}_n{n}_")))
+    cfg = os.path.join(d, f"cfg_{tag}_n{n}.yaml")
+    _write_cfg(cfg, _cfg(d, txt, os.path.join(d, f"{tag}_n{n}_")))
     env = {**os.environ, "OMP_NUM_THREADS": "1"}
     subprocess.run(["mpirun", "-n", str(n), wtm, cfg] + TAPER_FLAGS,
                    cwd=d, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -221,9 +230,8 @@ def _arid_cfg(d, txt, prefix):
 
 
 def _arid_run(wtm, d, tag, flags):
-    cfg = os.path.join(d, f"cfg_{tag}")
-    with open(cfg, "w") as f:
-        f.write(_arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_")))
+    cfg = os.path.join(d, f"cfg_{tag}.yaml")
+    _write_cfg(cfg, _arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_")))
     subprocess.run([wtm, cfg] + flags, cwd=d, env={**os.environ, "OMP_NUM_THREADS": "1"},
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_") and f.endswith(".tif"))
