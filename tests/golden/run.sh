@@ -88,11 +88,12 @@ CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff fsm_runoff_hi transient)
 
 run_case() { # name nranks -> sets $PREFIX
     local name="$1" n="$2"
-    local cfg="$WORK/${name}_n${n}.cfg"
+    local cfg="$WORK/${name}_n${n}.yaml"
     PREFIX="$WORK/${name}_n${n}_"
-    case_cfg "$name" | sed "s|__X__|x|" > "$cfg"
-    echo "textfilename       $WORK/${name}_n${n}.txt" >> "$cfg"
-    echo "outfile_prefix     $PREFIX" >> "$cfg"
+    { case_cfg "$name" | sed "s|__X__|x|"
+      echo "textfilename   $WORK/${name}_n${n}.txt"
+      echo "outfile_prefix $PREFIX"
+    } | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${name}_n${n}.log" 2>&1 )
