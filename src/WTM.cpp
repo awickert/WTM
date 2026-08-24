@@ -827,8 +827,8 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (v != "auto")
       set_opt_if_unset("-wtm_dtc_dt_max", std::to_string(parse_time_seconds(v, "solver.dt_max")).c_str());
   }
-  if (auto n = root["solver"]["wtd_step_error_tol"]) {
-    const std::string v = n.as<std::string>();
+  if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {
+    const std::string v = n.as<std::string>();  // adaptive per-step WATER (volume) local-error tol; auto = track eq_tol
     if (v != "auto") set_opt_if_unset("-wtm_dt_tol", v.c_str());
   }
   if (auto n = root["solver"]["t_bar"])   { if (n.as<bool>()) set_opt_if_unset("-wtm_Tbar", "true"); }

@@ -128,10 +128,13 @@ solver:
                                  #   ON  -> step chosen automatically within [time.deltat (seed) .. dt_max]
                                  #   OFF -> FIXED step = time.deltat every timestep
   dt_max: auto                   # adaptive only: largest step; auto = 1000 x time.deltat (or a duration, "500yr")
-  wtd_step_error_tol: auto       # adaptive only: target per-step LOCAL ERROR of the water table [m] -- how far
-                                 #   wtd may land from a linear extrapolation over one timestep (NOT the step's
-                                 #   magnitude); the controller sizes dt to hold it. auto = derived from
-                                 #   run.equilibrium_stop.tol on equilibrium, 0.1 m on transient.
+  water_volume_timestep_error_tol: auto  # adaptive only: target per-step LOCAL ERROR in WATER (volume) [m of
+                                 #   water = |S*Δwtd|] -- how far the water content may land from a linear
+                                 #   extrapolation over one timestep (NOT the step's magnitude); the controller
+                                 #   sizes dt to hold it. SAME units as run.equilibrium_stop.tol, so the two are
+                                 #   comparable (a time-marching scheme cannot resolve a steady state finer than
+                                 #   its own per-step error). auto = tracks equilibrium_stop.tol on equilibrium
+                                 #   (capped at the 0.5 m free-surface ring bound), 0.1 m on transient.
 
   # transmissivity time-averaging (a convergence aid; answer-preserving) ------
   t_bar: false                   # time-/log-averaged T over the step (T-bar -> T at equilibrium; cures cold
