@@ -11,21 +11,23 @@ surrounding flow field across ranks.
 """
 import numpy as np
 import os
-import rasterio
-from rasterio.transform import from_bounds
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import write_tif as _write_tif  # noqa: E402
 
 NX, NY = 16, 16          # 14x14 interior after the ocean edge ring
 REGION, TIME = "fsm_test", "t0"
 OUTDIR = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUTDIR, exist_ok=True)
-transform = from_bounds(0, 0, NX, NY, NX, NY)
-CRS = "EPSG:4326"
+
+# Intended grid: WTM derives geometry from the geotransform (#124), which the shared writer encodes.
+CELLS_PER_DEGREE = 10.0
+SOUTHERN_EDGE    = -45.0
 
 
 def write_tif(path, data, dtype="float32"):
-    with rasterio.open(path, "w", driver="GTiff", height=NY, width=NX, count=1,
-                       dtype=dtype, crs=CRS, transform=transform) as dst:
-        dst.write(data.astype(dtype), 1)
+    _write_tif(path, data, CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
 
 
 # Plateau at 100 m with a square pit (depression) at 90 m, placed off-centre.

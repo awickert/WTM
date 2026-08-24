@@ -17,18 +17,19 @@ tests/spectral_terrain.py and the golden fsm_runoff / fsm_runoff_hi cases.
 import numpy as np
 import os
 import sys
-import rasterio
-from rasterio.transform import from_bounds
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from spectral_terrain import spectral_terrain
+from wtm_testgrid import write_tif as _write_tif  # noqa: E402
 
 NX, NY = 16, 16
 TIME = "t0"
 OUTDIR = os.path.join(os.path.dirname(__file__), "inputs_runoff")
 os.makedirs(OUTDIR, exist_ok=True)
-transform = from_bounds(0, 0, NX, NY, NX, NY)
-CRS = "EPSG:4326"
+
+# Intended grid: WTM derives geometry from the geotransform (#124), which the shared writer encodes.
+CELLS_PER_DEGREE = 10.0
+SOUTHERN_EDGE    = -45.0
 
 # region name -> Fourier mode spectrum (kx, ky, amplitude_m). Base 50 m; kept band-limited
 # (max wavenumber 3 << Nyquist 7) so gradients stay smooth and FSM routing is deterministic.
@@ -40,9 +41,7 @@ BASE = 50.0
 
 
 def write_tif(path, data, dtype="float32"):
-    with rasterio.open(path, "w", driver="GTiff", height=NY, width=NX, count=1,
-                       dtype=dtype, crs=CRS, transform=transform) as dst:
-        dst.write(data.astype(dtype), 1)
+    _write_tif(path, data, CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
 
 
 # Forcing shared by both regions. Large runoff_ratio (0.8) -> infiltrating recharge is
