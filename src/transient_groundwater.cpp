@@ -860,8 +860,9 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   AppCtx* uc = static_cast<AppCtx*>(ctx);
   // Standard verdict first: atol/rtol/maxit + the head-step stol. Keep all of it except, when governing, the stol.
   SNESConvergedDefault(snes, it, xnorm, snorm, fnorm, reason, nullptr);
-  // The step is taken vs the PREVIOUS accepted iterate we store ourselves -- SNESGetSolutionUpdate is the raw
-  // pre-mixing Anderson update (measured ~10x the accepted step, near-constant), not the accepted step.
+  // The step is taken vs the PREVIOUS accepted iterate we store ourselves. SNESGetSolutionUpdate does NOT return
+  // Anderson's accepted (mixed) step here -- measured ~10x larger and near-constant, so it is some internal
+  // update vector; the exact semantics were not chased since the stored-iterate diff is authoritative (== snorm).
   Vec x;
   SNESGetSolution(snes, &x);
   if (uc->vol_prev_x == nullptr) VecDuplicate(x, &uc->vol_prev_x);

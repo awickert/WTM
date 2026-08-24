@@ -103,7 +103,7 @@ struct AppCtx {
   bool      snes_volume_conv_govern = false;   // -wtm_snes_volume_conv_govern: make the water step authoritative
   PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
-                                               // SNESGetSolutionUpdate is the raw pre-mixing update, not the step)
+                                               // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)
 
   // --- rho-based proactive adaptive restart (-wtm_adaptive_restart) ---
   // Restart Anderson's history when the CONVERGENCE RATE degrades (rho = |F_k|/|F_{k-1}| climbs
