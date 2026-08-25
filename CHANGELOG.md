@@ -53,7 +53,45 @@ individual changes are verified with targeted checks.
   rank counts only to ~2e-6 m (micrometre round-off from the active set differing in its last bits
   between decompositions), where `implicit` reproduced below 1e-6.
 
+### Fixed
+
+- **TR-BDF2 was losing water through the active-set exfiltration transfer.** The multiplier the
+  constraint hands to FillSpillMerge was read off whichever residual evaluation ran last, which under
+  a two-stage scheme is stage 2. Stage 2 carries only `C3 = 29.29%` of the step and knows nothing of
+  what stage 1 shed, so the step's exfiltration was understated by `1/C3 = 3.4142` and that water was
+  neither delivered nor accounted. Measured on `tests/multilake` (`active_set`, `dt = 0.25 yr`):
+  **5.97e11 m³ delivered against backward Euler's 2.00e12 m³**, and a physical budget residual of
+  **9.5% of recharge** where BDF2-on-V — also multi-level, also second order — closes at 0.2%. The
+  step multiplier is `E = C1·E1 + E2`; both stage multipliers are now captured by an explicit
+  post-solve residual evaluation at the *accepted* state, which for stage 1 is required rather than
+  merely tidy.
+- **TR-BDF2's flux and removal budget terms were accumulated with backward-Euler weighting.** The
+  land→ocean Darcy flux, the taper-2/3 evaporation, and the taper-1 sink were each evaluated once at
+  `w^{n+1}` over the full step. Under TR-BDF2 every such term is a three-point quadrature over
+  `(w^n, Y_γ, w^{n+1})` with weights `(C1γ/2, C1γ/2, C3)`. Evaporation dominated in practice — it
+  carries 91% of the water leaving the domain on `tests/multilake` — and the taper-1 sink drove the
+  exact residual to **191% of recharge** under the `implicit` collector, against backward Euler's
+  6.5e-09 on the same arm. The sink's quadrature depth is also what is now handed to FSM, so the
+  aquifer and the surface agree on the amount transferred.
+
 ### Added
+
+- **TR-BDF2 now has an exact per-step water budget** (`exact_budget_residual`, column 17), where it
+  previously reported `nan` on the grounds that two stages have no single-step identity. They do:
+  `C1·(stage 1) + (stage 2)` telescopes, because `C1 − C2 = 1` and `C1γ + C3 = 1` exactly. Storage
+  and recharge come out as the backward-Euler forms unchanged; only the flux, removal and
+  exfiltration terms differ. Column 17 now closes at **2.2e-8 of recharge** under TR-BDF2 against
+  backward Euler's 3.1e-8, tolerance-limited at `-snes_stol 1e-8`. This closes the gap where second
+  order and verifiable conservation were mutually exclusive — TR-BDF2 is the integrator the adaptive
+  controller drives, and it had been the one scheme whose conservation nothing could check.
+  - `src/tr_bdf2_coefficients.hpp` — the derivation, with the stage coefficients and the step
+    quadrature weights named separately (the duplication of bare locals is how a stage weight came to
+    stand in for a step weight in the first place).
+  - `src/test_tr_bdf2_balance.cpp` — 7 unit cases pinning every identity the derivation rests on,
+    including the second-order condition `W_YGAMMA·γ + W_NEW = 1/2` and the order barrier above it.
+  - `tests/budget_closure` — plain TR-BDF2 and TR-BDF2 + active-set arms, replacing the assertion
+    that TR-BDF2 reports `nan`. Shown to bite three ways: against a pre-fix binary, and against two
+    weight injections that reproduce the original defects numerically.
 
 #### Configuration (nested YAML)
 - **Nested-YAML config** (`yaml-cpp`), replacing `key value` `.cfg`. Key moves from the old flat keys:
