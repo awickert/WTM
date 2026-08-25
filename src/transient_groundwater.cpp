@@ -1,5 +1,6 @@
 #include "transient_groundwater.hpp"
 #include "add_recharge.hpp"
+#include "tr_bdf2_coefficients.hpp"
 #include "update_effective_storativity.hpp"
 
 #include <omp.h>
@@ -1731,7 +1732,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (user_context.use_dt_adaptive && user_context.use_tr_bdf2) {
     // TR-BDF2 embedded estimate from the two stages (no history needed; valid on step 1):
     //   h_pred = [Y_gamma - (1-gamma) h^n]/gamma  -- EXACT for linear-in-time, O(dt^2) for curvature.
-    const double TR_G = 2.0 - std::sqrt(2.0);
+    const double TR_G = trbdf2::GAMMA;
     PetscScalar **yg, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
@@ -2309,10 +2310,12 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   // tr_expl); tr_stage 2 = BDF2 from (w^n, Y_gamma). gamma=2-sqrt2; recharge conserves via c1*gamma+c3=1.
   // Head-scaled by Sy like BDF2-on-V. Intended standalone (not combined with -wtm_Tbar).
   const int    tr_stage = user_context->use_tr_bdf2 ? user_context->tr_stage : 0;
-  const double TR_G  = 2.0 - std::sqrt(2.0);
-  const double tr_c1 = 1.0 / (TR_G * (2.0 - TR_G));
-  const double tr_c2 = (1.0 - TR_G) * (1.0 - TR_G) / (TR_G * (2.0 - TR_G));
-  const double tr_c3 = (1.0 - TR_G) / (2.0 - TR_G);
+  // Named in src/tr_bdf2_coefficients.hpp, which also derives the STEP weights the water budget
+  // needs. Kept as locals here so the OpenMP clause below can name them.
+  const double TR_G  = trbdf2::GAMMA;
+  const double tr_c1 = trbdf2::C1;
+  const double tr_c2 = trbdf2::C2;
+  const double tr_c3 = trbdf2::C3;
   PetscScalar** my_tr_ygamma = nullptr;
   PetscScalar** my_tr_expl   = nullptr;
   if (tr_stage == 2) PetscCall(DMDAVecGetArray(da, user_context->tr_ygamma, &my_tr_ygamma));
