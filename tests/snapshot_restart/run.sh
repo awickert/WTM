@@ -20,6 +20,15 @@ emit() { # stem surfdir supplied_wt
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
+# Pinned to the FORMER default collector on purpose. This test's subject is snapshot/restart
+# MECHANICS (filename format; a warm restart reaching the same equilibrium in fewer cycles), which are
+# collector-independent. Under the current default, active_set, this fixture reaches equilibrium in
+# TWO cycles at any tolerance tried (1e-3 down to 1e-6) -- so "warm restart takes fewer cycles than
+# cold" has no headroom left to be a meaningful assertion. Rather than weaken the assertion or invent
+# a harder fixture for a mechanic that does not depend on the collector, hold the collector fixed.
+# (That active_set converges here in 2 cycles against implicit's 7 is itself worth knowing; the
+# collector's own behaviour is covered by dt_sensitivity, active_set, multilake and budget_closure.)
+runoff_collector implicit
 evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
@@ -50,14 +59,30 @@ emit cold "$INP" 0
 C_COLD=$(stop_cycle "$WORK/cold.log")
 
 # --- (1) FILENAME format: year == cycle (deltat 1 yr, report_interval 1) ---
+# Its own SHORT run with the equilibrium auto-stop DISABLED, so the cycle numbers exist regardless of
+# how fast the model converges. Previously this checked cycles {1,3,5} of the cold equilibrium run,
+# which broke when the default collector became active_set: that converges ~3x faster (2 cycles here
+# vs 7 under implicit), so cycles 3 and 5 no longer existed. A filename-format assertion should not
+# depend on convergence speed.
+emit fname "$INP" 0
+sed -i "s#^  total:.*#  total: '6yr'#" "$WORK/fname.yaml"
+"$WTM" "$WORK/fname.yaml" -wtm_anderson -wtm_eq_tol 0 > "$WORK/fname.log" 2>&1 \
+  || { echo "RUN FAILED: fname"; tail -3 "$WORK/fname.log"; exit 2; }
 for k in 1 3 5; do
+  f=$(printf "%s/fname_%09d_%dyr.tif" "$WORK" "$k" "$k")
+  [[ -f "$f" ]] || { echo "FAIL: expected snapshot $(basename "$f") not found (filename year != cycle?)"; ls "$WORK"/fname_*.tif | sed 's#.*/##' | head; exit 1; }
+done
+for k in ; do
   f=$(printf "%s/cold_%09d_%dyr.tif" "$WORK" "$k" "$k")
   [[ -f "$f" ]] || { echo "FAIL: expected snapshot $(basename "$f") not found (filename year != cycle?)"; ls "$WORK"/cold_*.tif | sed 's#.*/##' | head; exit 1; }
 done
 echo "  filename format OK: {prefix}{cycle:09}_{year}yr.tif, year==cycle"
 
-# --- (2) RESTART from a mid snapshot (cycle 4, clearly pre-equilibrium) ---
-MID=4
+# --- (2) RESTART from a mid snapshot (clearly pre-equilibrium) ---
+# Derived from the cold run's own length, not hardcoded. A fixed MID=4 broke when the default
+# collector became active_set and the cold run began converging in 2 cycles instead of 7 -- cycle 4
+# no longer existed. Half-way (min 1) is pre-equilibrium by construction at any convergence speed.
+MID=$(( C_COLD / 2 )); [[ "$MID" -ge 1 ]] || MID=1
 SNAP=$(printf "%s/cold_%09d_%dyr.tif" "$WORK" "$MID" "$MID")
 [[ -f "$SNAP" ]] || { echo "FAIL: mid snapshot $(basename "$SNAP") missing"; exit 1; }
 mkdir -p "$WORK/rinp"; cp "$INP"/*.tif "$WORK/rinp/"; cp "$SNAP" "$WORK/rinp/snaptest_ta_starting_wt.tif"

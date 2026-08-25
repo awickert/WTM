@@ -40,10 +40,14 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 RANKS="${RANKS:-4}"
 
+# Every arm names its collector EXPLICITLY. Inheriting the default is a trap: when the default flipped
+# from `implicit` to `active_set` the two "implicit" arms silently became active-set arms and the BITES
+# check went from [6,5] to [4,4] -- the test correctly reported that it had stopped discriminating.
+#
 # 150 yr is ample: the lakes reach a per-cycle rms of ~1e-4 mm-water and their stages are unchanged
 # at 400 yr. dt is the only thing that varies between arms; report_interval scales with it so the
 # reporting cadence (and therefore the FSM/coupling cadence per report) is held fixed.
-mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps
+mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = runoff_collector
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 total_time 150yr
@@ -58,6 +62,7 @@ fdepth_b 150
 fdepth_fmin 2
 infiltration_on 0
 fsm_on 1
+runoff_collector $4
 surfdatadir $INP
 region multilake
 time_start t0
@@ -67,20 +72,20 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4.. = solver flags
-    local stem="$1" dt="$2" ri="$3"; shift 3
-    mkcfg "$stem" "$dt" "$ri"
+run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = solver flags
+    local stem="$1" dt="$2" ri="$3" coll="$4"; shift 4
+    mkcfg "$stem" "$dt" "$ri" "$coll"
     mpirun -n "$RANKS" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 \
         > "$WORK/$stem.log" 2>&1 || { echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log"; return 1; }
 }
 
 echo "=== multi-lake: four lakes at different stages, vs the time step ==="
 fail=0
-run A1 15768000 10 -wtm_anderson -wtm_dev_active_set || fail=1   # dt = 0.5   yr
-run A2  7884000 20 -wtm_anderson -wtm_dev_active_set || fail=1   # dt = 0.25  yr
-run A4  3942000 40 -wtm_anderson -wtm_dev_active_set || fail=1   # dt = 0.125 yr
-run I1 15768000 10 -wtm_anderson                     || fail=1   # implicit, dt = 0.5  yr
-run I2  7884000 20 -wtm_anderson                     || fail=1   # implicit, dt = 0.25 yr
+run A1 15768000 10 active_set -wtm_anderson || fail=1   # dt = 0.5   yr
+run A2  7884000 20 active_set -wtm_anderson || fail=1   # dt = 0.25  yr
+run A4  3942000 40 active_set -wtm_anderson || fail=1   # dt = 0.125 yr
+run I1 15768000 10 implicit   -wtm_anderson || fail=1   # implicit, dt = 0.5  yr
+run I2  7884000 20 implicit   -wtm_anderson || fail=1   # implicit, dt = 0.25 yr
 [[ $fail -eq 0 ]] || { echo "MULTI-LAKE: FAILED (a run did not complete)"; exit 1; }
 
 WORK="$WORK" INP="$INP" "$PY" - <<'PY'

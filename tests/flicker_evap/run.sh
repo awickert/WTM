@@ -32,6 +32,14 @@ export OMP_NUM_THREADS=1
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
+# Pinned to the FORMER default collector on purpose. This test's subject is the EVAPORATION
+# discontinuity taper: it needs a fixture that visibly flickers with the taper OFF, so the taper can be
+# shown to remove it. Under the current default, active_set, the bare (taper-off) arm SETTLES -- the
+# semismooth pin removes that flicker by itself -- so the negative control stops discriminating and the
+# test reports "does not bite". Hold the collector fixed so the taper remains testable.
+# (That active_set alone also kills the evaporation-discontinuity flicker is a real finding, recorded
+# in benchmark/scheme_bench/README.md; it is not something this test can demonstrate.)
+runoff_collector implicit
 evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
