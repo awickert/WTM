@@ -109,7 +109,19 @@ run_case() { # name nranks -> sets $PREFIX
 # default those two fixtures sat near a routing threshold where Anderson's larger cross-rank GW noise
 # was amplified by the discontinuous routing into ~mm-cm differences and needed physical tolerances;
 # if you run the tests under -wtm_anderson, expect that to return.)
-case_tol() { echo ""; }
+# Per-case tolerance override (empty = golden.py's default 1e-6 m).
+#
+# transient: 1e-5 m. Under the default active_set enforcement this case reproduces across MPI rank
+# counts only to ~2e-6 m (measured: n=1 and n=4 match the n=1 reference exactly; n=2/6/8 differ by
+# 1.2e-6, 2.1e-6 and 1.2e-6 m). That is MICROMETRE-scale round-off on a field with 21 m features,
+# sitting at the SNES tolerance: the semismooth pin's active set can differ in its last bits between
+# domain decompositions near a cell that is marginally at the free surface. It is round-off, not a
+# decomposition-dependent algorithm -- a real MPI inconsistency would not pass at n=1 and n=4 nor stay
+# within 2 um. Under the former `implicit` default the same case reproduced below 1e-6, so this is a
+# genuine (tiny) loss of cross-rank reproducibility that comes with the constraint being solved rather
+# than approximated. Recorded rather than hidden; if this ever needs to be TIGHT again, the fix is an
+# active-set tie-break that is decomposition-independent, not a looser number here.
+case_tol() { case "$1" in transient) echo "1e-5" ;; *) echo "" ;; esac; }
 
 fail=0
 for name in "${CASES[@]}"; do
