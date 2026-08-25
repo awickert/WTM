@@ -649,7 +649,7 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp, Vec h
 // shortly afterwards, which is why the ocean-outflow call for every other scheme sits further down and
 // this one does not.
 static void accumulate_tr_bdf2_step_fluxes(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack,
-                                           bool evap_active) {
+                                           bool evap_active, bool sink_active) {
   DM da                       = user_context.da;
   const auto [xs, ys, xm, ym] = get_corners(da);
   const double dt             = user_context.deltat;
@@ -674,33 +674,61 @@ static void accumulate_tr_bdf2_step_fluxes(AppCtx& user_context, ArrayPack& arp,
   accumulate_ocean_outflow(user_context, arp, user_context.tr_ygamma, trbdf2::W_YGAMMA);
   accumulate_ocean_outflow(user_context, arp, user_context.x, trbdf2::W_NEW);
 
-  // Taper-2/3 evaporation to the atmosphere, same quadrature. This is the term that dominates in
-  // practice: on tests/multilake it carries 91% of the water leaving the domain, so weighting it as a
-  // single end-of-step evaluation was worth 0.55% of recharge on its own. The taper-1 sink is not here
-  // -- it is switched OFF under the active-set constraint, and update()'s commit loop still handles it
-  // for the configurations that do run it.
-  if (!evap_active) return;
-  PetscScalar **topo, **my_evap, **my_owe, **my_precip, **yg;
+  // The two IN-RESIDUAL removals, same quadrature. Both must be taken here rather than in update()'s
+  // commit loop, because both are evaluated at states the copy-back is about to destroy.
+  //
+  //   taper 2/3 evaporation -- to the ATMOSPHERE. Dominant in practice: on tests/multilake it carries
+  //       91% of the water leaving the domain, so its weighting alone was worth 0.55% of recharge.
+  //   taper 1 sink / direct-to-runoff -- to FILLSPILLMERGE, so the quadrature depth is also what gets
+  //       handed over in sink_removed_dist. Weighting only the budget and not the handoff would remove
+  //       one amount from the aquifer and deliver a different one, which is a leak rather than a
+  //       mis-report. Measured on tests/fsm_consistency under the `implicit` collector: the exact
+  //       residual was 191% of recharge with this term left at backward-Euler weighting, against
+  //       6.5e-09 for backward Euler itself, so this is TR-specific and not a pre-existing gap.
+  if (!evap_active && !sink_active) return;
+  PetscScalar **topo, **yg, **my_fringe;
+  PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(da, user_context.topo_vec, &topo);
-  DMDAVecGetArray(da, user_context.evap_vec, &my_evap);
-  DMDAVecGetArray(da, user_context.open_water_evap_vec, &my_owe);
-  DMDAVecGetArray(da, user_context.precip_vec, &my_precip);
   DMDAVecGetArray(da, user_context.tr_ygamma, &yg);
+  DMDAVecGetArray(da, user_context.fringe_width_vec, &my_fringe);
+  if (evap_active) {
+    DMDAVecGetArray(da, user_context.evap_vec, &my_evap);
+    DMDAVecGetArray(da, user_context.open_water_evap_vec, &my_owe);
+    DMDAVecGetArray(da, user_context.precip_vec, &my_precip);
+  }
+  // Quadrature of any per-cell removal rate R(wtd) over the step, in depth units.
+  const auto quad = [&](auto&& R, int j, int i) {
+    return dt * (trbdf2::W_OLD * R(static_cast<double>(dmdapack.starting_wtd[j][i]))
+                 + trbdf2::W_YGAMMA * R(yg[j][i] - topo[j][i])
+                 + trbdf2::W_NEW * R(dmdapack.x[j][i] - topo[j][i]));
+  };
   for (int j = ys; j < ys + ym; j++)
     for (int i = xs; i < xs + xm; i++) {
       if (dmdapack.mask[j][i] == 0) continue;
-      const double P     = my_precip[j][i] / SECONDS_IN_A_YEAR;
-      const double R_old = evapRemoval(dmdapack.starting_wtd[j][i], my_evap[j][i], my_owe[j][i], P);
-      const double R_yg  = evapRemoval(yg[j][i] - topo[j][i], my_evap[j][i], my_owe[j][i], P);
-      const double R_new = evapRemoval(dmdapack.x[j][i] - topo[j][i], my_evap[j][i], my_owe[j][i], P);
-      const double depth = dt * (trbdf2::W_OLD * R_old + trbdf2::W_YGAMMA * R_yg + trbdf2::W_NEW * R_new);
-      arp.total_evap_removed += depth * arp.cell_area[j];
+      if (evap_active) {
+        const double P = my_precip[j][i] / SECONDS_IN_A_YEAR;
+        const double depth =
+            quad([&](double w) { return evapRemoval(w, my_evap[j][i], my_owe[j][i], P); }, j, i);
+        arp.total_evap_removed += depth * arp.cell_area[j];
+      }
+      if (sink_active) {
+        // Mirrors FormFunctionLocal's cascade: direct-to-runoff supersedes the band sink.
+        const double depth =
+            g_direct_to_runoff
+                ? quad([&](double w) { return directToRunoffRemoval(w, dt); }, j, i)
+                : quad([&](double w) { return surfaceSink(w, my_fringe[j][i]); }, j, i);
+        arp.total_surface_removed += depth * arp.cell_area[j];  // budget
+        dmdapack.sink_removed_dist[j][i] += depth;              // and the water itself, to FSM
+      }
     }
   DMDAVecRestoreArray(da, user_context.topo_vec, &topo);
-  DMDAVecRestoreArray(da, user_context.evap_vec, &my_evap);
-  DMDAVecRestoreArray(da, user_context.open_water_evap_vec, &my_owe);
-  DMDAVecRestoreArray(da, user_context.precip_vec, &my_precip);
   DMDAVecRestoreArray(da, user_context.tr_ygamma, &yg);
+  DMDAVecRestoreArray(da, user_context.fringe_width_vec, &my_fringe);
+  if (evap_active) {
+    DMDAVecRestoreArray(da, user_context.evap_vec, &my_evap);
+    DMDAVecRestoreArray(da, user_context.open_water_evap_vec, &my_owe);
+    DMDAVecRestoreArray(da, user_context.precip_vec, &my_precip);
+  }
 }
 
 // Accumulate the solver's EXACT per-step discrete storage and specific-yield recharge over owned
@@ -733,13 +761,14 @@ static void accumulate_tr_bdf2_step_fluxes(AppCtx& user_context, ArrayPack& arp,
 //
 // Called after the solve, BEFORE the BDF2 history overwrites w^{n-1}.
 static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack,
-                                    bool evap_active) {
+                                    bool evap_active, bool sink_active) {
   // TR-BDF2: the two stages DO telescope into one per-step identity -- C1*(stage 1) + (stage 2), with
   // C1 - C2 == 1 and C1*gamma + C3 == 1 (src/tr_bdf2_coefficients.hpp). Storage and recharge come out
   // unchanged from the backward-Euler forms below, so they fall through to the shared code; the flux
   // and removal terms become a three-point quadrature and are taken here, while w^n and Y_gamma are
   // both still live.
-  if (user_context.use_tr_bdf2) accumulate_tr_bdf2_step_fluxes(user_context, arp, dmdapack, evap_active);
+  if (user_context.use_tr_bdf2)
+    accumulate_tr_bdf2_step_fluxes(user_context, arp, dmdapack, evap_active, sink_active);
 
   // TR-BDF2's telescoped storage is V(w^{n+1}) - V(w^n), i.e. the backward-Euler weights, whatever
   // -wtm_bdf2 may also be asking for -- the stage combination has already consumed the multi-level
@@ -1946,7 +1975,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // read while starting_wtd still holds w^n and starting_wtd_prev still holds w^{n-1} (both below
   // overwrite these). Together with total_ocean_outflow and total_surface_removed the budget then
   // closes to the SNES tolerance. See benchmark/WATER_BUDGET.md.
-  accumulate_budget_terms(user_context, arp, dmdapack, evap_active_this_step);
+  accumulate_budget_terms(user_context, arp, dmdapack, evap_active_this_step, sink_active_this_step);
 
   // BDF2 / predictor: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag, so BDF2 /
@@ -2027,7 +2056,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       }
       // Land cells: the sink and the evaporation taper can both be active; account each in the same
       // sub-step it was removed, evaluated at the just-computed new head. Serial loop -> += race-free.
-      if (sink_active_this_step) {
+      // TR-BDF2 took this above, with the step quadrature, and handed the SAME depth to FSM. Repeating
+      // it here at w^{n+1} alone would both double-count and use the wrong weight.
+      if (sink_active_this_step && !user_context.use_tr_bdf2) {
         // Sink removed dt*Q(w^{n+1}) (Q is m/s -> dt*Q is a depth). To FSM (stays in domain).
         const double removed_depth =
             g_direct_to_runoff ? std::max(0.0, static_cast<double>(dmdapack.starting_wtd[j][i]))  // = dt*rate = the excess depth
