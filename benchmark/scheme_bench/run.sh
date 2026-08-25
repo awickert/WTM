@@ -79,6 +79,14 @@ SCHEMES=(
 # transmissivity for Picard; dt-continuation for Newton) so no scheme is judged on a setup it was
 # never claimed to handle. The continuation arm varies dt, so its CYCLE count is not comparable with
 # the fixed-dt arms; its iterations and wall still are, and precision is matched by rms either way.
+#
+# KNOWN HANDICAP, not yet corrected: every arm here runs runoff_collector=implicit so the physics is
+# identical across schemes, but the implicit exfiltration kink is NOT in the Newton Jacobian (the run
+# prints a WARNING to that effect and the documented remedy is runoff_collector=explicit). So the
+# Newton rows are a lower bound on Newton, measured outside its supported configuration. Fixing this
+# properly means a second matched set at runoff_collector=explicit for ALL schemes -- comparing one
+# scheme under explicit against the rest under implicit would manufacture a difference that is really
+# a configuration artifact.
 
 echo "=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ==="
 echo "binary: $WTM   ranks: $RANKS   cycle budget: $CYCLES   auto-stop: DISABLED (eq_tol 0)"

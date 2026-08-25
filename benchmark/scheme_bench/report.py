@@ -15,15 +15,20 @@ import re, os, sys, math
 
 R = sys.argv[1] if len(sys.argv) > 1 else "results"
 TARGETS = [100.0, 10.0, 1.0]          # mm-water
-NATIVE_TOL = 1e-2                     # the shipped default -wtm_eq_tol, in the same mm-water metric
+NATIVE_TOL = 1e-2   # shipped default -wtm_eq_tol -- applied to the HEAD rms in METRES (index 3),
+                    # NOT to the mm-water precision axis. Mixing them makes table 3 nonsense.
 
-ITER_RE  = re.compile(r"Number of nonlinear iterations = (\d+)")
-# cycle N: per-cycle |dwtd| max=.. rms=.. frac>tol=.. m  |S*dwtd| max=.. rms=<X> mm-water ...
-CYCLE_RE = re.compile(r"cycle (\d+): per-cycle .*?rms=([0-9.eE+-]+) mm-water")
+ITER_RE = re.compile(r"Number of nonlinear iterations = (\d+)")
+# cycle N: per-cycle |dwtd| max=.. rms=<HEAD_RMS> frac>tol=.. m  |S*dwtd| max=.. rms=<WATER_RMS> mm-water
+# Two different metrics on one line and they are NOT interchangeable: the auto-stop (-wtm_eq_tol) is
+# applied to the HEAD rms in metres, while the precision axis for cross-scheme comparison is the
+# water-depth rms in mm-water. Capture both so table 3 cannot silently compare against the wrong one.
+CYCLE_RE = re.compile(
+    r"cycle (\d+): per-cycle \|.wtd\| max=[0-9.eE+-]+ rms=([0-9.eE+-]+) .*?rms=([0-9.eE+-]+) mm-water")
 
 
 def trajectory(path):
-    """[(cycle, cumulative_iters, rms_mm)] in cycle order."""
+    """[(cycle, cumulative_iters, water_rms_mm, head_rms_m)] in cycle order."""
     cum, rows = 0, []
     for line in open(path, errors="ignore"):
         m = ITER_RE.search(line)
@@ -32,7 +37,7 @@ def trajectory(path):
             continue
         c = CYCLE_RE.search(line)
         if c:
-            rows.append((int(c.group(1)), cum, float(c.group(2))))
+            rows.append((int(c.group(1)), cum, float(c.group(3)), float(c.group(2))))
     return rows
 
 
@@ -50,9 +55,10 @@ def load_summary():
 
 
 def first_at_or_below(traj, target):
-    for cyc, it, rms in traj:
-        if rms <= target:
-            return cyc, it, rms
+    """First row whose WATER rms (mm) is at or below target."""
+    for row in traj:
+        if row[2] <= target:
+            return row[0], row[1], row[2]
     return None
 
 
@@ -109,11 +115,14 @@ for a in arms:
         continue
     best = min(a["traj"], key=lambda r: r[2])
     final = a["traj"][-1]
-    # improving if the last decade of cycles still lowered the rms materially
     k = max(1, len(a["traj"]) // 10)
-    improving = a["traj"][-k][2] > final[2] * 1.05
-    print(f"{a['label']:<30}{best[2]:>16.4g}{best[0]:>10}{final[2]:>14.4g}"
-          f"{('yes' if improving else 'PLATEAU'):>20}")
+    if final[2] > best[2] * 1.5:
+        state = "REGRESSED"          # went past its best and got worse -- not a floor at all
+    elif a["traj"][-k][2] > final[2] * 1.05:
+        state = "still improving"    # had not converged within the budget
+    else:
+        state = "PLATEAU"            # genuinely floored
+    print(f"{a['label']:<30}{best[2]:>16.4g}{best[0]:>10}{final[2]:>14.4g}{state:>20}")
 
 # ---------------------------------------------------------------- 3. native stop
 print()
@@ -128,12 +137,12 @@ for a in arms:
     if not a["traj"]:
         print(f"{a['label']:<30}{'-- did not run --':>12}")
         continue
-    hit = first_at_or_below(a["traj"], NATIVE_TOL)
+    hit = next((r for r in a["traj"] if r[3] <= NATIVE_TOL), None)
     if hit is None:
         print(f"{a['label']:<30}{'never reached':>12}{'':>10}{'':>10}"
               f"{a['traj'][-1][2]:>20.4g}")
         continue
-    cyc, it, rms = hit
+    cyc, it, rms = hit[0], hit[1], hit[2]
     frac = it / a["iters"] if a["iters"] else 0.0
     print(f"{a['label']:<30}{cyc:>12}{it:>10}{a['wall'] * frac:>10.1f}{rms:>20.4g}")
 
