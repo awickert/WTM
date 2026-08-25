@@ -265,6 +265,19 @@ static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScal
   DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
 }
 
+// As scatter_into_owned, but ADDS the scattered rank-0 field onto the held owned array (+=). Used to fold
+// the FSM per-step delta into rech_dist as a source (-wtm_fsm_delta_source, #116) via the wtd_global scratch.
+template <typename T>
+static void accumulate_into_owned(AppCtx& user_context, const T* full_r0, PetscScalar** dest) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  PetscScalar** scratch;
+  user_context.full_grid_gather->scatterFromZero(full_r0, user_context.wtd_global);
+  DMDAVecGetArray(user_context.da, user_context.wtd_global, &scratch);
+  for (auto j = ys; j < ys + ym; j++)
+    for (auto i = xs; i < xs + xm; i++) dest[j][i] += scratch[j][i];
+  DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
+}
+
 // Per-timestep surface-water coupling (tight coupling: FillSpillMerge runs EVERY step -- see
 // benchmark/FSM_EVERY_STEP_DESIGN.md). Assemble the water table on rank 0, hand this step's above-surface
 // removal to FSM, run FillSpillMerge (timed into fsm_seconds), scatter the post-FSM table back, then set the
@@ -279,6 +292,11 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
                                         bool distribute_recharge, double& fsm_seconds) {
   // Assemble the full wtd on rank 0 (the intermediate solves only touch each rank's owned cells).
   FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+
+  // -wtm_fsm_delta_source (#116): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
+  // row-major (matching arp.wtd.data()). Populated below in the FSM block; injected into rech_dist further down.
+  const bool fsm_delta_source = FanDarcyGroundwater::fsm_delta_source_on() && params.fsm_on && distribute_recharge;
+  std::vector<double> fsm_delta_r0;
 
   // Hand this step's above-surface removal (sink / extended-soil / exfiltration / direct-to-runoff) into
   // rank-0 arp.runoff so FillSpillMerge routes it. No-op when all are off (stays 0).
@@ -296,8 +314,23 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds the full arp.
     if (mpi_rank == 0) dh::FillSpillMerge(params, deps, arp);
     fsm_seconds += fsm_timer.lap();
-    // FSM changed rank-0 arp.wtd; resync the distributed carrier so the next solve's recharge reads it.
-    if (distribute_recharge) scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
+    if (fsm_delta_source) {
+      // -wtm_fsm_delta_source (#116): instead of overwriting the carrier with the post-FSM table (an IC jump
+      // that breaks 2nd-order accuracy on TR-BDF2/adaptive), KEEP the smooth pre-FSM GW result as starting_wtd
+      // and record FSM's per-cell volume change V(post)-V(pre) to fold into the next step's recharge below.
+      if (mpi_rank == 0) {
+        const size_t n = arp.wtd.size();
+        fsm_delta_r0.resize(n);
+        const auto* w   = arp.wtd.data();       // post-FSM
+        const auto* wm  = arp.wtd_mid.data();   // pre-FSM (== starting_wtd this step)
+        const auto* por = arp.porosity.data();
+        for (size_t k = 0; k < n; k++)
+          fsm_delta_r0[k] = storedVolume(w[k], por[k]) - storedVolume(wm[k], por[k]);
+      }
+    } else if (distribute_recharge) {
+      // FSM changed rank-0 arp.wtd; resync the distributed carrier so the next solve's recharge reads it.
+      scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
+    }
   }
 
   // Carrier reset (approach B). FillSpillMerge has now CONSUMED this step's runoff (routed it to lakes/ocean),
@@ -337,6 +370,24 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   }
   if (distribute_recharge) {
     distributed_recharge(params, user_context, dmdapack);
+    // -wtm_fsm_delta_source (#116): fold FSM's per-cell volume change onto the recharge source for the next
+    // step. Added AFTER distributed_recharge so the runoff ratio does not take a second cut of water FSM has
+    // already routed -- that ordering is load-bearing.
+    //
+    // KNOWN DEFECT (why this is still opt-in). SumDV is NOT zero: it is rr + s - spill, where rr is the
+    // runoff-ratio share (genuinely new water, correctly booked here), s the exfiltrated excess (already
+    // booked once as recharge, and again in total_surface_removed) and spill FSM's discharge to sea (already
+    // booked in total_loss_to_ocean). Because total_added_recharge counts ALL of rech_dist
+    // (transient_groundwater.cpp, set_starting_values), s is double-counted as an input and the spill is
+    // double-subtracted, so the water budget stops closing: measured on the dome fixture at 18.5% of recharge
+    // vs 1.09% for the overwrite path, with storage/evap/ocean fluxes identical to 5-6 figures. The physics
+    // may be unaffected -- but the diagnostic that would prove it is what this breaks, so do not default this
+    // on until rech_dist's solve role and total_added_recharge's budget role are separated.
+    //
+    // Also unverified: keeping the pre-FSM table as the step baseline leaves above-surface water in the
+    // column for one more step, where the exfiltration rule sees it while this term also removes it.
+    if (fsm_delta_source)
+      accumulate_into_owned(user_context, fsm_delta_r0.data(), dmdapack.rech_dist);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
     if (params.fsm_on && params.runoff_ratio_on)
       FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack);

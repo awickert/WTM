@@ -264,6 +264,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
+static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL]: feed FSM's per-step water-table change into the NEXT step's recharge source (keeping the smooth pre-FSM state as the step baseline) instead of overwriting the baseline with the post-FSM table. A no-op under backward Euler; restores 2nd-order accuracy on TR-BDF2/adaptive by removing the between-step FSM jump. See GH #13 / #116.
 static bool             g_active_set                  = false; // -wtm_dev_active_set [EXPERIMENTAL]: semismooth seepage face pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
@@ -1182,6 +1183,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, &seep_set);
   g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
+  // -wtm_fsm_delta_source [EXPERIMENTAL]: carry FSM's per-step wtd change as a source in the NEXT step's
+  // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH #116).
+  PetscBool fsm_src = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_delta_source", &fsm_src, nullptr);
+  g_fsm_delta_source = (fsm_src == PETSC_TRUE);
+
   // Surface-water routing selector (config key `runoff_collector`, optional). When set it OVERRIDES the
   // legacy -wtm_ flags above with one coherent choice; unset ("") keeps the legacy defaults
   // (behaviour-preserving). See benchmark/SURFACE_WATER_ROUTING.md. All modes share one destination
@@ -1908,6 +1915,7 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
 bool surface_sink_on() { return g_surface_sink; }
 bool direct_to_runoff_on() { return g_direct_to_runoff; }
+bool fsm_delta_source_on() { return g_fsm_delta_source; }
 // Whether the lake-aware active-set skim is on. It captures the skimmed above-free-surface water into the
 // same sink accumulator, so the post-solve gather must hand it to arp.runoff for FSM -- otherwise the
 // skimmed water is removed from the aquifer and counted as surface_removed but never delivered to the lake,

@@ -24,6 +24,9 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 bool surface_sink_on();
 // Whether the direct-to-runoff (seepage-face) removal is configured this run (-wtm_direct_to_runoff).
 bool direct_to_runoff_on();
+// Whether FSM's per-step wtd change is carried as a next-step recharge source rather than an IC overwrite
+// (-wtm_fsm_delta_source; experimental, off by default). See the flag decl in transient_groundwater.cpp.
+bool fsm_delta_source_on();
 // Whether the lake-aware active-set skim is on (so the post-solve gather hands its captured seepage to FSM).
 bool active_set_on();
 
