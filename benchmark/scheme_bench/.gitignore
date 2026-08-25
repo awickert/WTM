@@ -1,7 +1,12 @@
-# Generated run artifacts: configs, logs, run textfiles, rasters, the summary CSV.
-results/
+# Generated run artifacts: per-arm configs, logs, run textfiles, rasters, summary CSVs.
+# NOTE the trailing-glob form: an earlier version listed only `results/`, which does NOT match
+# `results_implicit_between/` etc., so a `git add` of this directory committed ~3 MB of generated
+# rasters and logs per corner. Keep this pattern broad.
+results*/
+*.log
 smoke/
-results_run.log
 
-# ...but DO keep the recorded report of a benchmark run (the repo-wide *.txt rule would drop it).
+# ...but DO keep the recorded reports of a benchmark run (the repo-wide *.txt rule would drop these).
 !RESULTS_*.txt
+!COMPARISON_*.txt
+!MATRIX_*.txt

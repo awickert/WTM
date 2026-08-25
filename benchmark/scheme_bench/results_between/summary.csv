@@ -1,9 +1,0 @@
-stem,label,rc,wall_s,iters,cycles_run
-and_be,Anderson BE (secant),0,1.46,2869,250
-and_vol,Anderson BE (volume dV),0,1.42,2868,250
-picard,Picard BDF2-on-V (plain),134,19.68,10000,0
-picard_tbar,Picard BDF2-on-V + Tbar,0,4.32,1443,250
-tr_fixed,TR-BDF2 (fixed dt),0,1.24,1771,250
-tr_adapt,TR-BDF2 + adaptive dt,0,1.96,3769,250
-newton,Newton (plain),134,3.27,2,0
-newton_cont,Newton + dt-continuation,0,412.50,261203,250
