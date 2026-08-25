@@ -44,11 +44,25 @@ case "$COUPLING" in
   during)  COUPLING_FLAGS="-wtm_fsm_delta_source" ;;
   *) echo "ERROR: COUPLING must be 'between' or 'during' (got '$COUPLING')"; exit 1 ;;
 esac
+# COLLECTOR (env, default `implicit`) selects how the wtd<=0 exfiltration constraint is ENFORCED:
+#   implicit   -- in-residual siphon max(0,wtd)/dt. Measured dt-DEPENDENT: retained head ~ linear in dt,
+#                 which FSM then turns into dt-dependent lake depth (SURFACE_WATER_ROUTING.md).
+#   active_set -- semismooth pin at wtd=0 inside the solve. Measured dt-INDEPENDENT (5.6986 m at
+#                 dt = 1, 1/3, 1/6 week). Supersedes the collector removals and auto-enables
+#                 -wtm_volume_storage. Its pin is in the ANDERSON residual only -- the Picard operator
+#                 and Newton Jacobian have no tangent for it, so those arms are expected to be
+#                 inconsistent here, exactly as Newton is under `implicit`. Reported, not hidden.
+COLLECTOR="${COLLECTOR:-implicit}"
+case "$COLLECTOR" in
+  implicit)   COLLECTOR_FLAGS="" ;;
+  active_set) COLLECTOR_FLAGS="-wtm_dev_active_set" ;;
+  *) echo "ERROR: COLLECTOR must be 'implicit' or 'active_set' (got '$COLLECTOR')"; exit 1 ;;
+esac
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
 DOM=$(readlink -f ../island/domain)
 [[ -f "$DOM/Esquibel_010000_topography.tif" ]] || { echo "ERROR: island fixture missing at $DOM"; exit 1; }
-OUT="${OUT:-results_$COUPLING}"; mkdir -p "$OUT"
+OUT="${OUT:-results_${COLLECTOR}_${COUPLING}}"; mkdir -p "$OUT"
 export OMP_NUM_THREADS=1     # pure MPI: OpenMP x MPI oversubscription hangs this fixture at n>=4
 
 # Cold start from a saturated table (supplied_wt 0) -- the spin-up regime, where the schemes actually
@@ -106,7 +120,7 @@ SCHEMES=(
 
 echo "=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ==="
 echo "binary: $WTM   ranks: $RANKS   cycle budget: $CYCLES   auto-stop: DISABLED (eq_tol 0)"
-echo "FSM coupling: $COUPLING${COUPLING_FLAGS:+  ($COUPLING_FLAGS)}"
+echo "FSM coupling: $COUPLING${COUPLING_FLAGS:+  ($COUPLING_FLAGS)}   collector: $COLLECTOR${COLLECTOR_FLAGS:+  ($COLLECTOR_FLAGS)}"
 echo
 printf "%-28s %10s %12s %12s\n" "scheme" "rc" "wall_s" "SNES_iters"
 : > "$OUT/summary.csv"
@@ -116,7 +130,7 @@ for entry in "${SCHEMES[@]}"; do
     mkcfg "$stem"; rm -f "$OUT/$stem.txt"
     t0=$(date +%s.%N)
     # shellcheck disable=SC2086
-    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS -snes_stol 1e-8 -wtm_eq_tol 0 \
+    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS $COLLECTOR_FLAGS -snes_stol 1e-8 -wtm_eq_tol 0 \
         > "$OUT/$stem.log" 2>&1
     rc=$?
     t1=$(date +%s.%N)
