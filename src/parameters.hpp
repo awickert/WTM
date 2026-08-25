@@ -31,12 +31,24 @@ struct Parameters {
   std::string textfilename   = UNINIT_STR;
   std::string time_start     = UNINIT_STR;
   std::string time_end       = UNINIT_STR;
-  // Surface-water routing selector. DEFAULT "implicit": the exact, dt-independent in-residual exfiltration constraint
-  // (wired into the Anderson residual and the Picard operator; adaptive-dt handles it via the feasible-set
-  // predictor clamp in the error estimate). Alternatives: "explicit" (post-solve clamp -- robust everywhere,
-  // ~1 cm from implicit), "off" (no collection -- NONPHYSICAL, warns), "legacy" (the old -wtm_ surface-flag
-  // band-sink defaults). "" is accepted as a synonym for the default. See README / SURFACE_WATER_ROUTING.md.
-  std::string runoff_collector = "implicit";
+  // Surface-water routing selector: how the wtd <= topo + surface_water_depth exfiltration constraint is
+  // ENFORCED. DEFAULT "active_set": the semismooth constraint solved INSIDE the residual. It is the only
+  // enforcement measured to leave no SPURIOUS dt-dependence -- `implicit`'s in-residual siphon removes at
+  // rate max(0,wtd)/dt, so its retained head is ~LINEAR in dt (1.97 / 0.68 / 0.34 m at dt = 1, 1/3, 1/6
+  // week), and FSM routes that dt-dependent excess into a different set of lakes: the lake COUNT itself
+  // moves with dt (tests/multilake). Active-set also eliminates the between-step FSM shock (ratio 0.985 ->
+  // 3.6e-13) and is 2-100x cheaper across solvers (benchmark/scheme_bench).
+  // Alternatives: "implicit" (in-residual siphon -- the former default, dt-dependent), "explicit"
+  // (post-solve clamp -- robust on every solver, dt-lagged), "off" (no collection -- NONPHYSICAL, warns),
+  // "legacy" (the old -wtm_ surface-flag band-sink defaults). "" is a synonym for the default.
+  // CAVEAT: the active-set pin lives in the Anderson residual only; the Picard operator and Newton Jacobian
+  // carry no tangent for it, so those paths warn and should use "explicit" until that lands.
+  // See README / SURFACE_WATER_ROUTING.md.
+  std::string runoff_collector = "active_set";
+  // True only if surface_water.collection.method was PRESENT in the config. Lets the solver-dependent
+  // default resolution below distinguish "the user chose active_set" from "active_set is the default",
+  // so an explicit choice is always honoured (with a warning) and never silently downgraded.
+  bool runoff_collector_set = false;
 
   // Grid geometry. cells_per_degree / southern_edge are DEPRECATED config inputs (the `grid:` block),
   // kept only as an override for inputs that lack georeferencing. By default the geometry is derived from

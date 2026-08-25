@@ -1235,8 +1235,30 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
   std::string rc = params.runoff_collector;
-  if (rc.empty()) rc = "implicit";  // "" = the default; adaptive-dt handles implicit via the predictor clamp
+  if (rc.empty()) rc = "active_set";  // "" = the default (see parameters.hpp for why active_set)
+  // SOLVER-DEPENDENT DEFAULT RESOLUTION. The active-set pin lives in the matrix-free (Anderson)
+  // residual only -- the Picard operator and Newton Jacobian carry no tangent for it, and this block
+  // also switches every collector removal off, so those solvers would run with the constraint
+  // effectively UNENFORCED. That is not a degradation but a hard failure: Newton ABORTS (verified on
+  // tests/boundary_consistency, which core-dumped the moment the default flipped). A default must not
+  // crash a supported path, so on Picard/Newton the DEFAULT resolves to `explicit` -- the post-solve
+  // clamp, which is robust on every solver and is the documented remedy. An EXPLICIT
+  // surface_water.collection.method is always honoured (the warning below still fires), so this only
+  // ever changes what an unspecified config does.
+  if (rc == "active_set" && !params.runoff_collector_set
+      && (user_context.use_picard || user_context.use_newton)) {
+    rc = "explicit";
+    static bool noted_downgrade = false;
+    if (!noted_downgrade) {
+      noted_downgrade = true;
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "NOTE: the default exfiltration enforcement is active_set, but its pin is wired into the "
+                  "matrix-free Anderson residual only. On this solver the default resolves to `explicit` "
+                  "(post-solve clamp) instead. Set surface_water.collection.method explicitly to override.\n");
+    }
+  }
   // Snapshot the legacy-flag choices so the selector can report any of them it supersedes (below).
+  bool collector_wants_active_set = false;  // set by rc == "active_set"; enabling happens below
   const bool pre_sink  = g_surface_sink;
   const bool pre_direct = g_direct_to_runoff;
   const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
@@ -1253,6 +1275,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     } else if (rc == "explicit") {
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = true;
+    } else if (rc == "active_set") {
+      // The semismooth constraint solved INSIDE the residual (see the block below, which does the
+      // actual enabling -- this only records the request, since g_active_set is assigned there).
+      // It supersedes all three collector removals; that happens below too. Measured to be the only
+      // enforcement whose equilibrium does not carry a spurious dt-dependence: the `implicit` siphon
+      // leaves a head ~ LINEAR in dt, which FSM routes into a different set of lakes (the lake COUNT
+      // itself moves with dt -- tests/multilake). Anderson residual only; Picard/Newton have no
+      // tangent for the pin, warned below.
+      collector_wants_active_set = true;
     } else {  // "off"
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;
@@ -1300,8 +1331,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // ONE exfiltration BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
   // for now; the pinned exfiltration flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
   PetscBool activeset = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset, nullptr);
-  g_active_set = (activeset == PETSC_TRUE);
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_active_set", &activeset, nullptr);
+  if (activeset != PETSC_TRUE)  // legacy spelling, kept working so existing scripts/tests do not break
+    PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset, nullptr);
+  // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
+  g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
   // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
   // balance -- the semismooth max(w_c, f) and the captured exfiltration f*Sy are only meaningful then. The default
   // secant backward-Euler uses RHS b = h^n (f != residual). If no b=0 scheme is already selected, auto-enable
@@ -1319,6 +1353,21 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     g_direct_to_runoff                     = false;
     g_surface_sink                         = false;
     g_surface_exfiltration_to_runoff_array = false;
+    // The pin is in the matrix-free (Anderson) residual ONLY. On Picard/Newton it is absent, and since
+    // this block also switches the collectors OFF, those paths would run with NO above-surface removal
+    // at all -- the nonphysical `off` mode. That used to be masked: under the FSM overwrite coupling the
+    // post-FSM table write was quietly doing the enforcement for them. Warn loudly rather than let a
+    // solver silently pile water (measured: Picard ponded 105.47 m against a correct 31.97 m).
+    static bool warned_as_solver = false;
+    if (!warned_as_solver && (user_context.use_picard || user_context.use_newton)) {
+      warned_as_solver = true;
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "WARNING [runoff_collector=active_set]: the semismooth pin is wired into the matrix-free "
+                  "Anderson residual ONLY -- the Picard operator and Newton Jacobian have no tangent for it. "
+                  "On this solver the exfiltration constraint is effectively UNENFORCED and above-surface "
+                  "water can pile up. Use surface_water.collection.method: explicit on Picard/Newton until "
+                  "active-set tangents land.\n");
+    }
   }
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off

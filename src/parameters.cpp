@@ -124,7 +124,10 @@ Parameters::Parameters(const std::string& config_file) {
     }
   }
   if (auto n = root["surface_water"]["infiltration_during_flow"]) infiltration_on = n.as<bool>() ? 1 : 0;
-  if (auto n = root["surface_water"]["collection"]["method"])     runoff_collector = n.as<std::string>();
+  if (auto n = root["surface_water"]["collection"]["method"]) {
+    runoff_collector     = n.as<std::string>();
+    runoff_collector_set = true;
+  }
 
   // -------- io (source was surfdatadir; outfile/log moved to output) --------
   if (auto n = root["io"]["source"])     surfdatadir = n.as<std::string>();
@@ -250,8 +253,8 @@ void Parameters::check() const {
   check_positive("total_time", total_time);
   check_positive("total_reports", total_reports);
   if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
-        || runoff_collector == "off" || runoff_collector == "legacy")) {
-    throw std::runtime_error("runoff_collector must be one of: implicit, explicit, off, legacy. Got: '"
+        || runoff_collector == "active_set" || runoff_collector == "off" || runoff_collector == "legacy")) {
+    throw std::runtime_error("runoff_collector must be one of: active_set, implicit, explicit, off, legacy. Got: '"
                              + runoff_collector + "'");
   }
 }
