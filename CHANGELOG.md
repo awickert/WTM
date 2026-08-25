@@ -21,6 +21,38 @@ underlying `-wtm_*` / `-snes_*` options; an explicit CLI flag still overrides th
 regression suite is **mid-migration** to the new format and is not currently green end-to-end;
 individual changes are verified with targeted checks.
 
+### Changed
+
+- **DEFAULT surface-water enforcement is now `active_set`** (`surface_water.collection.method`),
+  replacing `implicit`. The semismooth exfiltration constraint is solved *inside* the residual rather
+  than approximated by an in-residual siphon. Why:
+  - **`implicit` is dt-DEPENDENT.** Its removal rate is `max(0,wtd)/dt`, so the retained head is
+    ~linear in `dt` — measured with FSM off, isolating the face: **1.97 / 0.68 / 0.34 m** at
+    `dt` = 1, 1/3, 1/6 week. With FSM on, that dt-dependent excess is what FillSpillMerge routes, so
+    **lake depth inherits it** (5.38 / 2.50 / 2.02 m), and on a multi-lake fixture the lake *count*
+    itself moves with `dt` (6 → 5). Under `active_set` the same lakes hold **5.6986 m at every `dt`**.
+  - **It eliminates the between-step FSM shock.** FSM was undoing essentially the whole groundwater
+    step every cycle: shock ratio **0.985 → 3.6e-13**. The solve now arrives at a state FSM agrees with.
+  - **It is cheaper**, 2–100× across solvers (island, cold start, matched precision): Anderson
+    2869 → 1364 SNES iterations, TR-BDF2 1771 → 957, TR-BDF2+adaptive 3769 → 957 (adaptive stops
+    subdividing and becomes identical to fixed-`dt`), Newton+continuation 261203/412.5 s → 2478/5.3 s.
+  - **All eight schemes now agree exactly** on the resulting water table, where previously they did not.
+- **The default is solver-dependent.** The active-set pin is wired into the matrix-free Anderson
+  residual only; the Picard operator and Newton Jacobian have no tangent for it, and selecting
+  active-set also disables every collector removal — so on those solvers the constraint would be
+  effectively unenforced (Newton *aborts*). With the key unset, the default therefore resolves to
+  `active_set` on Anderson and `explicit` on Picard/Newton, with a NOTE. An explicit choice is always
+  honoured, with a warning on the solvers that cannot enforce it consistently.
+- `runoff_collector` accepts a new `active_set` value; `-wtm_active_set` is the new flag spelling and
+  `-wtm_dev_active_set` still works.
+- **Golden references regenerated** for the surface-water cases. `below_ground` (no surface water) is
+  unchanged, as it must be. Changes are ≤1 m except the `transient` case, where 52 cells move >1 m
+  (max 21.7 m) at cells previously held near the surface by the siphon and now free to drain — the
+  known collector divergence at rim cells, now resolved to one enforcement-independent answer. The
+  `transient` golden tolerance is loosened 1e-6 → 1e-5 m: under active-set that case reproduces across
+  rank counts only to ~2e-6 m (micrometre round-off from the active set differing in its last bits
+  between decompositions), where `implicit` reproduced below 1e-6.
+
 ### Added
 
 #### Configuration (nested YAML)

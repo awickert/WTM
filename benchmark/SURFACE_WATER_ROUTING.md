@@ -8,14 +8,23 @@ through the ground (`wtd = 0`) and is routed to runoff / FillSpillMerge. This is
 `runoff_collector` config key makes that choice explicit.
 
 ```
-runoff_collector implicit    # in-residual exfiltration constraint. Anderson + Picard. DEFAULT.
+runoff_collector active_set  # semismooth constraint solved INSIDE the residual. DEFAULT (Anderson).
+                             #   The only enforcement with no SPURIOUS dt-dependence.
+runoff_collector implicit    # in-residual exfiltration constraint. The FORMER default.
                              #   NOT dt-independent: leaves a residual head ~ dt*inflow (see below)
 runoff_collector explicit    # post-solve clamp (robust on every solver, dt-lagged)
 runoff_collector off         # no collection -- NONPHYSICAL, warns
 runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-scaled)
 ```
 
-**Default is `implicit`** (the exact constraint); the default *solver* is matrix-free Anderson.
+**Default is `active_set`**; the default *solver* is matrix-free Anderson.
+
+**The default is solver-dependent.** The active-set pin lives in the matrix-free Anderson residual
+only -- the Picard operator and Newton Jacobian carry no tangent for it, and selecting active-set also
+switches every collector removal off, so those solvers would run with the constraint effectively
+UNENFORCED. That is a hard failure, not a degradation: Newton *aborts*. So when
+`surface_water.collection.method` is **unset**, the default resolves to `active_set` on Anderson and
+to `explicit` on Picard/Newton, with a NOTE. An explicit choice is always honoured (and warns).
 
 **The selector wins over the legacy `-wtm_` surface flags.** In every mode except `legacy`, the selector sets
 `-wtm_surface_sink`, `-wtm_direct_to_runoff` and `-wtm_surface_exfiltration_to_runoff` itself, so passing one of
