@@ -60,8 +60,11 @@
     (island cold start: rang forever at 14843 iters excluded vs a monotone settle in 1547 including it). A
     *settled* clamped cell has `h_pred ≈ hⁿ⁺¹` ⇒ deviation ≈ 0, so inclusion costs nothing on a warm
     transient (byte-identical iteration counts to the excluded norm at `dt_tol` 0.5/5/20); only a
-    *transitioning / ringing* surface cell spikes, which correctly shrinks Δt. MAX norm (default) or RMS
-    (`-wtm_dt_norm_rms`).
+    *transitioning / ringing* surface cell spikes, which correctly shrinks Δt. **RMS norm (default)** or MAX
+    (`-wtm_dt_norm_max`). RMS is the default because, under the water (volume) step-error, the MAX worst-cell
+    norm is hostage to a handful of surface-kink cells (the `storedVolume` slope changes 1→φ at `wtd=0`) whose
+    spike is **dt-INDEPENDENT** — on a cold start MAX shrinks Δt to the floor and aborts (max retries) at any
+    `dt_tol`; RMS averages those cells over the domain and cold-starts robustly. See GH #13.
   - **Validated** (Esquibel, dry −20 %, `tests/run_all.sh` green): `-wtm_dt_tol 1/5/20 m` → 33/12/8 steps
     (6/3/1 rejected), all converged — monotone in the tolerance, both mechanisms live. This is the general
     stability route: the controller keeps Δt as large as the *local* terrain/conditions allow and backs off
