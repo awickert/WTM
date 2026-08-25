@@ -51,7 +51,7 @@ The reported quantities fall in two groups, kept separate on purpose:
 | `stored_volume` | 14 | **physical** | exact stored water, `Sum storedVolume(w)\cdot A` |
 | `ocean_loss_closing` | 15 | **budget-closing** | total ocean loss *inferred by difference*: `recharge − evap − \Delta(stored\_volume)` |
 | `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow − total_loss_to_ocean` (both ocean channels: Darcy + FSM spill; carries the BDF2 gap) |
-| `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance (Picard path) |
+| `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance on every solver path (`nan` under TR-BDF2, which has no single-step identity) |
 
 - The **physical** quantities are what science uses: how much water entered, where and how fast it
   left through the coast (a real Darcy flux, per-cell-mappable), how much the sink removed, how much
@@ -113,10 +113,42 @@ consistency term.
 **Making it exact.** `exact_budget_residual` (column 17) does exactly this: it accumulates the
 solver's *exact per-step discrete* terms — the storage term `\sum (a_c V^{n+1}-b_c V^{n}+c_c
 V^{n-1})A` (which telescopes to the endpoints above automatically) and the solver recharge `\sum S_y
-r\,A` — over owned land cells (Picard/BDF2 path). By the discrete balance, `storage_change =
+r\,A` — over owned land cells. By the discrete balance, `storage_change =
 solver_recharge − ocean_outflow − surface_removed` to the SNES tolerance, so this residual is ~0
 regardless of cold-start transients. We report it *alongside* the physical quantities (not instead),
 so the headline numbers mean what a scientist expects while the exact residual proves conservation.
+
+**It is now solver-agnostic** (it was Picard-only, which left the default matrix-free Anderson path
+without an exact check). `accumulate_budget_terms` mirrors the branch cascade of *both*
+`FormPicardRHS` and the matrix-free `FormFunctionLocal` — secant backward Euler, `-wtm_volume_storage`
+(exact `\Delta V` backward Euler), and BDF2-on-V — in **volume** units, i.e. without the `1/S_y`
+head-scaling the Anderson residual applies (a positive per-cell scale that leaves the root unchanged
+but would corrupt a budget). **TR-BDF2 is deliberately not covered:** its two stages each satisfy
+their own discrete balance and do not telescope into one per-step identity, so any accumulated total
+would be a wrong number wearing the word "exact". A run that takes a TR-BDF2 step clears
+`exact_budget_valid` and column 17 is reported as `nan`, never as a stale zero.
+
+### Two definitions of "recharge", and which one this uses
+
+There are two accumulators, and they mean different things:
+
+| accumulator | sums | meaning |
+|---|---|---|
+| `total_added_recharge` (col 9) | `rech_dist` | **external** water entering the domain (precipitation, less the runoff-ratio share) |
+| `total_solver_recharge` (col 17's input) | `rech_vec`, the source term the residual actually integrates | **everything the scheme treats as an input during the step** |
+
+They agree whenever all input arrives as precipitation. They diverge under
+`-wtm_fsm_delta_source` (#116), where FillSpillMerge's delivery is folded into the step's source term
+rather than applied as a between-step overwrite of the water table. Once the water arrives *during*
+the step, the scheme's own conservation law counts it as an input, and only the second definition
+describes the scheme being run — so the exact budget uses it.
+
+Measured on the dome fixture (Anderson, FSM on, at steady state), the exact residual relative to
+recharge is `1.6e-6` for the overwrite path and **`6.9e-11`** for `-wtm_fsm_delta_source`. The source
+path conserves *more* tightly, and for a structural reason: its coupling flux is an explicit term in
+the residual, which the solver drives to its tolerance, whereas the overwrite arrives as a state jump
+that no per-step discrete identity can see. Column 16 (the physical residual, built on the external
+definition) still reads ~18% for the source path; that is the definitional mismatch, not a leak.
 
 ## 4a. What the exact residual then uncovered: N–S flux on a lat-lon grid
 

@@ -635,13 +635,37 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
 // satisfies is  storage(w^{n+1},w^n,w^{n-1}) + dt*lateral_flux + dt*Q_sink = recharge_term, so summed
 // over land cells (interior lateral fluxes cancel; the land->ocean flux is total_ocean_outflow):
 //   total_storage_change = total_solver_recharge - total_ocean_outflow - total_surface_removed
-// to SNES tolerance. The storage/recharge forms mirror FormPicardRHS exactly across its paths
-// (BDF2-on-V uses V and specific yield; the secant paths use the effective storativity and heads).
-// Called after the solve, BEFORE the BDF2 history overwrites w^{n-1}. Picard path only (the exact
-// residual is not defined for the matrix-free Anderson default). See benchmark/WATER_BUDGET.md.
+// to SNES tolerance.
+//
+// SOLVER-AGNOSTIC (was Picard-only). The storage form must be the one the residual ACTUALLY used, so
+// this mirrors the branch structure of both FormPicardRHS and the matrix-free FormFunctionLocal
+// (transient_groundwater.cpp, the `tr_stage` / `bdf2v` / `vol_storage` / secant cascade) -- in VOLUME
+// units, i.e. without the 1/Sy head-scaling the Anderson residual applies (a positive per-cell scale
+// that leaves the root unchanged but would corrupt a budget).
+//
+// This term is what makes the budget agree with the SCHEME rather than with an external-water
+// bookkeeping convention -- which matters directly for -wtm_fsm_delta_source (#116): once FSM's
+// delivery is a source inside the step, the scheme's own conservation law counts it as an input, and
+// `rech_vec` (which this reads) is exactly that full source term. See benchmark/WATER_BUDGET.md.
+//
+// TR-BDF2 is NOT covered: its two stages each satisfy their own discrete balance and do not telescope
+// into a single per-step identity, so an accumulated total would be a wrong number wearing the word
+// "exact". Steps taken under TR-BDF2 clear arp.exact_budget_valid and PrintValues reports the column
+// as unavailable rather than as zero.
+//
+// Called after the solve, BEFORE the BDF2 history overwrites w^{n-1}.
 static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack) {
-  const bool bdf2      = user_context.use_bdf2 && user_context.bdf2_have_history;
-  const bool bdf2_on_V = bdf2 && user_context.use_bdf2_on_V;
+  // TR-BDF2: no single-step discrete identity to accumulate (see the note above). Mark and bail.
+  if (user_context.use_tr_bdf2) {
+    arp.exact_budget_valid = false;
+    return;
+  }
+  const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history;
+  // Mirror the residual's branch choice. Picard uses use_bdf2_on_V; the matrix-free path additionally
+  // offers -wtm_volume_storage, a backward Euler whose storage is the exact volume change (a_c,b_c,c_c
+  // = 1,1,0). Both are volume-form; everything else is the secant S_c*(a_c h^{n+1} - b_c h^n + c_c h^{n-1}).
+  const bool bdf2_on_V     = bdf2 && user_context.use_bdf2_on_V;
+  const bool volume_form   = bdf2_on_V || g_volume_storage;
   double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // backward-Euler weights (recharge form S_c*(h^{n+1}-h^n))
   if (bdf2) {
     const double omega = user_context.deltat / user_context.bdf2_prev_dt;
@@ -649,6 +673,8 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
     b_c                = 1.0 + omega;
     c_c                = omega * omega / (1.0 + omega);
   }
+  // -wtm_volume_storage is backward Euler even when BDF2 history exists on another path: no w^{n-1} term.
+  if (g_volume_storage && !bdf2_on_V) { a_c = 1.0; b_c = 1.0; c_c = 0.0; }
 
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar **my_topo, **my_prev = nullptr;
@@ -663,7 +689,7 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
       const double wm1  = my_prev ? my_prev[j][i] : 0.0;     // w^{n-1} (unused when c_c==0)
       const double rech = dmdapack.rech_vec[j][i];
       double storage, recharge;
-      if (bdf2_on_V) {
+      if (volume_form) {
         storage  = a_c * storedVolume(w1, poro) - b_c * storedVolume(w0, poro) + c_c * storedVolume(wm1, poro);
       } else {
         const double S_c = updateEffectiveStorativity(w0, w1, poro);  // secant storativity (matches the RHS)
@@ -1705,7 +1731,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // read while starting_wtd still holds w^n and starting_wtd_prev still holds w^{n-1} (both below
   // overwrite these). Together with total_ocean_outflow and total_surface_removed the budget then
   // closes to the SNES tolerance. See benchmark/WATER_BUDGET.md.
-  if (user_context.use_picard) accumulate_budget_terms(user_context, arp, dmdapack);
+  accumulate_budget_terms(user_context, arp, dmdapack);
 
   // BDF2 / predictor: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag, so BDF2 /

@@ -105,6 +105,10 @@ struct ArrayPack {
   // ~1% of the physical snapshot). See benchmark/WATER_BUDGET.md.
   double total_storage_change  = 0;
   double total_solver_recharge = 0;
+  // False once any step ran under a scheme with no single-step discrete identity to accumulate
+  // (TR-BDF2: its two stages each satisfy their own balance and do not telescope). The exact budget
+  // residual is then meaningless and PrintValues reports it as unavailable rather than as a number.
+  bool exact_budget_valid = true;
 
   // FSM fullness-walk census (#122): set each FillSpillMerge call by MarkFullness() -- how many of the
   // (non-ocean) depressions are filled to capacity. Diagnostic only for now; the future prune skips the
