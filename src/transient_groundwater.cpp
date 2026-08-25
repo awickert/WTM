@@ -1378,6 +1378,26 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // something else would violate "an explicit choice is always honoured", and a warning in front of
     // the nonphysical `off` mode is a warning users will scroll past. (The DEFAULT never lands here --
     // it resolves to `explicit` on these solvers further up.)
+    // TRIED AND REVERTED (2026-08-26) -- record so the next attempt starts here rather than repeating it.
+    // Adding the active-set ROW to the Picard operator/RHS is the easy half and it does work: assemble the
+    // pinned row as a single diagonal entry with b = topo + surface_water_depth, AREA-SCALED (every other
+    // row is volume-form, ~1e6-1e8 m^2; an unscaled identity row against a ~90 m head puts 8 orders of
+    // magnitude of row scaling in the matrix and CG/GAMG dies -- that scaling was the whole reason the
+    // first three attempts failed identically at 12 iterations). With it scaled, Picard CONVERGES (607
+    // iterations, 1.8 s) and reproduces Anderson's lake TOPOLOGY (4 lakes) on tests/multilake.
+    //
+    // It is still WRONG, and the missing piece is not a tangent. Pinning discards the cell's mass balance,
+    // so the water the constraint removes must be recovered and handed to FSM. On the Anderson path that
+    // is the multiplier read straight off the residual (my_exfiltration = max(0, -f*Sy) in
+    // FormFunctionLocal). The Picard formulation never forms a residual, so there is nothing to read:
+    // measured total_surface_removed = 0.0 (Anderson: 2.0e12) and an exact budget residual of 93% of
+    // recharge, with lake stages 97.5-99.3 m against Anderson's 90.9-97.2 m. Recovering the multiplier
+    // post-solve -- evaluating the free row that was discarded, for pinned cells only -- is the real work,
+    // and it is a new mechanism rather than a derivative. Two further caveats found on the way: the
+    // operator becomes NONSYMMETRIC (neighbours keep entries in the pinned column, and it cannot be
+    // symmetrised as ocean cells are, because MatZeroRowsColumns with x=b=NULL is valid only for an
+    // imposed value of zero), so the CG+GAMG default is no longer justified; and CG vs GMRES made no
+    // difference to any of the failures, so symmetry was never the binding constraint.
     if (user_context.use_picard)
       throw std::runtime_error(
           "surface_water.collection.method: active_set is not supported on the Picard solver. The pin is "
