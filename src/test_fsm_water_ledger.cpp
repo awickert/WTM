@@ -1,8 +1,8 @@
 // Unit tests for the FillSpillMerge WATER LEDGER -- what FSM does to arp.wtd, arp.runoff and
 // arp.total_loss_to_ocean, and the conservation identity that relates them.
 //
-// WHY THIS EXISTS. The GW<->FSM handoff has repeatedly been mis-read (see GH awickert/WTM#116, the
-// FSM-delta-source work): the recurring error is to expect FSM's per-cell volume change to sum to
+// WHY THIS EXISTS. The GW<->FSM handoff has repeatedly been mis-read (the FSM-delta-source work):
+// the recurring error is to expect FSM's per-cell volume change to sum to
 // ZERO over the domain, and then to read the (correct, non-zero) sum as evidence of a double-count.
 // It is not zero. FSM is handed water in arp.runoff that was already debited from aquifer storage
 // earlier in the step (the exfiltration constraint), and it RETURNS that water to the

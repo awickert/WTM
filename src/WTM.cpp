@@ -266,7 +266,7 @@ static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScal
 }
 
 // As scatter_into_owned, but ADDS the scattered rank-0 field onto the held owned array (+=). Used to fold
-// the FSM per-step delta into rech_dist as a source (-wtm_fsm_delta_source, #116) via the wtd_global scratch.
+// the FSM per-step delta into rech_dist as a source (-wtm_fsm_delta_source, the FSM-delta-source work) via the wtd_global scratch.
 template <typename T>
 static void accumulate_into_owned(AppCtx& user_context, const T* full_r0, PetscScalar** dest) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
@@ -293,7 +293,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   // Assemble the full wtd on rank 0 (the intermediate solves only touch each rank's owned cells).
   FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
 
-  // -wtm_fsm_delta_source (#116): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
+  // -wtm_fsm_delta_source (FSM-delta-source): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
   // row-major (matching arp.wtd.data()). Populated below in the FSM block; injected into rech_dist further down.
   const bool fsm_delta_source = FanDarcyGroundwater::fsm_delta_source_on() && params.fsm_on && distribute_recharge;
   std::vector<double> fsm_delta_r0;
@@ -315,7 +315,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     if (mpi_rank == 0) dh::FillSpillMerge(params, deps, arp);
     fsm_seconds += fsm_timer.lap();
     if (fsm_delta_source) {
-      // -wtm_fsm_delta_source (#116): instead of overwriting the carrier with the post-FSM table (an IC jump
+      // -wtm_fsm_delta_source (FSM-delta-source): instead of overwriting the carrier with the post-FSM table (an IC jump
       // that breaks 2nd-order accuracy on TR-BDF2/adaptive), KEEP the smooth pre-FSM GW result as starting_wtd
       // and record FSM's per-cell volume change V(post)-V(pre) to fold into the next step's recharge below.
       if (mpi_rank == 0) {
@@ -370,7 +370,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   }
   if (distribute_recharge) {
     distributed_recharge(params, user_context, dmdapack);
-    // -wtm_fsm_delta_source (#116): fold FSM's per-cell volume change onto the recharge source for the next
+    // -wtm_fsm_delta_source (FSM-delta-source): fold FSM's per-cell volume change onto the recharge source for the next
     // step. Added AFTER distributed_recharge so the runoff ratio does not take a second cut of water FSM has
     // already routed -- that ordering is load-bearing.
     //

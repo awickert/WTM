@@ -264,7 +264,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL, SUPERSEDED for its original purpose]: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy); ACTIVE_SET now removes that shock by itself -- shock ratio 0.985 -> 3.6e-13 -- so this no longer has a shock to smooth and is NOT recommended for that. Retained because its source-delivery machinery is the mechanism for DECOUPLING FSM CADENCE from the GW step, if the serial-FSM ceiling is ever attacked (option B of the lake-coupling design). Incompatible with active_set (guarded in update()). See GH #116 and benchmark/scheme_bench/README.md.
+static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL, SUPERSEDED for its original purpose]: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy); ACTIVE_SET now removes that shock by itself -- shock ratio 0.985 -> 3.6e-13 -- so this no longer has a shock to smooth and is NOT recommended for that. Retained because its source-delivery machinery is the mechanism for DECOUPLING FSM CADENCE from the GW step, if the serial-FSM ceiling is ever attacked (option B of the lake-coupling design). Incompatible with active_set (guarded in update()). See the FSM-delta-source work (backlog item, NOT a GitHub issue) and benchmark/scheme_bench/README.md.
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
@@ -644,7 +644,7 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
 // that leaves the root unchanged but would corrupt a budget).
 //
 // This term is what makes the budget agree with the SCHEME rather than with an external-water
-// bookkeeping convention -- which matters directly for -wtm_fsm_delta_source (#116): once FSM's
+// bookkeeping convention -- which matters directly for -wtm_fsm_delta_source (FSM-delta-source): once FSM's
 // delivery is a source inside the step, the scheme's own conservation law counts it as an input, and
 // `rech_vec` (which this reads) is exactly that full source term. See benchmark/WATER_BUDGET.md.
 //
@@ -1108,7 +1108,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   (void)anderson_path;
   PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
   // Track whether the user PASSED this flag (vs. it taking its default). The runoff_collector selector
-  // below supersedes it, and a silent override sent a #116 experiment after the wrong exfiltration
+  // below supersedes it, and a silent override sent a the FSM-delta-source work experiment after the wrong exfiltration
   // enforcement -- so the selector warns, but only when there is a real user choice to report.
   PetscBool surfexfil_set = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, &surfexfil_set);
@@ -1212,7 +1212,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_direct_to_runoff = (directexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // -wtm_fsm_delta_source [EXPERIMENTAL]: carry FSM's per-step wtd change as a source in the NEXT step's
-  // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH #116).
+  // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH the FSM-delta-source work).
   PetscBool fsm_src = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_delta_source", &fsm_src, nullptr);
   g_fsm_delta_source = (fsm_src == PETSC_TRUE);
@@ -1291,7 +1291,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
     // Report any legacy surface flag the selector just superseded -- but ONLY one the user actually
     // passed, and only where the selector changed its effect. A run that takes the defaults says
-    // nothing here. The silent version of this override sent a #116 experiment after the wrong
+    // nothing here. The silent version of this override sent a the FSM-delta-source work experiment after the wrong
     // exfiltration enforcement (the command line asked for the post-solve clamp; the selector's
     // default gave the in-residual face, and no log recorded it). Once per run, not per cycle.
     static bool reported_override = false;
@@ -1417,7 +1417,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
 
-  // #116 x active_set are STRUCTURALLY INCOMPATIBLE, and now that active_set is the default this has to
+  // FSM-delta-source x active_set are STRUCTURALLY INCOMPATIBLE, and now that active_set is the default this has to
   // be a hard error rather than a footnote. The lake-aware pin reads its obstacle from the water table
   // itself (surface_water_depth = max(0, starting_wtd), the stage FSM wrote there last step).
   // -wtm_fsm_delta_source exists precisely to STOP FillSpillMerge writing its result there -- that is its
