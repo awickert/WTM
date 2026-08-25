@@ -71,3 +71,55 @@ was never claimed to handle.
   arms. Its iterations and wall are; precision is matched by rms either way.
 - One fixture, one domain, one `dt`. The adaptive regression above is a direct warning against
   generalising any of this to Esquibel or to production scale without re-measuring.
+
+---
+
+# The key comparison: FSM between steps vs during the step
+
+`run.sh` takes `COUPLING=between|during`. Both sweeps were run identically
+(`results_between/`, `results_during/`); side-by-side output in
+`COMPARISON_island_2026-08-25.txt`, produced by `compare.py`.
+
+- **between** — FillSpillMerge runs between steps and **overwrites** the water table (original).
+- **during** — FSM's per-cell ΔV enters the **next step's source term** (`-wtm_fsm_delta_source`, #116).
+
+## Cost at matched settling precision (rms ≤ 1 mm-water), fixed-dt schemes
+
+| scheme | between (iters / ~s) | during (iters / ~s) | iters | wall |
+|---|---|---|---|---|
+| Anderson BE (secant) | 1835 / 0.9 | 1259 / 1.0 | **1.46× fewer** | 0.92× (slower) |
+| Anderson BE (volume ΔV) | 1834 / 0.9 | 1251 / 1.0 | **1.47× fewer** | 0.91× (slower) |
+| Picard BDF2-on-V + T̄ | 953 / 2.9 | 918 / 2.5 | 1.04× | 1.16× (faster) |
+| TR-BDF2 (fixed dt) | 1092 / 0.8 | 700 / 1.0 | **1.56× fewer** | 0.80× (slower) |
+
+**In-step coupling buys ~1.5× fewer nonlinear iterations and is ~10–20% SLOWER in wall time** on the
+matrix-free schemes. The two effects are separate and both real: the smoother state is easier to
+solve, but each step now pays an extra O(N) ΔV pass plus a scatter on rank 0. Measured cost per
+iteration, Anderson BE: 0.51 ms (`between`) vs 0.81 ms (`during`).
+
+That overhead is per *step*, not per iteration, so it should amortise better where iterations-per-cycle
+are higher or the domain is larger. **This is 8,775 cells; do not extrapolate to Esquibel or to
+production without re-measuring.**
+
+Settling floors are effectively identical (Anderson 0.1425 vs 0.1427; TR-BDF2 0.1334 vs 0.1338), so
+`during` settles just as completely — it is not trading precision for the iteration saving.
+
+## A correction to an earlier number
+
+An earlier note recorded "≈2.4× fewer iterations" for the source coupling on Esquibel (2661 → 1114).
+That was a **full-run** comparison at each arm's own stopping point, not precision-matched. The same
+inflation appears here: the full-budget ratio is 1.75× where the matched ratio is 1.46×. Treat the
+2.4× as an overstatement of the same kind until it is re-measured at matched precision.
+
+## Two arms whose iso-precision rows must not be read as convergence
+
+The precision axis is the per-cycle *change* in the water table, so a scheme deliberately taking tiny
+steps reports a tiny rms while nowhere near converged. Both variable-dt arms are affected and are
+marked in the output:
+
+- **Newton + dt-continuation** reads "10 mm after 10 iterations" because continuation starts near
+  `dt ≈ 0.001 yr`. Its eye-catching full-budget figures (261,203 → 7,426 iterations, 412.5 → 13.3 s,
+  ~35× and ~31×) are further confounded: `during` also ends at a **coarser** settling state
+  (4.68 vs 3.17 mm), so this is not a like-for-like win and should not be quoted as one.
+- **TR-BDF2 + adaptive** regresses under *both* couplings (1.14 → 14.4 mm `between`; 1.59 → 26.7 mm
+  `during`), so the coupling is not the cause of that regression.

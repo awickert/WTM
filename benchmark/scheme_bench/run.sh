@@ -22,17 +22,33 @@
 # All arms run at the same rank count on an otherwise idle machine; treat wall as noisy at the ~10%
 # level and iterations as the clean algorithmic metric.
 #
+# COUPLING (env, default `between`) selects HOW FillSpillMerge's water reaches the groundwater solve:
+#   between -- FSM runs between steps and OVERWRITES the water table (the original behaviour)
+#   during -- FSM's per-cell volume change is folded into the NEXT step's source term
+#              (-wtm_fsm_delta_source, #116), so the water arrives DURING the step
+# Run both and compare with compare.py. NOTE the two converge to genuinely DIFFERENT equilibria
+# (ponded cells infiltrate under `during` instead of being re-pinned full each step), so the
+# per-cycle rms compared here is a SETTLING-RATE metric -- how fast each stops changing -- and says
+# nothing about which answer is more nearly right. Do not read it as accuracy.
+#
 # Usage:  benchmark/scheme_bench/run.sh [path/to/wtm.x] [ranks] [cycles]
+#         COUPLING=during benchmark/scheme_bench/run.sh ...
 set -uo pipefail
 cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 RANKS="${2:-4}"
 CYCLES="${3:-120}"
+COUPLING="${COUPLING:-between}"
+case "$COUPLING" in
+  between) COUPLING_FLAGS="" ;;
+  during)  COUPLING_FLAGS="-wtm_fsm_delta_source" ;;
+  *) echo "ERROR: COUPLING must be 'between' or 'during' (got '$COUPLING')"; exit 1 ;;
+esac
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
 DOM=$(readlink -f ../island/domain)
 [[ -f "$DOM/Esquibel_010000_topography.tif" ]] || { echo "ERROR: island fixture missing at $DOM"; exit 1; }
-OUT="${OUT:-results}"; mkdir -p "$OUT"
+OUT="${OUT:-results_$COUPLING}"; mkdir -p "$OUT"
 export OMP_NUM_THREADS=1     # pure MPI: OpenMP x MPI oversubscription hangs this fixture at n>=4
 
 # Cold start from a saturated table (supplied_wt 0) -- the spin-up regime, where the schemes actually
@@ -90,6 +106,7 @@ SCHEMES=(
 
 echo "=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ==="
 echo "binary: $WTM   ranks: $RANKS   cycle budget: $CYCLES   auto-stop: DISABLED (eq_tol 0)"
+echo "FSM coupling: $COUPLING${COUPLING_FLAGS:+  ($COUPLING_FLAGS)}"
 echo
 printf "%-28s %10s %12s %12s\n" "scheme" "rc" "wall_s" "SNES_iters"
 : > "$OUT/summary.csv"
@@ -99,7 +116,7 @@ for entry in "${SCHEMES[@]}"; do
     mkcfg "$stem"; rm -f "$OUT/$stem.txt"
     t0=$(date +%s.%N)
     # shellcheck disable=SC2086
-    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags -snes_stol 1e-8 -wtm_eq_tol 0 \
+    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS -snes_stol 1e-8 -wtm_eq_tol 0 \
         > "$OUT/$stem.log" 2>&1
     rc=$?
     t1=$(date +%s.%N)

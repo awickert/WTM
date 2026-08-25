@@ -1,0 +1,76 @@
+=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ===
+binary: /home/awickert/models/WTM/build/wtm.x   ranks: 4   cycle budget: 250   auto-stop: DISABLED (eq_tol 0)
+FSM coupling: during  (-wtm_fsm_delta_source)
+
+scheme                               rc       wall_s   SNES_iters
+Anderson BE (secant)                  0         1.33         1643
+Anderson BE (volume dV)               0         1.31         1635
+Picard BDF2-on-V (plain)            134        17.51        10000
+Picard BDF2-on-V + Tbar               0         3.32         1235
+TR-BDF2 (fixed dt)                    0         1.35          991
+TR-BDF2 + adaptive dt                 0         1.98         3708
+Newton (plain)                      134         3.66            2
+Newton + dt-continuation              0        13.28         7426
+
+Fixture: island 117x75 (8775 cells), cold start (saturated), dt = 1 week, FSM on.
+Precision axis: per-cycle water-depth rms [mm-water] (volume-consistent, not a head diff).
+Wall is measured per ARM; iso-precision wall is apportioned by iteration share and marked '~'.
+Iterations are the clean algorithmic metric; wall carries ~10% machine noise.
+
+====================================================================================================
+1. ISO-PRECISION COST  (cycles / SNES iters / ~wall to FIRST reach the target rms)
+====================================================================================================
+scheme                                  rms<=100.0mm           rms<=10.0mm            rms<=1.0mm
+                                    cyc / iters / ~s      cyc / iters / ~s      cyc / iters / ~s
+----------------------------------------------------------------------------------------------------
+Anderson BE (secant)                  11 / 186 / 0.2        60 / 654 / 0.5      156 / 1259 / 1.0
+Anderson BE (volume dV)               11 / 179 / 0.1        60 / 647 / 0.5      156 / 1251 / 1.0
+Picard BDF2-on-V (plain)        DID NOT RUN (rc=134)
+Picard BDF2-on-V + Tbar               11 / 127 / 0.3        64 / 500 / 1.3       152 / 918 / 2.5
+TR-BDF2 (fixed dt)                     11 / 93 / 0.1        59 / 353 / 0.5       153 / 700 / 1.0
+TR-BDF2 + adaptive dt                 11 / 233 / 0.1       71 / 1145 / 0.6                 never
+Newton (plain)                  DID NOT RUN (rc=134)
+Newton + dt-continuation                1 / 10 / 0.0          1 / 10 / 0.0                 never
+
+====================================================================================================
+2. PRECISION FLOOR  (finest rms reached, and whether it was still improving at the budget end)
+====================================================================================================
+scheme                           best rms [mm]  at cycle     final rms    still improving?
+----------------------------------------------------------------------------------------------------
+Anderson BE (secant)                    0.1427       250        0.1427     still improving
+Anderson BE (volume dV)                 0.1427       250        0.1427     still improving
+Picard BDF2-on-V (plain)      -- did not run --
+Picard BDF2-on-V + Tbar                 0.1379       250        0.1379     still improving
+TR-BDF2 (fixed dt)                      0.1338       250        0.1338     still improving
+TR-BDF2 + adaptive dt                    1.588       162         26.67           REGRESSED
+Newton (plain)                -- did not run --
+Newton + dt-continuation                 4.682       250         4.682     still improving
+
+====================================================================================================
+3. NATIVE STOP  (where each scheme's own auto-stop -wtm_eq_tol 0.01 would have fired)
+   *** NOT precision-matched -- each row stops at a DIFFERENT rms. Never compare these times
+       across schemes; that is exactly the error table 1 exists to prevent. ***
+====================================================================================================
+scheme                          stop cycle     iters   ~wall_s    rms AT STOP [mm]
+----------------------------------------------------------------------------------------------------
+Anderson BE (secant)                    88       854       0.7                4.67
+Anderson BE (volume dV)                 88       847       0.7                4.67
+Picard BDF2-on-V (plain)      -- did not run --
+Picard BDF2-on-V + Tbar                 89       639       1.7               4.628
+TR-BDF2 (fixed dt)                      86       464       0.6               4.681
+TR-BDF2 + adaptive dt                  103      1544       0.8               4.794
+Newton (plain)                -- did not run --
+Newton + dt-continuation                 1        10       0.0               5.317
+
+Full-budget totals (all arms ran the same cycle budget):
+scheme                           rc    wall_s     iters   cycles  iters/cycle
+----------------------------------------------------------------------------------------------------
+Anderson BE (secant)              0      1.33      1643      250         6.57
+Anderson BE (volume dV)           0      1.31      1635      250         6.54
+Picard BDF2-on-V (plain)        134     17.51     10000        0          nan
+Picard BDF2-on-V + Tbar           0      3.32      1235      250         4.94
+TR-BDF2 (fixed dt)                0      1.35       991      250         3.96
+TR-BDF2 + adaptive dt             0      1.98      3708      250        14.83
+Newton (plain)                  134      3.66         2        0          nan
+Newton + dt-continuation          0     13.28      7426      250        29.70
+DONE rc=0
