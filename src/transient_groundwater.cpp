@@ -2362,25 +2362,41 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // table outside of the solve.
         // -wtm_dev_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth exfiltration constraint, enforced INSIDE the solve
         // (enforcement-independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`).
-        // The head is pinned to the FSM FREE SURFACE, not the land surface: wtd <= d_pond, where
-        // d_pond = max(0, starting_wtd) is the ponded depth from the PREVIOUS step's FillSpillMerge (0 off
-        // lakes; the one-step lag). Complementarity 0 <= (d_pond - w_c) ⊥ (exfiltration flux) >= 0, on the mass
-        // residual R = f (head units): the semismooth min-NCP is f <- max(w_c - d_pond, R). Below the free
-        // surface the normal residual R drives mass balance (f=R->0); if the cell overshoots ABOVE the free
-        // surface the (w_c - d_pond) branch skims the excess to runoff. Off lakes (d_pond=0) this reduces to
-        // the wtd<=0 pin (skim at the land surface = hillslope discharge). On lakes (d_pond>0) the aquifer
-        // keeps water up to the lake stage -- its head is felt DURING the solve -- and only the OVERFLOW above
-        // the stage is skimmed; the lake is a finite reservoir whose level is free to fall (drying). Continuous
-        // at the shore (d_pond->0), so no discrete wet/dry switch. The branches MEET at the free surface (both
+        // THE OBSTACLE. The head may not exceed  topo + surface_water_depth  -- ONE single-valued surface
+        // over the whole land domain, equal to the lake stage inside a depression, to sea level on land
+        // below sea level, and to the land surface everywhere else. Writing it as a DEPTH above topo (rather
+        // than storing the elevation) is deliberate: topo cancels out of the residual below, the quantity is
+        // independent of topography (which transient runs re-interpolate every cycle, so a stored elevation
+        // would go stale), and it costs no array -- just this max on a value already in registers.
+        //
+        // In wtd variables: wtd <= surface_water_depth, where surface_water_depth = max(0, starting_wtd) is
+        // the ponded depth left by the PREVIOUS step's FillSpillMerge (0 off lakes; the one-step lag).
+        // Verified flat: on a real lake the per-cell depths differ but topo + surface_water_depth is constant
+        // to sigma = 0 across the lake, i.e. one free-surface ELEVATION, which is what a lake should have.
+        //
+        // NOTE (fragility): surface_water_depth is INFERRED from starting_wtd, so it silently depends on FSM
+        // having written its result there. -wtm_fsm_delta_source skips exactly that write, which collapses
+        // this to 0 everywhere and drains every lake. The two are incompatible until the stage is carried
+        // explicitly. See benchmark/scheme_bench/README.md.
+        //
+        // Complementarity 0 <= (surface_water_depth - w_c) ⊥ (exfiltration flux) >= 0, on the mass residual
+        // R = f (head units): the semismooth min-NCP is f <- max(w_c - surface_water_depth, R). Below the
+        // free surface the normal residual R drives mass balance (f=R->0); if the cell overshoots ABOVE it
+        // the (w_c - surface_water_depth) branch skims the excess to runoff. Off lakes this reduces to the
+        // wtd<=0 pin (skim at the land surface = hillslope discharge). On lakes the aquifer keeps water up to
+        // the lake stage -- its head is felt DURING the solve -- and only the OVERFLOW above the stage is
+        // skimmed; the lake is a finite reservoir whose level is free to fall (drying). Continuous at the
+        // shore (surface_water_depth->0), so no discrete wet/dry switch. LAND ONLY: ocean cells take the
+        // Dirichlet h=0 branch above and never reach here. The branches MEET at the free surface (both
         // 0) so f is CONTINUOUS -- a hard switch's jump makes matrix-free Anderson diverge. Pinned-cell exfiltration
         // flux (the residual R discarded into the max) is captured for mass conservation: depth-form residual
         // is f*Sy, so an over-supplied cell (f<0) sheds exfiltration_depth = max(0,-f*Sy) to sink_removed_dist ->
         // FSM and total_surface_removed (budget). At convergence only cells held AT the free surface carry a
         // nonzero residual, so freely-solving (incl. below-stage lake) cells shed ~0. Anderson residual only.
         if (as_on) {
-          const double d_pond = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
+          const double surface_water_depth = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
           if (my_exfiltration) my_exfiltration[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
-          f[j][i] = std::max(w_c - d_pond, f[j][i]);
+          f[j][i] = std::max(w_c - surface_water_depth, f[j][i]);
         }
       }
     }

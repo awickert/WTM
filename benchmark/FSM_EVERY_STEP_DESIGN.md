@@ -60,7 +60,7 @@ stays flat and <0.3% of a cycle).
 - **Implicit coupling (future, #116):** with FSM every step, the FSM-induced water-table change can be folded
   into the recharge and solved *implicitly* in Anderson. FSM itself (fill-spill-merge) is combinatorial and
   cannot go into a residual, but its *result* — the lake stage — can enter as a Dirichlet head boundary (the
-  active-set pin at `topo + d_pond`), with the lake↔aquifer exchange in the residual. See the lake-as-head
+  active-set pin at `topo + surface_water_depth`), with the lake↔aquifer exchange in the residual. See the lake-as-head
   boundary design.
 - **Surface-crossing flicker (separate, #114):** the evaporation-discontinuity flicker at `wtd = 0` is a
   distinct, GW-side cause, managed by the smooth evaporation taper (taper 2); the `flicker_evap` test verifies

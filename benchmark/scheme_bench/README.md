@@ -186,11 +186,11 @@ The lake-aware pin takes its lake stage from the water table itself
 (`transient_groundwater.cpp:2381`):
 
 ```cpp
-const double d_pond = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
+const double surface_water_depth = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
 ```
 
 `-wtm_fsm_delta_source` exists precisely to **stop FSM writing its result into `starting_wtd`**. So
-under `during`, `d_pond` is ~0 everywhere, the pin skims at the land surface, and lakes cannot fill —
+under `during`, `surface_water_depth` is ~0 everywhere, the pin skims at the land surface, and lakes cannot fill —
 max wtd 0.0000 m. Active-set's lake-awareness *depends on* the very write that #116 removes.
 
 Confirming detail: **Picard is the exception** (5.8757 m / 176) because the pin lives in the Anderson
