@@ -111,6 +111,7 @@ add_sanitizers(dephier.x)
 add_executable(test_dmda.x
   src/test_dmda_gather.cpp
   src/test_storage_math.cpp
+  src/test_geometry.cpp
 )
 target_link_libraries(test_dmda.x PRIVATE wtm)
 target_compile_features(test_dmda.x PRIVATE cxx_std_20)

@@ -2,9 +2,9 @@
 # Run the unit tests (test_dmda.x) across a sweep of MPI rank counts. Two groups:
 # the DMDA gather/scatter primitives -- whose row-major layout must hold independent
 # of how PETSc decomposes the grid, so running at n>1 is the whole point -- and the
-# pure-math storage functions (storedVolume / specificYield / effective storativity),
-# which run redundantly per rank. Exit code (not just stdout) is checked on every rank
-# count, so a failure on any rank -- including non-root -- is caught.
+# pure-math functions (storedVolume / specificYield / effective storativity, and the
+# geotransform cell geometry), which run redundantly per rank. Exit code (not just
+# stdout) is checked on every rank count, so a failure on any rank is caught.
 #
 # Usage:  tests/run_unit_tests.sh [path/to/test_dmda.x] [ranks...]
 # Default binary: ../build/test_dmda.x   Default ranks: 1 2 3 4 8
@@ -21,7 +21,7 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
-echo "=== unit tests (DMDA gather/scatter + storage math) ==="
+echo "=== unit tests (DMDA gather/scatter + storage + geometry math) ==="
 echo "binary: $BIN"
 fail=0
 for n in "${RANKS[@]}"; do
