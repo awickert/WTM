@@ -8,7 +8,8 @@ through the ground (`wtd = 0`) and is routed to runoff / FillSpillMerge. This is
 `runoff_collector` config key makes that choice explicit.
 
 ```
-runoff_collector implicit    # in-residual exfiltration constraint (exact, dt-independent). Anderson + Picard. DEFAULT.
+runoff_collector implicit    # in-residual exfiltration constraint. Anderson + Picard. DEFAULT.
+                             #   NOT dt-independent: leaves a residual head ~ dt*inflow (see below)
 runoff_collector explicit    # post-solve clamp (robust on every solver, dt-lagged)
 runoff_collector off         # no collection -- NONPHYSICAL, warns
 runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-scaled)
@@ -39,12 +40,12 @@ budget) and `arp.runoff → FillSpillMerge`. They differ only in *when the const
 
 | mode | mechanism | where | dt-dependence | solvers |
 |---|---|---|---|---|
-| `implicit` | in-residual exfiltration `max(0,wtd)/dt` (`-wtm_direct_to_runoff`) | inside `F(w)`, solved-for | none (exact) | Anderson today; Picard/Newton need active-set (Issue #7) |
+| `implicit` | in-residual exfiltration `max(0,wtd)/dt` (`-wtm_direct_to_runoff`) | inside `F(w)`, solved-for | **LINEAR in dt** (measured) | Anderson today; Picard/Newton need active-set (Issue #7) |
 | `explicit` | post-solve clamp (`-wtm_surface_exfiltration_to_runoff`) | after each step, projected | small (~1 cm, → 0 as dt→0) | all |
 | `off` | none | — | — | all (nonphysical) |
 
 - **`implicit`** adds the exfiltration removal to the residual, so the lateral flow field equilibrates *against* a
-  surface pinned at `wtd = 0`. It is the exact exfiltration constraint and is dt-independent. Its removal is a
+  surface pinned at `wtd = 0`. Its removal is a
   discontinuous step at `wtd = 0`; the matrix-free Anderson path tolerates that kink, but the Picard operator /
   Newton Jacobian do not (Picard lands ~0.1 m off; Newton diverges), so `implicit` **warns** on those solvers.
   It runs **alone** — no post-solve clamp backstop — deliberately: a backstop would silently mop up any
@@ -76,3 +77,44 @@ later, regold-bearing step (Issue #7), with `explicit` the robust default and `i
 `-wtm_surface_sink 0` does **not** reliably mean "sink off" — that CLI form mis-parses (it can leave the surface
 unmanaged, so water piles). Use `-wtm_surface_sink false`, or better, drive the choice through
 `runoff_collector`, whose test asserts each mode by the config key and so cannot be fooled by the `0` form.
+
+## Measured: `implicit` is dt-DEPENDENT, and it propagates into lake depth
+
+**Date:** 2026-08-25 · island fixture (117×75), cold start, TR-BDF2, 250 weeks of simulated time held
+constant while only `dt` changes.
+
+The `implicit` siphon removes above-surface water at rate `max(0,wtd)/dt`, so at steady state the
+retained head balances inflow against a `1/dt` conductance: **`wtd_above ∝ dt`**. With FSM **off**
+(no routing, so the face is measured alone):
+
+| `dt` | max wtd [m] | ratio vs 1 week | ideal if ∝ `dt` |
+|---|---|---|---|
+| 1 week | 1.96615 | 1.000 | 1.000 |
+| 1/3 week | 0.68122 | 0.346 | 0.333 |
+| 1/6 week | 0.34425 | 0.175 | 0.167 |
+
+Essentially linear. This confirms the mechanism already noted in `tests/dt_sensitivity` and
+**contradicts the earlier "dt-independent, exact" claim in this document**, now corrected above.
+
+With FSM **on**, that dt-dependent excess is what FillSpillMerge routes, so **lake depth inherits the
+dependence** — a ~1.6 m face artifact becomes a ~3.4 m difference in modelled lake depth:
+
+| `dt` | `implicit` max wtd [m] | `-wtm_dev_active_set` max wtd [m] |
+|---|---|---|
+| 1 week | 5.3776 | **5.6986** |
+| 1/3 week | 2.4962 | **5.6986** |
+| 1/6 week | 2.0171 | **5.6986** |
+
+**The active-set exfiltration constraint removes it completely**: max &#124;Δwtd&#124; = 1.1e-3 m
+(rms 6e-5 m) across a 6× `dt` range, and it agrees with the value the well-converged fixed-dt
+Anderson and Picard+T̄ runs reach (5.6986 m). It was also *cheaper* here — 957 vs 1771 SNES
+iterations at `dt` = 1 week.
+
+### Why this matters beyond the collector
+
+This is what made **TR-BDF2 + adaptive dt** look like it was regressing in
+`benchmark/scheme_bench`. The controller subdivides each week into ~3 sub-steps and **rejects
+nothing** — it is behaving correctly. It simply lands on the small-`dt` branch of a model whose
+equilibrium lake depth depends on `dt` (adaptive: 2.37 m, right on the `dt` = 1/3 week line at
+2.50 m). **Adaptive was the messenger, not the fault.** Any scheme that shortens the step will
+disagree with the production `dt` = 1 week answer for as long as `implicit` is the default.
