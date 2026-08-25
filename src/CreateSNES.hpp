@@ -263,11 +263,11 @@ struct AppCtx {
   // gather) when the sink is off. See SURFACE_SINK_DESIGN.md and issue #4.
   Vec sink_removed_dist_vec = nullptr;
 
-  // -wtm_dev_active_set: per-cell seepage depth (m) captured from the pinned-cell mass residual during the
+  // -wtm_dev_active_set: per-cell exfiltration depth (m) captured from the pinned-cell mass residual during the
   // final residual evaluation, transferred post-solve into sink_removed_dist (-> FSM) + total_surface_removed
-  // so the active-set seepage is conserved (the semismooth face removes water INSIDE the solve, so nothing
+  // so the active-set exfiltration is conserved (the semismooth constraint removes water INSIDE the solve, so nothing
   // remains above the surface for the post-solve collectors to see). Zero unless -wtm_dev_active_set.
-  Vec seepage_vec = nullptr;
+  Vec exfiltration_vec = nullptr;
 
   // Extract global vectors from DM; then duplicate for remaining
   // vectors that are the same types
@@ -292,8 +292,8 @@ struct AppCtx {
     VecDuplicate(x, &rech_source);
     VecDuplicate(x, &runoff_dist_vec);
     VecDuplicate(x, &sink_removed_dist_vec);
-    VecDuplicate(x, &seepage_vec);
-    VecSet(seepage_vec, 0.0);
+    VecDuplicate(x, &exfiltration_vec);
+    VecSet(exfiltration_vec, 0.0);
     VecDuplicate(x, &precip_vec);
     VecDuplicate(x, &evap_vec);
     VecDuplicate(x, &open_water_evap_vec);

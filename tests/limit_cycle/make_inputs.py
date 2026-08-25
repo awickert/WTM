@@ -3,7 +3,7 @@
 
 A high plateau ringed by ocean, water table starting below the surface with strong recharge, so the
 interior mound rises ACROSS the land surface and sits at the free boundary (wtd=0). There, backward Euler
-+ Anderson OVERSHOOT the surface each step (storativity jump porosity->~1 and the seepage/removal kink),
++ Anderson OVERSHOOT the surface each step (storativity jump porosity->~1 and the exfiltration/removal kink),
 producing a period-2 LIMIT CYCLE -- the water table bounces above/below the surface and never settles.
 
 This is a deliberately BAD (unmanaged) configuration: run bare, it flickers, and different time-integration

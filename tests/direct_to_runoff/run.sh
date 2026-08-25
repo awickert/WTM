@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # DIRECT-TO-RUNOFF gathering -- the routing-success view of the free-surface flicker (FSM off).
 # See benchmark/FREE_SURFACE_FLICKER.md. The flicker is not a numerical problem when above-surface water has
-# somewhere to GO: with -wtm_direct_to_runoff the in-residual seepage face routes the excess (max(0,wtd)/dt)
+# somewhere to GO: with -wtm_direct_to_runoff the in-residual exfiltration constraint routes the excess (max(0,wtd)/dt)
 # into the runoff array, holding the table AT the surface (wtd = 0) instead of letting it pile up and slosh.
 # POSITIVE test of that success, with a bite proving the routing is load-bearing. Asserts:
 #   SETTLING     : with the routing on, the run reaches equilibrium (per-cycle |Δwtd| decays; no limit cycle).
-#   GATHERING    : the table is held at the surface -- max wtd = 0 and wtd <= 0 everywhere (the seepage-face
+#   GATHERING    : the table is held at the surface -- max wtd = 0 and wtd <= 0 everywhere (the exfiltration
 #                  complementarity: wherever water is gathered to runoff the table is pinned at 0, none piled).
 #   MASS BALANCE : at steady state the per-cycle recharge input equals what leaves via the runoff array + ocean
 #                  outflow:  Δrecharge = Δtotal_surface_removed + Δtotal_ocean_outflow  (evap_mode 0, no evap).
@@ -21,7 +21,7 @@ INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/dtr_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-1e-4}"          # metres; settled if final per-cycle |Δwtd| below this
 SURF_TOL="${SURF_TOL:-0.5}" # metres; implicit pins the table at the surface to the SNES tolerance (a small
-                            # cm-dm overshoot, no clamp backstop) -- a seepage face, not a pile
+                            # cm-dm overshoot, no clamp backstop) -- a exfiltration constraint, not a pile
 PILE_MIN="${PILE_MIN:-1.0}" # metres; without gathering the table piles far above this
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
@@ -52,7 +52,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
-# gathered = implicit (in-residual seepage; pins wtd~0 to the SNES tolerance); piled = off (no collection).
+# gathered = implicit (in-residual exfiltration; pins wtd~0 to the SNES tolerance); piled = off (no collection).
 emit gathered implicit
 "$WTM" "$WORK/gathered.yaml" -wtm_anderson -wtm_eq_tol 0 > "$WORK/gathered.log" 2>&1 \
   || { echo "RUN FAILED: gathered"; tail -3 "$WORK/gathered.log"; exit 2; }
@@ -76,7 +76,7 @@ dR, dS, dO = map(float, sys.argv[3:6])
 tol = float(os.environ["TOL"]); mbtol = float(os.environ["MB_TOL"]); pile_min = float(os.environ["PILE_MIN"])
 surf_tol = float(os.environ["SURF_TOL"])
 above = float(gat.max()); below_ok = bool((gat <= surf_tol).all())
-at_surface = bool(abs(above) <= surf_tol)       # gathered: table pinned at the surface (seepage face, SNES-tol overshoot)
+at_surface = bool(abs(above) <= surf_tol)       # gathered: table pinned at the surface (exfiltration constraint, SNES-tol overshoot)
 mb = abs(dR - dS - dO); rel = mb / max(abs(dR), 1e-30)
 pile = float(pil.max())                          # without gathering: piles far above the surface
 print(f"  SETTLING       : gathered final per-cycle |Δwtd| = {os.environ['GSETTLE']} m (<= {tol})")

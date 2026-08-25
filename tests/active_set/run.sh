@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Lake-aware active-set / semismooth seepage-face regression (-wtm_dev_active_set).
+# Lake-aware active-set / semismooth exfiltration regression (-wtm_dev_active_set).
 #
-# The active-set pin enforces the seepage complementarity INSIDE the matrix-free Anderson residual, pinned to
+# The active-set pin enforces the exfiltration complementarity INSIDE the matrix-free Anderson residual, pinned to
 # the FSM FREE SURFACE (wtd <= d_pond, d_pond = lagged ponded depth; 0 off lakes) via the min-NCP
 # f = max(w_c - d_pond, f). It supersedes the runoff_collector enforcement, so the FSM-on equilibrium is
 # INDEPENDENT of the collector choice -- the collector x FSM coupling ambiguity is dissolved -- WHILE keeping

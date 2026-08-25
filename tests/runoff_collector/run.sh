@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# runoff_collector selector: the input-file choice of how the wtd<=0 seepage face is enforced. One boundary
+# runoff_collector selector: the input-file choice of how the wtd<=0 exfiltration constraint is enforced. One boundary
 # condition, three enforcements (see benchmark/SURFACE_WATER_ROUTING.md):
-#   implicit : in-residual seepage (direct_to_runoff) -- pins wtd=0, dt-independent, exact (Anderson today).
+#   implicit : in-residual exfiltration (direct_to_runoff) -- pins wtd=0, dt-independent, exact (Anderson today).
 #   explicit : post-solve clamp -- robust on every solver, a dt-lagged form of the same face.
 #   off      : no collection -- above-surface water piles up (NONPHYSICAL; warns).
-# On a partial-seepage fixture (interior driven to the surface) these are distinguishable by the peak water
+# On a partial-exfiltration fixture (interior driven to the surface) these are distinguishable by the peak water
 # table. Asserts, on the matrix-free Anderson path unless noted:
-#   IMPLICIT : table pinned at the surface (0 <= max wtd < 0.5 m: a seepage face, not a pile) with seeping cells.
-#   EXPLICIT : table clamped to exactly the surface (|max wtd| < 1e-4 m) with seeping cells.
+#   IMPLICIT : table pinned at the surface (0 <= max wtd < 0.5 m: a exfiltration constraint, not a pile) with exfiltrating cells.
+#   EXPLICIT : table clamped to exactly the surface (|max wtd| < 1e-4 m) with exfiltrating cells.
 #   OFF      : water piles far above the surface (max wtd > 5 m) AND the nonphysical warning is printed.
-#   UNSET    : no collector set -> the DEFAULT (implicit seepage face) applies, identical to the IMPLICIT case.
+#   UNSET    : no collector set -> the DEFAULT (implicit exfiltration constraint) applies, identical to the IMPLICIT case.
 #              (The legacy band sink is no longer the default; it is covered as an explicit mode in taper / dt_sensitivity.)
 #   AGREE    : implicit and explicit land within a few cm (same face, converging as dt->0).
 #   SOLVER   : explicit also converges on the default Picard path (it needs no tangent).
@@ -80,13 +80,13 @@ def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}")
     ok = ok and cond
-check("IMPLICIT (seepage face, not piled)", (0.0 - 1e-3 <= im_mx < 0.5) and im_seep > 0,
-      f"max wtd = {im_mx:.4f} m, seeping cells = {im_seep}")
+check("IMPLICIT (exfiltration constraint, not piled)", (0.0 - 1e-3 <= im_mx < 0.5) and im_seep > 0,
+      f"max wtd = {im_mx:.4f} m, exfiltrating cells = {im_seep}")
 check("EXPLICIT (clamped to surface)",      abs(ex_mx) < 1e-4 and ex_seep > 0,
-      f"max wtd = {ex_mx:.4e} m, seeping cells = {ex_seep}")
+      f"max wtd = {ex_mx:.4e} m, exfiltrating cells = {ex_seep}")
 check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
       f"max wtd = {of_mx:.2f} m, warning printed = {offwarn}")
-check("UNSET (defaults to implicit seepage face)", (0.0 - 1e-3 <= un_mx < 0.5) and abs(un_mx - im_mx) < 1e-6,
+check("UNSET (defaults to implicit exfiltration constraint)", (0.0 - 1e-3 <= un_mx < 0.5) and abs(un_mx - im_mx) < 1e-6,
       f"max wtd = {un_mx:.4f} m (== implicit default {im_mx:.4f} m)")
 check("AGREE implicit vs explicit",         agree < 0.1,
       f"max|implicit - explicit| = {agree:.3e} m")

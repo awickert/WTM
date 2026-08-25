@@ -50,18 +50,18 @@ individual changes are verified with targeted checks.
   `cycles_to_save` (deprecated), which are no longer coupling intervals now that FillSpillMerge runs every
   timestep (see *Changed*). Per-report `t GW time / FSM time` lines are summed from timers around each GW and
   each FSM step.
-- **`-wtm_dev_active_set` (EXPERIMENTAL, off by default)** — semismooth active-set seepage face: enforces
+- **`-wtm_dev_active_set` (EXPERIMENTAL, off by default)** — semismooth active-set exfiltration constraint: enforces
   `wtd ≤ 0` as a min-NCP constraint *inside* the matrix-free Anderson solve (`f = max(w_c, f)`), pinning the
   free surface every iteration rather than via a post-solve clamp (`explicit`) or in-residual siphon
-  (`implicit`). dt-independent to machine precision, mass-conserving (captured seepage → FillSpillMerge), and
+  (`implicit`). dt-independent to machine precision, mass-conserving (captured exfiltration → FillSpillMerge), and
   collector-independent with FSM on. Auto-enables `-wtm_volume_storage` (it needs a `b = 0` residual path) and
   supersedes the `runoff_collector` removals. Picard/Newton tangents and a full default decision are future
   work. See `benchmark/FSM_EVERY_STEP_DESIGN.md`.
 
 #### Surface-water routing
 - **`runoff_collector` config-file selector** (`implicit` | `explicit` | `off` | `legacy`) unifies how the
-  `wtd = 0` seepage face — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced.
-  `implicit` is the in-residual seepage: exact, dt-independent, pins `wtd = 0`, wired into the Anderson
+  `wtd = 0` exfiltration constraint — where above-surface water is routed to runoff / Fill-Spill-Merge — is enforced.
+  `implicit` is the in-residual exfiltration: exact, dt-independent, pins `wtd = 0`, wired into the Anderson
   residual **and** the Picard operator (a frozen active-set diagonal); Newton still warns (its Jacobian needs a
   semismooth/active-set treatment of the discontinuous kink). `explicit` is the post-solve clamp: robust on
   every solver *and* under adaptive-dt, within ~1 cm of `implicit` and converging as `dt → 0`. `off` collects
@@ -69,7 +69,7 @@ individual changes are verified with targeted checks.
   `-wtm_dev_allow_aboveground_water_columns`). `legacy` keeps the old `-wtm_surface_sink` band-sink defaults.
   The modes are mutually exclusive (no hidden clamp backstop under `implicit`, so its misbehaviour stays
   visible). **Default is `implicit`.** Adaptive-dt (`-wtm_dt_adaptive`) handles `implicit` by clamping the
-  error-estimate predictor to the feasible set (`wtd ≤ 0`), so its discontinuous seepage kink no longer
+  error-estimate predictor to the feasible set (`wtd ≤ 0`), so its discontinuous exfiltration kink no longer
   spikes the step-size controller (verified: implicit-adaptive == implicit-fixed-cc to ~1 cm). See
   `benchmark/SURFACE_WATER_ROUTING.md`.
 
@@ -171,7 +171,7 @@ individual changes are verified with targeted checks.
   any value overrides. Each cycle prints the per-cycle change alongside a within-cycle flicker diagnostic.
 - **Sub-step under-relaxation** (`-wtm_relax a`, default 1 = off): blends each sub-step's solved water table
   with the previous one, `w ← a·w_solve + (1−a)·w_prev`, damping the period-2 flicker at pinned free
-  boundaries (a FillSpillMerge lake surface, or a `-wtm_direct_to_runoff` seepage cell). Inert at steady
+  boundaries (a FillSpillMerge lake surface, or a `-wtm_direct_to_runoff` exfiltration cell). Inert at steady
   state — the equilibrium is unchanged; only the transient march is damped.
 
 #### Smooth surface-water transition (now the default — three tapers, per-taper off-switches)
@@ -198,11 +198,11 @@ default** and each individually disabled by its flag (e.g. `-wtm_evap_taper 0`):
 Any configuration other than all-three-on emits a warning (arid-unsafe, inert, or the legacy
 hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
 
-- **Direct-to-runoff seepage face** (`-wtm_direct_to_runoff`, _opt-in alternative to taper 1_): removes the
+- **Direct-to-runoff exfiltration constraint** (`-wtm_direct_to_runoff`, _opt-in alternative to taper 1_): removes the
   above-surface water-table excess to runoff each sub-step at rate `max(0,wtd)/dt`, pinning the table at the
   land surface with no rate cap (so no runaway pile) and no below-surface band (so no artificial depression).
   A simpler, tuning-free surface→runoff handoff; the removed water is routed to FillSpillMerge, so it stays
-  in the domain. Also modestly **faster** (~24 % per cycle on Esquibel), because pinning the seepage cells
+  in the domain. Also modestly **faster** (~24 % per cycle on Esquibel), because pinning the exfiltration cells
   removes the above-surface churn that otherwise keeps each cycle's solve stiff. Off by default.
 
 #### Scaling and memory
@@ -247,7 +247,7 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   three metrics are water-based now; the old names map with a deprecation note). Raw head is still printed each
   cycle as a diagnostic.
 - **`arp.runoff` (the Fill-Spill-Merge input carrier) is assembled additively.** It is zeroed once per step,
-  then every contributor — the runoff-ratio channel, the seepage sink, and FSM's own ponded water — adds into
+  then every contributor — the runoff-ratio channel, the exfiltration sink, and FSM's own ponded water — adds into
   it before the single FSM, replacing a fragile overwrite-vs-add scheme with an order-independent lifecycle.
   Byte-identical on the FSM tests (conservation closes to 0.0, MPI bit-identical); restores the additive
   pattern of the upstream FillSpillMerge.
@@ -264,15 +264,15 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   See `benchmark/FSM_EVERY_STEP_DESIGN.md`. The FillSpillMerge progress bar is silenced in the `wtm` library
   (`RICHDEM_NO_PROGRESS`) since it would otherwise spam once per step; the standalone `dephier.x` keeps it.
 - **The default solver is now matrix-free Anderson** (was semi-implicit BDF2-on-V/Picard). Anderson is the
-  robust production worker, carries the exact in-residual seepage face, and is bit-exact across MPI ranks;
+  robust production worker, carries the exact in-residual exfiltration constraint, and is bit-exact across MPI ranks;
   it is 1st-order-in-time (backward-Euler cc, the right choice for equilibrium). Opt into BDF2-on-V/Picard
   (large stable steps, 2nd-order) with `-wtm_bdf2_on_V`. Picard is retained as the cross-rank-deterministic
   **grounding reference** the golden tests hold Anderson against. Combined with the `runoff_collector` AUTO
-  default (implicit surface seepage; explicit under `-wtm_dt_adaptive`), the golden references were
+  default (implicit surface exfiltration; explicit under `-wtm_dt_adaptive`), the golden references were
   regenerated. The old default is exactly reproducible with `runoff_collector legacy -wtm_bdf2_on_V` (verified
   bit-for-bit against the pre-flip goldens), so every golden delta is the intended change, not a regression:
   below_ground 4.37 m (solver order over the deliberately short 6-step run), fsm_evap0/1 10.0 m (band sink →
-  implicit seepage face), fsm_runoff/hi 36.5/31.6 m max but 0.28 m mean (a few FSM routing-threshold cells
+  implicit exfiltration constraint), fsm_runoff/hi 36.5/31.6 m max but 0.28 m mean (a few FSM routing-threshold cells
   flip), transient unchanged.
 - **The mask-aware ghost boundary is now the default** (no flag needed). It applies Dirichlet `h = 0`
   (constant head) at ocean edges and land-slope Neumann (constant flux) at land edges, computed at the true
@@ -287,7 +287,7 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   runoff when FSM is off), the physical Fan & Miguez-Macho behaviour, so physical runs never leave water
   ponded above ground as a raised water table and never flicker at the free surface. Previously default-on
   only for the matrix-free Anderson path; now also on for the default Picard/Newton paths (a post-solve
-  clamp there, complementing the in-residual taper-1 sink; the operator-consistent in-residual seepage
+  clamp there, complementing the in-residual taper-1 sink; the operator-consistent in-residual exfiltration
   `-wtm_direct_to_runoff` is task #100). Golden references were regenerated: the subsurface case is
   unchanged, and cases that generated above-surface water shifted (fsm cases up to ~9.4 m, the 4-cycle
   cold-start transient up to ~24.9 m as routing early surface water changes the trajectory).

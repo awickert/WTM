@@ -4,7 +4,7 @@
 An ocean-ringed plateau with moderate recharge and weak drainage, so the interior water table equilibrates
 just BELOW the land surface -- inside the depth range where the legacy taper-1 sub-surface sink acts. Because
 that sink's band width scales with the timestep (2*qmax*dt), a table sitting in the band equilibrates at a
-dt-DEPENDENT depth: the whole reason the exact in-residual seepage face (runoff_collector=implicit, the
+dt-DEPENDENT depth: the whole reason the exact in-residual exfiltration constraint (runoff_collector=implicit, the
 default) replaced it. This fixture makes that contrast sharp: implicit is dt-independent to ~machine
 precision, the legacy band sink is dt-dependent by ~0.8 m across a 4x dt change.
 

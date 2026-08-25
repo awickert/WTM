@@ -306,7 +306,7 @@ void Parameters::print() const {
   std::cout << "c fdepth_b               = " << fdepth_b << std::endl;
   std::cout << "c fdepth_fmin            = " << fdepth_fmin << std::endl;
   // Surface water. runoff_collector is the SELECTOR: when it is anything but "legacy" it supersedes the
-  // legacy -wtm_ surface flags, so this line -- not the command line -- says which seepage-face
+  // legacy -wtm_ surface flags, so this line -- not the command line -- says which exfiltration
   // enforcement ran. See transient_groundwater.cpp (the selector block) and SURFACE_WATER_ROUTING.md.
   std::cout << "c fsm_on                 = " << fsm_on << std::endl;
   std::cout << "c runoff_collector       = " << (runoff_collector.empty() ? "implicit (default)" : runoff_collector)

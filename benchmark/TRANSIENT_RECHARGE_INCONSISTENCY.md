@@ -25,7 +25,7 @@ The chase instead ran through three layers:
    self-convergence) fixed the metric.
 
 2. **Order is capped at 1, for both schemes.** Self-convergence at t = 2 wk gives order → 1.0 for cc **and**
-   for TR-BDF2 — the non-smooth seepage face (active-set switching at `wtd = 0`) destroys TR-BDF2's formal
+   for TR-BDF2 — the non-smooth exfiltration constraint (active-set switching at `wtd = 0`) destroys TR-BDF2's formal
    2nd order. TR-BDF2 keeps a ~2× smaller error constant and a **4× larger stable step** (converges to
    dt = 8 wk warm; cc diverges `DIVERGED_MAX_IT` at dt ≥ 4 wk), but it does not buy an order.
 
@@ -134,7 +134,7 @@ disagreement is a distinct, still-open anomaly.
 ## Bottom line for #93
 
 The benchmark question has an answer — TR-BDF2 buys **~4× stability and a ~2× smaller error constant, with
-no order gain** (the seepage face caps both schemes at 1st order) — but the finding that matters is the
+no order gain** (the exfiltration constraint caps both schemes at 1st order) — but the finding that matters is the
 recharge-consistency bug it surfaced in the default transient path. See
 `benchmark/FREE_SURFACE_RUNOFF.md` (the sibling free-surface treatment) and the memory note
 `finding_recharge_storativity_inconsistency`.

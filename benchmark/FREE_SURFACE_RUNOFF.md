@@ -31,7 +31,7 @@ Two things make this a clean, local problem rather than a hard one:
    applies only for `wtd < -shallow` (≈ −1.5 m; `dischargePotential`, `transient_groundwater.cpp`). Near
    and above the surface T is the smooth **clamped** form — so the shore is **not** an exp-stiffness
    problem. The only non-smoothness at the surface is (a) the storativity switch (Sy→porosity) and (b)
-   the seepage removal.
+   the exfiltration removal.
 2. **Engage the removal *post-solve*, not inside the residual.** `-wtm_surface_exfiltration_to_runoff`
    lets the table mound *during* the implicit solve (T stays clamped → the mound does not spread
    laterally), then **after** the solve routes the exact above-surface excess
@@ -42,7 +42,7 @@ Two things make this a clean, local problem rather than a hard one:
 
 `-wtm_direct_to_runoff` puts the removal **inside** the implicit residual as `max(0, wtd)/dt` — a
 non-smooth **kink** at wtd = 0, and a rate-relaxation rather than a hard constraint. **Use it for the
-Picard and Newton paths:** those solvers build an operator / Jacobian, so the seepage must be *in* the
+Picard and Newton paths:** those solvers build an operator / Jacobian, so the exfiltration must be *in* the
 residual (with its tangent `directToRunoffTangent`); a post-solve clamp would break their consistency.
 It is also **more cold-stable at large dt** (it holds wtd ≤ 0 *during* the solve → no mounding → the
 cold big step doesn't overshoot).

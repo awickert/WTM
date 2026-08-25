@@ -12,7 +12,7 @@
 # apply a FACTOR-f step change to net forcing P-ET (perturb_pet.py: precip'=fP+(1-f)E),
 # and watch the per-cycle |Delta wtd| relax. Goal: pick T_end inside the ACTIVE-relaxation
 # window before the cc-vs-TR-BDF2 dt-sweep. cc config (Anderson, backward-Euler, restart off),
-# fsm OFF, -wtm_surface_exfiltration_to_runoff (post-solve clamp = the true seepage face).
+# fsm OFF, -wtm_surface_exfiltration_to_runoff (post-solve clamp = the true exfiltration constraint).
 #   FACTOR=0.8 sbatch transient_smoke_msi.sbatch   # -20% dry (primary; deepens toward steep exp-T)
 #   FACTOR=1.2 sbatch transient_smoke_msi.sbatch   # +20% wet (control)
 set -uo pipefail

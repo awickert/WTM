@@ -120,7 +120,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
 
   // The DEFAULT solver is the matrix-free Anderson path (selected ~60 lines below when no path flag is given):
   // the production worker -- robust across regimes, no preconditioner to tune, bit-exact across ranks, and it
-  // carries the exact in-residual seepage face (runoff_collector=implicit). It is 1st-order-in-time
+  // carries the exact in-residual exfiltration constraint (runoff_collector=implicit). It is 1st-order-in-time
   // (backward-Euler cc), the right choice for equilibrium (a 2nd-order step oscillates at the free surface).
   // Opt into the semi-implicit volume-form BDF2-on-V/Picard path (large, ~dt-independent, 2nd-order steps) with
   // -wtm_bdf2_on_V, matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with
@@ -177,7 +177,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (!force_anderson && !newton_flag && !any_path_flag) {
     // Default solver: matrix-free Anderson -- the production worker. It is robust across regimes and
     // converges where the Picard/Newton free-boundary solve struggles, and it carries the exact
-    // in-residual seepage face (runoff_collector=implicit). No flag is set here: Anderson is simply the
+    // in-residual exfiltration constraint (runoff_collector=implicit). No flag is set here: Anderson is simply the
     // path taken when neither Picard nor Newton is selected. It is 1st-order-in-time (backward-Euler cc,
     // the right choice for equilibrium, where a 2nd-order step oscillates at the free surface). Opt into
     // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with -wtm_bdf2_on_V,

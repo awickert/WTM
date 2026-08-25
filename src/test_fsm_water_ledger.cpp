@@ -5,7 +5,7 @@
 // FSM-delta-source work): the recurring error is to expect FSM's per-cell volume change to sum to
 // ZERO over the domain, and then to read the (correct, non-zero) sum as evidence of a double-count.
 // It is not zero. FSM is handed water in arp.runoff that was already debited from aquifer storage
-// earlier in the step (the seepage face / exfiltration collector), and it RETURNS that water to the
+// earlier in the step (the exfiltration constraint), and it RETURNS that water to the
 // domain -- so the sum of its volume changes equals the runoff it consumed minus what it spilled to
 // the ocean. These tests pin that identity so the contract is checkable instead of remembered.
 //
@@ -122,8 +122,8 @@ TEST_CASE("FSM ledger: net volume change == runoff consumed - ocean spill (NOT z
   f.build();
 
   // Hand FSM water two ways at once, exactly as a production step does: standing water left in the
-  // table by the solve (wtd > 0) AND water already collected into the runoff array by the seepage
-  // face / exfiltration collector.
+  // table by the solve (wtd > 0) AND water already collected into the runoff array by the exfiltration
+  // collector.
   f.arp.wtd(7, 2)    = 2.0;  // standing water high on the eastern slope
   f.arp.runoff(6, 1) = 3.0;  // already debited from storage, handed to FSM to route
   f.arp.runoff(5, 3) = 1.5;

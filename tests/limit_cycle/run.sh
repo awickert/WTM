@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# LIMIT CYCLE -- mechanism 1: storativity-jump / seepage overshoot at the free surface (wtd=0).
+# LIMIT CYCLE -- mechanism 1: storativity-jump / exfiltration overshoot at the free surface (wtd=0).
 # See benchmark/FREE_SURFACE_FLICKER.md. This is now a POSITIVE test: under the default exfiltration clamp
 # the flicker-prone plateau SETTLES to a physically consistent free boundary, the exfiltrated water is fully
 # accounted by the runoff array (mass balance), and two time-integration schemes agree. (The old negative
@@ -11,10 +11,10 @@
 # Asserts, with the clamp on by default:
 #   SETTLING        : the run reaches equilibrium (per-cycle change decays; it does NOT limit-cycle).
 #   COMPLEMENTARITY : wtd <= 0 everywhere AND max wtd = 0 -- cells pinned exactly at the surface are the
-#                     seepage face (the free-boundary complementarity condition).
+#                     exfiltration constraint (the free-boundary complementarity condition).
 #   MASS BALANCE    : at steady state (storage constant) the per-cycle recharge input equals what leaves via
 #                     the runoff array + ocean outflow:  Δrecharge = Δtotal_surface_removed + Δtotal_ocean_outflow.
-#                     runoff_ratio_on 0 so total_surface_removed is purely the exfiltration (seepage) runoff.
+#                     runoff_ratio_on 0 so total_surface_removed is purely the exfiltration (exfiltration) runoff.
 #   AGREEMENT       : backward-Euler (cc) and BDF2-on-V settle to the same water table.
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -72,14 +72,14 @@ cc, bd = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 dR, dS, dO = map(float, sys.argv[3:6])
 tol = float(os.environ["TOL"]); mbtol = float(os.environ["MB_TOL"])
 above = float(cc.max()); below_ok = bool((cc <= tol).all())
-seepage = bool(abs(above) < tol)                 # some cells pinned exactly at the surface = the seepage face
+exfiltration = bool(abs(above) < tol)                 # some cells pinned exactly at the surface = the exfiltration constraint
 mb = abs(dR - dS - dO)                            # steady-state runoff mass-balance residual
 rel = mb / max(abs(dR), 1e-30)
 agree = float(np.max(np.abs(cc - bd)))
-print(f"  COMPLEMENTARITY: max wtd = {above:.3e} (=0 seepage face), all wtd<=0: {below_ok}")
+print(f"  COMPLEMENTARITY: max wtd = {above:.3e} (=0 exfiltration constraint), all wtd<=0: {below_ok}")
 print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
 print(f"  AGREEMENT cc vs bdf2v: max|Δwtd| = {agree:.3e}")
-ok = below_ok and seepage and rel < mbtol and agree < tol
-print("PASS: settles; wtd<=0 with a pinned seepage face; runoff+ocean close the budget; schemes agree" if ok else "FAIL")
+ok = below_ok and exfiltration and rel < mbtol and agree < tol
+print("PASS: settles; wtd<=0 with a pinned exfiltration constraint; runoff+ocean close the budget; schemes agree" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

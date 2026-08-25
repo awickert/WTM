@@ -10,7 +10,7 @@ asserts that it is present. That is intentional. The flicker is **not** a target
 
 Where the water table sits at the land surface (`wtd = 0`), the backward-Euler + Anderson solve
 **overshoots** the free boundary each step: the storativity jumps (porosity below → ~1 above) and the
-seepage/exfiltration term switches on. Recharge pushes the table up across the surface, exfiltration pulls
+exfiltration/exfiltration term switches on. Recharge pushes the table up across the surface, exfiltration pulls
 it back, and it repeats — a period-2 **limit cycle**. The per-cycle `|Δwtd|` never decays; the "solution"
 oscillates forever. It is a numerical artifact, not physics.
 

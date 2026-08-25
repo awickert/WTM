@@ -10,7 +10,7 @@
 # Equilibrium algorithmic-comparison runner (ONE config per job), cold from t=0, dt=1 week,
 # fsm OFF, with -wtm_surface_exfiltration_to_runoff = the CORRECT free-surface treatment:
 # water mounds during the solve, then POST-SOLVE the above-surface excess is routed to runoff
-# (->FSM when on) and the table is CLAMPED to the surface (wtd=0). This is the true seepage
+# (->FSM when on) and the table is CLAMPED to the surface (wtd=0). This is the true exfiltration
 # face. (NOT -wtm_direct_to_runoff, the in-residual max(0,w)/dt kink -- that leaves a
 # dt-dependent RESIDUAL POND above the surface (14k cells, up to 2.26m) and drives the bounce.)
 # eq_tol 0.01 m: with the post-solve clamp the bounce is gone, so TRUE convergence is reached

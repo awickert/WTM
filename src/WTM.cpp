@@ -335,7 +335,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
 
   // Carrier reset (approach B). FillSpillMerge has now CONSUMED this step's runoff (routed it to lakes/ocean),
   // so zero the rank-0 arp.runoff carrier explicitly before the next step's contributors accumulate into it.
-  // Every writer of arp.runoff is ADDITIVE -- the runoff-ratio arm below, the seepage-sink gather
+  // Every writer of arp.runoff is ADDITIVE -- the runoff-ratio arm below, the exfiltration-sink gather
   // (gather_sink_removed_to_zero), and FSM's own ponded `+= wtd`. So the carrier's lifecycle is one clean loop:
   // zero here -> += all contributors -> one FSM consumes -> zero. This replaces the prior scheme (the arm
   // OVERWRITING, relying on FSM to leave exactly 0), which left stale runoff on the runoff_ratio-off / rech<=0
@@ -493,9 +493,9 @@ void update(
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
   }
 
-  // Reset the per-STEP sink-removal accumulator (taper 1 / seepage): update() sums the removed depth for one
+  // Reset the per-STEP sink-removal accumulator (taper 1 / exfiltration): update() sums the removed depth for one
   // step, then couple_surface_and_recharge hands it to FSM. Zeroed before EACH step (FSM now runs every step),
-  // so every step starts fresh; a harmless no-op when no sink/seepage is active (stays 0).
+  // so every step starts fresh; a harmless no-op when no sink/exfiltration is active (stays 0).
   const auto zero_sink = [&]() {
     const auto [xs, ys, xm, ym] = get_corners(user_context.da);
     for (int j = ys; j < ys + ym; j++)
@@ -767,7 +767,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.rech_source);
   VecDestroy(&user_context.runoff_dist_vec);
   VecDestroy(&user_context.sink_removed_dist_vec);
-  VecDestroy(&user_context.seepage_vec);
+  VecDestroy(&user_context.exfiltration_vec);
 
   SNESDestroy(&user_context.snes);
   DMDestroy(&user_context.da);

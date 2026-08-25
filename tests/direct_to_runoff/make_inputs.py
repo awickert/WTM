@@ -4,10 +4,10 @@
 See benchmark/FREE_SURFACE_FLICKER.md. The free-surface flicker is not a numerical problem when the
 above-surface water has somewhere to GO: routed into the runoff array, the water table is held at the surface
 (wtd = 0) instead of piling up and sloshing. This fixture demonstrates that success for the IN-RESIDUAL
-seepage route (-wtm_direct_to_runoff): a low ocean-ringed plateau (with a slight interior low as a
+exfiltration route (-wtm_direct_to_runoff): a low ocean-ringed plateau (with a slight interior low as a
 concentrator) under strong recharge and weak drainage, so the interior is driven to the surface and must shed
 its excess. With direct-to-runoff the excess is gathered to the runoff array and the table sits exactly at
-wtd = 0 (the seepage-face complementarity: removal active <=> table pinned at the surface); the water budget
+wtd = 0 (the exfiltration complementarity: removal active <=> table pinned at the surface); the water budget
 closes (recharge = surface_removed + ocean_outflow). Without any gathering (ponding allowed) the same water
 piles hundreds of metres above the surface -- the failure the routing prevents.
 

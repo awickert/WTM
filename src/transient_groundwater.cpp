@@ -253,7 +253,7 @@ static double g_ksat_surface_smoothing_width    = 0.0;  // eps0: 0 m surface cla
 // Qmax by the surface). Qmax must exceed the peak recharge rate to guarantee no breach.
 // See benchmark/SURFACE_SINK_DESIGN.md sec 11.
 static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
-// SEEP_EST note (adaptive-dt error estimate with the implicit seepage face): the head is constrained to
+// EXFIL_EST note (adaptive-dt error estimate with the implicit exfiltration constraint): the head is constrained to
 // wtd<=0 (h<=topo), excess routed to runoff. A linear step-predictor that overshoots ABOVE the surface would
 // spike the per-cell error |x-h_pred| at that kink -- a projection artifact that does NOT shrink with dt, so
 // the controller would reject to the floor (crash). Fix: CLAMP the predictor into the feasible set
@@ -263,9 +263,9 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
-static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: excess-to-runoff seepage face
+static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
 static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL]: feed FSM's per-step water-table change into the NEXT step's recharge source (keeping the smooth pre-FSM state as the step baseline) instead of overwriting the baseline with the post-FSM table. A no-op under backward Euler; restores 2nd-order accuracy on TR-BDF2/adaptive by removing the between-step FSM jump. See GH #13 / #116.
-static bool             g_active_set                  = false; // -wtm_dev_active_set [EXPERIMENTAL]: semismooth seepage face pinned wtd=0 INSIDE the solve
+static bool             g_active_set                  = false; // -wtm_dev_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
@@ -333,13 +333,13 @@ static double surfaceSinkTangent(const double wtd, const double w) {
   return g_surface_sink_qmax * surfaceSinkRampTangent(wtd, w);
 }
 
-// Seepage face (-wtm_direct_to_runoff): remove exactly the ABOVE-surface excess to runoff each step.
+// Exfiltration (-wtm_direct_to_runoff): remove exactly the ABOVE-surface excess to runoff each step.
 // removal RATE [m/s] = max(0,wtd)/dt, so dt*removal = the excess depth. Pins wtd<=0 (no rate cap -> no
 // pile) and removes nothing below the surface (no depression). The Anderson solve tolerates the hard
 // max fine -- an earlier softplus smoothing was inert (convergence was eps-invariant), so it is gone.
 static double directToRunoffRemoval(const double wtd, const double dt) { return std::max(0.0, wtd) / dt; }
-// The seepage-face tangent dR/dwtd. Wired into the Picard operator + RHS as a FROZEN ACTIVE-SET diagonal
-// (FormPicardOperator/FormPicardRHS): each Picard sweep fixes which cells seep, so the discontinuous step at
+// The exfiltration tangent dR/dwtd. Wired into the Picard operator + RHS as a FROZEN ACTIVE-SET diagonal
+// (FormPicardOperator/FormPicardRHS): each Picard sweep fixes which cells exfil, so the discontinuous step at
 // wtd=0 is handled by set membership, not a derivative -- and Picard+implicit then matches Anderson to ~1e-11.
 // It is NOT yet in the Newton Jacobian (FormJacobianLocal): a Newton line search would overshoot the same kink,
 // which needs a semismooth / active-set Newton (see the fork enhancement issue).
@@ -1073,14 +1073,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // truncates any residual wtd>0 to the surface and routes the excess, and fires only when a cell ends above
   // the surface. On every path the in-residual taper-1 sink (-wtm_surface_sink, on by default) is the primary
   // manager that already holds wtd<=0, so this is a safety net (a no-op when the sink holds; the corrective
-  // truncation when a step overshoots). The Picard/Newton IN-RESIDUAL seepage (-wtm_direct_to_runoff) remains
+  // truncation when a step overshoots). The Picard/Newton IN-RESIDUAL exfiltration (-wtm_direct_to_runoff) remains
   // the operator-consistent alternative (its Jacobian tangent is task #100). Disable with
   // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime
   // -wtm_dev_allow_aboveground_water_columns.
   (void)anderson_path;
   PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
   // Track whether the user PASSED this flag (vs. it taking its default). The runoff_collector selector
-  // below supersedes it, and a silent override sent a #116 experiment after the wrong seepage-face
+  // below supersedes it, and a silent override sent a #116 experiment after the wrong exfiltration
   // enforcement -- so the selector warns, but only when there is a real user choice to report.
   PetscBool surfexfil_set = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, &surfexfil_set);
@@ -1170,7 +1170,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
 
-  // -wtm_direct_to_runoff: in-residual seepage-face removal (supersedes the qmax sink where on). Removes the
+  // -wtm_direct_to_runoff: in-residual exfiltration removal (supersedes the qmax sink where on). Removes the
   // above-surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
   // and no below-surface band -> no pile, no depression. OPT-IN (default off): its removal tangent is NOT
   // yet wired into the Picard operator / Newton Jacobian (directToRunoffTangent is unused), so defaulting it
@@ -1178,10 +1178,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
   // direct_to_runoff tangent so it can default on for those paths is future work.
   // -wtm_dev_allow_aboveground_water_columns still forces it off.
-  PetscBool seep     = PETSC_FALSE;
-  PetscBool seep_set = PETSC_FALSE;  // was it passed? (for the selector-override warning below)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, &seep_set);
-  g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
+  PetscBool directexfil     = PETSC_FALSE;
+  PetscBool directexfil_set = PETSC_FALSE;  // was it passed? (for the selector-override warning below)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &directexfil, &directexfil_set);
+  g_direct_to_runoff = (directexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // -wtm_fsm_delta_source [EXPERIMENTAL]: carry FSM's per-step wtd change as a source in the NEXT step's
   // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH #116).
@@ -1193,9 +1193,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // legacy -wtm_ flags above with one coherent choice; unset ("") keeps the legacy defaults
   // (behaviour-preserving). See benchmark/SURFACE_WATER_ROUTING.md. All modes share one destination
   // (above-surface excess -> total_surface_removed + arp.runoff -> FSM); they differ in HOW the wtd<=0
-  // seepage face is enforced:
-  //   implicit : in-residual seepage (-wtm_direct_to_runoff) ALONE, pins wtd=0, dt-INDEPENDENT and exact. Its
-  //              seepage kink is matrix-free only for now (Anderson); on Picard/Newton it is inconsistent
+  // exfiltration constraint is enforced:
+  //   implicit : in-residual exfiltration (-wtm_direct_to_runoff) ALONE, pins wtd=0, dt-INDEPENDENT and exact. Its
+  //              exfiltration kink is matrix-free only for now (Anderson); on Picard/Newton it is inconsistent
   //              (needs active-set Newton), so WARN there. NO explicit backstop: mixing the two would let the
   //              post-solve clamp silently mop up any implicit overshoot and HIDE an implicit bug, so the modes
   //              are mutually exclusive -- if implicit misbehaves the water visibly piles.
@@ -1210,7 +1210,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (rc.empty()) rc = "implicit";  // "" = the default; adaptive-dt handles implicit via the predictor clamp
   // Snapshot the legacy-flag choices so the selector can report any of them it supersedes (below).
   const bool pre_sink  = g_surface_sink;
-  const bool pre_seep  = g_direct_to_runoff;
+  const bool pre_direct = g_direct_to_runoff;
   const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
   if (rc != "legacy") {
     g_surface_sink = false;  // selector supersedes the band sink in every mode
@@ -1218,7 +1218,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       g_direct_to_runoff                     = true;
       g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
       if (user_context.use_newton)
-        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the seepage-face tangent is wired into "
+        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the exfiltration tangent is wired into "
                     "the Anderson residual and the Picard operator, but NOT the Newton Jacobian (its kink needs "
                     "active-set Newton). On the Newton path the solve is inconsistent (may diverge); use "
                     "runoff_collector=explicit there until active-set Newton lands.\n");
@@ -1234,7 +1234,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // Report any legacy surface flag the selector just superseded -- but ONLY one the user actually
     // passed, and only where the selector changed its effect. A run that takes the defaults says
     // nothing here. The silent version of this override sent a #116 experiment after the wrong
-    // seepage-face enforcement (the command line asked for the post-solve clamp; the selector's
+    // exfiltration enforcement (the command line asked for the post-solve clamp; the selector's
     // default gave the in-residual face, and no log recorded it). Once per run, not per cycle.
     static bool reported_override = false;
     if (!reported_override) {
@@ -1248,7 +1248,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                       rc.c_str(), flag, after ? "on" : "off");
       };
       supersede("-wtm_surface_sink", sink_set, pre_sink, g_surface_sink);
-      supersede("-wtm_direct_to_runoff", seep_set, pre_seep, g_direct_to_runoff);
+      supersede("-wtm_direct_to_runoff", directexfil_set, pre_direct, g_direct_to_runoff);
       supersede("-wtm_surface_exfiltration_to_runoff", surfexfil_set, pre_exfil,
                 g_surface_exfiltration_to_runoff_array);
     }
@@ -1265,28 +1265,28 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_volume_storage", &volstore, nullptr);
   g_volume_storage = (volstore == PETSC_TRUE);
 
-  // -wtm_dev_active_set [EXPERIMENTAL]: enforce the wtd<=0 seepage face as an ACTIVE-SET / semismooth
+  // -wtm_dev_active_set [EXPERIMENTAL]: enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET / semismooth
   // constraint INSIDE the matrix-free (Anderson) solve -- a cell whose iterate rises above the land surface
   // is pinned at wtd=0 by overriding its residual with f = w_c (mirroring the ocean Dirichlet), instead of a
   // post-solve clamp (`explicit`) or an in-residual siphon (`implicit`). Enforcement-independent: aims to give
-  // ONE seepage BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
-  // for now; the pinned seepage flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
+  // ONE exfiltration BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
+  // for now; the pinned exfiltration flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
   PetscBool activeset = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset, nullptr);
   g_active_set = (activeset == PETSC_TRUE);
   // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
-  // balance -- the semismooth max(w_c, f) and the captured seepage f*Sy are only meaningful then. The default
+  // balance -- the semismooth max(w_c, f) and the captured exfiltration f*Sy are only meaningful then. The default
   // secant backward-Euler uses RHS b = h^n (f != residual). If no b=0 scheme is already selected, auto-enable
   // the exact volume-storage BE (b=0, 1st-order, same limit as TR-BDF2/BDF2-on-V; see finding_cc_secant_...).
   if (g_active_set && !user_context.use_bdf2_on_V && !user_context.use_tr_bdf2 && !g_volume_storage) {
     g_volume_storage = true;
     PetscPrintf(PETSC_COMM_WORLD, "NOTE [-wtm_dev_active_set]: auto-enabled -wtm_volume_storage (a b=0 residual "
-                "path is required for the semismooth seepage face).\n");
+                "path is required for the semismooth exfiltration constraint).\n");
   }
-  // Active-set IS the seepage-face enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
+  // Active-set IS the exfiltration enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
   // in-residual siphon (implicit) or post-solve clamp (explicit) stack on top of the pin and the result is no
   // longer enforcement-independent. Disable all collector removals when active-set is on; the pinned-cell
-  // seepage is conserved via the captured-seepage transfer instead.
+  // exfiltration is conserved via the captured-exfiltration transfer instead.
   if (g_active_set) {
     g_direct_to_runoff                     = false;
     g_surface_sink                         = false;
@@ -1294,7 +1294,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   }
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
-  // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / seepage). At
+  // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / exfiltration). At
   // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &g_relax, nullptr);
 
@@ -1602,11 +1602,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see below)
           const double h_n = dmdapack.starting_wtd[j][i] + topo_e[j][i];
           double       h_pred = (yg[j][i] - (1.0 - TR_G) * h_n) / TR_G;
-          // Implicit seepage face: the head is constrained to wtd<=0 (h<=topo). A linear predictor that
+          // Implicit exfiltration constraint: the head is constrained to wtd<=0 (h<=topo). A linear predictor that
           // overshoots ABOVE the surface would spike |x-h_pred| at the kink (a projection artifact that does
           // NOT shrink with dt -> the controller would reject to the floor). Clamp the predictor into the
           // feasible set so the estimate measures real truncation error: a cell RISING to the surface still
-          // contributes its true rise (bounding dt), a cell already pinned contributes ~0. See SEEP_EST note.
+          // contributes its true rise (bounding dt), a cell already pinned contributes ~0. See EXFIL_EST note.
           if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);
           // WATER (volume) local error: the step tolerance lives in the same water units as the equilibrium
           // stop (|S·Δwtd|). |storedVolume(wtd_actual) - storedVolume(wtd_pred)| IS that water moved (secant
@@ -1644,7 +1644,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     long   local_n = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
-        if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see SEEP_EST note)
+        if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see EXFIL_EST note)
           const double h_n = dmdapack.starting_wtd[j][i] + topo_e[j][i];
           double       h_pred = h_n + omega * (dmdapack.starting_wtd[j][i] - swp[j][i]);
           if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);  // wtd<=0 feasible set (kink-free error)
@@ -1730,8 +1730,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscScalar **my_fdepth_cb = nullptr, **my_ksat_cb = nullptr;  // for the Kirchhoff Φ⁻¹ back-transform
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
-  PetscScalar** my_seepage_post = nullptr;  // -wtm_dev_active_set: captured seepage depth from the converged residual eval
-  if (g_active_set) DMDAVecGetArray(user_context.da, user_context.seepage_vec, &my_seepage_post);
+  PetscScalar** my_exfiltration_post = nullptr;  // -wtm_dev_active_set: captured exfiltration depth from the converged residual eval
+  if (g_active_set) DMDAVecGetArray(user_context.da, user_context.exfiltration_vec, &my_exfiltration_post);
   PetscScalar **my_fringe;
   DMDAVecGetArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
@@ -1774,14 +1774,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         dmdapack.starting_wtd[j][i] = 0.;
         continue;
       }
-      // -wtm_dev_active_set: the semismooth face removed the seepage INSIDE the solve, so it left no above-
-      // surface water for the collectors below to see. Transfer the captured per-cell seepage depth (from the
+      // -wtm_dev_active_set: the semismooth constraint removed the exfiltration INSIDE the solve, so it left no above-
+      // surface water for the collectors below to see. Transfer the captured per-cell exfiltration depth (from the
       // converged residual eval) to FSM (sink_removed_dist) and the budget (total_surface_removed). Serial loop.
-      if (g_active_set && my_seepage_post) {
-        const double seep = my_seepage_post[j][i];
-        if (seep > 0.0) {
-          arp.total_surface_removed        += seep * arp.cell_area[j];
-          dmdapack.sink_removed_dist[j][i] += seep;
+      if (g_active_set && my_exfiltration_post) {
+        const double exfil_depth = my_exfiltration_post[j][i];
+        if (exfil_depth > 0.0) {
+          arp.total_surface_removed        += exfil_depth * arp.cell_area[j];
+          dmdapack.sink_removed_dist[j][i] += exfil_depth;
         }
       }
       // Land cells: the sink and the evaporation taper can both be active; account each in the same
@@ -1827,7 +1827,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
-  if (g_active_set) DMDAVecRestoreArray(user_context.da, user_context.seepage_vec, &my_seepage_post);
+  if (g_active_set) DMDAVecRestoreArray(user_context.da, user_context.exfiltration_vec, &my_exfiltration_post);
   DMDAVecRestoreArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
   if (g_kirchhoff) {
     DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
@@ -2148,8 +2148,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscScalar **my_fringe;
   PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
-  PetscScalar** my_seepage = nullptr;  // -wtm_dev_active_set: per-cell captured seepage depth (m) -> FSM post-solve
-  if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->seepage_vec, &my_seepage));
+  PetscScalar** my_exfiltration = nullptr;  // -wtm_dev_active_set: per-cell captured exfiltration depth (m) -> FSM post-solve
+  if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->exfiltration_vec, &my_exfiltration));
   // Matrix-free 2nd-order-in-time (-wtm_anderson -wtm_bdf2_on_V): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
   // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
@@ -2209,12 +2209,12 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool dtr_on  = g_direct_to_runoff;
   const bool taper_on = g_evap_taper;
   const bool vol_storage = g_volume_storage;  // BE with volume-form (ΔV) storage instead of secant S·Δh
-  const bool as_on    = g_active_set;         // -wtm_dev_active_set: pin seeping land cells at wtd=0 in-solve
+  const bool as_on    = g_active_set;         // -wtm_dev_active_set: pin exfiltrating land cells at wtd=0 in-solve
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
            bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev, smooth_T, g_land_boundary_dirichlet,      \
-           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_seepage) collapse(2)
+           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_exfiltration) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
@@ -2332,11 +2332,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         }
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
-        // -wtm_dev_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth seepage face, enforced INSIDE the solve
+        // -wtm_dev_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth exfiltration constraint, enforced INSIDE the solve
         // (enforcement-independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`).
         // The head is pinned to the FSM FREE SURFACE, not the land surface: wtd <= d_pond, where
         // d_pond = max(0, starting_wtd) is the ponded depth from the PREVIOUS step's FillSpillMerge (0 off
-        // lakes; the one-step lag). Complementarity 0 <= (d_pond - w_c) ⊥ (seepage flux) >= 0, on the mass
+        // lakes; the one-step lag). Complementarity 0 <= (d_pond - w_c) ⊥ (exfiltration flux) >= 0, on the mass
         // residual R = f (head units): the semismooth min-NCP is f <- max(w_c - d_pond, R). Below the free
         // surface the normal residual R drives mass balance (f=R->0); if the cell overshoots ABOVE the free
         // surface the (w_c - d_pond) branch skims the excess to runoff. Off lakes (d_pond=0) this reduces to
@@ -2344,14 +2344,14 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // keeps water up to the lake stage -- its head is felt DURING the solve -- and only the OVERFLOW above
         // the stage is skimmed; the lake is a finite reservoir whose level is free to fall (drying). Continuous
         // at the shore (d_pond->0), so no discrete wet/dry switch. The branches MEET at the free surface (both
-        // 0) so f is CONTINUOUS -- a hard switch's jump makes matrix-free Anderson diverge. Pinned-cell seepage
+        // 0) so f is CONTINUOUS -- a hard switch's jump makes matrix-free Anderson diverge. Pinned-cell exfiltration
         // flux (the residual R discarded into the max) is captured for mass conservation: depth-form residual
-        // is f*Sy, so an over-supplied cell (f<0) sheds seepage_depth = max(0,-f*Sy) to sink_removed_dist ->
+        // is f*Sy, so an over-supplied cell (f<0) sheds exfiltration_depth = max(0,-f*Sy) to sink_removed_dist ->
         // FSM and total_surface_removed (budget). At convergence only cells held AT the free surface carry a
         // nonzero residual, so freely-solving (incl. below-stage lake) cells shed ~0. Anderson residual only.
         if (as_on) {
           const double d_pond = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
-          if (my_seepage) my_seepage[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
+          if (my_exfiltration) my_exfiltration[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
           f[j][i] = std::max(w_c - d_pond, f[j][i]);
         }
       }
@@ -2370,7 +2370,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
-  if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->seepage_vec, &my_seepage));
+  if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->exfiltration_vec, &my_exfiltration));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
@@ -2716,10 +2716,10 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
           bb[j][i] += A_j * (dt * surfaceSinkTangent(w_k, my_fringe[j][i]) * xx[j][i] - dt * surfaceSink(w_k, my_fringe[j][i]));
         }
         if (g_direct_to_runoff) {
-          // Seepage face (runoff_collector=implicit): in-residual removal dt*max(0,w)/dt (the above-surface
+          // Exfiltration (runoff_collector=implicit): in-residual removal dt*max(0,w)/dt (the above-surface
           // excess), Picard-linearized about w_k in the SAME form as the sink. The removal is exactly linear
           // where active (rate w/dt for w>0), so this linearization is exact; it matches the operator's
-          // dt*R'(w_k)*A_j = A_j seeping-cell diagonal below (a frozen active set: the seeping set is fixed
+          // dt*R'(w_k)*A_j = A_j exfiltrating-cell diagonal below (a frozen active set: the exfiltrating set is fixed
           // each Picard sweep). Mutually exclusive with the sink under the selector.
           const double dt = user_context->deltat;
           bb[j][i] += A_j * (dt * directToRunoffTangent(w_k, dt) * xx[j][i] - dt * directToRunoffRemoval(w_k, dt));
@@ -2933,8 +2933,8 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
                                      ? dt * evapRemovalTangent(w_k, my_evap[j][i], my_owe[j][i],
                                                                my_precip[j][i] / SECONDS_IN_A_YEAR) * A_j
                                      : 0.0;
-        // Seepage face (runoff_collector=implicit): dt*R'(w_k)*A_j = A_j for a seeping cell (w_k > 0), 0 below.
-        // A frozen active-set diagonal (the seeping set is fixed each Picard sweep); >= 0 -> SPD-preserving.
+        // Exfiltration (runoff_collector=implicit): dt*R'(w_k)*A_j = A_j for a exfiltrating cell (w_k > 0), 0 below.
+        // A frozen active-set diagonal (the exfiltrating set is fixed each Picard sweep); >= 0 -> SPD-preserving.
         // The matching RHS constant is added in FormPicardRHS. Mutually exclusive with the sink.
         const double dtr_diag = (g_direct_to_runoff && bdf2_on_V)
                                     ? dt * directToRunoffTangent(w_k, dt) * A_j : 0.0;

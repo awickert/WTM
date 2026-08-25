@@ -23,10 +23,10 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
 
 ---
 
-## Mechanism 1 — storativity jump + seepage kink (inner GW solve)
+## Mechanism 1 — storativity jump + exfiltration kink (inner GW solve)
 
 - **Trigger:** effective storativity jumps from specific yield (`Sy ≈ porosity`) below the surface to `~1`
-  (open water) at `wtd = 0`, plus the seepage/removal kink. The matrix-free Anderson (frozen-coefficient)
+  (open water) at `wtd = 0`, plus the exfiltration/removal kink. The matrix-free Anderson (frozen-coefficient)
   iteration linearizes across that jump and overshoots it each cycle -> period-2 bounce.
 - **Where:** the groundwater solve alone. Reproduces with **`fsm_on 0, evap_mode 0`** — nothing else can be
   the cause.
@@ -96,7 +96,7 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
 
 | mechanism | isolate with | management | test |
 |---|---|---|---|
-| 1 storativity/seepage | fsm 0, evap 0 | exfiltration clamp (default) | `tests/limit_cycle` -> positive |
+| 1 storativity/exfiltration | fsm 0, evap 0 | exfiltration clamp (default) | `tests/limit_cycle` -> positive |
 | 2 evap discontinuity | evap on, fsm 0 | smooth evap taper (taper 2) | `tests/flicker_evap` ✓ (managed) |
 | 3 FSM concentration + evap | fsm 1, evap 1, depression | couple-convergence / tighter split / damp | `tests/flicker_fsm_evap` [NEW] |
 

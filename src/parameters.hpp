@@ -31,7 +31,7 @@ struct Parameters {
   std::string textfilename   = UNINIT_STR;
   std::string time_start     = UNINIT_STR;
   std::string time_end       = UNINIT_STR;
-  // Surface-water routing selector. DEFAULT "implicit": the exact, dt-independent in-residual seepage face
+  // Surface-water routing selector. DEFAULT "implicit": the exact, dt-independent in-residual exfiltration constraint
   // (wired into the Anderson residual and the Picard operator; adaptive-dt handles it via the feasible-set
   // predictor clamp in the error estimate). Alternatives: "explicit" (post-solve clamp -- robust everywhere,
   // ~1 cm from implicit), "off" (no collection -- NONPHYSICAL, warns), "legacy" (the old -wtm_ surface-flag

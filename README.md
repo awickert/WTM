@@ -122,7 +122,7 @@ Here, N is the number of CPU threads you want the parallel processing for the gr
 
 The model chooses sensible solver defaults, so no PETSc solver flags are required on the command line.
 The **default solver is the matrix-free Anderson** path, for both run types: it is robust across regimes,
-bit-exact across MPI ranks, and carries the exact in-residual seepage face (`runoff_collector` implicit).
+bit-exact across MPI ranks, and carries the exact in-residual exfiltration constraint (`runoff_collector` implicit).
 It is 1st-order-in-time (backward-Euler cc) — the right choice for equilibrium, where a 2nd-order step
 oscillates at the free surface.
 
@@ -186,20 +186,20 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 #Is water allowed to gather in lakes, with lake evaporation removing some portion of it?
 #If this is set to 0, all surface water will be removed from the domain.
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
-#How is above-surface water routed to runoff (the wtd<=0 seepage face)? Optional; default is implicit.
+#How is above-surface water routed to runoff (the wtd<=0 exfiltration constraint)? Optional; default is implicit.
 #See "Surface-water routing" below.
-runoff_collector   implicit              # implicit (in-residual seepage, exact; default) | explicit (post-solve clamp) | off (nonphysical) | legacy (old band sink)
+runoff_collector   implicit              # implicit (in-residual exfiltration, exact; default) | explicit (post-solve clamp) | off (nonphysical) | legacy (old band sink)
 ```
 
 ## Surface-water transition (smooth tapers, on by default)
 At the land surface (water-table depth `wtd = 0`) WTM smooths the transition between groundwater and
 surface water with implicit, order-preserving **tapers**, which replace the old hard `wtd = 0` switch.
 The **evaporation** tapers (2 & 3) are **on by default** and are controlled by command-line `-wtm_*` flags
-(each disabled with `<flag> 0`). The **seepage** at the surface — taper 1's old job — is now the
+(each disabled with `<flag> 0`). The **exfiltration** at the surface — taper 1's old job — is now the
 `runoff_collector` config-file selector (see "Surface-water routing" below; default is the exact in-residual
 face). The legacy sub-surface band sink is reached with `runoff_collector legacy`:
 
-- **Taper 1 — sub-surface band sink** (`-wtm_surface_sink`; the legacy seepage, off unless
+- **Taper 1 — sub-surface band sink** (`-wtm_surface_sink`; the legacy exfiltration, off unless
   `runoff_collector legacy`): a smooth removal in a band that holds the table at/below the surface and hands
   exfiltrated water to Fill-Spill-Merge. Preserves 2nd-order time accuracy across the surface, but its band
   width scales with `deltat` (so the equilibrium is dt-dependent — the reason `runoff_collector` replaced it).
@@ -218,7 +218,7 @@ Running with any combination other than all three on prints a warning explaining
 `benchmark/SURFACE_SINK_DESIGN.md` for the full derivation.
 
 ## Surface-water routing (`runoff_collector`)
-Above-surface water leaves the subsurface at a seepage face (`wtd = 0`) and is routed to runoff /
+Above-surface water leaves the subsurface at a exfiltration constraint (`wtd = 0`) and is routed to runoff /
 Fill-Spill-Merge. The config-file key `runoff_collector` selects **how** that one boundary condition is
 enforced. **Default is `implicit`.** Set it explicitly to override:
 
@@ -257,7 +257,7 @@ explicit path flag wins, and Newton is mutually exclusive with Picard/Anderson.
 
 | Flag | Default | Status | Effect |
 |---|---|---|---|
-| `-wtm_anderson` | **on** | default | Matrix-free Anderson mixing. Robust across regimes, bit-exact across MPI ranks, carries the exact in-residual seepage face. 1st-order-in-time unless `-wtm_bdf2_on_V` is added. |
+| `-wtm_anderson` | **on** | default | Matrix-free Anderson mixing. Robust across regimes, bit-exact across MPI ranks, carries the exact in-residual exfiltration constraint. 1st-order-in-time unless `-wtm_bdf2_on_V` is added. |
 | `-wtm_bdf2_on_V` | off | opt-in | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time; cross-rank deterministic (the golden reference). |
 | `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, usually with `-wtm_dt_continuation`. |
 | `-wtm_picard` | off | opt-in | Force the frozen-coefficient backward-Euler Picard operator explicitly (it is also the operator behind the default). |
@@ -334,7 +334,7 @@ plus optional routing modes. `-wtm_direct_to_runoff` supersedes the taper-1 sink
 | `-wtm_evap_taper_s` | 0.1 m | tuning | Width of the ET transition. |
 | `-wtm_extinction` | **on** | default | Taper 3: limits arid draw-down to within the extinction depth (requires taper 2). |
 | `-wtm_extinction_depth` | 8 m | tuning | Depth below which phreatic ET is inaccessible. |
-| `-wtm_direct_to_runoff` | off | opt-in | In-residual seepage face: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
+| `-wtm_direct_to_runoff` | off | opt-in | In-residual exfiltration constraint: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
 | `-wtm_surface_exfiltration_to_runoff` | **on** (all paths) | default | Post-solve clamp: pin the table at/below the surface and route exact above-surface water to the runoff accumulator, keeping T clamped. Disable with `-wtm_surface_exfiltration_to_runoff false`. |
 | `-wtm_dev_allow_aboveground_water_columns` | off | developer | Leave above-surface water unmanaged as nonphysical vertical columns (limit-cycles). Switches the two runoff clamps off; prints a warning. |
 

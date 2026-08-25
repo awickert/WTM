@@ -53,7 +53,7 @@ surface_water:
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false
   collection:
-    method: implicit           # implicit (in-residual seepage) | explicit | off | legacy
+    method: implicit           # implicit (in-residual exfiltration) | explicit | off | legacy
 
 solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton

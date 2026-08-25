@@ -98,7 +98,7 @@ surface_water:
     # PENDING (parked on the active-set work, #100): the REAL production default is `implicit` (verified in
     # code); active-set is a SUPERSEDING dev mode (see dev.active_set), NOT a peer collector value here.
     # Finalize this block only when active-set is un-deferred.
-    method: implicit             #   implicit (in-residual seepage; DEFAULT) | explicit (post-solve clamp) |
+    method: implicit             #   implicit (in-residual exfiltration; DEFAULT) | explicit (post-solve clamp) |
                                  #   off (nonphysical; water piles) | legacy (band sink)
     sink:                        #   parameters for method: legacy (band sink)
       qmax: 1.0                  #     peak removal rate [m/yr]

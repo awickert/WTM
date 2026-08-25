@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dt-SENSITIVITY: the equilibrium water table must NOT depend on the time step. The active-set semismooth
-# seepage face (-wtm_dev_active_set) pins wtd=0 INSIDE the solve, so the free-surface equilibrium is
+# exfiltration constraint (-wtm_dev_active_set) pins wtd=0 INSIDE the solve, so the free-surface equilibrium is
 # dt-INDEPENDENT to machine precision. The legacy taper-1 band sink is NOT (its band width scales as
 # 2*qmax*dt, so a table sitting in the band equilibrates at a dt-dependent depth). (The default `implicit`
 # in-residual siphon is also dt-DEPENDENT at the face -- its finite 1/dt conductance leaves a dt*excess head
@@ -74,7 +74,7 @@ leg = float(np.max(np.abs(lc - lf)))   # legacy band sink: dt sensitivity (shoul
 print(f"  DT-INDEPENDENT : active-set        max|wtd(1yr) - wtd(0.25yr)| = {act:.3e} m  (<= {dt_tol})")
 print(f"  BITES          : legacy band sink  max|wtd(1yr) - wtd(0.25yr)| = {leg:.3e} m  (>= {bite})")
 ok = act <= dt_tol and leg >= bite
-print("PASS: the active-set seepage face gives a dt-independent equilibrium; the legacy band sink does not (test bites)"
+print("PASS: the active-set exfiltration constraint gives a dt-independent equilibrium; the legacy band sink does not (test bites)"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

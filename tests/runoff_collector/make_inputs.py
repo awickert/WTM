@@ -2,9 +2,9 @@
 """Fixture for the runoff_collector selector test.
 
 A low ocean-ringed plateau under strong recharge and weak drainage, so the interior is driven up to the
-land surface and must shed its excess -- a PARTIAL seepage face (interior cells pinned at wtd=0, cells near
+land surface and must shed its excess -- a PARTIAL exfiltration constraint (interior cells pinned at wtd=0, cells near
 the ocean ring below). This is the regime that distinguishes the three surface-water routing modes:
-  implicit (in-residual seepage)  -> table pinned ~0 (seepage face), water NOT piled,
+  implicit (in-residual exfiltration)  -> table pinned ~0 (exfiltration constraint), water NOT piled,
   explicit (post-solve clamp)     -> table clamped to exactly 0,
   off      (no collection)        -> water piles far above the surface (nonphysical),
 and the unset default (legacy band sink) holds the table just BELOW the surface.
@@ -34,7 +34,7 @@ for lay, a in {"topography":topo, "slope":zero, "mask":mask,
                "precipitation":np.full((NY,NX),0.5,np.float32),   # strong recharge -> interior reaches the surface
                "evaporation":zero, "open_water_evaporation":zero, "winter_temperature":zero}.items():
     w(f"{REGION}_ta_{lay}.tif", a); w(f"{REGION}_tb_{lay}.tif", a)
-w(f"{REGION}_horizontal_ksat.tif", np.full((NY, NX), 1e-5, np.float32))  # weak drainage -> partial seepage face
+w(f"{REGION}_horizontal_ksat.tif", np.full((NY, NX), 1e-5, np.float32))  # weak drainage -> partial exfiltration constraint
 w(f"{REGION}_porosity.tif", np.full((NY, NX), 0.25, np.float32))
 w(f"{REGION}_ta_starting_wt.tif", np.full((NY, NX), -1.0, np.float64), "float64")
 print("wrote", OUT, "region", REGION)
