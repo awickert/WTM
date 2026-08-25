@@ -228,9 +228,10 @@ selects the bundle; you only override a piece if you mean to.
 |---|---|---|---|
 | select with | *(default)* | `-wtm_picard -wtm_bdf2_on_V` | `-wtm_newton` |
 | solve | matrix-free | assembled operator + linear solve | assembled Jacobian + linear solve |
-| exfiltration enforcement | **`active_set`** | **`explicit`** (active_set rejected) | **`active_set`** or `explicit` |
+| exfiltration enforcement | **`active_set`** | **`explicit`** — by design, see below | **`active_set`** or `explicit` |
 | cold start from far | works as-is | needs **`-wtm_Tbar`** (log-mean transmissivity) | needs **dt-continuation** (`-wtm_stiff`) |
 | order in time | 1st (BE); 2nd via `-wtm_tr_bdf2` / `-wtm_bdf2_on_V` | 2nd | 1st |
+| role | **production** | verification oracle | hard/stiff problems, cross-check |
 
 **Newton carries `active_set`; Picard does not.** The distinction is easy to lose and worth stating: the
 Newton *residual* is the same function the Anderson path uses, so Newton has always **enforced** the
@@ -243,24 +244,46 @@ line search on some problems (it does on the boundary fixture, not on the multi-
 `-wtm_dt_continuation` cures it — the same treatment Newton's mode already needs for cold starts. Not
 supported together with `-wtm_kirchhoff`, where the pinned residual has no unit derivative.
 
-**`active_set` is REJECTED on Picard, not merely discouraged.** Selecting it there never
-actually enforces the constraint — it silently becomes something else, and measurement says neither
-outcome is what you asked for. With FSM **on**, FillSpillMerge's between-step overwrite
-(`runoff += wtd; wtd = 0`, then re-level) does the job instead: that is a post-solve projection, i.e.
-functionally `explicit`, and it is *not* luck — FSM duplicates that function. With FSM **off**,
-nothing does the job: on the multi-lake fixture Picard then piles water over **1440 of ~1444 land
-cells** where `explicit` holds `max wtd` at 0.000. So the run stops with an explanation rather than
-producing a plausible-looking wrong answer. (The *default* never lands here — it resolves to
-`explicit` on those solvers.)
+**Picard uses `explicit` by design, not by limitation.** This is the one worth reading if you are
+choosing a mode, because it is easy to mistake for a gap waiting to be filled. Picard's whole advantage
+is a **smooth, symmetric, SPD** operator solved with CG + GAMG. The exfiltration constraint is
+**non-smooth complementarity**. Reconciling the two costs one of those three properties, whichever
+route you take — and all four routes have been measured:
 
-**Why each gets the enforcement it does.** The semismooth `active_set` pin is wired into the
-matrix-free residual only; the Picard operator and Newton Jacobian carry no tangent for it, and
-selecting it also switches every collector removal off — so on those solvers the constraint would be
-*unenforced* and Newton aborts. They fall back to `explicit`, not to `implicit`, and that is a measured
-choice: on the multi-lake fixture, halving `dt` leaves `active_set` and `explicit` topologically stable
-(4 → 4 and 6 → 6 lakes) while **`implicit` changes the lake count, 6 → 5**. Note that `explicit` and
-`active_set` still disagree with each other on the answer (6 lakes vs 4); `explicit` is the best
-*available* enforcement on those solvers, not an equivalent one.
+| enforcement | smooth? | SPD? | dt-independent? | evidence |
+|---|---|---|---|---|
+| band sink (`legacy`) | yes | yes | **no** — the *stable* width is `C·qmax·dt` | `SURFACE_SINK_DESIGN.md` §14g |
+| `implicit` | kink, but its one-sided derivative sits in the diagonal | yes (diagonal ≥ 0) | **no** — retained head ∝ `dt` (1.97 / 0.68 / 0.34 m) | `SURFACE_WATER_ROUTING.md` |
+| `active_set` | **no** | **no** (neighbours keep entries in the pinned column) | yes | needs multiplier recovery; see below |
+| **`explicit`** | **yes** | **yes** | **yes** (lake topology 6 → 6 under halved `dt`) | `tests/multilake` |
+
+`explicit` is the only one that keeps all three, and it puts the non-smoothness where it costs Picard
+nothing — outside the linear solve, as a post-solve projection. What it gives up is **order**: the flow
+field never feels the constraint during the step. That is precisely the cheapest property for *Picard*
+to surrender, because Picard is not the accuracy path — TR-BDF2 on Anderson is 2nd-order *and* faster
+(957 iterations / 1.4 s against Picard + T̄'s 1438 / 3.6 s). Each of the other three routes asks Picard
+to give up the thing that makes it worth having, in exchange for an accuracy property it is not the
+right tool to deliver.
+
+**`active_set` is therefore REJECTED on Picard**, not merely discouraged, because selecting it never
+actually enforces anything. With FSM **on**, FillSpillMerge's between-step overwrite
+(`runoff += wtd; wtd = 0`, then re-level) does the job instead — a post-solve projection, i.e.
+functionally `explicit`, and *not* luck: FSM duplicates that function. With FSM **off**, nothing does
+the job: Picard piles water over **1440 of ~1444 land cells** where `explicit` holds `max wtd` at 0.000.
+Building the row was tried and reverted (see the comment at the rejection in `transient_groundwater.cpp`):
+area-scaled correctly it *converges* and even reproduces Anderson's 4-lake topology, but the pin
+discards each cell's mass balance and the Picard formulation has no residual to read the multiplier
+from, so the removed water is never handed to FillSpillMerge — measured `total_surface_removed = 0.0`
+against Anderson's 2.0e12, and an exact budget residual of **93 % of recharge**. Recovering that
+multiplier is a new mechanism, not a derivative, and it is the real remaining work if Picard ever needs
+the constraint.
+
+**Picard's role is verification, not production.** It is slower than Anderson on every axis measured and
+needs the most scaffolding (`-wtm_Tbar` is mandatory, not optional). What it uniquely provides is an
+*independent* assembled-operator check on the matrix-free production path, which otherwise has no
+Jacobian of its own to validate it — see `tests/solver_consistency`, whose fixture is deliberately
+purely sub-surface, so the constraint never fires and Picard's enforcement is irrelevant to the job it
+is actually doing.
 
 **Cold starts are a property of the mode, not of the problem.** Plain Picard and plain Newton both fail
 from a cold start at production `dt` on every enforcement tested — Picard hits the iteration cap,
