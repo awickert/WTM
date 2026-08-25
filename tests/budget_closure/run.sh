@@ -153,17 +153,18 @@ echo "-- active-set exfiltration constraint --"
 # tolerance (rather than tightening this arm's snes_stol, which would make its numbers incomparable
 # with the others) so the difference stays visible in the output.
 #
-# CORRECTION (do not restore the earlier claim here). This comment used to add that the next arm --
-# active-set WITH -wtm_fsm_delta_source -- closes ~50x tighter at 8e-8, and read that as evidence the
-# two changes "belong together". That inference was WRONG. On this same fixture the source arm HALVES
-# the ponded water (160.00 -> 79.04 m of ponded depth, max wtd 10.0 -> 5.0 m), so the tighter residual
-# is measured on a MATERIALLY DIFFERENT answer, not on a better version of the same one -- and tighter
-# closure of a different state says nothing about complementarity. Both arms are kept as conservation
-# GATES; neither is evidence for enabling the pair. See benchmark/scheme_bench/README.md, where
+# HISTORY, so the earlier claim is not resurrected. This comment used to add that a second arm --
+# active-set WITH -wtm_fsm_delta_source -- closed ~50x tighter at 8e-8, and read that as evidence the
+# two changes "belong together". That inference was WRONG: on this fixture the source arm HALVES the
+# ponded water (160.00 -> 79.04 m, max wtd 10.0 -> 5.0 m), so the tighter residual was measured on a
+# MATERIALLY DIFFERENT answer, and tighter closure of a different state says nothing about
+# complementarity. That arm has since been REMOVED entirely, because the pair is now a hard error: the
+# active-set obstacle is read from the water table FSM writes each step, and -wtm_fsm_delta_source
+# suppresses exactly that write, so every lake drains (5.6986 -> 0.0000 m). The #116 arms above still
+# run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # -wtm_fsm_delta_source exists to address.
 ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_active_set
-check "Anderson + active-set, src" a_as_src -wtm_anderson -wtm_active_set -wtm_fsm_delta_source
 echo
 echo "-- no single-step identity --"
 check_nan "TR-BDF2"                s_tr     -wtm_anderson -wtm_tr_bdf2

@@ -264,7 +264,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL]: feed FSM's per-step water-table change into the NEXT step's recharge source (keeping the smooth pre-FSM state as the step baseline) instead of overwriting the baseline with the post-FSM table. A no-op under backward Euler; restores 2nd-order accuracy on TR-BDF2/adaptive by removing the between-step FSM jump. See GH #13 / #116.
+static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL, SUPERSEDED for its original purpose]: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy); ACTIVE_SET now removes that shock by itself -- shock ratio 0.985 -> 3.6e-13 -- so this no longer has a shock to smooth and is NOT recommended for that. Retained because its source-delivery machinery is the mechanism for DECOUPLING FSM CADENCE from the GW step, if the serial-FSM ceiling is ever attacked (option B of the lake-coupling design). Incompatible with active_set (guarded in update()). See GH #116 and benchmark/scheme_bench/README.md.
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
@@ -1416,6 +1416,22 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           "the discharge-potential variable the pinned residual has no unit derivative, so the "
           "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
+
+  // #116 x active_set are STRUCTURALLY INCOMPATIBLE, and now that active_set is the default this has to
+  // be a hard error rather than a footnote. The lake-aware pin reads its obstacle from the water table
+  // itself (surface_water_depth = max(0, starting_wtd), the stage FSM wrote there last step).
+  // -wtm_fsm_delta_source exists precisely to STOP FillSpillMerge writing its result there -- that is its
+  // whole mechanism. So the obstacle collapses to the land surface everywhere and every lake drains:
+  // measured on the island fixture, max wtd 5.6986 m -> 0.0000 m with ZERO cells holding more than 1 mm.
+  // The reader and its source are the same line of code. Fixing it means carrying the lake stage in its
+  // own array rather than inferring it from starting_wtd; see benchmark/scheme_bench/README.md.
+  if (g_fsm_delta_source && g_active_set)
+    throw std::runtime_error(
+        "-wtm_fsm_delta_source cannot be combined with the active_set exfiltration enforcement (now the "
+        "default). The active-set obstacle is read from the water table that FillSpillMerge writes each "
+        "step, and -wtm_fsm_delta_source exists to suppress exactly that write -- so the obstacle would "
+        "collapse to the land surface and every lake would drain (measured: 5.6986 m -> 0.0000 m). Use "
+        "surface_water.collection.method: implicit or explicit with -wtm_fsm_delta_source, or drop the flag.");
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / exfiltration). At
