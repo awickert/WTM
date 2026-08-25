@@ -37,7 +37,7 @@ run() { # name  command...
     if "$@"; then NAMES+=("$name"); RESULTS+=("PASS"); else NAMES+=("$name"); RESULTS+=("FAIL"); fi
 }
 
-run "unit: DMDA gather/scatter" ./run_unit_tests.sh "$TDMDA"
+run "unit: DMDA gather + storage math" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"
 run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" $MPI_RANKS
