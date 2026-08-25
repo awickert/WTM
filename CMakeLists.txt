@@ -113,6 +113,7 @@ add_executable(test_dmda.x
   src/test_storage_math.cpp
   src/test_geometry.cpp
   src/test_fsm_water_ledger.cpp
+  src/test_tr_bdf2_balance.cpp
 )
 target_link_libraries(test_dmda.x PRIVATE wtm)
 target_compile_features(test_dmda.x PRIVATE cxx_std_20)
