@@ -66,13 +66,14 @@ EOF
 }
 
 fail=0
-check() { # $1 = label, $2 = stem, $3.. = solver flags
+check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL for one arm
     local label="$1" stem="$2"; shift 2
+    local tol="${ARM_TOL:-$TOL}"
     mkcfg "$stem"
     if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
-    TOL="$TOL" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
+    TOL="$tol" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 tol   = float(os.environ["TOL"]); label = os.environ["LABEL"]
 rows  = [[float(x) for x in l.split()] for l in open(sys.argv[1])
@@ -125,6 +126,23 @@ echo
 echo "-- FSM-delta-source coupling (#116) --"
 check "Anderson BE (secant)"       f_and    -wtm_anderson -wtm_fsm_delta_source
 check "Anderson BE (volume dV)"    f_vol    -wtm_anderson -wtm_volume_storage -wtm_fsm_delta_source
+echo
+# Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
+# measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
+# here so that property cannot regress while the default question is open. Note its residual is the
+# LOOSEST of the schemes (~6e-7 vs 1e-8..1e-10) -- the pinned-cell exfiltration flux is transferred to
+# the budget post-solve rather than being an integrated source, so it carries the SNES tolerance of
+# the pin. Understand that gap before making it the default.
+echo "-- active-set exfiltration constraint --"
+# KNOWN GAP, measured not guessed: active-set under the OVERWRITE coupling closes only to ~5e-6
+# per cycle -- 50x looser than every other arm -- so it runs at its own documented tolerance rather
+# than loosening the gate for everything else. Hypothesis (UNVERIFIED): the pinned cells' exfiltration
+# flux is captured POST-solve and handed to FSM, whose overwrite is a state jump no per-step identity
+# can see, so the transfer carries the pin's SNES tolerance instead of being an integrated source.
+# Note the very next arm -- the same active-set WITH -wtm_fsm_delta_source -- closes at 8e-8, which is
+# consistent with that hypothesis and is the reason the two changes belong together.
+ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_dev_active_set
+check "Anderson + active-set, src" a_as_src -wtm_anderson -wtm_dev_active_set -wtm_fsm_delta_source
 echo
 echo "-- no single-step identity --"
 check_nan "TR-BDF2"                s_tr     -wtm_anderson -wtm_tr_bdf2
