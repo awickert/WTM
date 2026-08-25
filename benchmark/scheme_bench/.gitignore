@@ -2,3 +2,6 @@
 results/
 smoke/
 results_run.log
+
+# ...but DO keep the recorded report of a benchmark run (the repo-wide *.txt rule would drop it).
+!RESULTS_*.txt
