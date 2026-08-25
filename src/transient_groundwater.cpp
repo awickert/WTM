@@ -1611,8 +1611,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         throw std::runtime_error("TR-BDF2 trapezoidal stage (1) did not converge.");
       }
       VecCopy(user_context.x, user_context.tr_ygamma);  // Y_gamma carried into stage 2
+      // -wtm_active_set: BOTH stages pin, and BOTH discard water into the pin. The step's exfiltration is
+      // E = C1*E1 + E2 (derived in src/tr_bdf2_coefficients.hpp; C1*gamma = 70.71% of the step is carried
+      // by stage 1). exfiltration_vec is rewritten by every residual evaluation, so E1 has to be taken now,
+      // before stage 2 overwrites it -- and taken by an EXPLICIT residual evaluation at the accepted
+      // Y_gamma, because the solver's last evaluation may have been at a rejected trial iterate.
+      if (g_active_set) {
+        if (!user_context.tr_exfil_stage1) VecDuplicate(user_context.x, &user_context.tr_exfil_stage1);
+        if (!user_context.tr_fwork) VecDuplicate(user_context.x, &user_context.tr_fwork);
+        SNESComputeFunction(user_context.snes, user_context.x, user_context.tr_fwork);  // tr_stage still 1
+        VecCopy(user_context.exfiltration_vec, user_context.tr_exfil_stage1);
+      }
       user_context.tr_stage = 2;  // BDF2 → w^{n+1} (initial guess = Y_gamma, already in x)
       SNESSolve(user_context.snes, user_context.b, user_context.x);
+      if (g_active_set) {
+        // E2 at the accepted w^{n+1}, then combine into the STEP multiplier the commit block transfers to
+        // FillSpillMerge. Both stage multipliers are >= 0 (each is a max(0, .)), so the sum is too.
+        SNESComputeFunction(user_context.snes, user_context.x, user_context.tr_fwork);  // tr_stage still 2
+        VecAXPY(user_context.exfiltration_vec, trbdf2::WE_STAGE1, user_context.tr_exfil_stage1);
+      }
       user_context.tr_stage = 0;
     } else if (user_context.use_handoff) {
       // Phase 1: Anderson globalizes, with the flail-detect convergence test (saves the best iterate,

@@ -232,6 +232,14 @@ struct AppCtx {
   bool use_predict_guess = false;
   Vec  tr_ygamma   = nullptr;  // intermediate Y_gamma (owned range; storage is centre-only)
   Vec  tr_expl     = nullptr;  // dt*(N(w^n)/A_j + removal(w^n)) per owned land cell (explicit TR half)
+  // -wtm_active_set x TR-BDF2: the exfiltration multiplier is a PER-STAGE quantity, and the step's is
+  // E = C1*E1 + E2 (src/tr_bdf2_coefficients.hpp). tr_exfil_stage1 parks E1, captured at the converged
+  // Y_gamma, until stage 2 has produced E2. tr_fwork is the throwaway residual vector for the explicit
+  // post-solve SNESComputeFunction calls that put each stage's multiplier at its ACCEPTED state rather
+  // than at whichever trial iterate the solver happened to evaluate last. Allocated lazily (both flags
+  // must be known); nullptr otherwise.
+  Vec  tr_exfil_stage1 = nullptr;
+  Vec  tr_fwork        = nullptr;
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the

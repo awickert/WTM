@@ -798,6 +798,8 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.starting_wtd_local);
   VecDestroy(&user_context.tr_ygamma);  // TR-BDF2 (no-op if unallocated)
   VecDestroy(&user_context.tr_expl);
+  VecDestroy(&user_context.tr_exfil_stage1);  // TR-BDF2 x active-set (lazily allocated)
+  VecDestroy(&user_context.tr_fwork);
 
   // Picard path (nullptr / no-op when -wtm_picard was not set).
   MatDestroy(&user_context.picard_A);
