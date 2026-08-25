@@ -1,0 +1,4 @@
+# Generated run artifacts: configs, logs, run textfiles, rasters, the summary CSV.
+results/
+smoke/
+results_run.log
