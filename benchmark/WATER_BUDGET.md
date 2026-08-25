@@ -51,7 +51,7 @@ The reported quantities fall in two groups, kept separate on purpose:
 | `stored_volume` | 14 | **physical** | exact stored water, `Sum storedVolume(w)\cdot A` |
 | `ocean_loss_closing` | 15 | **budget-closing** | total ocean loss *inferred by difference*: `recharge − evap − \Delta(stored\_volume)` |
 | `budget_residual` | 16 | **budget-closing** | `ocean_loss_closing − total_ocean_outflow − total_loss_to_ocean` (both ocean channels: Darcy + FSM spill; carries the BDF2 gap) |
-| `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance on every solver path (`nan` under TR-BDF2, which has no single-step identity) |
+| `exact_budget_residual` | 17 | **budget-closing** | `solver_recharge − storage_change − ocean − sink` from the solver's exact per-step discrete terms; ≈0 to SNES tolerance on every solver path, TR-BDF2 included (its two stages telescope — see below). Reported as `nan`, never as a stale zero, if a scheme ever cannot be expressed as one per-step identity |
 
 - The **physical** quantities are what science uses: how much water entered, where and how fast it
   left through the coast (a real Darcy flux, per-cell-mappable), how much the sink removed, how much
@@ -131,10 +131,47 @@ computes precisely that: `updateEffectiveStorativity(w^n, w^{n+1})` is **defined
 `h^{n+1} - h^{n} = w^{n+1} - w^{n}`, so `S_c(h^{n+1}-h^{n}) \equiv V(w^{n+1}) - V(w^{n})`. The two
 separate only once the BDF2 weights are not `(1,1,0)`, because `S_c(a_c h^{n+1} - b_c h^{n} + c_c
 h^{n-1})` is then *not* the weighted volume difference. So: secant for everything backward-Euler,
-volume for BDF2-on-V. **TR-BDF2 is deliberately not covered:** its two stages each satisfy
-their own discrete balance and do not telescope into one per-step identity, so any accumulated total
-would be a wrong number wearing the word "exact". A run that takes a TR-BDF2 step clears
-`exact_budget_valid` and column 17 is reported as `nan`, never as a stale zero.
+volume for BDF2-on-V. **TR-BDF2 needs neither of them** — see below, where its two stages are shown
+to telescope onto the backward-Euler storage form exactly.
+
+### TR-BDF2: the step balance its two stages define
+
+TR-BDF2 takes two implicit stages per step and each satisfies its own discrete balance. Neither is
+the step's, so for a long time column 17 was reported as `nan` under TR-BDF2 and the scheme was
+simply excluded. That was honest but expensive: TR-BDF2 is the integrator the adaptive controller
+drives, and it was the one scheme whose conservation nothing could check.
+
+The stages *do* combine. Take `C1 × (stage 1) + (stage 2)`, with `γ = 2 − √2`, `C1 = 1/(γ(2−γ))`,
+`C2 = (1−γ)²/(γ(2−γ))` and `C3 = (1−γ)/(2−γ)`. The storage terms telescope because `C1 − C2 = 1`
+exactly, and the recharge collapses because `C1·γ + C3 = 1`, leaving
+
+```
+V(w^{n+1}) − V(w^n)  =  R  −  [ W_OLD·F(w^n) + W_YGAMMA·F(Y_γ) + W_NEW·F(w^{n+1}) ]  −  [ C1·E1 + E2 ]
+```
+
+with `W_OLD = W_YGAMMA = C1·γ/2` and `W_NEW = C3`. So **TR-BDF2's per-step balance is the
+backward-Euler balance with exactly two substitutions**: every flux and removal term becomes a
+three-point quadrature over the states `(w^n, Y_γ, w^{n+1})`, and the active-set exfiltration
+multiplier becomes `E = C1·E1 + E2`. Storage and recharge are unchanged — which is why those halves
+of the budget were always right under TR-BDF2 and only the flux, removal and exfiltration halves
+were wrong.
+
+The weights sum to 1 (consistency) and satisfy `W_YGAMMA·γ + W_NEW = 1/2` exactly, which is the
+second-order condition: the budget is second-order accurate, not merely conservative. It is not
+exact on a quadratic (0.414214 against 1/3), the expected order barrier. All of this is derived in
+`src/tr_bdf2_coefficients.hpp` and pinned in `src/test_tr_bdf2_balance.cpp`.
+
+**Why it mattered, quantitatively.** Stage 1 carries `C1·γ = 70.71%` of the step and stage 2 carries
+`C3 = 29.29%`. Reading the exfiltration multiplier off the stage-2 residual alone — which is what
+happened, because every residual evaluation overwrites the vector and stage 2 evaluates last —
+recovered 29.29% of the step and understated by `1/C3 = 3.4142`. Measured on `tests/multilake` under
+`active_set` at `dt = 0.25 yr`: 5.97e11 m³ delivered to FillSpillMerge against backward Euler's
+2.00e12 m³ (ratio 3.356 against the predicted 3.414), and a physical budget residual of 9.5% of
+recharge where BDF2-on-V — also multi-level, also second order — closes at 0.2%.
+
+With all three terms weighted, column 17 closes at 2.2e-8 of recharge under TR-BDF2 against
+backward Euler's 3.1e-8, and is tolerance-limited (1.7e-8 per cycle at `-snes_stol 1e-8`).
+`tests/budget_closure` holds both plain TR-BDF2 and TR-BDF2 + active-set to that standard.
 
 ### Two definitions of "recharge", and which one this uses
 
@@ -184,6 +221,38 @@ now the check *measures* it.
   ghost `mask_local` so land→ocean faces at rank boundaries are counted exactly once).
 - **Non-invasive:** the accounting only *reads* the converged head; the golden regression is
   byte-clean.
+
+### KNOWN DEFECT: the exact budget does not close under the `explicit` collector
+
+Uncovered while building the TR-BDF2 arms above, and **not** a TR-BDF2 problem — it is
+scheme-independent and predates that work. Varying only the collector on `tests/fsm_consistency`,
+exact residual as a fraction of recharge:
+
+| collector | backward Euler | TR-BDF2 |
+|---|---|---|
+| `implicit` | 6.5e-09 ✓ | −2.7e-08 ✓ |
+| `explicit` | **−14.30** ✗ | **−14.29** ✗ |
+| `off` | −2.7e-07 ✓ | −8.9e-08 ✓ |
+| `active_set` | −5.8e-07 ✓ | −2.1e-07 ✓ |
+
+Backward Euler and TR-BDF2 fail *identically*, which is what identifies this as the collector rather
+than the integrator. The mechanism: `explicit` is a **post-solve clamp**, so its removal is not a
+term in the residual. `accumulate_budget_terms` reads the storage from `dmdapack.x`, the *pre-clamp*
+`w^{n+1}`, while the clamped water is added to `total_surface_removed` and subtracted from the
+identity — so the residual comes out equal to `total_surface_removed` almost exactly (3.477e11
+against a residual of 3.477e11). With FSM on, the same water is returned each step and re-skimmed,
+which is why the accumulated figure reaches 14× recharge.
+
+This matters more than a diagnostic bug usually would, because **`explicit` is the collector the
+Picard solver resolves to by default** (active-set cannot be carried by the Picard operator), and
+`tests/budget_closure`'s Picard arm pins `runoff_collector implicit` — so no arm covers the
+configuration Picard actually runs in production. The physical budget (column 16) is unaffected: it
+correctly treats `surface_removed` as an internal groundwater→FSM transfer rather than as a sink.
+
+Not fixed here: the repair is a decision about what the exact identity should mean when a removal
+happens outside the residual (measure storage post-clamp, or stop subtracting a post-solve transfer),
+and that is its own change with its own blast radius rather than something to tow behind a TR-BDF2
+fix.
 
 ## 6. Reported columns (textfile)
 
