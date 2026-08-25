@@ -9,7 +9,8 @@
 #   IMPLICIT : table pinned at the surface (0 <= max wtd < 0.5 m: a exfiltration constraint, not a pile) with exfiltrating cells.
 #   EXPLICIT : table clamped to exactly the surface (|max wtd| < 1e-4 m) with exfiltrating cells.
 #   OFF      : water piles far above the surface (max wtd > 5 m) AND the nonphysical warning is printed.
-#   UNSET    : no collector set -> the DEFAULT (implicit exfiltration constraint) applies, identical to the IMPLICIT case.
+#   UNSET    : no collector set -> the DEFAULT applies. That default is now active_set (was implicit),
+#              so UNSET is compared against the ACTIVE_SET run -- this is the check that catches a flip.
 #              (The legacy band sink is no longer the default; it is covered as an explicit mode in taper / dt_sensitivity.)
 #   AGREE    : implicit and explicit land within a few cm (same face, converging as dt->0).
 #   SOLVER   : explicit also converges on the default Picard path (it needs no tangent).
@@ -58,6 +59,7 @@ run() { # stem  collector-line  extra-flags
 run implicit "runoff_collector implicit" ""
 run explicit "runoff_collector explicit" ""
 run off      "runoff_collector off"      ""
+run aset     "runoff_collector active_set" ""
 run unset    ""                          ""
 # explicit on the DEFAULT Picard path (no -wtm_anderson): must converge (no tangent needed)
 emit picard "runoff_collector explicit"
@@ -67,11 +69,12 @@ OFFWARN=$(grep -c "WARNING \[runoff_collector=off\]" "$WORK/off.log" || true)
 
 IM=$(ls "$WORK"/implicit_*.tif | tail -1); EX=$(ls "$WORK"/explicit_*.tif | tail -1)
 OF=$(ls "$WORK"/off_*.tif | tail -1);      UN=$(ls "$WORK"/unset_*.tif | tail -1)
-OFFWARN="$OFFWARN" "$PY" - "$IM" "$EX" "$OF" "$UN" <<'PY'
+AS=$(ls "$WORK"/aset_*.tif | tail -1)
+OFFWARN="$OFFWARN" "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" <<'PY'
 import sys, os, numpy as np, rasterio
-im, ex, of, un = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
+im, ex, of, un, aset = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:6]]
 def interior(a): return a[1:-1, 1:-1]
-im_mx, ex_mx, of_mx, un_mx = (float(interior(a).max()) for a in (im, ex, of, un))
+im_mx, ex_mx, of_mx, un_mx, as_mx = (float(interior(a).max()) for a in (im, ex, of, un, aset))
 im_seep = int((interior(im) > -1e-3).sum()); ex_seep = int((interior(ex) > -1e-3).sum())
 agree = float(np.max(np.abs(im - ex)))
 offwarn = int(os.environ["OFFWARN"]) > 0
@@ -86,11 +89,18 @@ check("EXPLICIT (clamped to surface)",      abs(ex_mx) < 1e-4 and ex_seep > 0,
       f"max wtd = {ex_mx:.4e} m, exfiltrating cells = {ex_seep}")
 check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
       f"max wtd = {of_mx:.2f} m, warning printed = {offwarn}")
-check("UNSET (defaults to implicit exfiltration constraint)", (0.0 - 1e-3 <= un_mx < 0.5) and abs(un_mx - im_mx) < 1e-6,
-      f"max wtd = {un_mx:.4f} m (== implicit default {im_mx:.4f} m)")
+# UNSET must track the CURRENT default, which is active_set (it was implicit until 2026-08-25). This
+# check is the one that catches a default flip, so it compares against the active_set run rather than
+# hard-coding a number.
+check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < 1e-6,
+      f"max wtd = {un_mx:.4f} m (== active_set {as_mx:.4f} m; implicit would be {im_mx:.4f} m)")
 check("AGREE implicit vs explicit",         agree < 0.1,
       f"max|implicit - explicit| = {agree:.3e} m")
 print("PASS: runoff_collector modes behave as specified" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY
+checks_rc=$?
 echo "  SOLVER: explicit converged on the default Picard path (no tangent needed)"
+# Propagate the checks' status. This was previously dropped: the trailing echo returned 0, so a FAILING
+# assertion still exited 0 and run_all.sh reported the suite PASS while printing "FAIL" in its output.
+exit $checks_rc
