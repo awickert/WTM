@@ -661,11 +661,15 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
     return;
   }
   const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history;
-  // Mirror the residual's branch choice. Picard uses use_bdf2_on_V; the matrix-free path additionally
-  // offers -wtm_volume_storage, a backward Euler whose storage is the exact volume change (a_c,b_c,c_c
-  // = 1,1,0). Both are volume-form; everything else is the secant S_c*(a_c h^{n+1} - b_c h^n + c_c h^{n-1}).
-  const bool bdf2_on_V     = bdf2 && user_context.use_bdf2_on_V;
-  const bool volume_form   = bdf2_on_V || g_volume_storage;
+  // Mirror the residual's branch choice -- but note that only BDF2 actually needs a separate volume
+  // form. -wtm_volume_storage is a backward Euler whose storage is the exact volume change
+  // V(w^{n+1}) - V(w^n), and the secant branch below already computes exactly that: by definition
+  // updateEffectiveStorativity(w^n, w^{n+1}) IS the secant (V(w^{n+1}) - V(w^n)) / (w^{n+1} - w^n)
+  // (pinned in src/test_storage_math.cpp), and h^{n+1} - h^n = w^{n+1} - w^n, so
+  // S_c*(h^{n+1} - h^n) == V(w^{n+1}) - V(w^n) identically. The two forms separate only once the BDF2
+  // weights are not (1,1,0), because S_c*(a_c h^{n+1} - b_c h^n + c_c h^{n-1}) is then NOT the
+  // weighted volume difference. So the single volume branch is the BDF2-on-V one.
+  const bool bdf2_on_V = bdf2 && user_context.use_bdf2_on_V;
   double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // backward-Euler weights (recharge form S_c*(h^{n+1}-h^n))
   if (bdf2) {
     const double omega = user_context.deltat / user_context.bdf2_prev_dt;
@@ -673,8 +677,6 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
     b_c                = 1.0 + omega;
     c_c                = omega * omega / (1.0 + omega);
   }
-  // -wtm_volume_storage is backward Euler even when BDF2 history exists on another path: no w^{n-1} term.
-  if (g_volume_storage && !bdf2_on_V) { a_c = 1.0; b_c = 1.0; c_c = 0.0; }
 
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar **my_topo, **my_prev = nullptr;
@@ -689,7 +691,7 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
       const double wm1  = my_prev ? my_prev[j][i] : 0.0;     // w^{n-1} (unused when c_c==0)
       const double rech = dmdapack.rech_vec[j][i];
       double storage, recharge;
-      if (volume_form) {
+      if (bdf2_on_V) {
         storage  = a_c * storedVolume(w1, poro) - b_c * storedVolume(w0, poro) + c_c * storedVolume(wm1, poro);
       } else {
         const double S_c = updateEffectiveStorativity(w0, w1, poro);  // secant storativity (matches the RHS)

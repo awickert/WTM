@@ -119,11 +119,19 @@ regardless of cold-start transients. We report it *alongside* the physical quant
 so the headline numbers mean what a scientist expects while the exact residual proves conservation.
 
 **It is now solver-agnostic** (it was Picard-only, which left the default matrix-free Anderson path
-without an exact check). `accumulate_budget_terms` mirrors the branch cascade of *both*
-`FormPicardRHS` and the matrix-free `FormFunctionLocal` — secant backward Euler, `-wtm_volume_storage`
-(exact `\Delta V` backward Euler), and BDF2-on-V — in **volume** units, i.e. without the `1/S_y`
-head-scaling the Anderson residual applies (a positive per-cell scale that leaves the root unchanged
-but would corrupt a budget). **TR-BDF2 is deliberately not covered:** its two stages each satisfy
+without an exact check). `accumulate_budget_terms` mirrors the residual's storage form in **volume**
+units, i.e. without the `1/S_y` head-scaling the Anderson residual applies (a positive per-cell scale
+that leaves the root unchanged but would corrupt a budget).
+
+Only **two** storage forms are needed, not one per solver flag, and the reason is worth recording
+because it is easy to get wrong in the other direction. `-wtm_volume_storage` is a backward Euler
+whose storage is the exact volume change `V(w^{n+1}) - V(w^{n})`, and the *secant* form already
+computes precisely that: `updateEffectiveStorativity(w^n, w^{n+1})` is **defined** as the secant
+`(V(w^{n+1}) - V(w^{n}))/(w^{n+1} - w^{n})` (pinned in `src/test_storage_math.cpp`), and
+`h^{n+1} - h^{n} = w^{n+1} - w^{n}`, so `S_c(h^{n+1}-h^{n}) \equiv V(w^{n+1}) - V(w^{n})`. The two
+separate only once the BDF2 weights are not `(1,1,0)`, because `S_c(a_c h^{n+1} - b_c h^{n} + c_c
+h^{n-1})` is then *not* the weighted volume difference. So: secant for everything backward-Euler,
+volume for BDF2-on-V. **TR-BDF2 is deliberately not covered:** its two stages each satisfy
 their own discrete balance and do not telescope into one per-step identity, so any accumulated total
 would be a wrong number wearing the word "exact". A run that takes a TR-BDF2 step clears
 `exact_budget_valid` and column 17 is reported as `nan`, never as a stale zero.
