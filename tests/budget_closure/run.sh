@@ -139,8 +139,16 @@ echo "-- active-set exfiltration constraint --"
 # than loosening the gate for everything else. Hypothesis (UNVERIFIED): the pinned cells' exfiltration
 # flux is captured POST-solve and handed to FSM, whose overwrite is a state jump no per-step identity
 # can see, so the transfer carries the pin's SNES tolerance instead of being an integrated source.
-# Note the very next arm -- the same active-set WITH -wtm_fsm_delta_source -- closes at 8e-8, which is
-# consistent with that hypothesis and is the reason the two changes belong together.
+#
+# CORRECTION (do not restore the earlier claim here). This comment used to add that the next arm --
+# active-set WITH -wtm_fsm_delta_source -- closes ~50x tighter at 8e-8, and read that as evidence the
+# two changes "belong together". That inference was WRONG. On this same fixture the source arm HALVES
+# the ponded water (160.00 -> 79.04 m of ponded depth, max wtd 10.0 -> 5.0 m), so the tighter residual
+# is measured on a MATERIALLY DIFFERENT answer, not on a better version of the same one -- and tighter
+# closure of a different state says nothing about complementarity. Both arms are kept as conservation
+# GATES; neither is evidence for enabling the pair. See benchmark/scheme_bench/README.md, where
+# active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
+# -wtm_fsm_delta_source exists to address.
 ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_dev_active_set
 check "Anderson + active-set, src" a_as_src -wtm_anderson -wtm_dev_active_set -wtm_fsm_delta_source
 echo

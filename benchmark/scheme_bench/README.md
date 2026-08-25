@@ -208,3 +208,41 @@ across many shallow ponds instead of one deep lake, and the schemes disagree wit
 conserves mass to 6.9e-11, so this is a **redistribution** difference, not a leak — exactly the class
 of error a global budget cannot see and that the per-cell ledger (not yet built) would catch. #116's
 answer is therefore **not validated** by this benchmark, whatever its conservation properties.
+
+---
+
+# Correction: active-set SUPERSEDES #116; they are not complementary
+
+An earlier note in `tests/budget_closure/run.sh` read active-set + `-wtm_fsm_delta_source` closing the
+budget ~50× tighter (8e-8 vs 5.8e-7) as evidence the two changes "belong together." **That inference
+was wrong** and is retracted here and there.
+
+**Why it was wrong.** On the same fixture the source arm *halves the ponded water* — max wtd
+10.0 → 5.0 m, ponded total 160.00 → 79.04 m. The tighter residual is measured on a **materially
+different answer**, not a better version of the same one. Tighter closure of a different state is not
+evidence of complementarity.
+
+**Why active-set supersedes it.** `-wtm_fsm_delta_source` exists to remove the between-step FSM shock.
+Active-set removes that shock *by itself*:
+
+| corner | GW move | FSM jump | shock ratio |
+|---|---|---|---|
+| implicit × between | 46.38 | 45.67 | **0.985** |
+| active-set × between | 0.708 | 3.6e-13 | **0.000** |
+
+Under `implicit`, FSM undoes essentially the whole groundwater step every cycle — a limit cycle, and a
+real problem that #116 was a reasonable answer to. Under active-set the solve already places cells at
+the stage FSM would set, so FSM has nothing left to change. **#116's premise does not survive
+active-set**, and neither does the second-order-accuracy argument built on it.
+
+**Its effect is not even consistent in sign.** Ponded total under `during` vs `between`:
+island/implicit **+69%**, island/active-set **−100%**, fsm_test/active-set **−51%**. A systematic
+physical improvement would not wander like that.
+
+**Conclusion: enable active-set; park #116.** Keep `-wtm_fsm_delta_source` gated off — its
+source-delivery machinery is the right mechanism if FSM cadence is ever decoupled from the GW step to
+get off the serial-FSM ceiling (option B of the original design). That is a *cost* lever, not a
+correctness one, and is not what the flag was built for.
+
+**What would reopen it:** if active-set does *not* become the default. A 0.985 shock ratio is severe,
+and #116's motivation returns in full.
