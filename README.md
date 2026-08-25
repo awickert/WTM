@@ -228,11 +228,22 @@ selects the bundle; you only override a piece if you mean to.
 |---|---|---|---|
 | select with | *(default)* | `-wtm_picard -wtm_bdf2_on_V` | `-wtm_newton` |
 | solve | matrix-free | assembled operator + linear solve | assembled Jacobian + linear solve |
-| exfiltration enforcement | **`active_set`** | **`explicit`** | **`explicit`** |
+| exfiltration enforcement | **`active_set`** | **`explicit`** (active_set rejected) | **`active_set`** or `explicit` |
 | cold start from far | works as-is | needs **`-wtm_Tbar`** (log-mean transmissivity) | needs **dt-continuation** (`-wtm_stiff`) |
 | order in time | 1st (BE); 2nd via `-wtm_tr_bdf2` / `-wtm_bdf2_on_V` | 2nd | 1st |
 
-**`active_set` is REJECTED on Picard/Newton, not merely discouraged.** Selecting it there never
+**Newton carries `active_set`; Picard does not.** The distinction is easy to lose and worth stating: the
+Newton *residual* is the same function the Anderson path uses, so Newton has always **enforced** the
+constraint — it merely differentiated a different function, which is why it lost quadratic convergence
+and aborted unpredictably. `FormJacobianLocal` now carries the matching semismooth tangent (an identity
+row on the active set, structurally the same as the ocean Dirichlet row), and Newton then agrees with
+Anderson on lake **topology** — 4 lakes on the multi-lake fixture, where `explicit` gives 6.
+**Robustness caveat:** the `max()` kink is still non-differentiable, so plain Newton can diverge in the
+line search on some problems (it does on the boundary fixture, not on the multi-lake one).
+`-wtm_dt_continuation` cures it — the same treatment Newton's mode already needs for cold starts. Not
+supported together with `-wtm_kirchhoff`, where the pinned residual has no unit derivative.
+
+**`active_set` is REJECTED on Picard, not merely discouraged.** Selecting it there never
 actually enforces the constraint — it silently becomes something else, and measurement says neither
 outcome is what you asked for. With FSM **on**, FillSpillMerge's between-step overwrite
 (`runoff += wtd; wtd = 0`, then re-level) does the job instead: that is a post-solve projection, i.e.

@@ -30,6 +30,13 @@ emit() { # stem region surfdir southern_edge
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 fsm_on 0
+# Pinned to `explicit` on purpose. This test's subject is the land-edge BOUNDARY CONDITION, not the
+# exfiltration enforcement. Its Newton arm uses PLAIN Newton deliberately (the comment below explains
+# why dt-continuation is avoided here), and plain Newton + active_set diverges in the line search on
+# this fixture -- the semismooth kink, which dt-continuation cures but which would make this test slow.
+# Holding the enforcement fixed keeps the boundary comparison clean. (Newton + active_set IS supported;
+# it converges on tests/multilake with or without continuation. See the README solution-mode table.)
+runoff_collector explicit
 evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0

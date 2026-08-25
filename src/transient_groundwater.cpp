@@ -1245,16 +1245,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // clamp, which is robust on every solver and is the documented remedy. An EXPLICIT
   // surface_water.collection.method is always honoured (the warning below still fires), so this only
   // ever changes what an unspecified config does.
-  if (rc == "active_set" && !params.runoff_collector_set
-      && (user_context.use_picard || user_context.use_newton)) {
+  if (rc == "active_set" && !params.runoff_collector_set && user_context.use_picard) {
     rc = "explicit";
     static bool noted_downgrade = false;
     if (!noted_downgrade) {
       noted_downgrade = true;
       PetscPrintf(PETSC_COMM_WORLD,
-                  "NOTE: the default exfiltration enforcement is active_set, but its pin is wired into the "
-                  "matrix-free Anderson residual only. On this solver the default resolves to `explicit` "
-                  "(post-solve clamp) instead. Set surface_water.collection.method explicitly to override.\n");
+                  "NOTE: the default exfiltration enforcement is active_set, but the pin is absent from the "
+                  "Picard operator/RHS. On this solver the default resolves to `explicit` (post-solve clamp) "
+                  "instead. Set surface_water.collection.method explicitly to override.\n");
     }
   }
   // Snapshot the legacy-flag choices so the selector can report any of them it supersedes (below).
@@ -1379,13 +1378,23 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // something else would violate "an explicit choice is always honoured", and a warning in front of
     // the nonphysical `off` mode is a warning users will scroll past. (The DEFAULT never lands here --
     // it resolves to `explicit` on these solvers further up.)
-    if (user_context.use_picard || user_context.use_newton)
+    if (user_context.use_picard)
       throw std::runtime_error(
-          "surface_water.collection.method: active_set is not supported on the Picard or Newton solver. "
-          "The semismooth pin is wired into the matrix-free Anderson residual only, so on this solver the "
+          "surface_water.collection.method: active_set is not supported on the Picard solver. The pin is "
+          "absent from the Picard operator and RHS (a separate formulation from the residual), so the "
           "exfiltration constraint would never be enforced -- it would silently fall through to "
-          "FillSpillMerge's overwrite (with FSM on) or to no enforcement at all (with FSM off). "
-          "Use surface_water.collection.method: explicit on Picard/Newton, or run the Anderson solver.");
+          "FillSpillMerge's overwrite (with FSM on) or to no enforcement at all (with FSM off; measured: "
+          "water piles over 1440 of ~1444 land cells). Use surface_water.collection.method: explicit on "
+          "Picard, or run the Anderson solver.");
+    // Newton is DIFFERENT from Picard here, and the distinction is easy to lose: the Newton RESIDUAL is
+    // FormFunctionLocal, the same function that carries the pin, so Newton has always ENFORCED the
+    // constraint -- it merely differentiated a different function. FormJacobianLocal now carries the
+    // matching semismooth tangent, so the pair is consistent and active_set is supported there.
+    if (user_context.use_newton && g_kirchhoff)
+      throw std::runtime_error(
+          "surface_water.collection.method: active_set is not supported together with -wtm_kirchhoff. In "
+          "the discharge-potential variable the pinned residual has no unit derivative, so the "
+          "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
@@ -2595,6 +2604,33 @@ static PetscErrorCode FormJacobianLocal(
         MatSetValuesStencil(Jmat, 1, &row, 1, &col, &one, INSERT_VALUES);
         if (P != Jmat) MatSetValuesStencil(P, 1, &row, 1, &col, &one, INSERT_VALUES);
         continue;
+      }
+
+      // ACTIVE-SET (semismooth) TANGENT. The residual applies f <- max(w_c - surface_water_depth, f)
+      // (see FormFunctionLocal). Differentiating that max: where the PIN branch wins, the residual IS
+      // w_c - surface_water_depth = x - (topo + surface_water_depth), so the row is d/dx = 1 with NO
+      // neighbour coupling -- structurally identical to the ocean Dirichlet row above, except that the
+      // imposed set is DISCOVERED each iteration from the current iterate rather than fixed by the mask.
+      // That is what makes this a semismooth / primal-dual active-set Newton.
+      //
+      // WHY THIS MATTERS: without it the Newton residual (which HAS the pin) and the Newton Jacobian
+      // (which did not) describe different functions. An inconsistent Jacobian is the textbook cause of
+      // losing quadratic convergence and of line-search failure, which is what plain Newton did here.
+      //
+      // NOT applied under -wtm_kirchhoff: there the SNES variable is the discharge potential, so the
+      // pinned residual w_c - swd = Phi^-1(x) - swd does NOT have a unit derivative in x, and the row
+      // would need 1/Phi'(wtd). Left alone rather than assembled wrong; see the guard in update().
+      if (g_active_set && !g_kirchhoff) {
+        const double w_c_pin = x[j][i] - my_topo[j][i];
+        const double swd_pin = std::max(0.0, my_starting_wtd[j][i]);
+        if (w_c_pin - swd_pin > 0.0) {  // the max() picks the pin branch: this cell is in the active set
+          const PetscScalar one = 1.0;
+          MatStencil col;
+          col.j = j; col.i = i; col.c = 0;
+          MatSetValuesStencil(Jmat, 1, &row, 1, &col, &one, INSERT_VALUES);
+          if (P != Jmat) MatSetValuesStencil(P, 1, &row, 1, &col, &one, INSERT_VALUES);
+          continue;
+        }
       }
 
       // wtd at centre and 4 neighbours from the SNES variable (Kirchhoff x=Φ → wtd=Φ⁻¹(x); else x−topo),
