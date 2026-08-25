@@ -16,6 +16,14 @@ runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-
 
 **Default is `implicit`** (the exact face); the default *solver* is matrix-free Anderson.
 
+**The selector wins over the legacy `-wtm_` surface flags.** In every mode except `legacy`, the selector sets
+`-wtm_surface_sink`, `-wtm_direct_to_runoff` and `-wtm_surface_exfiltration_to_runoff` itself, so passing one of
+those on the command line has no effect — the *config key*, not the command line, decides which enforcement
+runs. Because `runoff_collector` defaults to `implicit`, this holds even for a config that never mentions it.
+If you passed such a flag and the selector changed its effect, the run prints a one-line `NOTE [runoff_collector=…]`
+saying so; the resolved value is also on the `c runoff_collector = …` line of the config echo at the top of every
+run log. Set `surface_water.collection.method: legacy` to hand control back to the flags.
+
 **Adaptive-dt and the implicit kink.** The implicit seepage's discontinuous `max(0,wtd)/dt` would spike the
 adaptive-dt controller's error estimate at a cell crossing the surface (a projection jump that does not shrink
 with `dt`), so it once could not be adaptively stepped. Fixed by **clamping the error predictor to the

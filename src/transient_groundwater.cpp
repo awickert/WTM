@@ -1078,7 +1078,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // -wtm_dev_allow_aboveground_water_columns.
   (void)anderson_path;
   PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, nullptr);
+  // Track whether the user PASSED this flag (vs. it taking its default). The runoff_collector selector
+  // below supersedes it, and a silent override sent a #116 experiment after the wrong seepage-face
+  // enforcement -- so the selector warns, but only when there is a real user choice to report.
+  PetscBool surfexfil_set = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, &surfexfil_set);
   g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
@@ -1146,8 +1150,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // domain, unlike taper 2's evaporation). Applied on the Anderson default path (FormFunctionLocal,
   // every solve) and the Picard BDF2-on-V path; it smooths the wtd=0 exfiltration->runoff handoff that
   // otherwise breaks 2nd-order accuracy. Qmax supplied in m/yr (intuitive), stored as m/s.
-  PetscBool sink = PETSC_TRUE;  // taper 1 default ON (off-switch: -wtm_surface_sink 0 / false)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_sink", &sink, nullptr);
+  PetscBool sink     = PETSC_TRUE;  // taper 1 default ON (off-switch: -wtm_surface_sink 0 / false)
+  PetscBool sink_set = PETSC_FALSE;  // was it passed? (for the selector-override warning below)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_sink", &sink, &sink_set);
   g_surface_sink         = (sink == PETSC_TRUE);
   double sink_qmax_yr    = 1.0;  // default peak removal 1 m/yr (~ precip/evap scale; supplied m/yr, stored m/s)
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_qmax", &sink_qmax_yr, nullptr);
@@ -1172,8 +1177,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
   // direct_to_runoff tangent so it can default on for those paths is future work.
   // -wtm_dev_allow_aboveground_water_columns still forces it off.
-  PetscBool seep = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, nullptr);
+  PetscBool seep     = PETSC_FALSE;
+  PetscBool seep_set = PETSC_FALSE;  // was it passed? (for the selector-override warning below)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &seep, &seep_set);
   g_direct_to_runoff = (seep == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
 
   // Surface-water routing selector (config key `runoff_collector`, optional). When set it OVERRIDES the
@@ -1195,6 +1201,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // a mode the default) is a later, regold-bearing step.
   std::string rc = params.runoff_collector;
   if (rc.empty()) rc = "implicit";  // "" = the default; adaptive-dt handles implicit via the predictor clamp
+  // Snapshot the legacy-flag choices so the selector can report any of them it supersedes (below).
+  const bool pre_sink  = g_surface_sink;
+  const bool pre_seep  = g_direct_to_runoff;
+  const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
   if (rc != "legacy") {
     g_surface_sink = false;  // selector supersedes the band sink in every mode
     if (rc == "implicit") {
@@ -1213,6 +1223,27 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       g_surface_exfiltration_to_runoff_array = false;
       PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=off]: NONPHYSICAL -- above-surface water is NOT "
                   "collected; it piles up and the free surface will limit-cycle. Testing/diagnostics only.\n");
+    }
+    // Report any legacy surface flag the selector just superseded -- but ONLY one the user actually
+    // passed, and only where the selector changed its effect. A run that takes the defaults says
+    // nothing here. The silent version of this override sent a #116 experiment after the wrong
+    // seepage-face enforcement (the command line asked for the post-solve clamp; the selector's
+    // default gave the in-residual face, and no log recorded it). Once per run, not per cycle.
+    static bool reported_override = false;
+    if (!reported_override) {
+      reported_override    = true;
+      const auto supersede = [&](const char* flag, PetscBool was_set, bool before, bool after) {
+        if (was_set == PETSC_TRUE && before != after)
+          PetscPrintf(PETSC_COMM_WORLD,
+                      "NOTE [runoff_collector=%s]: %s was passed but the surface-water selector supersedes it "
+                      "(effective: %s). Use surface_water.collection.method to choose the enforcement, or set it "
+                      "to 'legacy' to hand control back to the -wtm_ surface flags.\n",
+                      rc.c_str(), flag, after ? "on" : "off");
+      };
+      supersede("-wtm_surface_sink", sink_set, pre_sink, g_surface_sink);
+      supersede("-wtm_direct_to_runoff", seep_set, pre_seep, g_direct_to_runoff);
+      supersede("-wtm_surface_exfiltration_to_runoff", surfexfil_set, pre_exfil,
+                g_surface_exfiltration_to_runoff_array);
     }
   }
 
