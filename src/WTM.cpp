@@ -979,6 +979,15 @@ int main(int argc, char** argv) {
 
   initialise(params, arp, user_context);
 
+  // Echo the RESOLVED configuration (rank 0 only) so the run log records what the run actually used --
+  // defaults applied, geometry derived from the geotransform, output paths rewritten by output.directory.
+  // Placed after initialise() because report_steps / total_reports / the grid geometry are set there.
+  {
+    PetscMPIInt cfg_rank;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &cfg_rank);
+    if (cfg_rank == 0 && params.verbosity != "quiet") params.print();
+  }
+
   // Structural acceptance check (2f-C, the memory win): the full-grid ArrayPack
   // is allocated only on rank 0; non-root ranks hold it empty. Assert it so a
   // regression that reintroduces full-grid allocation on non-root is caught.

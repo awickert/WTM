@@ -266,29 +266,62 @@ std::string Parameters::get_path(const std::string& layer_name) const {
   return fmt::format(SURF_DATA_PATH_FORMAT, surfdatadir, region, layer_name);
 }
 
+// RESOLVED-CONFIG ECHO. Every `c <key> = <value>` line reports the value the run is ACTUALLY using --
+// after config parsing, after defaults are applied, and after the geometry is derived from the input
+// geotransform -- so a log can answer "what did this run do?" without re-deriving it from the source.
+// Call once on rank 0, after initialise() (report_steps / total_reports / the grid geometry are set
+// there, and output.directory has by then rewritten outfile_prefix and textfilename).
+//
+// KEEP THIS IN SYNC with the fields of Parameters. It went dead once -- nothing called it -- and drifted
+// behind the config walk's new keys while runs quietly logged nothing; that gap turned a silently
+// overridden setting into a wrong conclusion. A new config key belongs here in the same commit.
 void Parameters::print() const {
-  std::cout << "c cells_per_degree       = " << cells_per_degree << std::endl;
+  std::cout << "c --- resolved configuration ---" << std::endl;
+  std::cout << "c run_type               = " << run_type << std::endl;
+  std::cout << "c region                 = " << region << std::endl;
+  std::cout << "c surfdatadir            = " << surfdatadir << std::endl;
+  std::cout << "c time_start             = " << time_start << std::endl;
+  std::cout << "c time_end               = " << time_end << std::endl;
+  std::cout << "c initial_water_table    = "
+            << (initial_wt_path.empty() ? (supplied_wt ? "supplied (from file)" : "saturated (wtd = 0)")
+                                        : initial_wt_path)
+            << std::endl;
+  // Time stepping.
   std::cout << "c deltat                 = " << deltat << std::endl;
-  std::cout << "c evap_mode              = " << evap_mode << std::endl;
+  std::cout << "c report_steps           = " << report_steps << std::endl;
+  std::cout << "c report_seconds         = " << report_seconds << std::endl;
+  std::cout << "c total_time (s)         = " << total_time << std::endl;
+  std::cout << "c total_reports          = " << total_reports << std::endl;
+  std::cout << "c save_nreport_interval  = " << save_nreport_interval << std::endl;
+  // Grid geometry: cells_per_degree is the DEPRECATED override; ns/ew_deg_per_cell are what the run uses
+  // when the geometry comes from the topography's geotransform (#124).
+  std::cout << "c ncells_x, ncells_y     = " << ncells_x << ", " << ncells_y << std::endl;
+  std::cout << "c ns_deg_per_cell        = " << ns_deg_per_cell << std::endl;
+  std::cout << "c ew_deg_per_cell        = " << ew_deg_per_cell << std::endl;
+  std::cout << "c cells_per_degree       = " << cells_per_degree << " (deprecated override)" << std::endl;
+  std::cout << "c southern_edge          = " << southern_edge << std::endl;
+  std::cout << "c cellsize_n_s_metres    = " << cellsize_n_s_metres << std::endl;
+  // Transmissivity.
   std::cout << "c fdepth_a               = " << fdepth_a << std::endl;
   std::cout << "c fdepth_b               = " << fdepth_b << std::endl;
   std::cout << "c fdepth_fmin            = " << fdepth_fmin << std::endl;
+  // Surface water. runoff_collector is the SELECTOR: when it is anything but "legacy" it supersedes the
+  // legacy -wtm_ surface flags, so this line -- not the command line -- says which seepage-face
+  // enforcement ran. See transient_groundwater.cpp (the selector block) and SURFACE_WATER_ROUTING.md.
   std::cout << "c fsm_on                 = " << fsm_on << std::endl;
-  std::cout << "c infiltration_on        = " << infiltration_on << std::endl;
-  std::cout << "c report_steps           = " << report_steps << std::endl;
-  std::cout << "c report_seconds         = " << report_seconds << std::endl;
-  std::cout << "c save_nreport_interval  = " << save_nreport_interval << std::endl;
-  std::cout << "c outfile_prefix         = " << outfile_prefix << std::endl;
-  std::cout << "c region                 = " << region << std::endl;
-  std::cout << "c run_type               = " << run_type << std::endl;
+  std::cout << "c runoff_collector       = " << (runoff_collector.empty() ? "implicit (default)" : runoff_collector)
+            << std::endl;
   std::cout << "c runoff_ratio_on        = " << runoff_ratio_on << std::endl;
-  std::cout << "c runoff_collector       = " << (runoff_collector.empty() ? "(unset: legacy flags)" : runoff_collector) << std::endl;
-  std::cout << "c southern_edge          = " << southern_edge << std::endl;
-  std::cout << "c supplied_wt            = " << supplied_wt << std::endl;
-  std::cout << "c surfdatadir            = " << surfdatadir << std::endl;
+  if (runoff_ratio_uniform >= 0.0)
+    std::cout << "c runoff_ratio_uniform   = " << runoff_ratio_uniform << std::endl;
+  std::cout << "c infiltration_on        = " << infiltration_on << std::endl;
+  std::cout << "c evap_mode              = " << evap_mode << std::endl;
+  // Output.
+  std::cout << "c output_directory       = " << (output_directory.empty() ? "(legacy: literal paths)" : output_directory)
+            << std::endl;
+  std::cout << "c if_exists              = " << if_exists << std::endl;
+  std::cout << "c outfile_prefix         = " << outfile_prefix << std::endl;
   std::cout << "c textfilename           = " << textfilename << std::endl;
-  std::cout << "c time_end               = " << time_end << std::endl;
-  std::cout << "c time_start             = " << time_start << std::endl;
-  std::cout << "c total_time (s)         = " << total_time << std::endl;
-  std::cout << "c total_reports          = " << total_reports << std::endl;
+  std::cout << "c verbosity              = " << verbosity << std::endl;
+  std::cout << "c --- end configuration ---" << std::endl;
 }
