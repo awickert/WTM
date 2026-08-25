@@ -166,8 +166,25 @@ echo "-- active-set exfiltration constraint --"
 # -wtm_fsm_delta_source exists to address.
 ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_active_set
 echo
-echo "-- no single-step identity --"
-check_nan "TR-BDF2"                s_tr     -wtm_anderson -wtm_tr_bdf2
+# TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
+# reported the exact residual as `nan`. That was true and worth pinning while the two stages' balances
+# had not been combined -- but it also meant TR-BDF2 was the ONE scheme whose conservation nothing
+# could check, and it was quietly losing 9.5% of recharge through the active-set exfiltration transfer
+# (the multiplier was read off the stage-2 residual alone, recovering C3 = 29.29% of the step). The
+# stages do telescope: C1*(stage 1) + (stage 2), with storage and recharge coming out unchanged and
+# every flux/removal term becoming a three-point quadrature over (w^n, Y_gamma, w^{n+1}). See
+# src/tr_bdf2_coefficients.hpp for the derivation and src/test_tr_bdf2_balance.cpp for the identities.
+#
+# So TR-BDF2 is now held to the same closure standard as everything else. The check_nan helper is kept
+# (unused) because the guard it tests is still in the code as a backstop for a future scheme that
+# genuinely has no per-step identity.
+echo "-- TR-BDF2 (two stages, telescoped) --"
+check "TR-BDF2"                    s_tr     -wtm_anderson -wtm_tr_bdf2
+# The combination that was leaking, and the reason this arm exists: active-set puts a multiplier in
+# BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
+# the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
+# the residual, so it carries the solve's tolerance, not a conservation defect.
+ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson -wtm_tr_bdf2 -wtm_active_set
 echo
 
 if [[ $fail -eq 0 ]]; then echo "BUDGET CLOSURE: ALL PASSED"; else echo "BUDGET CLOSURE: FAILED" >&2; fi
