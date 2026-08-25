@@ -308,9 +308,17 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                   "  tolerance <= eq_tol, or omit it to auto-track eq_tol.\n",
                   user_context.dt_tol, user_context.eq_tol);
     }
-    PetscBool norm_rms = PETSC_FALSE;
+    // Adaptive error norm: RMS over land cells is the DEFAULT (robust on cold spin-up). MAX (worst-cell) is
+    // opt-in via -wtm_dt_norm_max: under the water (volume) step-error a few surface-kink cells give a
+    // dt-independent spike that the MAX norm is hostage to, stalling a cold start (GH #13). -wtm_dt_norm_rms is
+    // still accepted (now the default); if BOTH are given, the explicit MAX wins.
+    PetscBool norm_rms = PETSC_FALSE, norm_max = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
-    user_context.dt_norm_rms = (norm_rms == PETSC_TRUE);
+    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_max", &norm_max);
+    user_context.dt_norm_rms = (norm_max != PETSC_TRUE);
+    if (norm_rms == PETSC_TRUE && norm_max == PETSC_TRUE)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "WARNING: both -wtm_dt_norm_rms and -wtm_dt_norm_max given; using MAX.\n");
     const char* integ = user_context.use_tr_bdf2      ? "TR-BDF2 (2nd-order)"
                         : user_context.use_bdf2_on_V  ? "BDF2-on-V (2nd-order)"
                         : user_context.use_picard     ? "backward-Euler Picard (1st-order)"

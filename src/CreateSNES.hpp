@@ -186,7 +186,9 @@ struct AppCtx {
   // followed by a smaller one. See BDF2_ADAPTIVE_DESIGN.md.
   bool   use_dt_adaptive = false;
   double dt_tol          = 0.1;    // target |h - linear-extrapolation| per step, metres
-  bool   dt_norm_rms     = false;  // -wtm_dt_norm_rms: RMS error norm (default MAX) on the TR-BDF2 adaptive path
+  bool   dt_norm_rms     = true;   // adaptive error norm: RMS (DEFAULT; robust on cold spin-up) | MAX via -wtm_dt_norm_max.
+                                   // Under the water (volume) step-error the MAX worst-cell norm is hostage to a few
+                                   // surface-kink cells and can stall a cold start (GH #13); RMS averages them out.
   double dt_prev_est     = 0.0;    // previous accepted step's error estimate (PI-controller history; 0 = none)
 
   // Modeling options (metres, default 0): round the two C0 kinks in the depth-integrated
