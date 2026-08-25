@@ -232,6 +232,16 @@ selects the bundle; you only override a piece if you mean to.
 | cold start from far | works as-is | needs **`-wtm_Tbar`** (log-mean transmissivity) | needs **dt-continuation** (`-wtm_stiff`) |
 | order in time | 1st (BE); 2nd via `-wtm_tr_bdf2` / `-wtm_bdf2_on_V` | 2nd | 1st |
 
+**`active_set` is REJECTED on Picard/Newton, not merely discouraged.** Selecting it there never
+actually enforces the constraint — it silently becomes something else, and measurement says neither
+outcome is what you asked for. With FSM **on**, FillSpillMerge's between-step overwrite
+(`runoff += wtd; wtd = 0`, then re-level) does the job instead: that is a post-solve projection, i.e.
+functionally `explicit`, and it is *not* luck — FSM duplicates that function. With FSM **off**,
+nothing does the job: on the multi-lake fixture Picard then piles water over **1440 of ~1444 land
+cells** where `explicit` holds `max wtd` at 0.000. So the run stops with an explanation rather than
+producing a plausible-looking wrong answer. (The *default* never lands here — it resolves to
+`explicit` on those solvers.)
+
 **Why each gets the enforcement it does.** The semismooth `active_set` pin is wired into the
 matrix-free residual only; the Picard operator and Newton Jacobian carry no tangent for it, and
 selecting it also switches every collector removal off — so on those solvers the constraint would be

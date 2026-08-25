@@ -1364,21 +1364,28 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     g_direct_to_runoff                     = false;
     g_surface_sink                         = false;
     g_surface_exfiltration_to_runoff_array = false;
-    // The pin is in the matrix-free (Anderson) residual ONLY. On Picard/Newton it is absent, and since
-    // this block also switches the collectors OFF, those paths would run with NO above-surface removal
-    // at all -- the nonphysical `off` mode. That used to be masked: under the FSM overwrite coupling the
-    // post-FSM table write was quietly doing the enforcement for them. Warn loudly rather than let a
-    // solver silently pile water (measured: Picard ponded 105.47 m against a correct 31.97 m).
-    static bool warned_as_solver = false;
-    if (!warned_as_solver && (user_context.use_picard || user_context.use_newton)) {
-      warned_as_solver = true;
-      PetscPrintf(PETSC_COMM_WORLD,
-                  "WARNING [runoff_collector=active_set]: the semismooth pin is wired into the matrix-free "
-                  "Anderson residual ONLY -- the Picard operator and Newton Jacobian have no tangent for it. "
-                  "On this solver the exfiltration constraint is effectively UNENFORCED and above-surface "
-                  "water can pile up. Use surface_water.collection.method: explicit on Picard/Newton until "
-                  "active-set tangents land.\n");
-    }
+    // HARD ERROR on the solvers that cannot carry the pin. It lives in the matrix-free (Anderson)
+    // residual only; the Picard operator and Newton Jacobian have no tangent for it, and this block also
+    // switches every collector removal OFF. So selecting active_set there NEVER actually enforces the
+    // constraint -- it silently becomes one of two other things, and measurement says neither is what
+    // the user asked for:
+    //   FSM on  -> FillSpillMerge's between-step overwrite (runoff += wtd; wtd = 0, then re-level) does
+    //              the job instead. That is a post-solve projection, i.e. functionally `explicit`, and
+    //              it is NOT luck -- FSM duplicates that function. Measured on tests/multilake: Picard
+    //              under active_set and under explicit both give 6 lakes (stages differ in detail).
+    //   FSM off -> nothing does the job. Measured on the same fixture with FSM off: Picard piles water
+    //              over 1440 of ~1444 land cells (ponded 37.48 m) where explicit holds max wtd at 0.000.
+    // Erroring rather than warning is the honest option: silently resolving an EXPLICIT choice to
+    // something else would violate "an explicit choice is always honoured", and a warning in front of
+    // the nonphysical `off` mode is a warning users will scroll past. (The DEFAULT never lands here --
+    // it resolves to `explicit` on these solvers further up.)
+    if (user_context.use_picard || user_context.use_newton)
+      throw std::runtime_error(
+          "surface_water.collection.method: active_set is not supported on the Picard or Newton solver. "
+          "The semismooth pin is wired into the matrix-free Anderson residual only, so on this solver the "
+          "exfiltration constraint would never be enforced -- it would silently fall through to "
+          "FillSpillMerge's overwrite (with FSM on) or to no enforcement at all (with FSM off). "
+          "Use surface_water.collection.method: explicit on Picard/Newton, or run the Anderson solver.");
   }
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
