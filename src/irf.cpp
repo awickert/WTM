@@ -650,8 +650,11 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   // so this residual is ~0 (unlike the physical budget_residual, which carries the BDF2-startup gap).
   // Its departure from 0, once the numerics are exact, is a clean measure of any UNaccounted vertical
   // flux (e.g. evap_mode-0 surface discard / the water handed to FSM). See benchmark/WATER_BUDGET.md.
-  // Meaningless if any step ran under a scheme the accumulator cannot express as one per-step identity
-  // (TR-BDF2). Report NaN rather than a number, so a stale zero is never mistaken for a closed budget.
+  // Meaningless if any step ran under a scheme the accumulator cannot express as one per-step identity.
+  // Report NaN rather than a number, so a stale zero is never mistaken for a closed budget. Every
+  // scheme currently in the code CAN be expressed, TR-BDF2 included (its two stages telescope; see
+  // src/tr_bdf2_coefficients.hpp), so this guard is now a backstop for a future scheme rather than a
+  // live case -- but it stays, because the failure it prevents is silent.
   const double exact_budget_residual = arp.exact_budget_valid
                                            ? global_solver_recharge - global_storage_change - global_ocean_outflow
                                                  - global_surface_removed - global_evap_removed

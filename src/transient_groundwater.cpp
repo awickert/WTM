@@ -560,12 +560,18 @@ void set_starting_values(
 // is e * dt/(cell size)^2 * (h_land - 0) * cell_area, matching the operator's flux term (depth) times
 // the cell area (volume). Needs ghost heads (x) and the ghost mask (mask_local); mirrors
 // FormPicardOperator's ghost setup.
-static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
+// `head` is the state to evaluate at and `weight` scales what it contributes. Single-stage schemes pass
+// (user_context.x, 1.0). TR-BDF2 integrates the land->ocean flux over the step with the three-point
+// quadrature its two stages define -- (w^n, Y_gamma, w^{n+1}) weighted (W_OLD, W_YGAMMA, W_NEW) -- so it
+// calls this three times; see src/tr_bdf2_coefficients.hpp. Evaluating once at w^{n+1} with the full step,
+// as a single-stage scheme correctly does, would attribute the whole step's outflow to the final state and
+// the exact budget could not close.
+static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp, Vec head, double weight) {
   DM  da = user_context.da;
   Vec xloc;
   DMGetLocalVector(da, &xloc);
-  DMGlobalToLocalBegin(da, user_context.x, INSERT_VALUES, xloc);
-  DMGlobalToLocalEnd(da, user_context.x, INSERT_VALUES, xloc);
+  DMGlobalToLocalBegin(da, head, INSERT_VALUES, xloc);
+  DMGlobalToLocalEnd(da, head, INSERT_VALUES, xloc);
 
   PetscScalar **xx, **my_topo, **my_fdepth, **my_ksat, **my_mask, **my_T, **gew, **gn, **gs;
   DMDAVecGetArray(da, xloc, &xx);
@@ -601,18 +607,18 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
       // G = e * (L_wall/d_centre) the operator assembles (E-W uses geom_ew, N/S the face geom_n/s).
       // Off-map faces (global domain edge) are the ghost boundary, not land->ocean -- guard the neighbour
       // reads so an edge LAND cell (real when -wtm_ghost_boundary skips setEdges) doesn't read out of bounds.
-      if (i + 1 < info.mx && my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i + 1]) * gew[j][i] * h_c;
-      if (i - 1 >= 0      && my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
-      if (j + 1 < info.my && my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
-      if (j - 1 >= 0      && my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
+      if (i + 1 < info.mx && my_mask[j][i + 1] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j][i + 1]) * gew[j][i] * h_c;
+      if (i - 1 >= 0      && my_mask[j][i - 1] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j][i - 1]) * gew[j][i] * h_c;
+      if (j + 1 < info.my && my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
+      if (j - 1 >= 0      && my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
       // Under land-edge Dirichlet, an off-map edge face also drains to the sea-level ghost (surface T);
       // count it so the water budget closes (neumann_toposlope off-map faces are no-flow -> nothing to add).
       if (g_land_boundary_dirichlet) {
         const double e_s = 2.0 / (my_T[j][i] + 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T));
-        if (i + 1 >= info.mx) arp.total_ocean_outflow_gw += dt * e_s * gew[j][i] * h_c;
-        if (i - 1 < 0)        arp.total_ocean_outflow_gw += dt * e_s * gew[j][i] * h_c;
-        if (j + 1 >= info.my) arp.total_ocean_outflow_gw += dt * e_s * gn[j][i] * h_c;
-        if (j - 1 < 0)        arp.total_ocean_outflow_gw += dt * e_s * gs[j][i] * h_c;
+        if (i + 1 >= info.mx) arp.total_ocean_outflow_gw += weight * dt * e_s * gew[j][i] * h_c;
+        if (i - 1 < 0)        arp.total_ocean_outflow_gw += weight * dt * e_s * gew[j][i] * h_c;
+        if (j + 1 >= info.my) arp.total_ocean_outflow_gw += weight * dt * e_s * gn[j][i] * h_c;
+        if (j - 1 < 0)        arp.total_ocean_outflow_gw += weight * dt * e_s * gs[j][i] * h_c;
       }
     }
   }
@@ -628,6 +634,73 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
   DMDAVecRestoreArray(da, user_context.T_local, &my_T);
   if (g_Tbar) DMDAVecRestoreArray(da, user_context.starting_wtd_local, &my_starting_wtd_local);
   DMRestoreLocalVector(da, &xloc);
+}
+
+// TR-BDF2 only: accumulate the step's FLUX and REMOVAL budget terms with the three-point quadrature
+// the two stages define. Every such term enters the step balance as
+//   W_OLD*Q(w^n) + W_YGAMMA*Q(Y_gamma) + W_NEW*Q(w^{n+1}),   the weights summing to 1,
+// rather than as the single end-of-step evaluation a one-stage scheme correctly uses (derivation and
+// the second-order condition: src/tr_bdf2_coefficients.hpp). Storage and recharge are NOT here: they
+// telescope exactly to V(w^{n+1}) - V(w^n) and to the step's recharge, so the shared code below covers
+// them unchanged.
+//
+// TIMING IS LOAD-BEARING. This must run while w^n (dmdapack.starting_wtd) and Y_gamma
+// (user_context.tr_ygamma) are both still live -- update()'s copy-back overwrites w^n with w^{n+1}
+// shortly afterwards, which is why the ocean-outflow call for every other scheme sits further down and
+// this one does not.
+static void accumulate_tr_bdf2_step_fluxes(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack,
+                                           bool evap_active) {
+  DM da                       = user_context.da;
+  const auto [xs, ys, xm, ym] = get_corners(da);
+  const double dt             = user_context.deltat;
+
+  // w^n as a HEAD. starting_wtd stores 0 at ocean cells as a MARKER, not as a head, so w^n + topo there
+  // would be the topography -- the same trap compute_tr_explicit documents. Ocean cells are Dirichlet
+  // head 0, matching the converged x the other two evaluations use.
+  if (!user_context.tr_head_old) VecDuplicate(user_context.x, &user_context.tr_head_old);
+  {
+    PetscScalar **ho, **topo_h;
+    DMDAVecGetArray(da, user_context.tr_head_old, &ho);
+    DMDAVecGetArray(da, user_context.topo_vec, &topo_h);
+    for (int j = ys; j < ys + ym; j++)
+      for (int i = xs; i < xs + xm; i++)
+        ho[j][i] = (dmdapack.mask[j][i] == 0) ? 0.0 : dmdapack.starting_wtd[j][i] + topo_h[j][i];
+    DMDAVecRestoreArray(da, user_context.tr_head_old, &ho);
+    DMDAVecRestoreArray(da, user_context.topo_vec, &topo_h);
+  }
+
+  // Land->ocean Darcy flux at the three step states.
+  accumulate_ocean_outflow(user_context, arp, user_context.tr_head_old, trbdf2::W_OLD);
+  accumulate_ocean_outflow(user_context, arp, user_context.tr_ygamma, trbdf2::W_YGAMMA);
+  accumulate_ocean_outflow(user_context, arp, user_context.x, trbdf2::W_NEW);
+
+  // Taper-2/3 evaporation to the atmosphere, same quadrature. This is the term that dominates in
+  // practice: on tests/multilake it carries 91% of the water leaving the domain, so weighting it as a
+  // single end-of-step evaluation was worth 0.55% of recharge on its own. The taper-1 sink is not here
+  // -- it is switched OFF under the active-set constraint, and update()'s commit loop still handles it
+  // for the configurations that do run it.
+  if (!evap_active) return;
+  PetscScalar **topo, **my_evap, **my_owe, **my_precip, **yg;
+  DMDAVecGetArray(da, user_context.topo_vec, &topo);
+  DMDAVecGetArray(da, user_context.evap_vec, &my_evap);
+  DMDAVecGetArray(da, user_context.open_water_evap_vec, &my_owe);
+  DMDAVecGetArray(da, user_context.precip_vec, &my_precip);
+  DMDAVecGetArray(da, user_context.tr_ygamma, &yg);
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++) {
+      if (dmdapack.mask[j][i] == 0) continue;
+      const double P     = my_precip[j][i] / SECONDS_IN_A_YEAR;
+      const double R_old = evapRemoval(dmdapack.starting_wtd[j][i], my_evap[j][i], my_owe[j][i], P);
+      const double R_yg  = evapRemoval(yg[j][i] - topo[j][i], my_evap[j][i], my_owe[j][i], P);
+      const double R_new = evapRemoval(dmdapack.x[j][i] - topo[j][i], my_evap[j][i], my_owe[j][i], P);
+      const double depth = dt * (trbdf2::W_OLD * R_old + trbdf2::W_YGAMMA * R_yg + trbdf2::W_NEW * R_new);
+      arp.total_evap_removed += depth * arp.cell_area[j];
+    }
+  DMDAVecRestoreArray(da, user_context.topo_vec, &topo);
+  DMDAVecRestoreArray(da, user_context.evap_vec, &my_evap);
+  DMDAVecRestoreArray(da, user_context.open_water_evap_vec, &my_owe);
+  DMDAVecRestoreArray(da, user_context.precip_vec, &my_precip);
+  DMDAVecRestoreArray(da, user_context.tr_ygamma, &yg);
 }
 
 // Accumulate the solver's EXACT per-step discrete storage and specific-yield recharge over owned
@@ -649,19 +722,29 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp) {
 // delivery is a source inside the step, the scheme's own conservation law counts it as an input, and
 // `rech_vec` (which this reads) is exactly that full source term. See benchmark/WATER_BUDGET.md.
 //
-// TR-BDF2 is NOT covered: its two stages each satisfy their own discrete balance and do not telescope
-// into a single per-step identity, so an accumulated total would be a wrong number wearing the word
-// "exact". Steps taken under TR-BDF2 clear arp.exact_budget_valid and PrintValues reports the column
-// as unavailable rather than as zero.
+// TR-BDF2 IS covered. Its two stages each satisfy their own discrete balance, and the step's identity
+// is the combination C1*(stage 1) + (stage 2), which telescopes because C1 - C2 == 1 and
+// C1*gamma + C3 == 1 (src/tr_bdf2_coefficients.hpp). Storage and recharge come out as the
+// backward-Euler forms below and need no special case; the flux and removal terms become a three-point
+// quadrature over (w^n, Y_gamma, w^{n+1}) and are accumulated by accumulate_tr_bdf2_step_fluxes above.
+// This used to bail and clear arp.exact_budget_valid, which was the honest thing to do while the
+// combination was unbuilt -- but it also meant TR-BDF2 was the one scheme whose conservation nothing
+// could check, and it was leaking 9.5% of recharge through the active-set exfiltration transfer.
 //
 // Called after the solve, BEFORE the BDF2 history overwrites w^{n-1}.
-static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack) {
-  // TR-BDF2: no single-step discrete identity to accumulate (see the note above). Mark and bail.
-  if (user_context.use_tr_bdf2) {
-    arp.exact_budget_valid = false;
-    return;
-  }
-  const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history;
+static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_Array_Pack& dmdapack,
+                                    bool evap_active) {
+  // TR-BDF2: the two stages DO telescope into one per-step identity -- C1*(stage 1) + (stage 2), with
+  // C1 - C2 == 1 and C1*gamma + C3 == 1 (src/tr_bdf2_coefficients.hpp). Storage and recharge come out
+  // unchanged from the backward-Euler forms below, so they fall through to the shared code; the flux
+  // and removal terms become a three-point quadrature and are taken here, while w^n and Y_gamma are
+  // both still live.
+  if (user_context.use_tr_bdf2) accumulate_tr_bdf2_step_fluxes(user_context, arp, dmdapack, evap_active);
+
+  // TR-BDF2's telescoped storage is V(w^{n+1}) - V(w^n), i.e. the backward-Euler weights, whatever
+  // -wtm_bdf2 may also be asking for -- the stage combination has already consumed the multi-level
+  // structure. Without this guard the pair -wtm_tr_bdf2 -wtm_bdf2 would silently take 3-level weights.
+  const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history && !user_context.use_tr_bdf2;
   // Mirror the residual's branch choice -- but note that only BDF2 actually needs a separate volume
   // form. -wtm_volume_storage is a backward Euler whose storage is the exact volume change
   // V(w^{n+1}) - V(w^n), and the secant branch below already computes exactly that: by definition
@@ -1863,7 +1946,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // read while starting_wtd still holds w^n and starting_wtd_prev still holds w^{n-1} (both below
   // overwrite these). Together with total_ocean_outflow and total_surface_removed the budget then
   // closes to the SNES tolerance. See benchmark/WATER_BUDGET.md.
-  accumulate_budget_terms(user_context, arp, dmdapack);
+  accumulate_budget_terms(user_context, arp, dmdapack, evap_active_this_step);
 
   // BDF2 / predictor: before starting_wtd is overwritten with h^{n+1} below, save the current h^n
   // wtd as the next step's h^{n-1}. The first step captures h^0 and sets the history flag, so BDF2 /
@@ -1952,7 +2035,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         arp.total_surface_removed += removed_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += removed_depth;              // per-cycle FSM input (taper 1)
       }
-      if (evap_active_this_step) {
+      // TR-BDF2 accumulated its evaporation above, with the step quadrature over (w^n, Y_gamma,
+      // w^{n+1}); doing it again here at w^{n+1} alone would both double-count and use the wrong weight.
+      if (evap_active_this_step && !user_context.use_tr_bdf2) {
         // Taper 2 (+ taper 3) removed dt*R(w^{n+1}) to the ATMOSPHERE (leaves the domain) -> its own
         // budget channel, kept separate from the sink's exfiltration-to-FSM (different destination).
         // R = min(E_eff,P) + (E_eff-P)_+ * A(wtd): the accessible evaporative loss (== E_eff when taper 3
@@ -2007,7 +2092,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 
   // Account the water that left through land->ocean faces this solve (Darcy interface flux at the
   // converged head), the term that closes the water budget against the Dirichlet ocean boundary.
-  accumulate_ocean_outflow(user_context, arp);
+  // TR-BDF2 already accumulated its three-point step quadrature inside accumulate_budget_terms, back
+  // when w^n and Y_gamma were both still live (the copy-back below has since overwritten w^n).
+  if (!user_context.use_tr_bdf2) accumulate_ocean_outflow(user_context, arp, user_context.x, 1.0);
 
   // The full wtd field is assembled once per cycle, after the per-report step loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).

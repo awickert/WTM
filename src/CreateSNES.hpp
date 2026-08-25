@@ -240,6 +240,10 @@ struct AppCtx {
   // must be known); nullptr otherwise.
   Vec  tr_exfil_stage1 = nullptr;
   Vec  tr_fwork        = nullptr;
+  // w^n as a HEAD (ocean cells at the Dirichlet 0), so the step's land->ocean flux quadrature can be
+  // evaluated at the old state. starting_wtd cannot be used directly: it stores 0 at ocean cells as a
+  // MARKER rather than as a head. Lazily allocated under TR-BDF2 only.
+  Vec  tr_head_old     = nullptr;
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the

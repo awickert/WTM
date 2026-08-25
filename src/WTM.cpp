@@ -800,6 +800,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.tr_expl);
   VecDestroy(&user_context.tr_exfil_stage1);  // TR-BDF2 x active-set (lazily allocated)
   VecDestroy(&user_context.tr_fwork);
+  VecDestroy(&user_context.tr_head_old);  // TR-BDF2 step-flux quadrature (lazily allocated)
 
   // Picard path (nullptr / no-op when -wtm_picard was not set).
   MatDestroy(&user_context.picard_A);
