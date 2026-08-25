@@ -886,7 +886,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   if (auto n = root["solver"]["storage"]) { if (n.as<std::string>() == "volume") set_opt_if_unset("-wtm_volume_storage", "true"); }
 
   // dev
-  if (auto n = root["dev"]["active_set"])                      { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_active_set", "true"); }
+  if (auto n = root["dev"]["active_set"])                      { if (n.as<bool>()) set_opt_if_unset("-wtm_active_set", "true"); }
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dt-SENSITIVITY: the equilibrium water table must NOT depend on the time step. The active-set semismooth
-# exfiltration constraint (-wtm_dev_active_set) pins wtd=0 INSIDE the solve, so the free-surface equilibrium is
+# exfiltration constraint (-wtm_active_set) pins wtd=0 INSIDE the solve, so the free-surface equilibrium is
 # dt-INDEPENDENT to machine precision. The legacy taper-1 band sink is NOT (its band width scales as
 # 2*qmax*dt, so a table sitting in the band equilibrates at a dt-dependent depth). (The default `implicit`
 # in-residual siphon is also dt-DEPENDENT at the face -- its finite 1/dt conductance leaves a dt*excess head
@@ -58,8 +58,8 @@ run() { # stem deltat cycles collector extra_flags
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 COARSE=31536000; FINE=7884000   # 1 yr, 0.25 yr
-run as_c  $COARSE 100 off    "-wtm_dev_active_set -snes_stol 1e-10"
-run as_f  $FINE   400 off    "-wtm_dev_active_set -snes_stol 1e-10"
+run as_c  $COARSE 100 off    "-wtm_active_set -snes_stol 1e-10"
+run as_f  $FINE   400 off    "-wtm_active_set -snes_stol 1e-10"
 run leg_c $COARSE 100 legacy ""
 run leg_f $FINE   400 legacy ""
 

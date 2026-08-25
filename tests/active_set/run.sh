@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lake-aware active-set / semismooth exfiltration regression (-wtm_dev_active_set).
+# Lake-aware active-set / semismooth exfiltration regression (-wtm_active_set).
 #
 # The active-set pin enforces the exfiltration complementarity INSIDE the matrix-free Anderson residual, pinned to
 # the FSM FREE SURFACE (wtd <= d_pond, d_pond = lagged ponded depth; 0 off lakes) via the min-NCP
@@ -16,7 +16,7 @@
 #   BITE                   : WITHOUT active-set the collector choice moves the equilibrium (implicit vs
 #                            explicit spread > 0.05 m) -- proving the independence is the pin doing work.
 #
-# active-set is EXPERIMENTAL and OFF BY DEFAULT (-wtm_dev_active_set). Anderson residual only for now.
+# active-set is EXPERIMENTAL and OFF BY DEFAULT (-wtm_active_set). Anderson residual only for now.
 #
 # Usage:  tests/active_set/run.sh [path/to/wtm.x]
 set -uo pipefail
@@ -65,9 +65,9 @@ run() { # stem  collector  extra-flags
 run imp_plain implicit ""
 run exp_plain explicit ""
 # With lake-aware active-set: it supersedes the collector, so all three must agree exactly AND keep the lake.
-run imp_as implicit "-wtm_dev_active_set"
-run exp_as explicit "-wtm_dev_active_set"
-run off_as off      "-wtm_dev_active_set"
+run imp_as implicit "-wtm_active_set"
+run exp_as explicit "-wtm_active_set"
+run off_as off      "-wtm_active_set"
 
 IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | tail -1)
 IA=$(ls "$WORK"/imp_as_*.tif | tail -1);    EA=$(ls "$WORK"/exp_as_*.tif | tail -1)

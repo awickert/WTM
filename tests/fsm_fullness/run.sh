@@ -47,11 +47,11 @@ EOF
 run() { emit "$1"; "$WTM" "$WORK/$1.yaml" -wtm_anderson $2 -wtm_eq_tol 0 > "$WORK/$1.err" 2>&1 \
         || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.err"; exit 2; }; }
 run plain ""
-run skim  "-wtm_dev_active_set"
+run skim  "-wtm_active_set"
 # MPI consistency of the skim: n=4 must match n=1 byte-for-byte. The skim reads per-cell starting_wtd and
 # hands its captured water to a rank-0 FillSpillMerge, so this exercises the gather/scatter round-trip.
 emit skim4
-mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson -wtm_dev_active_set -wtm_eq_tol 0 \
+mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson -wtm_active_set -wtm_eq_tol 0 \
     -da_processors_x 2 -da_processors_y 2 > "$WORK/skim4.err" 2>&1 \
     || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 

@@ -108,7 +108,7 @@ Essentially linear. This confirms the mechanism already noted in `tests/dt_sensi
 With FSM **on**, that dt-dependent excess is what FillSpillMerge routes, so **lake depth inherits the
 dependence** — a ~1.6 m face artifact becomes a ~3.4 m difference in modelled lake depth:
 
-| `dt` | `implicit` max wtd [m] | `-wtm_dev_active_set` max wtd [m] |
+| `dt` | `implicit` max wtd [m] | `-wtm_active_set` max wtd [m] |
 |---|---|---|
 | 1 week | 5.3776 | **5.6986** |
 | 1/3 week | 2.4962 | **5.6986** |

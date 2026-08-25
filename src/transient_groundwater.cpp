@@ -265,7 +265,7 @@ static bool             g_surface_sink       = false;
 static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
 static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL]: feed FSM's per-step water-table change into the NEXT step's recharge source (keeping the smooth pre-FSM state as the step baseline) instead of overwriting the baseline with the post-FSM table. A no-op under backward Euler; restores 2nd-order accuracy on TR-BDF2/adaptive by removing the between-step FSM jump. See GH #13 / #116.
-static bool             g_active_set                  = false; // -wtm_dev_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
+static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 static double           g_surface_sink_qmax  = 0.0;  // Qmax: peak removal rate [m/s]
 static double           g_surface_sink_width = 1.0;  // w: band width below the surface [m]
@@ -1324,16 +1324,27 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_volume_storage", &volstore, nullptr);
   g_volume_storage = (volstore == PETSC_TRUE);
 
-  // -wtm_dev_active_set [EXPERIMENTAL]: enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET / semismooth
+  // -wtm_active_set [EXPERIMENTAL]: enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET / semismooth
   // constraint INSIDE the matrix-free (Anderson) solve -- a cell whose iterate rises above the land surface
   // is pinned at wtd=0 by overriding its residual with f = w_c (mirroring the ocean Dirichlet), instead of a
   // post-solve clamp (`explicit`) or an in-residual siphon (`implicit`). Enforcement-independent: aims to give
   // ONE exfiltration BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
   // for now; the pinned exfiltration flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
-  PetscBool activeset = PETSC_FALSE;
+  PetscBool activeset = PETSC_FALSE, activeset_legacy = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_active_set", &activeset, nullptr);
-  if (activeset != PETSC_TRUE)  // legacy spelling, kept working so existing scripts/tests do not break
-    PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset, nullptr);
+  // DEPRECATED spelling, still honoured so older scripts keep working. It carried the `dev_` prefix
+  // while this was experimental; the constraint is now the default enforcement, so the prefix is gone.
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset_legacy, nullptr);
+  if (activeset_legacy == PETSC_TRUE) {
+    activeset = PETSC_TRUE;
+    static bool warned_legacy_flag = false;
+    if (!warned_legacy_flag) {
+      warned_legacy_flag = true;
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "NOTE: -wtm_dev_active_set is DEPRECATED; use -wtm_active_set, or select it the "
+                  "documented way with surface_water.collection.method: active_set (now the default).\n");
+    }
+  }
   // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
   g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
   // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
@@ -1342,7 +1353,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the exact volume-storage BE (b=0, 1st-order, same limit as TR-BDF2/BDF2-on-V; see finding_cc_secant_...).
   if (g_active_set && !user_context.use_bdf2_on_V && !user_context.use_tr_bdf2 && !g_volume_storage) {
     g_volume_storage = true;
-    PetscPrintf(PETSC_COMM_WORLD, "NOTE [-wtm_dev_active_set]: auto-enabled -wtm_volume_storage (a b=0 residual "
+    PetscPrintf(PETSC_COMM_WORLD, "NOTE [-wtm_active_set]: auto-enabled -wtm_volume_storage (a b=0 residual "
                 "path is required for the semismooth exfiltration constraint).\n");
   }
   // Active-set IS the exfiltration enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
@@ -1807,7 +1818,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscScalar **my_fdepth_cb = nullptr, **my_ksat_cb = nullptr;  // for the Kirchhoff Φ⁻¹ back-transform
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
-  PetscScalar** my_exfiltration_post = nullptr;  // -wtm_dev_active_set: captured exfiltration depth from the converged residual eval
+  PetscScalar** my_exfiltration_post = nullptr;  // -wtm_active_set: captured exfiltration depth from the converged residual eval
   if (g_active_set) DMDAVecGetArray(user_context.da, user_context.exfiltration_vec, &my_exfiltration_post);
   PetscScalar **my_fringe;
   DMDAVecGetArray(user_context.da, user_context.fringe_width_vec, &my_fringe);
@@ -1851,7 +1862,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         dmdapack.starting_wtd[j][i] = 0.;
         continue;
       }
-      // -wtm_dev_active_set: the semismooth constraint removed the exfiltration INSIDE the solve, so it left no above-
+      // -wtm_active_set: the semismooth constraint removed the exfiltration INSIDE the solve, so it left no above-
       // surface water for the collectors below to see. Transfer the captured per-cell exfiltration depth (from the
       // converged residual eval) to FSM (sink_removed_dist) and the budget (total_surface_removed). Serial loop.
       if (g_active_set && my_exfiltration_post) {
@@ -2225,7 +2236,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscScalar **my_fringe;
   PetscCall(DMDAVecGetArray(da, user_context->fringe_width_vec, &my_fringe));
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
-  PetscScalar** my_exfiltration = nullptr;  // -wtm_dev_active_set: per-cell captured exfiltration depth (m) -> FSM post-solve
+  PetscScalar** my_exfiltration = nullptr;  // -wtm_active_set: per-cell captured exfiltration depth (m) -> FSM post-solve
   if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->exfiltration_vec, &my_exfiltration));
   // Matrix-free 2nd-order-in-time (-wtm_anderson -wtm_bdf2_on_V): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
@@ -2286,7 +2297,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool dtr_on  = g_direct_to_runoff;
   const bool taper_on = g_evap_taper;
   const bool vol_storage = g_volume_storage;  // BE with volume-form (ΔV) storage instead of secant S·Δh
-  const bool as_on    = g_active_set;         // -wtm_dev_active_set: pin exfiltrating land cells at wtd=0 in-solve
+  const bool as_on    = g_active_set;         // -wtm_active_set: pin exfiltrating land cells at wtd=0 in-solve
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, sink_on, dtr_on, taper_on, g_kirchhoff, my_fringe, \
@@ -2409,7 +2420,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         }
         // my_rech is converted to appropriate recharge for this timestep and starting water
         // table outside of the solve.
-        // -wtm_dev_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth exfiltration constraint, enforced INSIDE the solve
+        // -wtm_active_set [EXPERIMENTAL]: LAKE-AWARE semismooth exfiltration constraint, enforced INSIDE the solve
         // (enforcement-independent -- not a post-solve clamp `explicit` nor an in-residual siphon `implicit`).
         // THE OBSTACLE. The head may not exceed  topo + surface_water_depth  -- ONE single-valued surface
         // over the whole land domain, equal to the lake stage inside a depression, to sea level on land

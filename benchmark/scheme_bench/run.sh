@@ -55,7 +55,7 @@ esac
 COLLECTOR="${COLLECTOR:-implicit}"
 case "$COLLECTOR" in
   implicit)   COLLECTOR_FLAGS="" ;;
-  active_set) COLLECTOR_FLAGS="-wtm_dev_active_set" ;;
+  active_set) COLLECTOR_FLAGS="-wtm_active_set" ;;
   *) echo "ERROR: COLLECTOR must be 'implicit' or 'active_set' (got '$COLLECTOR')"; exit 1 ;;
 esac
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }

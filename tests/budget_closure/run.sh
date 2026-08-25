@@ -149,8 +149,8 @@ echo "-- active-set exfiltration constraint --"
 # GATES; neither is evidence for enabling the pair. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # -wtm_fsm_delta_source exists to address.
-ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_dev_active_set
-check "Anderson + active-set, src" a_as_src -wtm_anderson -wtm_dev_active_set -wtm_fsm_delta_source
+ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_active_set
+check "Anderson + active-set, src" a_as_src -wtm_anderson -wtm_active_set -wtm_fsm_delta_source
 echo
 echo "-- no single-step identity --"
 check_nan "TR-BDF2"                s_tr     -wtm_anderson -wtm_tr_bdf2
