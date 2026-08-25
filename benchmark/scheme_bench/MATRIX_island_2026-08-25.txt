@@ -70,11 +70,11 @@ scheme                         implicit x between      implicit x during   activ
 ----------------------------------------------------------------------------------------------------------------------
 Anderson BE (secant)                5.6986 m / 16         3.1198 m / 169          5.6986 m / 16          0.0000 m / 95
 Anderson BE (volume dV)             5.6986 m / 16         3.1198 m / 169          5.6986 m / 16          0.0000 m / 95
-Picard BDF2-on-V (plain)            5.6986 m / 16         3.1197 m / 169          5.6986 m / 16         5.8757 m / 176
+Picard BDF2-on-V (plain)             0.0000 m / 0           0.0000 m / 0           0.0000 m / 0           0.0000 m / 0
 Picard BDF2-on-V + Tbar             5.6986 m / 16         3.1197 m / 169          5.6986 m / 16         5.8757 m / 176
 TR-BDF2 (fixed dt)                  5.3776 m / 16         3.1198 m / 169          5.6986 m / 16         0.0000 m / 160
 TR-BDF2 + adaptive dt               2.3699 m / 16         0.7835 m / 166          5.6986 m / 16         0.0000 m / 160
-Newton (plain)                      5.6986 m / 16         0.6937 m / 198          5.6986 m / 16          0.0006 m / 26
+Newton (plain)                       0.0000 m / 0           0.0000 m / 0           0.0000 m / 0           0.0000 m / 0
 Newton + dt-continuation            5.6986 m / 16         0.6937 m / 198          5.6986 m / 16          0.0006 m / 26
 
 Lake depth is the diagnostic that exposed the collector's dt-dependence: under `implicit` it

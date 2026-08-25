@@ -131,7 +131,9 @@ try:
     for stem in stems:
         row = f"{DATA[present[0][0]][stem]['label']:<26}"
         for d, _ in present:
-            fs = sorted(glob.glob(os.path.join(ROOT, d, f"{stem}_*_5yr.tif")))
+            # Anchor on the 9-digit cycle number: glob("picard_*") also matches "picard_tbar_*"
+            # (and "newton_*" matches "newton_cont_*"), which silently showed the WRONG run's answer.
+            fs = sorted(glob.glob(os.path.join(ROOT, d, f"{stem}_[0-9]" + "[0-9]" * 8 + "_*yr.tif")))
             if not fs:
                 row += f"{'--':>23}"; continue
             w = rasterio.open(fs[-1]).read(1).astype(float)[mask]

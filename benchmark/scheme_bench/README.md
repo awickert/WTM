@@ -131,15 +131,33 @@ marked in the output:
 `run.sh` takes `COLLECTOR=implicit|active_set` and `COUPLING=between|during`, giving four corners.
 `implicit × between` is the original model; `active_set × during` was the proposed full stack.
 
-## Cost — active-set wins decisively (full-budget SNES iterations / wall s)
+## Cost — full-budget SNES iterations / wall s, every scheme, every corner
 
-| scheme | implicit × between | implicit × during | **active-set × between** |
-|---|---|---|---|
-| Anderson BE (secant) | 2869 / 1.5 | 1643 / 1.3 | **1364 / 1.2** |
-| Picard BDF2-on-V + T̄ | 1443 / 4.3 | 1235 / 3.3 | 1438 / 3.6 |
-| TR-BDF2 (fixed dt) | 1771 / 1.2 | 991 / 1.4 | **957 / 1.4** |
-| TR-BDF2 + adaptive dt | 3769 / 2.0 | 3708 / 2.0 | **957 / 1.4** |
-| Newton + dt-continuation | 261203 / 412.5 | 7426 / 13.3 | **2478 / 5.3** |
+| scheme | implicit × between | implicit × during | **active-set × between** | active-set × during |
+|---|---|---|---|---|
+| Anderson BE (secant) | 2869 / 1.5 | 1643 / 1.3 | **1364 / 1.2** | 1368 / 1.3 |
+| Anderson BE (volume ΔV) | 2868 / 1.4 | 1635 / 1.3 | **1364 / 1.2** | 1368 / 1.3 |
+| Picard BDF2-on-V (plain) | FAIL 10000 / 19.7 | FAIL 10000 / 17.5 | FAIL 10000 / 17.6 | FAIL 10000 / 19.0 |
+| Picard BDF2-on-V + T̄ | 1443 / 4.3 | 1235 / 3.3 | 1438 / 3.6 | 1237 / 3.3 |
+| TR-BDF2 (fixed dt) | 1771 / 1.2 | 991 / 1.4 | **957 / 1.4** | 956 / 1.4 |
+| TR-BDF2 + adaptive dt | 3769 / 2.0 | 3708 / 2.0 | **957 / 1.4** | 956 / 1.4 |
+| Newton (plain) | FAIL 2 / 3.3 | FAIL 2 / 3.7 | FAIL 2 / 3.5 | FAIL 2 / 3.4 |
+| Newton + dt-continuation | 261203 / 412.5 | 7426 / 13.3 | **2478 / 5.3** | 2478 / 5.3 |
+
+Three things the two extra rows add:
+
+- **Anderson secant and volume-ΔV are indistinguishable** in every corner (2869 vs 2868; 1364 vs
+  1364) and give identical water tables. That is the *empirical* confirmation of an algebraic
+  identity found separately while fixing the budget accumulator: for backward Euler,
+  `updateEffectiveStorativity` IS the secant of `V`, so `S_c·Δh ≡ V(w¹)−V(w⁰)`. The two "different"
+  storage forms are the same expression, and the benchmark shows it.
+- **Plain Picard fails from cold in ALL four corners** (hits the 10,000-iteration cap). Active-set
+  does *not* rescue it — the cold-start failure is the frozen-coefficient contraction, a separate
+  disease from the exfiltration constraint, and `-wtm_Tbar` remains the thing that fixes it.
+- **Picard + T̄ is nearly collector-insensitive but coupling-sensitive**: 1443 → 1438 across
+  collectors, 1443 → 1235 with `during`. It is the one scheme that gets its saving from #116 rather
+  than from active-set — because the active-set pin is in the Anderson residual only, so Picard never
+  applies it.
 
 Against the original: Anderson **2.1×** fewer iterations, TR-BDF2 **1.85×**, adaptive **3.9×**, and
 Newton + continuation **105× fewer iterations / 78× less wall** (412.5 s → 5.3 s).
