@@ -123,3 +123,70 @@ marked in the output:
   (4.68 vs 3.17 mm), so this is not a like-for-like win and should not be quoted as one.
 - **TR-BDF2 + adaptive** regresses under *both* couplings (1.14 → 14.4 mm `between`; 1.59 → 26.7 mm
   `during`), so the coupling is not the cause of that regression.
+
+---
+
+# The 2×2: collector × coupling (`matrix.py`, `MATRIX_island_2026-08-25.txt`)
+
+`run.sh` takes `COLLECTOR=implicit|active_set` and `COUPLING=between|during`, giving four corners.
+`implicit × between` is the original model; `active_set × during` was the proposed full stack.
+
+## Cost — active-set wins decisively (full-budget SNES iterations / wall s)
+
+| scheme | implicit × between | implicit × during | **active-set × between** |
+|---|---|---|---|
+| Anderson BE (secant) | 2869 / 1.5 | 1643 / 1.3 | **1364 / 1.2** |
+| Picard BDF2-on-V + T̄ | 1443 / 4.3 | 1235 / 3.3 | 1438 / 3.6 |
+| TR-BDF2 (fixed dt) | 1771 / 1.2 | 991 / 1.4 | **957 / 1.4** |
+| TR-BDF2 + adaptive dt | 3769 / 2.0 | 3708 / 2.0 | **957 / 1.4** |
+| Newton + dt-continuation | 261203 / 412.5 | 7426 / 13.3 | **2478 / 5.3** |
+
+Against the original: Anderson **2.1×** fewer iterations, TR-BDF2 **1.85×**, adaptive **3.9×**, and
+Newton + continuation **105× fewer iterations / 78× less wall** (412.5 s → 5.3 s).
+
+**Adaptive becomes identical to fixed-dt** (957 vs 957; 91/91 and 336/335 at the iso-precision
+targets). It stops subdividing, because the error estimator is no longer chasing the collector's
+dt-dependent artifact. That is the clean confirmation that adaptive was the messenger.
+
+## Answer — `active_set × between` is the only scheme-consistent corner
+
+Final max wtd / ponded-cell count:
+
+| corner | result |
+|---|---|
+| implicit × between | 5.6986/16, but TR-BDF2 5.3776/16 and adaptive **2.3699**/16 — schemes DISAGREE |
+| implicit × during | 3.1198/**169**, Newton 0.6937/198, adaptive 0.7835/166 — schemes DISAGREE |
+| **active-set × between** | **5.6986 m / 16 for every single scheme** — exact agreement |
+| active-set × during | 0.0000/95, 0.0000/160, Picard 5.8757/176 — **broken, see below** |
+
+Under active-set × between all eight rows agree exactly. dt-independence shows up as
+scheme-independence, which is what it should look like.
+
+## `active_set` and `-wtm_fsm_delta_source` are STRUCTURALLY INCOMPATIBLE as built
+
+The lake-aware pin takes its lake stage from the water table itself
+(`transient_groundwater.cpp:2381`):
+
+```cpp
+const double d_pond = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
+```
+
+`-wtm_fsm_delta_source` exists precisely to **stop FSM writing its result into `starting_wtd`**. So
+under `during`, `d_pond` is ~0 everywhere, the pin skims at the land surface, and lakes cannot fill —
+max wtd 0.0000 m. Active-set's lake-awareness *depends on* the very write that #116 removes.
+
+Confirming detail: **Picard is the exception** (5.8757 m / 176) because the pin lives in the Anderson
+residual only, so Picard never applies it — and Picard is exactly the row that does *not* show the
+drained lake. That is the mechanism reproducing itself in the one place it predicts an exception.
+
+**Consequence: these two changes cannot both be enabled as currently built.** Either the pin must get
+its lake stage from a channel #116 preserves (e.g. FSM's lake stage carried explicitly rather than
+inferred from `starting_wtd`), or they stay mutually exclusive.
+
+## Caveat on the `during` corners generally
+
+`implicit × during` moves from 16 ponded cells to **169** with a shallower maximum — water spread
+across many shallow ponds instead of one deep lake, and the schemes disagree with each other. #116
+conserves mass to 6.9e-11, so this is a **redistribution** difference, not a leak — exactly the class
+of error a global budget cannot see and that the per-cell ledger (not yet built) would catch. #116's
+answer is therefore **not validated** by this benchmark, whatever its conservation properties.
