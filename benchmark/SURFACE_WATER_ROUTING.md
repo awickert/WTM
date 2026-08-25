@@ -127,3 +127,26 @@ nothing** — it is behaving correctly. It simply lands on the small-`dt` branch
 equilibrium lake depth depends on `dt` (adaptive: 2.37 m, right on the `dt` = 1/3 week line at
 2.50 m). **Adaptive was the messenger, not the fault.** Any scheme that shortens the step will
 disagree with the production `dt` = 1 week answer for as long as `implicit` is the default.
+
+## Measured: why the Picard/Newton fallback is `explicit`, not `implicit`
+
+`implicit`'s tangent IS wired into the Picard operator (only the Newton Jacobian lacks it), so
+`implicit` was a live option for the Picard fallback. It was not chosen, and the reason is measured
+rather than inherited from this document's earlier claims.
+
+Multi-lake fixture (`tests/multilake`), same 150 yr of simulated time, `dt` halved from 0.5 to 0.25 yr:
+
+| enforcement | multi-cell lakes at `dt` = 0.5 → 0.25 yr | |
+|---|---|---|
+| `active_set` | 4 → 4 | topology stable |
+| `implicit` | **6 → 5** | **topology changes** |
+| `explicit` | 6 → 6 | topology stable |
+
+`implicit` does not merely shift the lake *stages* with `dt` — it changes how many lakes there are,
+because its `dt`-proportional retained head is routed by Fill-Spill-Merge into a different set of
+depressions. `explicit` is `dt`-stable in topology, so it is the better fallback for the solvers that
+cannot carry the active-set pin.
+
+**Honest caveat:** `explicit` and `active_set` do not agree with each other on the answer (6 lakes vs
+4 on this fixture). `explicit` is the best *available* enforcement on Picard/Newton, not an equivalent
+one. Closing that gap needs the active-set tangents for those paths.

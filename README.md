@@ -186,7 +186,8 @@ fsm_on             1                    # 1 to enable Fill-Spill-Merge for routi
 #Is water allowed to gather in lakes, with lake evaporation removing some portion of it?
 #If this is set to 0, all surface water will be removed from the domain.
 evap_mode          1                    # 1 to use a grid of potential evaporation for lakes; 0 to remove all surface water.
-#How is above-surface water routed to runoff (the wtd<=0 exfiltration constraint)? Optional; default is implicit.
+#How is above-surface water routed to runoff (the exfiltration constraint)? Optional; default is
+#active_set on Anderson, explicit on Picard/Newton. See "Solution modes" and "Surface-water routing" below.
 #See "Surface-water routing" below.
 runoff_collector   implicit              # implicit (in-residual exfiltration, exact; default) | explicit (post-solve clamp) | off (nonphysical) | legacy (old band sink)
 ```
@@ -217,22 +218,60 @@ Running with any combination other than all three on prints a warning explaining
 `evap_mode 0` the taper governs evaporation in place of the hard "remove all surface water" step. See
 `benchmark/SURFACE_SINK_DESIGN.md` for the full derivation.
 
-## Surface-water routing (`runoff_collector`)
-Above-surface water leaves the subsurface at a exfiltration constraint (`wtd = 0`) and is routed to runoff /
-Fill-Spill-Merge. The config-file key `runoff_collector` selects **how** that one boundary condition is
-enforced. **Default is `implicit`.** Set it explicitly to override:
+## Solution modes: each solver plus the mechanisms it needs to work
 
-- **`implicit`** (default; the exact face) — solved *inside* the groundwater equation: exact, dt-independent,
-  pins `wtd = 0`. Wired into the Anderson residual **and** the Picard operator; the adaptive-dt controller
-  handles its kink by clamping the error predictor to the feasible set (`wtd ≤ 0`). Newton still warns (its
-  Jacobian needs an active-set treatment of the kink).
-- **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver, within ~1 cm of
-  `implicit` and converging to it as `dt → 0`.
+A *solution mode* is not just a solver. Each one comes with the machinery that makes it work — the
+exfiltration enforcement it can support, and the cold-start treatment it needs. Choosing a solver
+selects the bundle; you only override a piece if you mean to.
+
+| | **Anderson** (default) | **Picard** (BDF2-on-V) | **Newton** (analytic Jacobian) |
+|---|---|---|---|
+| select with | *(default)* | `-wtm_picard -wtm_bdf2_on_V` | `-wtm_newton` |
+| solve | matrix-free | assembled operator + linear solve | assembled Jacobian + linear solve |
+| exfiltration enforcement | **`active_set`** | **`explicit`** | **`explicit`** |
+| cold start from far | works as-is | needs **`-wtm_Tbar`** (log-mean transmissivity) | needs **dt-continuation** (`-wtm_stiff`) |
+| order in time | 1st (BE); 2nd via `-wtm_tr_bdf2` / `-wtm_bdf2_on_V` | 2nd | 1st |
+
+**Why each gets the enforcement it does.** The semismooth `active_set` pin is wired into the
+matrix-free residual only; the Picard operator and Newton Jacobian carry no tangent for it, and
+selecting it also switches every collector removal off — so on those solvers the constraint would be
+*unenforced* and Newton aborts. They fall back to `explicit`, not to `implicit`, and that is a measured
+choice: on the multi-lake fixture, halving `dt` leaves `active_set` and `explicit` topologically stable
+(4 → 4 and 6 → 6 lakes) while **`implicit` changes the lake count, 6 → 5**. Note that `explicit` and
+`active_set` still disagree with each other on the answer (6 lakes vs 4); `explicit` is the best
+*available* enforcement on those solvers, not an equivalent one.
+
+**Cold starts are a property of the mode, not of the problem.** Plain Picard and plain Newton both fail
+from a cold start at production `dt` on every enforcement tested — Picard hits the iteration cap,
+Newton aborts. Those failures are the frozen-coefficient contraction and large-step overshoot
+respectively, *separate diseases* from the exfiltration constraint, and `-wtm_Tbar` and dt-continuation
+are their respective cures. Neither is optional if you start far from equilibrium.
+
+## Surface-water routing (`runoff_collector`)
+Above-surface water leaves the subsurface where the water table reaches the land surface — it
+**exfiltrates** — and is routed to runoff / Fill-Spill-Merge. The constraint is that head may not exceed
+`topo + surface_water_depth`: one surface, equal to the lake stage inside a depression, sea level on
+land below sea level, and the land surface elsewhere. The config key
+`surface_water.collection.method` selects **how** that one boundary condition is enforced.
+
+**Default is `active_set`, resolved per solver** (see the table above): `active_set` on Anderson,
+`explicit` on Picard/Newton. Set the key explicitly to override; an explicit choice is always honoured.
+
+- **`active_set`** (default on Anderson) — the constraint solved *inside* the residual as a semismooth
+  complementarity condition, rather than approximated. No `dt` appears in it, so it carries no spurious
+  `dt`-dependence; it also eliminates the between-step Fill-Spill-Merge shock and is 2–100× cheaper
+  across solvers. Matrix-free (Anderson) only.
+- **`implicit`** (the former default) — an in-residual siphon removing at rate `max(0,wtd)/dt`. Because
+  that is a *rate*, the retained head is ~**linear in `dt`** (1.97 / 0.68 / 0.34 m at `dt` = 1, 1/3, 1/6
+  week), and Fill-Spill-Merge routes that `dt`-dependent excess into a different set of lakes. Wired
+  into the Anderson residual and the Picard operator; **not** into the Newton Jacobian.
+- **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver, and is `dt`-stable
+  in lake topology. Lower-order (the flow field never feels the pin during the solve).
 - **`off`** — no collection; above-surface water piles up. **Nonphysical**, testing only (warns loudly).
 - **`legacy`** — the pre-selector `-wtm_surface_sink` band-sink defaults (dt-scaled; kept for the taper tests).
 
-The modes are mutually exclusive (no hidden backstop), so a misbehaving `implicit` shows visibly rather than
-being masked. See `benchmark/SURFACE_WATER_ROUTING.md`.
+The modes are mutually exclusive (no hidden backstop), so a misbehaving enforcement shows visibly
+rather than being masked. See `benchmark/SURFACE_WATER_ROUTING.md` for the measurements.
 
 ## Command-line flag reference
 
