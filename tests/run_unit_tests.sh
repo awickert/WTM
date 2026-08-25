@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Run the unit tests (test_dmda.x) across a sweep of MPI rank counts. Two groups:
+# Run the unit tests (test_dmda.x) across a sweep of MPI rank counts. Three groups:
 # the DMDA gather/scatter primitives -- whose row-major layout must hold independent
-# of how PETSc decomposes the grid, so running at n>1 is the whole point -- and the
+# of how PETSc decomposes the grid, so running at n>1 is the whole point; the
 # pure-math functions (storedVolume / specificYield / effective storativity, and the
-# geotransform cell geometry), which run redundantly per rank. Exit code (not just
-# stdout) is checked on every rank count, so a failure on any rank is caught.
+# geotransform cell geometry); and the FillSpillMerge water ledger (what FSM does to
+# wtd / runoff / total_loss_to_ocean, and the conservation identity between them).
+# The latter two run redundantly per rank -- FSM is serial by construction. Exit code
+# (not just stdout) is checked on every rank count, so a failure on any rank is caught.
 #
 # Usage:  tests/run_unit_tests.sh [path/to/test_dmda.x] [ranks...]
 # Default binary: ../build/test_dmda.x   Default ranks: 1 2 3 4 8
