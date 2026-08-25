@@ -134,11 +134,24 @@ echo
 # the budget post-solve rather than being an integrated source, so it carries the SNES tolerance of
 # the pin. Understand that gap before making it the default.
 echo "-- active-set exfiltration constraint --"
-# KNOWN GAP, measured not guessed: active-set under the OVERWRITE coupling closes only to ~5e-6
-# per cycle -- 50x looser than every other arm -- so it runs at its own documented tolerance rather
-# than loosening the gate for everything else. Hypothesis (UNVERIFIED): the pinned cells' exfiltration
-# flux is captured POST-solve and handed to FSM, whose overwrite is a state jump no per-step identity
-# can see, so the transfer carries the pin's SNES tolerance instead of being an integrated source.
+# KNOWN GAP, now EXPLAINED (was an unverified hypothesis): active-set closes to ~5e-6 per cycle at
+# this suite's -snes_stol 1e-8, ~50x looser than every other arm. The cause is that the pinned cells'
+# exfiltration flux is not an integrated source term -- it is recovered POST-solve from the residual
+# itself (exfiltration_depth = max(0, -f*Sy)), so its accuracy IS the residual's accuracy. Verified by
+# scaling the solver tolerance on this fixture:
+#
+#     snes_stol   cumulative   worst-per-cycle
+#     1e-6         3.25e-05      6.65e-05
+#     1e-8         5.84e-07      4.91e-06     <- what this suite runs
+#     1e-10        1.37e-08      3.41e-08
+#     1e-12        1.37e-08      3.41e-08     <- floors; the tolerance stops binding
+#
+# The residual tracks snes_stol until the solve floors, which is the signature of a tolerance-limited
+# quantity and NOT of a conservation defect: tighten the solve and the budget tightens with it, to
+# 3.4e-08 -- comparable to every other arm. So the looser per-arm tolerance below is a statement about
+# the SOLVER setting this suite uses, not about active-set conserving worse. It is kept as a per-ARM
+# tolerance (rather than tightening this arm's snes_stol, which would make its numbers incomparable
+# with the others) so the difference stays visible in the output.
 #
 # CORRECTION (do not restore the earlier claim here). This comment used to add that the next arm --
 # active-set WITH -wtm_fsm_delta_source -- closes ~50x tighter at 8e-8, and read that as evidence the
