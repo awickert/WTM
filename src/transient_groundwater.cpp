@@ -2715,8 +2715,22 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // nonzero residual, so freely-solving (incl. below-stage lake) cells shed ~0. Anderson residual only.
         if (as_on) {
           const double surface_water_depth = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
-          if (my_exfiltration) my_exfiltration[j][i] = std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i]));
-          f[j][i] = std::max(w_c - surface_water_depth, f[j][i]);
+          const double pin = w_c - surface_water_depth;
+          // Capture the multiplier ONLY on the ACTIVE SET -- the cells where the pin branch actually
+          // wins. Off the active set the multiplier is zero BY DEFINITION: there the free residual is
+          // what the solve drives to zero, so nothing is being discarded. Capturing max(0, -f*Sy) on
+          // every cell therefore does not read a near-zero quantity, it RECTIFIES the converged
+          // residual noise -- clipping the negative half and keeping the positive -- into a
+          // systematically positive bias that ACCUMULATES monotonically instead of averaging out.
+          // And it is not only a reporting bias: the captured depth is added to sink_removed_dist and
+          // handed to FillSpillMerge, while the solve removed nothing from that cell, so with FSM on
+          // it is water CREATED. Measured on tests/local_ledger arm B, table 8-20 m below the surface
+          // where nothing can exfiltrate: 31.27 m^3 of phantom removal over 20 cycles, exactly 0 after
+          // this gate. Every active-set budget arm tightened (TR-BDF2 1.37e-07 -> 5.67e-08).
+          if (my_exfiltration)
+            my_exfiltration[j][i] =
+                (pin >= f[j][i]) ? std::max(0.0, -f[j][i] * specificYield(w_c, my_porosity[j][i])) : 0.0;
+          f[j][i] = std::max(pin, f[j][i]);
         }
       }
     }
