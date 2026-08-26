@@ -2123,6 +2123,23 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         const double excess_depth = storedVolume(dmdapack.starting_wtd[j][i], poro) - storedVolume(0.0, poro);
         arp.total_surface_removed += excess_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += excess_depth;              // collect -> gather -> arp.runoff -> FSM
+        // ...and correct the STORAGE term to the state we are about to commit. This removal is
+        // POST-SOLVE: it is not a term in the residual, so the solve satisfied
+        //     dV_pre = solver_recharge - ocean - evap
+        // and accumulate_budget_terms (which ran earlier, before this loop) measured dV from
+        // dmdapack.x -- the PRE-clamp w^{n+1}. Subtracting `excess_depth` from the budget while leaving
+        // the storage term at its pre-clamp value describes a state the model does NOT carry forward,
+        // and leaves residual = -total_surface_removed exactly. With FSM on, the same water is returned
+        // and re-skimmed every step, so that gross flux accumulated to ~9x recharge:
+        //     collector    Anderson      Picard
+        //     explicit     -9.165e+00    -9.331e+00
+        //     legacy       -7.998e+00    -8.865e+00
+        // against ~1e-7..1e-10 for every collector whose removal IS in the residual. No water was ever
+        // lost -- excess_depth is handed to FSM on the line above -- so this was a defect in the
+        // conservation CHECK, not in conservation. But `explicit` is what the Picard solver resolves to
+        // when the collection method is unset, so the budget was unusable in Picard's default
+        // configuration. Substituting dV_post = dV_pre - excess_depth closes the identity exactly.
+        arp.total_storage_change -= excess_depth * arp.cell_area[j];
         dmdapack.starting_wtd[j][i] = 0.0;                             // truncate to the real land surface
       }
     }
