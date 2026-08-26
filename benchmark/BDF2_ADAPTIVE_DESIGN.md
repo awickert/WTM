@@ -358,6 +358,32 @@ The user sets one knob — a **path tolerance** (e.g. "keep the transient water 
 X m") — and Δt is chosen automatically, small early (strong nonlinearity, fast transient)
 and growing as the system settles.
 
+### The step's Δt and the next step's Δt are different numbers
+
+Worth stating explicitly, because conflating them was a real bug (fixed 2026-08-26). The
+controller's output is the **next** step's Δt. Everything that accounts the step just *taken* —
+the BDF2 history ratio `ω = Δt/Δt_{n-1}`, the taper-1 and taper-2/3 removal depths, the
+land→ocean flux accumulation, TR-BDF2's step-flux quadrature — needs **that step's** Δt. Writing
+the controller's output into `user_context.deltat` at the point it is computed handed all five of
+them the wrong number.
+
+It went unnoticed because nothing checked the water budget under adaptive Δt. Once TR-BDF2 gained
+an exact budget it was immediate: exact residual **−1.603 of recharge** for TR-BDF2 + adaptive and
+**−0.417** for BDF2-on-V + adaptive, against ~2e-07 for the same schemes at fixed Δt. Sizing is now
+the last thing `update()` does, and `tests/budget_closure` carries an adaptive arm per integrator.
+
+The reject path was never affected: it returns before any accounting runs, so it still writes
+`deltat` directly.
+
+### `implicit` + adaptive Δt cannot complete
+
+The `implicit` collector's retained head is ~linear in Δt, so **shrinking Δt moves the solution
+instead of converging it**. The local-error estimate therefore never settles and the controller
+exhausts its retries, aborting with *"adaptive dt: step failed after max retries"* under both
+TR-BDF2 and BDF2-on-V. This is not a controller fault — it is the same dt-dependence that made
+`active_set` the default enforcement, showing up as a hard failure rather than as a quietly
+dt-dependent lake. Use the default collector with adaptive Δt.
+
 ---
 
 ## 4. The equilibrium side: pseudo-transient continuation (automate the big step)
