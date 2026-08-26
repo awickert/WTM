@@ -74,6 +74,7 @@ run "solve-count invariance"        ./dt_invariance/run.sh "$WTM"
 run "serial rank-0 recharge path"   ./serial_recharge/run.sh "$WTM"
 run "local-in-space water ledger"   ./local_ledger/run.sh "$WTM"
 run "Newton Jacobian + contract"    ./newton_solver/run.sh "$WTM"
+run "combination sweep"             ./combination_sweep/run.sh "$WTM"
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
 run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
@@ -87,8 +88,10 @@ echo "================================================="
 
 # Regenerate the coverage matrix from what actually ran. Never fails the suite -- it is a map, not a
 # gate; if a crossing in it matters, give it an arm.
+# Report the REAL failure if this breaks. A blanket "skipped (no fingerprints)" once hid a crash in
+# the aggregator behind a plausible-sounding reason, and the matrix silently went stale.
 python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md --readme "$ROOT/README.md" \
-    || echo "coverage matrix: skipped (no fingerprints recorded)"
+    || echo "coverage matrix: FAILED to regenerate (see the error above); COVERAGE.md/README are STALE"
 
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
 exit $fail

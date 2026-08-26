@@ -36,4 +36,9 @@ for lay, a in {"topography":topo,"slope":zero,"mask":mask,"precipitation":precip
 w(f"{REGION}_horizontal_ksat.tif", ksat)
 w(f"{REGION}_porosity.tif", poro)
 w(f"{REGION}_ta_wtd.tif", wtd0, "float64")
+# The same field under the name an EQUILIBRIUM run with supplied_wt looks for. Transient reads
+# `_wtd`; equilibrium reads `_starting_wt`. tests/combination_sweep needs both so that its two run
+# types differ ONLY in run_type -- otherwise "fails in transient" is confounded with "fails on a
+# different starting state".
+w(f"{REGION}_ta_starting_wt.tif", wtd0, "float64")
 print("wrote", OUT)
