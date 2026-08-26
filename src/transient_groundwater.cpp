@@ -6,7 +6,10 @@
 #include <omp.h>
 #include <array>
 #include <chrono>
+#include <cctype>   // std::isspace for the coverage tag
+#include <cstdlib>  // std::getenv for the coverage fingerprint
 #include <cstring>  // std::strcmp for -wtm_land_boundary parsing
+#include <fstream>  // coverage fingerprint append
 #include <experimental/source_location>
 
 #include <petscdm.h>
@@ -177,6 +180,9 @@ static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge pote
 // This selector is the general-framework hook; more values (plain zero-gradient, specified flux/head) can
 // be added later. See BOUNDARY_CONDITIONS.md.
 static bool g_land_boundary_dirichlet = false;  // -wtm_land_boundary dirichlet (default: neumann_toposlope)
+// The collector actually in force after every override and solver downgrade -- what the run DID, not
+// what the config asked for. Read only by the coverage fingerprint (emit_coverage_fingerprint below).
+static std::string g_collector_resolved = "active_set";
 
 // --- Time-averaged interblock transmissivity (-wtm_Tbar) -----------------------------------------
 // The exponential T(wtd) is the dominant nonlinearity: the frozen-coefficient solvers freeze T at the
@@ -574,6 +580,67 @@ void set_starting_values(
 // calls this three times; see src/tr_bdf2_coefficients.hpp. Evaluating once at w^{n+1} with the full step,
 // as a single-stage scheme correctly does, would attribute the whole step's outflow to the final state and
 // the exact budget could not close.
+// COVERAGE FINGERPRINT. One machine-readable line per run, appended to the file named by the
+// WTM_COVERAGE_LOG environment variable (silent when unset, so ordinary runs are unaffected).
+//
+// WHY THE MODEL EMITS THIS RATHER THAN A SCRIPT PARSING CONFIGS. It records what the run ACTUALLY
+// resolved to -- after CLI overrides, after the solver-dependent collector downgrade, after
+// auto-enables -- not what a config file appears to say. Twice during this work a `sed` meant to
+// switch a collector silently did nothing (a flat key applied to a nested-YAML file) and a whole
+// measurement was made on the wrong configuration before anyone noticed. A fingerprint written by the
+// model itself makes that impossible to sustain.
+//
+// tests/coverage_matrix.py aggregates these into tests/COVERAGE.md: what each test covers, and which
+// CROSSINGS nothing covers. Every defect found on 2026-08-26 lived in an untested PAIR, not an
+// untested axis, which is what the crossing view is for.
+static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc) {
+  const char* path = std::getenv("WTM_COVERAGE_LOG");
+  if (!path) return;
+  PetscMPIInt rank = 0, size = 1;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+  MPI_Comm_size(PETSC_COMM_WORLD, &size);
+  if (rank != 0) return;  // one line per run, from rank 0
+
+  const char* solver = uc.use_aa_picard ? "aa_picard"
+                     : uc.use_handoff   ? "handoff"
+                     : uc.use_picard    ? "picard"
+                     : uc.use_newton    ? "newton"
+                                        : "anderson";
+  const char* integ  = uc.use_tr_bdf2    ? "tr_bdf2"
+                     : uc.use_bdf2_on_V  ? "bdf2_on_V"
+                     : g_volume_storage  ? "be_volume"
+                                         : "be_secant";
+  const char* dtctl  = uc.use_dt_adaptive          ? "adaptive"
+                     : uc.use_newton_continuation  ? "continuation"
+                                                   : "fixed";
+  // The line is whitespace-delimited, so a tag with spaces would be truncated at the first word --
+  // which silently mislabelled every multi-word test as its first token. Collapse to underscores.
+  std::string tag = "unknown";
+  if (const char* t = std::getenv("WTM_COVERAGE_TAG")) {
+    tag = t;
+    for (char& c : tag)
+      if (std::isspace(static_cast<unsigned char>(c))) c = '_';
+  }
+
+  std::ofstream f(path, std::ios_base::app);
+  if (!f) return;
+  f << "coverage"
+    << " test=" << tag
+    << " run_type=" << params.run_type
+    << " solver=" << solver
+    << " integrator=" << integ
+    << " dtctl=" << dtctl
+    << " collector=" << g_collector_resolved
+    << " fsm=" << (params.fsm_on ? 1 : 0)
+    << " runoff_ratio=" << (params.runoff_ratio_on ? 1 : 0)
+    << " infiltration=" << (params.infiltration_on ? 1 : 0)
+    << " recharge_path=" << ((!params.fsm_on || !params.infiltration_on) ? "distributed" : "serial")
+    << " coupling=" << (g_fsm_delta_source ? "fsm_delta_source" : "overwrite")
+    << " boundary=" << (g_land_boundary_dirichlet ? "dirichlet" : "neumann")
+    << " ranks=" << size
+    << "\n";
+}
+
 static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp, Vec head, double weight) {
   DM  da = user_context.da;
   Vec xloc;
@@ -1473,6 +1540,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   }
   // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
   g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
+  g_collector_resolved = (activeset == PETSC_TRUE && rc != "active_set") ? "active_set" : rc;
   // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
   // balance -- the semismooth max(w_c, f) and the captured exfiltration f*Sy are only meaningful then. The default
   // secant backward-Euler uses RHS b = h^n (f != residual). If no b=0 scheme is already selected, auto-enable
@@ -1564,6 +1632,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / exfiltration). At
   // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &g_relax, nullptr);
+
+  // Everything above has resolved; record what this run actually is. Once per process.
+  {
+    static bool coverage_emitted = false;
+    if (!coverage_emitted) { coverage_emitted = true; emit_coverage_fingerprint(params, user_context); }
+  }
 
   // -- Fringe-size source: set the per-cell sink band width (the physical capillary fringe), populated
   // into user_context.fringe_width_vec. Default none = today's numerical width (byte-identical). See the

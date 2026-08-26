@@ -30,10 +30,18 @@ else
 fi
 echo "WTM test suite -- tier: $TIER  (MPI ranks: n=1 vs {$MPI_RANKS})"
 
+# COVERAGE FINGERPRINTS. Every WTM run appends one line describing what it actually resolved to; the
+# tag names the test it belongs to. Accumulated across the whole suite, then turned into
+# tests/COVERAGE.md at the end. Off for anyone running a test directly (the variable is unset), so
+# this changes nothing about how the tests behave -- it only records.
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$(mktemp /tmp/wtm_coverage_XXXX)}"
+: > "$WTM_COVERAGE_LOG"
+
 declare -a NAMES RESULTS
 run() { # name  command...
     local name="$1"; shift
     echo; echo "########## $name ##########"
+    export WTM_COVERAGE_TAG="$name"
     if "$@"; then NAMES+=("$name"); RESULTS+=("PASS"); else NAMES+=("$name"); RESULTS+=("FAIL"); fi
 }
 
@@ -76,5 +84,11 @@ for i in "${!NAMES[@]}"; do
     [[ "${RESULTS[$i]}" == "FAIL" ]] && fail=1
 done
 echo "================================================="
+
+# Regenerate the coverage matrix from what actually ran. Never fails the suite -- it is a map, not a
+# gate; if a crossing in it matters, give it an arm.
+python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md \
+    || echo "coverage matrix: skipped (no fingerprints recorded)"
+
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
 exit $fail
