@@ -55,6 +55,19 @@ individual changes are verified with targeted checks.
 
 ### Fixed
 
+- **The water budget's "water in" term counted only one of the two input channels.**
+  Precipitation-less-evaporation is split by the runoff ratio the moment it is computed
+  (`runoff = rratio*rech_dist; rech_dist -= runoff`), and `total_recharge_added` summed only what was
+  left. The routed share was therefore never counted as an input, while the lakes FillSpillMerge
+  builds from it *did* appear in `stored_volume`, so `ocean_loss_closing` and `budget_residual` could
+  not close whenever `runoff_ratio > 0`. Measured: column 9 scaled as exactly `(1 − runoff_ratio)`.
+  The same accumulator also booked the **unscaled** `rech_dist` while the solver integrates
+  `rech_dist * rech_dt_scale`, so under sub-stepping it tracked the *solve count* rather than elapsed
+  time (2.55× inflation under adaptive `dt`). Both are fixed by reporting the channels for what they
+  are: new **column 19 `recharge_direct`** and **column 20 `runoff_to_surface`**, with column 9 now
+  their sum — which is what its name always promised. Columns are **appended**, so every existing
+  index is unchanged. Verified: column 9 is now identical at 20 solves (fixed `dt`) and 15 (adaptive),
+  and at `runoff_ratio = 1.0` the direct channel is exactly zero.
 - **Adaptive `dt` sized the next step before the current one had been accounted.** The controller
   wrote its newly-sized `dt` straight into `user_context.deltat`, but five consumers downstream are
   still accounting the step just *taken* and read it as that step's: the BDF2 history ratio
