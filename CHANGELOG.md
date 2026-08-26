@@ -37,12 +37,16 @@ individual changes are verified with targeted checks.
     2869 → 1364 SNES iterations, TR-BDF2 1771 → 957, TR-BDF2+adaptive 3769 → 957 (adaptive stops
     subdividing and becomes identical to fixed-`dt`), Newton+continuation 261203/412.5 s → 2478/5.3 s.
   - **All eight schemes now agree exactly** on the resulting water table, where previously they did not.
-- **The default is solver-dependent.** The active-set pin is wired into the matrix-free Anderson
-  residual only; the Picard operator and Newton Jacobian have no tangent for it, and selecting
-  active-set also disables every collector removal — so on those solvers the constraint would be
-  effectively unenforced (Newton *aborts*). With the key unset, the default therefore resolves to
-  `active_set` on Anderson and `explicit` on Picard/Newton, with a NOTE. An explicit choice is always
-  honoured, with a warning on the solvers that cannot enforce it consistently.
+- **The default is solver-dependent — and only Picard falls back.** The active-set pin lives in the
+  matrix-free residual, which is the Anderson path *and* Newton's, since Newton differentiates that
+  same function and now carries the matching semismooth tangent. Only the **Picard** operator and RHS
+  are a separate formulation with no pin, and selecting active-set there also disables every collector
+  removal, so the constraint would be silently unenforced. With the key unset the default therefore
+  resolves to `active_set` on **Anderson and Newton**, and to `explicit` on **Picard**, with a NOTE.
+  (An earlier draft of this entry said Picard *and Newton* downgrade; the downgrade is conditioned on
+  `use_picard` alone. `tests/budget_closure` now asserts which collector each solver resolves to, from
+  the log rather than by inference.) An explicit choice is always honoured, with a warning on the
+  solver that cannot enforce it consistently.
 - `runoff_collector` accepts a new `active_set` value; `-wtm_active_set` is the new flag spelling and
   `-wtm_dev_active_set` still works.
 - **Golden references regenerated** for the surface-water cases. `below_ground` (no surface water) is
