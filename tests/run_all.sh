@@ -63,6 +63,7 @@ run "FSM conservation + lake"       ./fsm_conservation/run.sh "$WTM"
 run "water-budget closure (schemes)" ./budget_closure/run.sh "$WTM"
 run "multi-lake stages vs dt"       ./multilake/run.sh "$WTM"
 run "solve-count invariance"        ./dt_invariance/run.sh "$WTM"
+run "serial rank-0 recharge path"   ./serial_recharge/run.sh "$WTM"
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
 run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
