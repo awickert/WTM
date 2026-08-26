@@ -164,7 +164,7 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
               "abs_change_in_GW abs_change_in_SW change_in_infiltration total_recharge_added total_loss_to_ocean "
               "sum_of_water_tables total_surface_removed total_ocean_outflow "
               "stored_volume ocean_loss_closing budget_residual exact_budget_residual total_evap_removed "
-              "recharge_direct runoff_to_surface "
+              "recharge_direct runoff_to_surface elapsed_time_s solves_done rejects_done "
            << std::endl;
   textfile.close();
 }
@@ -550,6 +550,7 @@ void update(
         arp.total_recharge_direct  = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
         rejects++;
+        params.rejects_done++;
         if (++retries > user_context.dtc_max_retries)
           throw std::runtime_error("adaptive dt: step failed after max retries; -wtm_dt_tol too tight "
                                    "or the local stability ceiling is below the smallest tried dt.");
@@ -558,6 +559,7 @@ void update(
       retries = 0;
       t += dt_taken;
       nsteps++;
+      params.solves_done++;
       if (params.fsm_on)
         couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
                                     fsm_seconds);
@@ -590,12 +592,14 @@ void update(
         arp.total_recharge_direct = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
         user_context.deltat        = dt_try * user_context.dtc_shrink;
+        params.rejects_done++;
         if (++retries > user_context.dtc_max_retries)
           throw std::runtime_error("dt-continuation: step failed to converge after max retries; deltat too "
                                    "small or the guess is too far (lower -wtm_dtc_grow / raise -wtm_dtc_dt0).");
         continue;  // do NOT advance `accepted`
       }
       accepted++;
+      params.solves_done++;
       retries = 0;
       // Grow Δt after an EASY step (converged in <= dtc_easy_iters), HOLD when hard (near the free-
       // boundary ceiling). NOTE: a residual/state-change SER controller (grow ∝ Δw_prev/Δw) was tried
@@ -619,6 +623,7 @@ void update(
       tgw.start();
       FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
       gw_seconds += tgw.lap();
+      params.solves_done++;
       if (params.fsm_on)
         couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
                                     fsm_seconds);

@@ -89,6 +89,19 @@ struct Parameters {
 
   double cellsize_n_s_metres = std::numeric_limits<double>::signaling_NaN();
   int32_t cycles_done        = 0;
+  // Cumulative solve accounting, reported alongside the budget so the run log carries the DENOMINATORS
+  // a reader needs to turn any cumulative volume into a rate -- and, more importantly, so this holds
+  // where it can be checked:
+  //     NO cumulative quantity may be proportional to the SOLVE COUNT.
+  //     Every one must be proportional to ELAPSED TIME, or be a difference of states.
+  // Three separate bugs violated that (the adaptive controller resizing dt before the step was
+  // accounted; column 9's missing rech_dt_scale; the runoff-ratio channel delivered at nominal-step
+  // size per sub-step), and each showed up as a column tracking solves instead of time. With both
+  // denominators in the file the violation is visible by inspection. Deliberately NOT accompanied by
+  // derived rate columns: a rate computed from a wrong amount is wrong in the same proportion, so it
+  // adds no checking power -- only the denominators do.
+  int64_t solves_done        = 0;  // accepted groundwater solves
+  int64_t rejects_done       = 0;  // rejected + retried steps (adaptive / dt-continuation only)
   double infiltration_change = 0.;
   // Exact stored water volume at t=0, captured on the first PrintValues call, so the budget-closing
   // diagnostic can report the change in stored volume (see benchmark/WATER_BUDGET.md).
