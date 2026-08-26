@@ -598,6 +598,12 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   const double global_loss_to_ocean = global_gw_loss_to_ocean + arp.total_loss_to_ocean;
 
   std::ofstream textfile(params.textfilename, std::ios_base::app);
+  // The run log is the water-BUDGET file: its purpose is verifying conservation to the SNES tolerance
+  // (~1e-8 relative), and cross-checking columns against one another (col 9 == col 19 + col 20). The
+  // stream default of 6 significant digits cannot support either -- a sum of two printed values misses
+  // a printed total by ~5e-7, which is indistinguishable from a real accounting error. 12 digits is
+  // still far short of double precision but comfortably below anything we assert on.
+  textfile.precision(12);
 
   double abs_total_wtd_change = 0.0;
   double abs_wtd_mid_change   = 0.0;
