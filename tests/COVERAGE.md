@@ -58,7 +58,7 @@ A blank cell is a combination **no run exercises**. `by design` marks the ones W
 | integrator \ collector | active_set | explicit | implicit | legacy | off |
 |---|---|---|---|---|---|
 | **bdf2_on_V** | 5 | 2 | 1 | 1 |   |
-| **be_secant** |   | 10 | 16 | 20 | 7 |
+| **be_secant** | by design | 10 | 16 | 20 | 7 |
 | **be_volume** | 67 |   | 2 |   |   |
 | **tr_bdf2** | 12 |   | 1 |   |   |
 
@@ -110,13 +110,12 @@ A blank cell is a combination **no run exercises**. `by design` marks the ones W
 
 ## 3. Uncovered crossings
 
-**32** combinations are reachable but exercised by nothing:
+**31** combinations are reachable but exercised by nothing:
 
 - `solver=newton` x `collector=legacy`
 - `solver=newton` x `collector=off`
 - `solver=picard` x `collector=off`
 - `integrator=bdf2_on_V` x `collector=off`
-- `integrator=be_secant` x `collector=active_set`
 - `integrator=be_volume` x `collector=explicit`
 - `integrator=be_volume` x `collector=legacy`
 - `integrator=be_volume` x `collector=off`

@@ -87,7 +87,7 @@ echo "================================================="
 
 # Regenerate the coverage matrix from what actually ran. Never fails the suite -- it is a map, not a
 # gate; if a crossing in it matters, give it an arm.
-python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md \
+python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md --readme "$ROOT/README.md" \
     || echo "coverage matrix: skipped (no fingerprints recorded)"
 
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
