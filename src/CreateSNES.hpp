@@ -190,6 +190,13 @@ struct AppCtx {
                                    // Under the water (volume) step-error the MAX worst-cell norm is hostage to a few
                                    // surface-kink cells and can stall a cold start (GH #13); RMS averages them out.
   double dt_prev_est     = 0.0;    // previous accepted step's error estimate (PI-controller history; 0 = none)
+  bool   dt_trace        = false;  // -wtm_dt_trace: report (dt, est, tol, factor, iters, accepted) for every
+                                   // adaptive step, accepted or rejected. The local error estimate STEERS the
+                                   // integration, but was computed every step and reported NOWHERE -- so no
+                                   // test, no run log and no diagnostic could see whether it responded to dt
+                                   // at all. That is how a generic-branch estimator with observed order
+                                   // p = 0.00 (constant in dt) went unnoticed. Machine-readable
+                                   // ("DTTRACE k=v ..."); consumed by tests/estimator_order.
 
   // Modeling options (metres, default 0): round the two C0 kinks in the depth-integrated
   // transmissivity, each independently -- -wtm_ksat_soilbottom_smoothing_width at -1.5 m (the
