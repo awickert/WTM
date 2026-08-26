@@ -287,6 +287,24 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscBool dt_trace_flag = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_trace", &dt_trace_flag);
     user_context.dt_trace = (dt_trace_flag == PETSC_TRUE);
+    // The step-size controller's own knobs, parsed HERE as well as on the continuation path. They were
+    // read ONLY inside `if (use_newton_continuation)`, yet the adaptive controller reads dtc_grow,
+    // dtc_shrink, dtc_dt_max and dtc_easy_iters on EVERY adaptive step -- so on a plain
+    // `-wtm_dt_adaptive` run these flags were accepted by PETSc, silently ignored, and the controller
+    // ran on its compiled-in defaults.
+    //
+    // The cost is not only a lost knob: it makes a NEGATIVE experiment untrustworthy. Sweeping a flag
+    // that is never parsed returns "no effect" for a reason that has nothing to do with the model, and
+    // it reads exactly like a real result. It produced one: a growth-gate sweep at
+    // -wtm_dtc_easy_iters 0 / 8 / 100000 returned byte-identical step counts, recorded as "the growth
+    // gate is inert on this fixture" when the gate had never been varied at all. With the flag live,
+    // the same sweep spans 57 steps (default 8) to 229506-and-still-running (0, growth forbidden).
+    // Parsing these where they are used is also what makes the controller testable: tests/estimator_order
+    // needs -wtm_dtc_grow 1 -wtm_dtc_shrink 1 to freeze dt and refine it from a fixed state.
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
+    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
     // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now
     // volume-weighted (storedVolume difference; see transient_groundwater.cpp). They still measure different
