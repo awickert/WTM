@@ -313,6 +313,44 @@ Every collector that already closed is unchanged to the digit, which is what mak
 surgical. `tests/budget_closure` now covers all five collectors on both solvers, plus each solver at
 its own resolved default.
 
+## 5a. Adding a new water channel
+
+Every defect found in the budget on 2026-08-26 was the same shape: a channel that was booked, scaled
+or delivered at the wrong moment. Not physics, not numerics — *when*. Six of them, all in one loop.
+
+So when you add a channel, add its **equivalent-model-time** arms at the same time. The idea is simple:
+run the same model time by a different numerical path, and require the cumulative totals to agree. Two
+paths are worth varying, and they catch different things.
+
+**Different step count.** Adaptive `dt` subdivides; a larger `dt` takes fewer steps. A cumulative
+quantity must scale with elapsed time, never with the number of solves. This caught the routed channel
+being delivered once per solve at nominal size:
+
+| arm | solves | elapsed | routed water |
+|---|---|---|---|
+| fixed `dt` | 20 | 20.00 yr | 1.36148e+10 |
+| adaptive | 14 | 20.00 yr | 9.53038e+09 |
+
+`9.53/13.61 = 0.700`, and `14/20 = 0.700`. Gated by `tests/dt_invariance`.
+
+**Different bookkeeping cadence.** Be precise about whose cadence: **FillSpillMerge is not
+configurable — with `fsm_on` it runs once per accepted step, always.** Three of the four
+`couple_surface_and_recharge` call sites sit inside the step loops. The fourth fires once per *report*
+and skips FSM entirely, so with no surface-water model the recharge/runoff bookkeeping happens per
+report and `report_interval` sets how often. That is the only cadence there is to vary, and varying it
+caught the routed share being booked `(N−1)/N` — 3/4, 1/2 and 0/1 of its true value at 4, 2 and 1
+cycles. Gated by `tests/local_ledger` arm C.
+
+**Why the exact budget does not substitute for either.** `budget_closure` passed throughout both of
+those bugs. It checks the *solver's own* discrete identity, which stays self-consistent when an input
+channel is mis-booked — the solve does not know or care what the bookkeeping did. Closure and
+correct accounting are different claims.
+
+**One more habit, learned expensively.** Pick a fixture where recharge is strictly positive when you
+need an exact expectation. `rech_dist` goes negative where evaporation exceeds precipitation, and the
+runoff split only fires where `rech_dist > 0`, so the direct channel carries negatives the routed one
+never sees. An hour went into a "35% under-count" that was the yardstick, not the code.
+
 ## 6. Reported columns (textfile)
 
 `... total_recharge_added(9) total_loss_to_ocean(10) sum_of_water_tables(11) total_surface_removed(12)

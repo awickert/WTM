@@ -83,8 +83,18 @@ run place  ledgerA "2yr"  15768000 ""    1 0 -wtm_anderson || fail=1   # dt = 0.
 # CLOSED precondition below meaningless. See task #17.
 run redist ledgerB "20yr" 31536000 "off" 1 0 -wtm_anderson || fail=1   # dt = 1 yr, 20 steps
 
-# C. CADENCE. The routed input channel (col 20) must depend on ELAPSED TIME, not on how often the
-# surface coupling happens. ledgerA is the fixture that makes this exact: precipitation is strictly
+# C. CADENCE -- and be precise about WHOSE cadence, because it is easy to get wrong.
+#
+# FillSpillMerge is NOT on a configurable cadence: with fsm_on it runs once per ACCEPTED STEP, always
+# (WTM.cpp -- "tight coupling: FillSpillMerge runs EVERY step"; three of the four
+# couple_surface_and_recharge call sites sit inside the step loops under `if (params.fsm_on)`). So
+# there is no FSM handoff frequency to vary.
+#
+# The FOURTH call site, `if (!params.fsm_on)`, fires once per REPORT -- and in that branch FSM is
+# skipped entirely. That is the path this arm exercises: with no surface-water model, the
+# recharge/runoff bookkeeping happens per report rather than per step, and report_interval sets how
+# often. The routed input channel (col 20) must depend on ELAPSED TIME, not on how many times that
+# bookkeeping call fired. ledgerA is the fixture that makes this exact: precipitation is strictly
 # positive and the table is deep, so recharge does not depend on the state and the split is exactly
 # runoff_ratio. On a fixture where recharge CAN go negative the split only fires where rech > 0, so
 # col 19 carries negatives col 20 never sees and no clean expectation exists -- that mistake cost an
