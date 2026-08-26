@@ -522,7 +522,8 @@ void set_starting_values(
     PetscInt xs,
     PetscInt ys,
     PetscInt xm,
-    PetscInt ym) {
+    PetscInt ym,
+    double rech_dt_scale) {
   // no pragma because we're editing arp accumulators
   // Accumulate over this rank's OWNED cells only (DMDA owned range, which is
   // non-overlapping across ranks), so under MPI each ocean/recharge cell is
@@ -540,11 +541,18 @@ void set_starting_values(
           arp.total_loss_to_ocean_gw += starting_wtd[y][x] * arp.cell_area[y] * porosity[y][x];
         starting_wtd[y][x] = 0.;
       } else {
-        double rech_count = rech_dist[y][x];
-        if (starting_wtd[y][x] >= 0 && starting_wtd[y][x] + rech_dist[y][x] < 0)
+        // rech_dist holds a NOMINAL step's depth (rate * params.deltat); the source the solve actually
+        // integrates is rech_dist * rech_dt_scale (see the note at the rech_vec assembly). Book the
+        // SCALED depth, or a sub-stepped cycle credits a whole cycle's recharge once per sub-step --
+        // measured at 2.55x inflation under adaptive dt, and it is only correct at all because
+        // rech_dt_scale is exactly 1 on every fixed-dt path. The clip below mirrors add_recharge:
+        // evaporation can remove surface water down to the land surface and no further.
+        const double rech_step = rech_dist[y][x] * rech_dt_scale;
+        double       rech_count = rech_step;
+        if (starting_wtd[y][x] >= 0 && starting_wtd[y][x] + rech_step < 0)
           rech_count = -starting_wtd[y][x];
 
-        arp.total_added_recharge += rech_count * arp.cell_area[y];
+        arp.total_recharge_direct += rech_count * arp.cell_area[y];
       }
     }
   }
@@ -1156,11 +1164,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // compute any starting values needed for arrays (owned cells only).
   // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
   // per-report step loop, then maintained by the copy-back below), not in arp.wtd.
-  PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
-  set_starting_values(
-      arp, dmdapack.starting_wtd, dmdapack.rech_dist, dmdapack.mask, dmdapack.porosity_vec, xs, ys, xm, ym);
-  PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
-
   // Recharge is a per-step AMOUNT (a depth) = rate*dt, but rech_dist is baked ONCE as
   // rate*params.deltat (irf.cpp / WTM.cpp). The residual adds my_rech directly and scales only the
   // flux by user_context.deltat, so on a VARIABLE-dt path (adaptive / Newton dt-continuation) an
@@ -1170,6 +1173,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the fixed point, dt cancels). Exactly 1.0 on every fixed-dt path, so those are byte-identical.
   // See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   const double rech_dt_scale = user_context.deltat / params.deltat;
+
+  // compute any starting values needed for arrays (owned cells only).
+  // wtd is carried in dmdapack.starting_wtd (populated once per cycle before the
+  // per-report step loop, then maintained by the copy-back below), not in arp.wtd.
+  // Hoisted BELOW rech_dt_scale (it used to sit above) because it books the direct-recharge input and
+  // must book the SCALED depth -- the same depth the rech_vec assembly just below hands the solver.
+  PetscLogEventBegin(EVENT_SETSTART, 0, 0, 0, 0);
+  set_starting_values(arp, dmdapack.starting_wtd, dmdapack.rech_dist, dmdapack.mask, dmdapack.porosity_vec,
+                      xs, ys, xm, ym, rech_dt_scale);
+  PetscLogEventEnd(EVENT_SETSTART, 0, 0, 0, 0);
+
 //  values for storativity are reset each time; and recharge changes from one timestep to the next, so set these here
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params, rech_dt_scale) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {

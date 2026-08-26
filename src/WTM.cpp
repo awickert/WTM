@@ -164,6 +164,7 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
               "abs_change_in_GW abs_change_in_SW change_in_infiltration total_recharge_added total_loss_to_ocean "
               "sum_of_water_tables total_surface_removed total_ocean_outflow "
               "stored_volume ocean_loss_closing budget_residual exact_budget_residual total_evap_removed "
+              "recharge_direct runoff_to_surface "
            << std::endl;
   textfile.close();
 }
@@ -183,7 +184,8 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
 // Forcing is read into float locals so the arithmetic is bit-identical to the arp
 // (float) loop: the surface-water branch subtracts precip-open_water_evap in float;
 // the below-surface branch subtracts in double via the explicit cast -- exactly as there.
-static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+static void distributed_recharge(Parameters& params, ArrayPack& arp, AppCtx& user_context,
+                                 DMDA_Array_Pack& dmdapack) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar **precip, **evap, **open_water_evap, **runoff_ratio;
   DMDAVecGetArray(user_context.da, user_context.precip_vec, &precip);
@@ -194,8 +196,10 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
   // Taper 2: when the smooth ET->open-water transition is on, evaporation is the implicit E_eff in
   // the solve, so the explicit recharge here is just the precip source (runoff still partitions it).
   const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
+  double     runoff_in_owned = 0.0;  // routed input channel, this rank's owned cells
 #pragma omp parallel for default(none) \
-    shared(params, dmdapack, precip, evap, open_water_evap, runoff_ratio, xs, ys, xm, ym, evap_taper) collapse(2)
+    shared(arp, params, dmdapack, precip, evap, open_water_evap, runoff_ratio, xs, ys, xm, ym, evap_taper) \
+    reduction(+ : runoff_in_owned) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
       // The DMDA vecs hold double(float) values scattered from the (float) arp
@@ -237,9 +241,17 @@ static void distributed_recharge(Parameters& params, AppCtx& user_context, DMDA_
         const double runoff        = rratio_f * dmdapack.rech_dist[j][i];
         dmdapack.runoff_dist[j][i] = runoff;
         dmdapack.rech_dist[j][i] -= runoff;
+        // Book the SURFACE-routed input channel where it is created. This is external water entering
+        // the domain exactly as much as the direct share is; it simply arrives via FillSpillMerge
+        // instead of as the step's source term. Counting only the direct share (which is what
+        // total_added_recharge did) left the routed water uncounted as an input while the lakes FSM
+        // builds from it still showed up in stored_volume. Owned cells only -> per-rank partial.
+        runoff_in_owned += runoff * arp.cell_area[j];
       }
     }
   }
+
+  arp.total_runoff_to_surface += runoff_in_owned;
 
   DMDAVecRestoreArray(user_context.da, user_context.precip_vec, &precip);
   DMDAVecRestoreArray(user_context.da, user_context.evap_vec, &evap);
@@ -349,7 +361,8 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
   if (!distribute_recharge && rech_rank == 0) {
     const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
-#pragma omp parallel for default(none) shared(arp, params, evap_taper)
+    double     serial_runoff_in = 0.0;
+#pragma omp parallel for default(none) shared(arp, params, evap_taper) reduction(+ : serial_runoff_in)
     for (unsigned int i = 0; i < arp.topo.size(); i++) {
       if (evap_taper) {
         arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
@@ -365,11 +378,17 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
         const double rr = arp.runoff_ratio(i) * arp.rech(i);
         arp.runoff(i) += rr;   // additive onto the zeroed carrier (approach B)
         arp.rech(i) -= rr;
+        // Routed input channel. Rank 0 holds the whole grid on this path, and every other rank
+        // contributes 0, so the Allreduce in PrintValues still yields the correct global total.
+        richdem::Array2D<float>::xy_t rx, ry;
+        arp.topo.iToxy(i, rx, ry);
+        serial_runoff_in += rr * arp.cell_area[ry];
       }
     }
+    arp.total_runoff_to_surface += serial_runoff_in;
   }
   if (distribute_recharge) {
-    distributed_recharge(params, user_context, dmdapack);
+    distributed_recharge(params, arp, user_context, dmdapack);
     // -wtm_fsm_delta_source (FSM-delta-source): fold FSM's per-cell volume change onto the recharge source for the next
     // step. Added AFTER distributed_recharge so the runoff ratio does not take a second cut of water FSM has
     // already routed -- that ordering is load-bearing.
@@ -520,7 +539,7 @@ void update(
       const double remaining = cycle_duration - t;
       if (user_context.deltat > remaining) user_context.deltat = remaining;
       const double dt_taken   = user_context.deltat;
-      const double rech_snap  = arp.total_added_recharge;    // roll back on a rejected step (non-converged
+      const double rech_snap  = arp.total_recharge_direct;    // roll back on a rejected step (non-converged
       const double ocean_snap = arp.total_loss_to_ocean_gw;  // OR too-inaccurate), as the continuation loop does
       zero_sink();
       richdem::Timer tgw_a;
@@ -528,7 +547,7 @@ void update(
       const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
       gw_seconds += tgw_a.lap();
       if (its < 0) {  // REJECT: update() shrank deltat and did NOT commit; retry the same step
-        arp.total_added_recharge   = rech_snap;
+        arp.total_recharge_direct  = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
         rejects++;
         if (++retries > user_context.dtc_max_retries)
@@ -559,7 +578,7 @@ void update(
     // retry does not double-count. See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
     int accepted = 0, retries = 0;
     while (accepted < params.report_steps) {
-      const double rech_snap  = arp.total_added_recharge;   // roll back on a rejected step
+      const double rech_snap  = arp.total_recharge_direct;   // roll back on a rejected step
       const double ocean_snap = arp.total_loss_to_ocean_gw;
       const double dt_try     = user_context.deltat;
       zero_sink();
@@ -568,7 +587,7 @@ void update(
       const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
       gw_seconds += tgw_n.lap();
       if (its < 0) {  // rejected (non-converged): restore accumulators, shrink dt, retry same step
-        arp.total_added_recharge  = rech_snap;
+        arp.total_recharge_direct = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
         user_context.deltat        = dt_try * user_context.dtc_shrink;
         if (++retries > user_context.dtc_max_retries)

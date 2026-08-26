@@ -74,7 +74,23 @@ struct ArrayPack {
   richdem::Array2D<richdem::flowdir_t> flowdirs;               // No cells flow anywhere
 
   // Cumulative state variables
-  double total_added_recharge = 0;
+  //
+  // THE TWO INPUT CHANNELS, reported separately because they are physically distinct and arrive by
+  // different routes. Precipitation less evaporation is split by the runoff ratio the moment it is
+  // computed (WTM.cpp, distributed_recharge / its serial twin):
+  //   total_recharge_direct    (1-runoff_ratio)*(P-ET)*dt -- straight into the aquifer as the step's
+  //                            source term. Accumulated PER SUB-STEP and scaled by rech_dt_scale, so a
+  //                            sub-stepped cycle books the cycle total once rather than once per step.
+  //   total_runoff_to_surface  runoff_ratio*(P-ET)*dt -- diverted to the surface for FillSpillMerge to
+  //                            route. Accumulated where it is created, once per FSM handoff.
+  // Their SUM is the run's total external input, which is what the physical budget's "water in" term
+  // must be. It used to be a single `total_added_recharge` that summed only the DIRECT channel, so the
+  // routed share was never counted as an input even though the lakes FSM builds from it do appear in
+  // stored_volume -- which is why budget_residual could not close whenever runoff_ratio > 0 (measured:
+  // col 9 scaled exactly as (1-runoff_ratio)). Both are per-rank owned-cell partials, reduced in
+  // PrintValues. See benchmark/WATER_BUDGET.md.
+  double total_recharge_direct   = 0;
+  double total_runoff_to_surface = 0;
   double total_loss_to_ocean  = 0;
   // Groundwater-only ocean loss (set_starting_values + solve copy-back). Under MPI this is a
   // per-rank OWNED-cell partial, reduced to a global total in PrintValues. Kept separate from

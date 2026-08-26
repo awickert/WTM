@@ -567,14 +567,20 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   // accumulated by FillSpillMerge on the full replicated grid on every rank, so it is
   // already global (rank 0's copy is correct) and must NOT be reduced. MPI_Allreduce is
   // collective -- every rank must reach these calls.
-  double global_added_recharge = 0.0;
+  double global_recharge_direct = 0.0;
+  double global_runoff_to_surface = 0.0;
   double global_gw_loss_to_ocean = 0.0;
   double global_surface_removed = 0.0;
   double global_evap_removed = 0.0;
   double global_ocean_outflow = 0.0;
   double global_storage_change = 0.0;
   double global_solver_recharge = 0.0;
-  MPI_Allreduce(&arp.total_added_recharge, &global_added_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_recharge_direct, &global_recharge_direct, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_runoff_to_surface, &global_runoff_to_surface, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  // TOTAL external input = both channels. Column 9's name has always promised this; it used to deliver
+  // only the direct share, so the runoff-ratio water was missing from the budget's "water in" while the
+  // lakes it built were present in stored_volume. See benchmark/WATER_BUDGET.md.
+  const double global_added_recharge = global_recharge_direct + global_runoff_to_surface;
   MPI_Allreduce(&arp.total_loss_to_ocean_gw, &global_gw_loss_to_ocean, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_surface_removed, &global_surface_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_evap_removed, &global_evap_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -665,7 +671,10 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
            << params.infiltration_change << " " << global_added_recharge << " " << global_loss_to_ocean << " "
            << wtd_sum << " " << global_surface_removed << " " << global_ocean_outflow << " "
            << stored_volume << " " << ocean_loss_closing << " " << budget_residual << " "
-           << exact_budget_residual << " " << global_evap_removed << " " << std::endl;
+           << exact_budget_residual << " " << global_evap_removed << " "
+           // Columns 19-20: the two input channels whose sum is column 9. APPENDED so every existing
+           // column index stays put -- three test scripts parse this file positionally.
+           << global_recharge_direct << " " << global_runoff_to_surface << " " << std::endl;
 
   textfile.close();
 }
