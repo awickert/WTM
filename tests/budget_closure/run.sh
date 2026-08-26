@@ -231,9 +231,34 @@ echo
 # dt MOVES the solution instead of converging it, the local-error estimate never settles, and the
 # controller correctly refuses. It is the same dt-dependence that made active_set the default. So
 # these arms run the DEFAULT collector -- which is also the combination anyone would actually use.
+#
+# THE TWO ARMS CARRY DIFFERENT dt TOLERANCES, and that is not an oversight. An adaptive arm is only a
+# test of adaptive dt if the controller actually RESIZES on this fixture; if it takes one step per
+# report and rejects nothing, it reproduces the fixed-dt trajectory exactly and cannot fail
+# differently from the fixed-dt arm above it -- it looks like coverage and is not. Measured here,
+# 20 cycles, steps (rejects):
+#
+#     -wtm_dt_tol       TR-BDF2        BDF2-on-V
+#     0.5 (default)     20  (0)  <-- DEGENERATE      62  (4)
+#     0.1               20  (0)  <-- DEGENERATE       -
+#     0.02              68  (0)                       -
+#     0.005             57  (1)                     356 (10)
+#
+# So BDF2-on-V subdivides and rejects at the default tolerance and is left alone, while TR-BDF2 needs
+# 0.005 before its embedded estimate is tight enough to make the controller do anything. Whatever
+# makes the two schemes differ this much at the same tolerance is NOT understood -- see the
+# non-monotonicity note below -- so the tolerance here is chosen by measurement, not by theory.
+#
+# If either arm ever prints "(fixed would be N)" with its own step count equal to N and no rejects,
+# it has gone vacuous again and the tolerance must be re-measured, not the arm deleted.
+#
+# UNEXPLAINED, recorded so it is not lost: for TR-BDF2 the step count is NON-MONOTONIC in the
+# tolerance -- 0.02 gives 68 steps but the tighter 0.005 gives 57. A stricter local-error bound
+# producing FEWER steps is backwards. BDF2-on-V is monotonic (62 -> 356). Adaptive dt is the
+# robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive
+    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive -wtm_dt_tol 0.005
 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
     -wtm_anderson -wtm_bdf2_on_V -wtm_active_set -wtm_dt_adaptive
 echo
