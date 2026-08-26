@@ -102,6 +102,7 @@ TRAJ   = [(9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
 # exactly invariant here because this fixture's recharge does not depend on the water table, which is
 # what makes them a clean probe -- asserted below so the test cannot silently stop discriminating.
 TOL_INPUT, TOL_TRAJ = 1e-9, 1e-2
+EXPECT_YEARS = 20.0  # must match `total_time` in mkcfg above
 
 def last(stem):
     rows = [[float(x) for x in l.split()] for l in open(f"{W}/{stem}.txt")
@@ -124,7 +125,14 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     print(f"-- {label} --")
     print(f"        elapsed_yr {[round(e,4) for e in elapsed]}   solves {solves}")
 
-    # PRECONDITIONS. Without both of these the comparison proves nothing.
+    # PRECONDITIONS. Without these the comparison proves nothing.
+    # ABSOLUTE elapsed time, not just agreement between arms: the config asks for 20 yr, so every arm
+    # must report 20 yr. Agreement alone would pass happily if all three were off by the same
+    # cycles_done off-by-one, and every rate a reader derives from this file divides by this number.
+    ok = max(abs(e - EXPECT_YEARS) for e in elapsed) < 1e-9
+    fail |= not ok
+    print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  elapsed time is the configured "
+          f"{EXPECT_YEARS:g} yr in every arm {[round(e, 6) for e in elapsed]}")
     ok = max(abs(e - elapsed[0]) for e in elapsed) < 1e-9
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  every arm covers the same elapsed time")
