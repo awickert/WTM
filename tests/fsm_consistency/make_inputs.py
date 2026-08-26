@@ -45,6 +45,10 @@ evap            = np.zeros((NY, NX), dtype=np.float32)
 open_water_evap = np.full((NY, NX), 0.2, dtype=np.float32)
 winter_temp     = np.zeros((NY, NX), dtype=np.float32)
 ksat            = np.full((NY, NX), 1e-4, dtype=np.float32)
+# Vertical (infiltration) conductivity. Only read when infiltration_during_flow is on, which is
+# what selects the SERIAL rank-0 recharge path (distribute_recharge = !fsm_on || !infiltration_on).
+# Added so that path can be tested at all -- see tests/serial_recharge.
+vert_ksat       = np.full((NY, NX), 1e-6, dtype=np.float32)
 porosity        = np.full((NY, NX), 0.25, dtype=np.float32)
 
 # Initial water table 5 m ABOVE the surface everywhere -> abundant surface water
@@ -61,6 +65,7 @@ files = {
     f"{REGION}_{TIME}_winter_temperature.tif":    (winter_temp, "float32"),
     f"{REGION}_horizontal_ksat.tif":              (ksat, "float32"),
     f"{REGION}_porosity.tif":                     (porosity, "float32"),
+    f"{REGION}_vertical_ksat.tif":                (vert_ksat, "float32"),
     f"{REGION}_{TIME}_starting_wt.tif":           (starting_wt, "float64"),
 }
 for fname, (arr, dt) in files.items():
