@@ -19,7 +19,7 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
 // Gather the distributed per-cycle runoff to rank-0 arp.runoff for the next FSM,
 // when runoff_ratio_on. See benchmark/DISTRIBUTED_ARP_DESIGN.md (2c).
 void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack,
-                           double dt_scale);
+                           double dt_scale, bool deliver);
 
 // Whether the implicit sub-surface sink is configured this run (taper 1).
 bool surface_sink_on();

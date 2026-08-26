@@ -313,12 +313,20 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   // smaller), whereas dt_committed is the dt of the step that has been ACCEPTED. Placed BEFORE the
   // exfiltration gather so the accumulation order into arp.runoff is unchanged, keeping fixed-dt runs
   // bit-identical (dt_committed == params.deltat there, so the scale is exactly 1).
-  if (params.fsm_on && params.runoff_ratio_on) {
-    const double dt_scale = (params.deltat > 0.0 && user_context.dt_committed > 0.0)
-                              ? user_context.dt_committed / params.deltat
-                              : 1.0;
+  // Note the guard is runoff_ratio_on ALONE, not `fsm_on &&`. With FSM off the runoff still has to be
+  // accounted -- it leaves the domain rather than being routed -- and gating the booking on fsm_on is
+  // what made it vanish silently.
+  if (params.runoff_ratio_on) {
+    // Scale by the interval since the LAST handoff, not by one step. With FSM on that interval is one
+    // accepted step (so this is identical to the previous behaviour); with FSM off the coupling runs
+    // once per REPORT, and scaling by a single step under-counted by the steps-per-report factor --
+    // measured: col 19 fell by 5.21e9 while col 20 recorded only 6.81e8.
+    const double interval = params.elapsed_time_s - params.runoff_booked_upto_s;
+    params.runoff_booked_upto_s = params.elapsed_time_s;
+    const double dt_scale = (params.deltat > 0.0 && interval > 0.0) ? interval / params.deltat : 1.0;
     if (distribute_recharge) {
-      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack, dt_scale);
+      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack, dt_scale,
+                                                 params.fsm_on != 0);
     } else if (mpi_rank == 0) {
       // Serial rank-0 recharge path: same handoff, same scale, from arp.runoff_nominal instead of the
       // distributed carrier. Rank 0 holds the whole grid and every other rank contributes 0, so the
@@ -326,7 +334,11 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       for (int j = 0; j < params.ncells_y; j++)
         for (int i = 0; i < params.ncells_x; i++) {
           const double routed = arp.runoff_nominal(i, j) * dt_scale;
-          arp.runoff(i, j) += routed;
+          if (params.fsm_on) {
+            arp.runoff(i, j) += routed;
+          } else {
+            arp.total_loss_to_ocean += routed * arp.cell_area[j];  // it leaves; see the gather
+          }
           arp.total_runoff_to_surface += routed * arp.cell_area[j];
         }
     }
@@ -536,6 +548,26 @@ void update(
   if (!distribute_recharge || params.cycles_done == 0) {
     scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
+  }
+
+  // FIRST CYCLE ONLY: hand the INITIAL runoff split to the carrier the handoff reads.
+  //
+  // irf.cpp's initialisation already performs the split (`rr = runoff_ratio*rech; arp.runoff += rr;
+  // arp.rech -= rr`), but it deposits the share in arp.runoff -- the rank-0 FillSpillMerge carrier --
+  // which couple_surface_and_recharge ZEROES before the handoff ever reads it. So the first interval's
+  // runoff was subtracted from recharge and then wiped: delivered to nobody with FSM off, and
+  // delivered but never BOOKED with FSM on. Measured on a strictly-positive-recharge fixture, col 20
+  // came out at exactly (N-1)/N of its true value -- 3/4, 1/2, 0/1 at 4, 2 and 1 cycles.
+  //
+  // Moving it into runoff_dist / runoff_nominal and clearing arp.runoff makes the handoff the SINGLE
+  // path that both delivers and books the routed share, in every configuration. Splitting the
+  // difference between two paths is what produced the off-by-one.
+  if (params.cycles_done == 0 && params.runoff_ratio_on) {
+    scatter_into_owned(user_context, arp.runoff.data(), dmdapack.runoff_dist);
+    if (mpi_rank == 0) {
+      arp.runoff_nominal = arp.runoff;  // the serial (rank-0) recharge path reads this one
+      arp.runoff.setAll(0);             // consumed above; must not also reach FSM directly
+    }
   }
 
   // Reset the per-STEP sink-removal accumulator (taper 1 / exfiltration): update() sums the removed depth for one

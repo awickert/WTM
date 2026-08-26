@@ -106,6 +106,11 @@ struct Parameters {
   // report_steps STEPS at a dt it is free to grow. Measured: a 20-cycle continuation run at
   // deltat 9.09e+06 s covers 5.77 yr while the derived form claimed 20.000 yr.
   double  elapsed_time_s     = 0.0;
+  // Simulated time at which the runoff-ratio share was last handed over. The amount to book is the
+  // rate times the interval SINCE THEN -- not one step's worth -- because the handoff cadence differs
+  // by configuration: with FillSpillMerge on it happens every accepted step, with FSM off only once
+  // per report. Scaling by a single step's dt under-counted by the steps-per-report factor.
+  double  runoff_booked_upto_s = 0.0;
   int64_t solves_done        = 0;  // accepted groundwater solves
   int64_t rejects_done       = 0;  // rejected + retried steps (adaptive / dt-continuation only)
   double infiltration_change = 0.;

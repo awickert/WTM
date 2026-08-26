@@ -2305,7 +2305,7 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
 // over -- the adaptive loop can still clamp dt to the cycle remainder afterwards, and a rejected step
 // re-runs at a smaller dt after the water was already sized. Exactly 1.0 on every fixed-dt path.
 void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack,
-                           double dt_scale) {
+                           double dt_scale, bool deliver) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** wg;
   DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
@@ -2323,7 +2323,18 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
     for (int j = 0; j < params.ncells_y; j++)
       for (int i = 0; i < params.ncells_x; i++) {
         const double routed = full[j * params.ncells_x + i] * dt_scale;
-        arp.runoff(i, j) += routed;
+        if (deliver) {
+          arp.runoff(i, j) += routed;         // FillSpillMerge will route it
+        } else {
+          // No surface-water model: the runoff LEAVES the domain. `fsm_on` is the route-vs-discard
+          // switch (see the selector note above), and the discard must be BOOKED or the water simply
+          // vanishes: measured, 30% of P-ET disappeared with nothing in the output saying so, because
+          // col 20 read 0 -- indistinguishable from runoff_ratio being off. Booked to the surface
+          // water-to-sea counter, which is what "runs off" means and is a term the physical budget
+          // already reads, so cols 15/16 keep closing. total_loss_to_ocean is a REPLICATED global
+          // (never MPI-reduced), and this runs on rank 0 alone, so adding here is consistent.
+          arp.total_loss_to_ocean += routed * arp.cell_area[j];
+        }
         // Book the routed INPUT CHANNEL (col 20) HERE, where the water is actually handed over and at
         // the same scale -- not at preparation, where the nominal amount is baked. Booking it there
         // made the diagnostic disagree with the physics the moment the delivery was scaled. rank 0
