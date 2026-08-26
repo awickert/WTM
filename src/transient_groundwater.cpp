@@ -2175,6 +2175,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // runoff-ratio handoff in couple_surface_and_recharge, which runs after this and needs the interval
   // the water actually fell over.
   user_context.dt_committed = user_context.deltat;
+  // TRUE elapsed simulated time: sum the ACCEPTED steps. Every reject path returns above this point,
+  // so a retried step is counted once, at the dt it finally succeeded with.
+  params.elapsed_time_s += user_context.deltat;
 
   // -wtm_dt_adaptive: NOW size the next step. Every accumulator above has finished accounting the step
   // just taken, so user_context.deltat is free to become the next step's. See the DEFERRED note in the

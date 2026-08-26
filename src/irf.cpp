@@ -683,11 +683,12 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
            // Columns 19-20: the two input channels whose sum is column 9. APPENDED so every existing
            // column index stays put -- three test scripts parse this file positionally.
            << global_recharge_direct << " " << global_runoff_to_surface << " "
-           // Columns 21-23: the DENOMINATORS. Elapsed simulated time is (cycles_done + 1)*report_seconds,
-           // not cycles_done*report_seconds -- this row is written for a cycle that has just COMPLETED,
-           // and cycles_done is incremented after the call. Getting that off by one would silently
-           // corrupt every rate a reader derives from this file.
-           << (static_cast<double>(params.cycles_done) + 1.0) * params.report_seconds << " "
+           // Columns 21-23: the DENOMINATORS. Elapsed time is ACCUMULATED from the accepted steps, not
+           // derived as cycles_done*report_seconds: that derivation assumes every cycle covers one
+           // report span, which is true for the fixed-dt and adaptive loops but FALSE for
+           // -wtm_dt_continuation, whose loop runs report_steps STEPS at a dt it may grow. The derived
+           // form reported 20.000 yr for a continuation run that had simulated 5.77 yr.
+           << params.elapsed_time_s << " "
            << params.solves_done << " " << params.rejects_done << " " << std::endl;
 
   textfile.close();

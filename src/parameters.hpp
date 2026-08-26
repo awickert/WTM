@@ -100,6 +100,12 @@ struct Parameters {
   // denominators in the file the violation is visible by inspection. Deliberately NOT accompanied by
   // derived rate columns: a rate computed from a wrong amount is wrong in the same proportion, so it
   // adds no checking power -- only the denominators do.
+  // TRUE elapsed simulated time, accumulated from the ACCEPTED steps themselves. It must not be
+  // derived as cycles_done * report_seconds: that assumes every cycle covers one report span, which
+  // holds for the fixed-dt and adaptive loops but NOT for -wtm_dt_continuation, whose loop runs
+  // report_steps STEPS at a dt it is free to grow. Measured: a 20-cycle continuation run at
+  // deltat 9.09e+06 s covers 5.77 yr while the derived form claimed 20.000 yr.
+  double  elapsed_time_s     = 0.0;
   int64_t solves_done        = 0;  // accepted groundwater solves
   int64_t rejects_done       = 0;  // rejected + retried steps (adaptive / dt-continuation only)
   double infiltration_change = 0.;
