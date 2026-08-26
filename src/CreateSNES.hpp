@@ -244,12 +244,24 @@ struct AppCtx {
   // evaluated at the old state. starting_wtd cannot be used directly: it stores 0 at ocean cells as a
   // MARKER rather than as a head. Lazily allocated under TR-BDF2 only.
   Vec  tr_head_old     = nullptr;
-  // The dt of the last ACCEPTED step. user_context.deltat is advanced to the NEXT step's size at the
-  // end of update(), so anything that runs after the solve and needs to know how long the step it is
-  // accounting for actually lasted must read THIS, not deltat. Currently that is the runoff-ratio
-  // handoff to FillSpillMerge, which happens in couple_surface_and_recharge -- outside update()
-  // entirely. Equal to params.deltat on every fixed-dt path.
-  double dt_committed  = 0.0;
+  // THE ACCEPTED STEP. One record of the interval the model has just committed to, written once when a
+  // step is accepted and read by everything that accounts for it.
+  //
+  // It exists because `deltat` is MUTABLE and means different things at different moments: the adaptive
+  // controller advances it to the NEXT step's size, and couple_surface_and_recharge runs after update()
+  // returns, by which time `deltat` no longer describes the step being accounted for. Reading `deltat`
+  // there is how the routed channel came to be scaled by the wrong interval. Anything that runs after
+  // the solve and needs to know how long the step it is accounting for actually lasted must read THIS.
+  //
+  // `dt` equals params.deltat on every fixed-dt path. `elapsed_from`/`elapsed_to` bracket the interval
+  // in simulated time, which is what a channel handed over at an irregular cadence needs -- the amount
+  // to book is a rate times the interval SINCE THE LAST HANDOFF, not one step's worth.
+  struct AcceptedStep {
+    double dt           = 0.0;  // duration of the step just accepted
+    double elapsed_from = 0.0;  // simulated time at its start
+    double elapsed_to   = 0.0;  // and at its end
+  };
+  AcceptedStep step;
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the

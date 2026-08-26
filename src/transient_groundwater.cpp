@@ -2245,13 +2245,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // when w^n and Y_gamma were both still live (the copy-back below has since overwritten w^n).
   if (!user_context.use_tr_bdf2) accumulate_ocean_outflow(user_context, arp, user_context.x, 1.0);
 
-  // Record the dt of the step just ACCEPTED, before deltat is advanced below. Read by the
-  // runoff-ratio handoff in couple_surface_and_recharge, which runs after this and needs the interval
-  // the water actually fell over.
-  user_context.dt_committed = user_context.deltat;
-  // TRUE elapsed simulated time: sum the ACCEPTED steps. Every reject path returns above this point,
-  // so a retried step is counted once, at the dt it finally succeeded with.
-  params.elapsed_time_s += user_context.deltat;
+  // COMMIT THE INTERVAL. One place, written once, before `deltat` is advanced below to the NEXT step's
+  // size. Everything that accounts for this step reads user_context.step rather than `deltat`, so the
+  // controller cannot mutate the interval out from under its own consumers. Every reject path returns
+  // ABOVE this point, so a retried step is committed once, at the dt it finally succeeded with.
+  user_context.step.dt           = user_context.deltat;
+  user_context.step.elapsed_from = params.elapsed_time_s;
+  params.elapsed_time_s         += user_context.deltat;   // TRUE elapsed time: summed, never derived
+  user_context.step.elapsed_to   = params.elapsed_time_s;
 
   // -wtm_dt_adaptive: NOW size the next step. Every accumulator above has finished accounting the step
   // just taken, so user_context.deltat is free to become the next step's. See the DEFERRED note in the
@@ -2297,7 +2298,7 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
 // only when runoff_ratio_on; otherwise this contribution is simply absent. Reuses the un-held wtd_global as
 // the gather scratch (after gather_wtd_to_all has finished with it -- the two run sequentially). See
 // DISTRIBUTED_ARP_DESIGN.md (2c).
-// `dt_scale` = dt_committed / params.deltat. runoff_dist holds a NOMINAL step's depth
+// `dt_scale` = (elapsed since the last handoff) / params.deltat. runoff_dist holds a NOMINAL step's depth
 // (runoff_ratio * rate * params.deltat), baked when the recharge for the next step was prepared -- at
 // which point the next step's dt is not yet final under adaptive stepping. So it is scaled HERE, at
 // consumption, where the accepted dt is known: the same LAZY treatment the direct channel already gets

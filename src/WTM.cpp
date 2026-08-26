@@ -310,9 +310,9 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   //
   // Scaling here rather than at preparation is what makes it exact: at preparation the next step's dt
   // is not final (the loop can still clamp it to the cycle remainder, and a rejected step re-runs
-  // smaller), whereas dt_committed is the dt of the step that has been ACCEPTED. Placed BEFORE the
+  // smaller), whereas user_context.step brackets the interval that has been ACCEPTED. Placed BEFORE the
   // exfiltration gather so the accumulation order into arp.runoff is unchanged, keeping fixed-dt runs
-  // bit-identical (dt_committed == params.deltat there, so the scale is exactly 1).
+  // bit-identical (step.dt == params.deltat there, so the scale is exactly 1).
   // Note the guard is runoff_ratio_on ALONE, not `fsm_on &&`. With FSM off the runoff still has to be
   // accounted -- it leaves the domain rather than being routed -- and gating the booking on fsm_on is
   // what made it vanish silently.
@@ -417,7 +417,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
         arp.rech(i) -= rr;
         // HELD, not delivered. Same reasoning as the distributed path: this is a NOMINAL step's depth,
         // and the dt of the step it will be routed over is not final yet. Handed to FillSpillMerge --
-        // and booked into col 20 -- at the top of the next coupling call, scaled by dt_committed.
+        // and booked into col 20 -- at the top of the next coupling call, scaled by the elapsed interval.
         arp.runoff_nominal(i) = rr;
       }
     }
