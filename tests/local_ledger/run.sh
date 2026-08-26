@@ -34,13 +34,14 @@ WORK=$(mktemp -d /tmp/ledger_XXXX); trap 'rm -rf "$WORK"' EXIT
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = region, $3 = total_time, $4 = deltat, $5 = runoff_collector ("" = default)
+mkcfg() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 report_interval, $7 runoff_ratio
     { cat <<EOF
 run_type equilibrium
 total_time $3
 supplied_wt 1
 deltat $4
-report_interval 1
+report_interval ${6:-1}
+runoff_ratio ${7:-0}
 save_nreport_interval 1
 cells_per_degree 10
 southern_edge -45
@@ -59,9 +60,9 @@ EOF
       [ -n "${5:-}" ] && echo "runoff_collector $5"; } | ../emit_config.sh > "$WORK/$1.yaml"
 }
 
-run() { # $1 = stem, $2 = region, $3 = total_time, $4 = deltat, $5 = collector, $6.. = flags
-    local stem="$1" region="$2" tt="$3" dt="$4" coll="$5"; shift 5
-    mkcfg "$stem" "$region" "$tt" "$dt" "$coll"; rm -f "$WORK/$stem.txt" "$WORK/${stem}_"*.tif
+run() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 ri, $7 rr, $8.. flags
+    local stem="$1" region="$2" tt="$3" dt="$4" coll="$5" ri="$6" rr="$7"; shift 7
+    mkcfg "$stem" "$region" "$tt" "$dt" "$coll" "$ri" "$rr"; rm -f "$WORK/$stem.txt" "$WORK/${stem}_"*.tif
     if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-10 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; grep -m2 -iE "what\(\)|ERROR" "$WORK/$stem.log" | sed 's/^/        /'
         return 1
@@ -72,7 +73,7 @@ echo "=== local-in-space water ledger ==="
 echo "WTM binary: $WTM"
 echo
 fail=0
-run place  ledgerA "2yr"  15768000 ""    -wtm_anderson || fail=1   # dt = 0.5 yr, 4 steps
+run place  ledgerA "2yr"  15768000 ""    1 0 -wtm_anderson || fail=1   # dt = 0.5 yr, 4 steps
 # Arm B pins runoff_collector=off ON PURPOSE, to isolate the lateral flux operator. Under the default
 # active_set the multiplier max(0, -f*Sy) is captured for EVERY cell, not only pinned ones, so
 # freely-solving cells contribute the RECTIFIED part of their converged residual noise -- a small,
@@ -80,7 +81,22 @@ run place  ledgerA "2yr"  15768000 ""    -wtm_anderson || fail=1   # dt = 0.5 yr
 # surface and nothing can exfiltrate (measured 31.27 m^3 against 2.16e11 m^3 stored, i.e. 1.4e-10).
 # It does not move any water -- stored_volume drift is 0.000e+00 either way -- but it would make the
 # CLOSED precondition below meaningless. See task #17.
-run redist ledgerB "20yr" 31536000 "off" -wtm_anderson || fail=1   # dt = 1 yr, 20 steps
+run redist ledgerB "20yr" 31536000 "off" 1 0 -wtm_anderson || fail=1   # dt = 1 yr, 20 steps
+
+# C. CADENCE. The routed input channel (col 20) must depend on ELAPSED TIME, not on how often the
+# surface coupling happens. ledgerA is the fixture that makes this exact: precipitation is strictly
+# positive and the table is deep, so recharge does not depend on the state and the split is exactly
+# runoff_ratio. On a fixture where recharge CAN go negative the split only fires where rech > 0, so
+# col 19 carries negatives col 20 never sees and no clean expectation exists -- that mistake cost an
+# hour, so the fixture choice here is load-bearing.
+#
+# It bites: the routed share used to be booked (N-1)/N -- 3/4, 1/2 and 0/1 of its true value at 4, 2
+# and 1 cycles -- because the FIRST interval's split was deposited in arp.runoff by irf.cpp's
+# initialisation and zeroed by couple_surface_and_recharge before the handoff read it.
+for RI in 1 2 4; do
+    run "cad0_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0   -wtm_anderson || fail=1
+    run "cad3_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0.3 -wtm_anderson || fail=1
+done
 [[ $fail -eq 0 ]] || { echo "LOCAL LEDGER: FAILED (a run did not complete)"; exit 1; }
 
 WORK="$WORK" INP="$INP" "$PY" - <<'PY'
@@ -175,6 +191,23 @@ else:
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CONSERVED  stored_volume drift over {len(vol)} cycles "
           f"{drift:.3e} (tol 1e-12); volume {vol[0]:.9e} m^3")
+
+# ---------------------------------------------------------------- C. CADENCE
+print("\n-- C. CADENCE: the routed input channel must track elapsed time, not coupling frequency --")
+def lastrow(stem):
+    rows = [[float(x) for x in l.split()] for l in open(f"{W}/{stem}.txt")
+            if l.split() and l.split()[0].isdigit() and len(l.split()) >= 23]
+    return rows[-1] if rows else None
+for RI in (1, 2, 4):
+    a, b = lastrow(f"cad0_{RI}"), lastrow(f"cad3_{RI}")
+    if a is None or b is None:
+        print(f"  FAIL  CADENCE    report_interval {RI}: missing output"); fail = 1; continue
+    split = b[19] / b[18] if b[18] else float("nan")   # col20 / col19
+    same_in = b[8] / a[8] if a[8] else float("nan")    # col9(rr=0.3) / col9(rr=0)
+    ok = abs(split - 3.0 / 7.0) < 1e-6 and abs(same_in - 1.0) < 1e-6
+    fail |= not ok
+    print(f"  {'PASS' if ok else 'FAIL'}  CADENCE    report_interval {RI}: col20/col19 = {split:.6f} "
+          f"(want 3/7 = 0.428571), total input vs runoff_ratio=0 = {same_in:.6f} (want 1.000000)")
 
 print("\nLOCAL LEDGER: " + ("ALL PASSED" if not fail else "FAILED"))
 sys.exit(1 if fail else 0)
