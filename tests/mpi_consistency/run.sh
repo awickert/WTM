@@ -39,7 +39,7 @@ base_cfg() {
 run_type           equilibrium
 fsm_on             __FSM__
 infiltration_on    0
-runoff_ratio_on    0
+runoff_ratio       __RR__
 cells_per_degree   10
 southern_edge      -45
 deltat             31536000
@@ -59,10 +59,11 @@ save_nreport_interval     9999
 EOF
 }
 
-run_case() { # fsm nranks tag
-    local fsm="$1" n="$2" tag="$3"
+run_case() { # fsm runoff_ratio nranks tag
+    local fsm="$1" rr="$2" n="$3" tag="$4"
     local cfg="$WORK/${tag}.yaml"
-    base_cfg | sed "s|__FSM__|$fsm|; s|__TXT__|$WORK/${tag}.txt|; s|__OUT__|$WORK/${tag}_|" | ../emit_config.sh > "$cfg"
+    base_cfg | sed "s|__FSM__|$fsm|; s|__RR__|$rr|; s|__TXT__|$WORK/${tag}.txt|; s|__OUT__|$WORK/${tag}_|" \
+        | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
     # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${tag}.log" 2>&1 )
@@ -74,12 +75,16 @@ echo
 
 # evap_mode was dropped from the schema (inert under the default evaporation taper), so the old
 # evap 0/1 dimension is gone -- it would now produce identical configs. Left: FSM off/on.
+# The runoff_ratio arm exists because the ROUTED input channel (col 20) is accumulated separately from
+# the direct one, and with runoff_ratio 0 it is identically zero -- so without this case its MPI
+# reduction is never exercised at all, which is how it went untested when the channel was added.
 fail=0
-for fsm in 0 1; do
-    label="fsm${fsm}"
-    run_case "$fsm" 1 "${label}_n1"
+for case in "0:0" "1:0" "1:0.3"; do
+    fsm="${case%%:*}"; rr="${case##*:}"
+    label="fsm${fsm}_rr${rr/./}"
+    run_case "$fsm" "$rr" 1 "${label}_n1"
     for n in "${RANKS[@]}"; do
-      run_case "$fsm" "$n" "${label}_n${n}"
+      run_case "$fsm" "$rr" "$n" "${label}_n${n}"
       if python3 compare.py "$WORK/${label}_n1" "$WORK/${label}_n${n}"; then
         printf "  %-14s n=1 vs n=%-2s : PASS\n" "$label" "$n"
       else
