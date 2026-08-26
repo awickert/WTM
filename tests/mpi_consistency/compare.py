@@ -69,9 +69,9 @@ WTD_TOL = 1e-6         # metres; above FP reduction noise, below any real error
 #           At the original 6 significant figures both printed as 792226000.000000, which is why no
 #           rank sweep had ever shown it.
 DIAG_RTOL_EXACT    = 1e-12
-DIAG_RTOL_STATE    = 1e-9
-DIAG_RTOL_STORED   = 1e-8
-DIAG_RTOL_DISCRETE = 1e-2
+DIAG_RTOL_STATE    = 1e-9    # ocean_outflow / evap; worst measured 5.123e-11 (evap, n=4/n=8)
+DIAG_RTOL_STORED   = 1e-8    # the ONE column the code fixes did not tighten (worst 2.281e-09 at n=6)
+DIAG_RTOL_DISCRETE = 1e-9    # was 1e-2 -- see above; worst measured now 2.076e-11
 
 # (0-indexed column, name, tolerance). See benchmark/WATER_BUDGET.md for the column list.
 DIAG_COLS = [
