@@ -39,8 +39,9 @@ TOL="${TOL:-1e-6}"      # relative to the run's solver recharge
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+mkcfg() { # $1 = stem, $2 = runoff_collector ("" = OMIT the key entirely -> default resolution)
+    local coll="${2-implicit}"
+    { cat <<EOF
 run_type equilibrium
 total_time 20yr
 supplied_wt 1
@@ -55,7 +56,6 @@ fdepth_fmin 2
 infiltration_on 0
 fsm_on 1
 runoff_ratio 0.3
-runoff_collector implicit
 surfdatadir $INP
 region fsm_test
 time_start t0
@@ -63,13 +63,14 @@ time_end t0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
+      [ -n "$coll" ] && echo "runoff_collector $coll"; } | ../emit_config.sh > "$WORK/$1.yaml"
 }
 
 fail=0
 check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL for one arm
     local label="$1" stem="$2"; shift 2
     local tol="${ARM_TOL:-$TOL}"
-    mkcfg "$stem"
+    mkcfg "$stem" "${COLL-implicit}"
     if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
@@ -113,6 +114,33 @@ print(f"  {'PASS' if ok else 'FAIL'}  {label:<34} exact residual reported as "
       f"{'nan (no single-step identity)' if ok else 'A NUMBER -- guard regressed'}")
 sys.exit(0 if ok else 1)
 PY
+}
+
+
+# xfail_broken: an arm that CANNOT close today. Held as an EXPECTED failure with a guard, so the defect
+# keeps a regression test instead of simply being absent from the suite. PASSes while the cumulative
+# residual stays ABOVE `floor` (still broken); FAILs the moment it closes -- which means the defect is
+# fixed and the arm must be promoted to a real `check`. An expected failure that silently starts
+# passing is how a fixed bug loses its test.
+xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags
+    local label="$1" stem="$2" floor="$3"; shift 3
+    mkcfg "$stem" "${COLL-implicit}"
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
+        echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
+    fi
+    FLOOR="$floor" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PYX' || fail=1
+import os, sys
+floor = float(os.environ["FLOOR"]); label = os.environ["LABEL"]
+rows = [[float(x) for x in l.split()] for l in open(sys.argv[1])
+        if l.split() and l.split()[0].isdigit() and len(l.split()) >= 18]
+if len(rows) < 3:
+    print(f"  FAIL  {label} -- only {len(rows)} data rows"); sys.exit(1)
+cum = abs(rows[-1][16]) / (abs(rows[-1][8]) or 1.0)
+still_broken = cum > floor
+print(f"  {'xfail' if still_broken else 'FAIL '}   {label:<34} cumulative={cum:.2e}  "
+      f"-- KNOWN DEFECT, task #12" + ("" if still_broken else "  <-- NOW CLOSES: promote to check()"))
+sys.exit(0 if still_broken else 1)
+PYX
 }
 
 echo "=== water-budget closure (exact per-step identity; runoff_ratio 0.3, FSM on) ==="
@@ -208,6 +236,53 @@ ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
     -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive
 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
     -wtm_anderson -wtm_bdf2_on_V -wtm_active_set -wtm_dt_adaptive
+echo
+
+
+# COLLECTOR SWEEP. The enforcement is a user config choice, and conservation must not depend on which
+# one is picked -- but until now every arm above pinned `implicit`, so three of the five values had no
+# budget coverage at all. Measured on this fixture (residual / recharge):
+#     active_set -3.744e-07 | implicit 4.197e-09 | off -1.753e-07   <- close
+#     explicit   -9.165e+00 | legacy   -7.998e+00                   <- do NOT close
+# Both failures are POST-SOLVE removals: the water leaves after the residual has been driven to zero,
+# so it is subtracted from an identity whose storage term was read before it left. That is task #12,
+# and `legacy` shares it -- the defect is broader than the `explicit` collector alone.
+echo "-- collector sweep (conservation must not depend on the enforcement) --"
+COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as  -wtm_anderson
+COLL=implicit                check "Anderson x implicit"        c_im  -wtm_anderson
+COLL=off                     check "Anderson x off"             c_off -wtm_anderson
+COLL=explicit xfail_broken   "Anderson x explicit"  c_ex  1.0    -wtm_anderson
+COLL=legacy   xfail_broken   "Anderson x legacy"    c_lg  1.0    -wtm_anderson
+echo
+# EACH SOLVER AT ITS OWN RESOLVED DEFAULT. Every other arm in this file names its collector explicitly,
+# which is right for discrimination but means the DEFAULT-RESOLUTION path itself was never exercised --
+# and that default is SOLVER-DEPENDENT. The downgrade in transient_groundwater.cpp is conditioned on
+# `use_picard` alone, so:
+#     Anderson unset -> active_set     Newton unset -> active_set     Picard unset -> explicit
+# Newton resolves to active_set because it now carries the matching semismooth tangent; only the Picard
+# operator lacks the pin. So the configuration PICARD actually runs in production had no budget
+# coverage at all, and it does not close.
+#
+# The resolution itself is asserted from the log, not inferred from the residual: two collectors could
+# coincidentally give similar residuals, and this test's whole point is knowing WHICH one ran.
+# Newton needs -wtm_dt_continuation to converge on this fixture; without it every collector aborts with
+# "The SNES solver has not converged".
+echo "-- each solver at its OWN resolved default (collector key UNSET) --"
+COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and -wtm_anderson
+COLL="" ARM_TOL=1e-5 check "Newton, unset -> active_set"         d_ntu -wtm_newton -wtm_dt_continuation
+COLL=""              xfail_broken "Picard, unset -> explicit"    d_pic 1.0 -wtm_picard -wtm_bdf2_on_V
+COLL=implicit        check "Newton + continuation x implicit"    d_nt  -wtm_newton -wtm_dt_continuation
+# Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
+# other two must NOT print it, or they have silently stopped testing the active-set default.
+for arm in d_and:absent d_ntu:absent d_pic:present; do
+    stem="${arm%%:*}"; want="${arm##*:}"
+    if grep -q "default resolves to \`explicit\`" "$WORK/$stem.log"; then got=present; else got=absent; fi
+    if [[ "$got" == "$want" ]]; then
+        echo "  PASS  RESOLUTION  $stem: Picard-downgrade NOTE $got (expected $want)"
+    else
+        echo "  FAIL  RESOLUTION  $stem: Picard-downgrade NOTE $got (expected $want)"; fail=1
+    fi
+done
 echo
 
 if [[ $fail -eq 0 ]]; then echo "BUDGET CLOSURE: ALL PASSED"; else echo "BUDGET CLOSURE: FAILED" >&2; fi
