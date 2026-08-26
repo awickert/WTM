@@ -1858,6 +1858,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the local-error estimate; the grow/shrink/reject logic is identical for all of them.
   double est      = 0.0;
   bool   have_est = false;
+  // The NEXT step's dt, held back until every accumulator below has finished accounting THIS one.
+  // See the DEFERRED note in the controller block.
+  double dt_next      = 0.0;
+  bool   have_dt_next = false;
   if (user_context.use_dt_adaptive && user_context.use_tr_bdf2) {
     // TR-BDF2 embedded estimate from the two stages (no history needed; valid on step 1):
     //   h_pred = [Y_gamma - (1-gamma) h^n]/gamma  -- EXACT for linear-in-time, O(dt^2) for curvature.
@@ -1964,11 +1968,20 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       return -1;
     }
     // ACCEPT (a mild overshoot is tolerated): commit, remember this error for the PI term, size the next step.
+    //
+    // DEFERRED, and this ordering is load-bearing. The sized dt belongs to the NEXT step, but everything
+    // below this point is still accounting the step just TAKEN and must see THAT step's dt: the BDF2
+    // history ratio (bdf2_prev_dt), the taper-1 sink and taper-2/3 evaporation removal depths, the
+    // land->ocean flux accumulation, and TR-BDF2's step quadrature. Writing it into user_context.deltat
+    // here made all five read the next step's dt. Measured on tests/fsm_consistency, exact budget
+    // residual as a fraction of recharge: TR-BDF2 + adaptive -1.603 and BDF2-on-V + adaptive -0.417,
+    // against ~2e-07 for the same schemes at fixed dt. The REJECT branch above is unaffected -- it
+    // returns before any of that accounting runs, so it still writes deltat directly.
     user_context.dt_prev_est = est;
     if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard solve: hold, don't grow
-    user_context.deltat = dt_now * factor;
-    if (user_context.dtc_dt_max > 0.0 && user_context.deltat > user_context.dtc_dt_max)
-      user_context.deltat = user_context.dtc_dt_max;
+    dt_next = dt_now * factor;
+    if (user_context.dtc_dt_max > 0.0 && dt_next > user_context.dtc_dt_max) dt_next = user_context.dtc_dt_max;
+    have_dt_next = true;
   }
 
   // Exact budget-closing accounting (Picard path): the solver's discrete storage + recharge terms,
@@ -2126,6 +2139,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // TR-BDF2 already accumulated its three-point step quadrature inside accumulate_budget_terms, back
   // when w^n and Y_gamma were both still live (the copy-back below has since overwritten w^n).
   if (!user_context.use_tr_bdf2) accumulate_ocean_outflow(user_context, arp, user_context.x, 1.0);
+
+  // -wtm_dt_adaptive: NOW size the next step. Every accumulator above has finished accounting the step
+  // just taken, so user_context.deltat is free to become the next step's. See the DEFERRED note in the
+  // controller block for what went wrong when this happened up there.
+  if (have_dt_next) user_context.deltat = dt_next;
 
   // The full wtd field is assembled once per cycle, after the per-report step loop, by
   // gather_wtd_to_all -- not here per solve (see benchmark/DISTRIBUTED_ARP_DESIGN.md).
