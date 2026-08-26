@@ -59,6 +59,25 @@ individual changes are verified with targeted checks.
 
 ### Fixed
 
+- **The runoff-ratio share was routed by solve count, not by elapsed time.** It was handed to
+  FillSpillMerge at full *nominal* step size on every accepted sub-step and never scaled, so under
+  adaptive `dt` or Newton continuation the model routed the wrong amount of water — a **mass** error,
+  not a reporting one. Measured at `runoff_ratio 0.3`: 1.36148e10 over 20 solves (fixed `dt`) against
+  9.53038e09 over 14 (adaptive), a ratio of 0.700 against a solve-count ratio of 0.700, producing a
+  **6.6 % divergence in stored volume** against 0.16 % with the channel off. Fixed by making the routed
+  channel *lazy* like the direct one: the nominal depth is held, and both delivery and booking happen
+  at the handoff scaled by the accepted step's `dt`. Column 20 is now exactly invariant to solve count
+  (0.000e+00) and the stored-volume spread falls to 7.293e-04. Fixed-`dt` runs are unaffected (the
+  scale is exactly 1; goldens unchanged).
+- **Neither post-solve collector closed the exact budget.** `explicit` and `legacy` reported residuals
+  of 8 to 9.3 *times* recharge, on every solver, because `accumulate_budget_terms` read the storage
+  from the **pre-clamp** `w^{n+1}` while the commit loop stored the post-clamp value — so the budget
+  described a state the model does not carry forward, and the residual came out at exactly
+  `−total_surface_removed`. No water was ever lost; this was a defect in the conservation *check*. It
+  mattered because `explicit` is what **Picard** resolves to when the collection method is unset.
+  Correcting the storage term to the committed state closes all four:
+  explicit −9.165e+00 → −1.670e-07 (Anderson), −9.331e+00 → −3.328e-10 (Picard); legacy −7.998e+00 →
+  −8.461e-08 and −8.865e+00 → −3.289e-10. Every collector that already closed is unchanged.
 - **The water budget's "water in" term counted only one of the two input channels.**
   Precipitation-less-evaporation is split by the runoff ratio the moment it is computed
   (`runoff = rratio*rech_dist; rech_dist -= runoff`), and `total_recharge_added` summed only what was

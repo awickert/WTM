@@ -206,14 +206,26 @@ Column 19 is accumulated **per sub-step and scaled by `rech_dt_scale`**, so a su
 the cycle total once rather than once per sub-step. Without that scaling column 9 tracked the *solve
 count* instead of elapsed time (2.55× inflation under adaptive dt).
 
-**KNOWN DEFECT that column 20 exposes.** The routed channel is *delivered* to FillSpillMerge at full
-nominal-step size on every accepted sub-step, and never scaled by `rech_dt_scale`. So under
-sub-stepping the model routes an amount proportional to the solve count rather than to elapsed time —
-a mass error, not merely a reporting one. Measured on `tests/fsm_consistency`: at `rr=0.3`, column 20
-is 1.36148e10 over 20 solves (fixed dt) against 9.53038e09 over 14 (adaptive), a ratio of 0.700
-against a solve-count ratio of 0.700. The storage divergence between adaptive and fixed is 6.6% with
-the routed channel on, against 0.16% with it off. Not fixed here: the repair has real design choices
-(the next step's `dt` is not final when the recharge is prepared), and it changes results.
+**RESOLVED (2026-08-26): the routed channel is now scaled by elapsed time.** It used to be *delivered*
+to FillSpillMerge at full nominal-step size on every accepted sub-step and never scaled, so under
+sub-stepping the model routed an amount proportional to the SOLVE COUNT — a mass error, not a
+reporting one. Measured at `rr=0.3`: 1.36148e10 over 20 solves (fixed `dt`) against 9.53038e09 over 14
+(adaptive), a ratio of 0.700 against a solve-count ratio of 0.700, and a 6.6 % divergence in
+`stored_volume` against 0.16 % with the channel off.
+
+The fix makes the routed channel **lazy**, like the direct one. The direct share survives sub-stepping
+because `rech_dist` holds a nominal depth scaled at the point of *use*, when `dt` is final; the routed
+share was baked and consumed eagerly, before the step it would be routed over had been chosen. So
+`runoff_dist` (and `arp.runoff_nominal` on the serial path) now hold the nominal depth, and both the
+delivery *and* the column-20 booking happen at the handoff, scaled by `dt_committed` — the `dt` of the
+step that was accepted. Scaling at preparation would still be wrong: the loop can clamp `dt` to the
+cycle remainder afterwards, and a rejected step re-runs smaller.
+
+Result: column 20 is now **exactly invariant** to solve count (0.000e+00), and `stored_volume`'s
+fixed-vs-adaptive spread at `rr=0.3` falls to 7.293e-04 — below the `rr=0` control. One deliberate
+change at fixed `dt`: the final step's prepared runoff is no longer booked, because it is never
+delivered, so column 20 counts N−1 handoffs rather than N preparations. `tests/dt_invariance` gates
+this.
 
 ### Two definitions of "recharge", and which one this uses
 
