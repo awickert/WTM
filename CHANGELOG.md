@@ -55,6 +55,17 @@ individual changes are verified with targeted checks.
 
 ### Fixed
 
+- **Adaptive `dt` sized the next step before the current one had been accounted.** The controller
+  wrote its newly-sized `dt` straight into `user_context.deltat`, but five consumers downstream are
+  still accounting the step just *taken* and read it as that step's: the BDF2 history ratio
+  `ω = Δt/Δt_{n-1}`, the taper-1 sink and taper-2/3 evaporation removal depths, the land→ocean flux
+  accumulation, and TR-BDF2's step-flux quadrature. Exact residual as a fraction of recharge:
+  **−1.603 → −2.100e-07** for TR-BDF2 + adaptive and **−0.417 → −8.139e-08** for BDF2-on-V +
+  adaptive, the former now identical to its fixed-`dt` value to the last digit. Sizing is now the
+  last thing `update()` does; the reject path is unchanged, since it returns before any accounting
+  runs. This is not only a diagnostic fix — `bdf2_prev_dt` feeds the BDF2 time ratio, so
+  adaptive + BDF2 *results* move. Nothing had ever checked the water budget under adaptive `dt`,
+  which is how it survived; `tests/budget_closure` now carries an adaptive arm per integrator.
 - **TR-BDF2 was losing water through the active-set exfiltration transfer.** The multiplier the
   constraint hands to FillSpillMerge was read off whichever residual evaluation ran last, which under
   a two-stage scheme is stage 2. Stage 2 carries only `C3 = 29.29%` of the step and knows nothing of
