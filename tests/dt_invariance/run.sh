@@ -14,8 +14,10 @@
 #     step's accounting had consumed it, so five accumulators read the wrong dt (f84126b);
 #   * column 9 booked the UNSCALED rech_dist, so it tracked the solve count rather than elapsed time
 #     (d42d844);
-#   * the runoff-ratio channel is DELIVERED to FillSpillMerge at nominal-step size on every accepted
-#     sub-step, so the model routes water in proportion to solve count -- a MASS error (open, task #15).
+#   * the runoff-ratio channel was DELIVERED to FillSpillMerge at nominal-step size on every accepted
+#     sub-step, so the model routed water in proportion to solve count -- a MASS error, not a reporting
+#     one (task #15). Carried here as an `xfail` with a guard until fixed; the guard is what reported
+#     the fix. Both runoff_ratio blocks are now full invariance checks.
 # Each showed up as a column tracking solves instead of time. This test is the general gate: it does
 # not know about any particular bug, only about the invariant.
 #
@@ -24,10 +26,6 @@
 # column is then invariant; a solve-count-proportional one moves by the ratio of the counts. Two
 # tolerances, both measured rather than invented (see the tables below): pure INPUT channels are
 # exactly invariant, while trajectory-dependent columns carry ordinary truncation error.
-#
-# NOTE ON THE `xfail` MARKER: deliberately lowercase. Auditing a suite log for the string "FAIL" is how
-# we catch assertions that silently cannot fail the suite, so an expected-failure marker must not
-# collide with it.
 #
 # Usage:  tests/dt_invariance/run.sh [path/to/wtm.x]
 set -uo pipefail
@@ -143,48 +141,21 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
 
     # INPUT channels: driven by the forcing and elapsed time, so exactly invariant on this fixture.
     for idx, name in INPUTS:
-        vals = [r[idx] for r in rows]
-        if p == "r" and idx in (19, 8):
-            continue  # handled as the known defect below
-        s = spread(vals)
+        s = spread([r[idx] for r in rows])
         ok = s < TOL_INPUT
         fail |= not ok
         print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread {s:.3e}  (tol {TOL_INPUT:.0e})")
 
     # col 9 must be exactly the sum of the two channels, in every arm.
-    ok = all(abs(r[8] - (r[18] + r[19])) <= 1e-6 * max(1.0, abs(r[8])) for r in rows)
+    ok = all(abs(r[8] - (r[18] + r[19])) <= 1e-11 * max(1.0, abs(r[8])) for r in rows)
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20 in every arm")
 
-    if p == "z":
-        for idx, name in TRAJ:
-            s = spread([r[idx] for r in rows])
-            ok = s < TOL_TRAJ
-            fail |= not ok
-            print(f"  {'PASS' if ok else 'FAIL'}  TRAJ    {name:<26} spread {s:.3e}  (tol {TOL_TRAJ:.0e})")
-    else:
-        # KNOWN DEFECT (task #15): the runoff-ratio share is DELIVERED to FillSpillMerge at full
-        # nominal-step size on every accepted sub-step and never scaled by rech_dt_scale, so the model
-        # routes water in proportion to the solve count. That is a mass error, and it contaminates
-        # every downstream column here -- so those are reported, not gated, until it is fixed.
-        s20 = spread([r[19] for r in rows])
-        print(f"  xfail   20 runoff_to_surface       spread {s20:.3e}  -- KNOWN DEFECT, task #15")
-        for idx, name in TRAJ + [(8, "9 total_recharge_added")]:
-            print(f"  (info)  {name:<26} spread {spread([r[idx] for r in rows]):.3e}  "
-                  f"-- downstream of #15")
-        # GUARD: assert the defect is STILL THERE. If this fails, #15 has been fixed and this whole
-        # block must be promoted to a real invariance check -- an xfail that silently starts passing
-        # is how a fixed bug loses its regression test.
-        ratio = [r[19] / rows[0][19] for r in rows]
-        srat  = [s / solves[0] for s in solves]
-        tracks = max(abs(a - b) for a, b in zip(ratio, srat)) < 5e-2
-        ok = s20 > 5e-2 and tracks
+    for idx, name in TRAJ:
+        s = spread([r[idx] for r in rows])
+        ok = s < TOL_TRAJ
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  GUARD   col 20 still tracks the solve count "
-              f"(col20 ratios {[round(x,3) for x in ratio]} vs solve ratios {[round(x,3) for x in srat]})")
-        if not ok:
-            print("        -> #15 appears FIXED. Promote this block to a real invariance check and "
-                  "delete the guard.")
+        print(f"  {'PASS' if ok else 'FAIL'}  TRAJ    {name:<26} spread {s:.3e}  (tol {TOL_TRAJ:.0e})")
     print()
 
 print("DT INVARIANCE: " + ("ALL PASSED" if not fail else "FAILED"))
