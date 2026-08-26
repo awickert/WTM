@@ -45,7 +45,9 @@ The reported quantities fall in two groups, kept separate on purpose:
 
 | quantity | column | kind | definition |
 |---|---|---|---|
-| `total_recharge_added` | 9 | **physical** | water delivered, `Sum r_{dist}\cdot A` (precip−ET as a depth) |
+| `total_recharge_added` | 9 | **physical** | TOTAL external water in = col 19 + col 20 (precip−ET as a depth) |
+| `recharge_direct` | 19 | **physical** | the `(1−runoff_ratio)` share, straight into the aquifer as the step's source |
+| `runoff_to_surface` | 20 | **physical** | the `runoff_ratio` share, diverted to the surface for FillSpillMerge to route |
 | `total_ocean_outflow` | 13 | **physical** | direct Darcy flux across land→ocean faces, `Sum e\,\tfrac{\Delta t}{(\text{cell})^2} h\, A` |
 | `total_surface_removed` | 12 | **physical** | sub-surface sink removal, `Sum \Delta t\, Q(w^{n+1})\, A` |
 | `stored_volume` | 14 | **physical** | exact stored water, `Sum storedVolume(w)\cdot A` |
@@ -173,13 +175,53 @@ With all three terms weighted, column 17 closes at 2.2e-8 of recharge under TR-B
 backward Euler's 3.1e-8, and is tolerance-limited (1.7e-8 per cycle at `-snes_stol 1e-8`).
 `tests/budget_closure` holds both plain TR-BDF2 and TR-BDF2 + active-set to that standard.
 
+### The two input CHANNELS (columns 19 and 20)
+
+Precipitation-less-evaporation is split by the runoff ratio the moment it is computed, in
+`WTM.cpp`'s `distributed_recharge` (and its serial rank-0 twin):
+
+```cpp
+const double runoff = rratio_f * dmdapack.rech_dist[j][i];
+dmdapack.runoff_dist[j][i] = runoff;   // -> FillSpillMerge      (column 20)
+dmdapack.rech_dist[j][i] -= runoff;    // -> the step's source   (column 19)
+```
+
+Both halves are external water entering the domain; they differ only in *route*. Column 9 used to
+sum the direct half alone, so the routed share was missing from the budget's "water in" while the
+lakes FSM builds from it were present in `stored_volume` — which is why `budget_residual` could not
+close with `runoff_ratio > 0`. Measured: col 9 scaled as exactly `(1 − runoff_ratio)` (2.43225e10 at
+`rr=0.3` against 3.47464e10 at `rr=0`, ratio 0.700000).
+
+Two things to know when reading the pair:
+
+- **`col20/col19` is *not* `rr/(1−rr)`.** The runoff share is taken only where `rech_dist > 0`, while
+  the direct channel also carries the *negative* (net-evaporation) cells and is clipped at the land
+  surface.
+- **The totals legitimately move with `runoff_ratio`**, because `rech_dist` is state-dependent: a
+  wetter table puts more cells on the `(precip − open_water_evap)` branch, and open-water evaporation
+  can exceed precipitation. This is the evaporation model, not an accounting error. Verified at
+  `runoff_ratio = 1.0`, where column 19 is exactly 0 and the whole input lands in column 20.
+
+Column 19 is accumulated **per sub-step and scaled by `rech_dt_scale`**, so a sub-stepped cycle books
+the cycle total once rather than once per sub-step. Without that scaling column 9 tracked the *solve
+count* instead of elapsed time (2.55× inflation under adaptive dt).
+
+**KNOWN DEFECT that column 20 exposes.** The routed channel is *delivered* to FillSpillMerge at full
+nominal-step size on every accepted sub-step, and never scaled by `rech_dt_scale`. So under
+sub-stepping the model routes an amount proportional to the solve count rather than to elapsed time —
+a mass error, not merely a reporting one. Measured on `tests/fsm_consistency`: at `rr=0.3`, column 20
+is 1.36148e10 over 20 solves (fixed dt) against 9.53038e09 over 14 (adaptive), a ratio of 0.700
+against a solve-count ratio of 0.700. The storage divergence between adaptive and fixed is 6.6% with
+the routed channel on, against 0.16% with it off. Not fixed here: the repair has real design choices
+(the next step's `dt` is not final when the recharge is prepared), and it changes results.
+
 ### Two definitions of "recharge", and which one this uses
 
 There are two accumulators, and they mean different things:
 
 | accumulator | sums | meaning |
 |---|---|---|
-| `total_added_recharge` (col 9) | `rech_dist` | **external** water entering the domain (precipitation, less the runoff-ratio share) |
+| `total_recharge_added` (col 9) | `rech_dist`·`rech_dt_scale` + `runoff_dist` | **external** water entering the domain, BOTH channels (cols 19 + 20) |
 | `total_solver_recharge` (col 17's input) | `rech_vec`, the source term the residual actually integrates | **everything the scheme treats as an input during the step** |
 
 They agree whenever all input arrives as precipitation. They diverge under
@@ -258,7 +300,11 @@ fix.
 
 `... total_recharge_added(9) total_loss_to_ocean(10) sum_of_water_tables(11) total_surface_removed(12)
 total_ocean_outflow(13) stored_volume(14) ocean_loss_closing(15) budget_residual(16)
-exact_budget_residual(17)`
+exact_budget_residual(17) total_evap_removed(18) recharge_direct(19) runoff_to_surface(20)`
+
+**Columns 19 and 20 are APPENDED, never inserted.** Three test scripts (`tests/budget_closure`,
+`tests/fsm_cascade`, `tests/fsm_conservation`) parse this file positionally, so every existing index
+must stay put.
 
 `sum_of_water_tables` (11) is the legacy stored-water proxy (`Sum w\cdot\phi\cdot A` below the surface,
 `Sum w\cdot A` above); `stored_volume` (14) is the exact `Sum storedVolume(w)\cdot A` used for the
