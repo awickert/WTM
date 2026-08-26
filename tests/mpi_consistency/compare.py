@@ -57,8 +57,20 @@ WTD_TOL = 1e-6         # metres; above FP reduction noise, below any real error
 #           and 24.5833057561 both print as "24.5833". Pre-existing and not introduced -- the digits
 #           prove it. The converged water table itself stays within WTD_TOL, so the ANSWER is
 #           consistent across decompositions; it is these gross-flux diagnostics that are sensitive.
+#   STORED    stored_volume gets its own tolerance between the two. On a groundwater-only fixture it
+#           behaves like a STATE sum (worst 8.434e-11), but with FSM ON it includes LAKE volume, which
+#           is set by the same discrete routing decisions as the DISCRETE class -- so it inherits some
+#           of that sensitivity without the full magnitude. Measured on tests/fsm_consistency at n=6:
+#           792225587.445 vs 792225585.638, rel 2.281e-09 (1.8 m^3 out of 7.92e8). n=2, n=4 and n=8 all
+#           agree, so it is decomposition-dependent noise rather than anything systematic.
+#
+#           PRE-EXISTING, and demonstrated rather than assumed: the session-start binary (2e1e2ed),
+#           rebuilt with the same 12-digit output, produces those two values IDENTICALLY to the digit.
+#           At the original 6 significant figures both printed as 792226000.000000, which is why no
+#           rank sweep had ever shown it.
 DIAG_RTOL_EXACT    = 1e-12
 DIAG_RTOL_STATE    = 1e-9
+DIAG_RTOL_STORED   = 1e-8
 DIAG_RTOL_DISCRETE = 1e-2
 
 # (0-indexed column, name, tolerance). See benchmark/WATER_BUDGET.md for the column list.
@@ -67,7 +79,7 @@ DIAG_COLS = [
     (18, "recharge_direct",       DIAG_RTOL_EXACT),
     (19, "runoff_to_surface",     DIAG_RTOL_EXACT),
     (12, "total_ocean_outflow",   DIAG_RTOL_STATE),
-    (13, "stored_volume",         DIAG_RTOL_STATE),
+    (13, "stored_volume",         DIAG_RTOL_STORED),
     (17, "total_evap_removed",    DIAG_RTOL_STATE),
     (11, "total_surface_removed", DIAG_RTOL_DISCRETE),
     (9,  "total_loss_to_ocean",   DIAG_RTOL_DISCRETE),
