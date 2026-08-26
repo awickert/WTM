@@ -244,15 +244,32 @@ echo
 # budget coverage at all. Measured on this fixture (residual / recharge):
 #     active_set -3.744e-07 | implicit 4.197e-09 | off -1.753e-07   <- close
 #     explicit   -9.165e+00 | legacy   -7.998e+00                   <- do NOT close
-# Both failures are POST-SOLVE removals: the water leaves after the residual has been driven to zero,
-# so it is subtracted from an identity whose storage term was read before it left. That is task #12,
-# and `legacy` shares it -- the defect is broader than the `explicit` collector alone.
+# FIXED (task #12). Both failures were POST-SOLVE removals: the water leaves after the residual has
+# been driven to zero, so it was subtracted from an identity whose storage term had been read from the
+# PRE-clamp state -- a state the model does not carry forward. Correcting the storage term to the
+# COMMITTED state closes all four, with every already-closing collector UNCHANGED:
+#     explicit  -9.165e+00 -> -1.670e-07 (Anderson)   -9.331e+00 -> -3.328e-10 (Picard)
+#     legacy    -7.998e+00 -> -8.461e-08 (Anderson)   -8.865e+00 -> -3.289e-10 (Picard)
+# These were xfail_broken arms until then, and the guards are what reported the fix
+# ("NOW CLOSES: promote to check()").
 echo "-- collector sweep (conservation must not depend on the enforcement) --"
 COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as  -wtm_anderson
 COLL=implicit                check "Anderson x implicit"        c_im  -wtm_anderson
 COLL=off                     check "Anderson x off"             c_off -wtm_anderson
-COLL=explicit xfail_broken   "Anderson x explicit"  c_ex  1.0    -wtm_anderson
-COLL=legacy   xfail_broken   "Anderson x legacy"    c_lg  1.0    -wtm_anderson
+COLL=explicit                check "Anderson x explicit"        c_ex  -wtm_anderson
+# `legacy` on Anderson keeps the band sink AND the clamp, and its per-cycle residual is
+# TOLERANCE-LIMITED rather than defective -- the same signature as the active-set arm above. Verified
+# by scaling the solve on this fixture:
+#     snes_stol   cumulative   worst-per-cycle
+#     1e-8         8.461e-08     2.039e-06     <- what this suite runs
+#     1e-10        4.847e-10     1.767e-08
+#     1e-12        4.847e-10     1.767e-08     <- floors; the tolerance stops binding
+# It tracks snes_stol and then floors, which is what a tolerance-limited quantity does and what a
+# conservation defect does not. Per-ARM tolerance rather than a tighter snes_stol, so this arm's
+# numbers stay comparable with the others.
+COLL=legacy   ARM_TOL=1e-5   check "Anderson x legacy [loose tol, see note]" c_lg -wtm_anderson
+COLL=explicit                check "Picard x explicit"          c_pex -wtm_picard -wtm_bdf2_on_V
+COLL=legacy                  check "Picard x legacy"            c_plg -wtm_picard -wtm_bdf2_on_V
 echo
 # EACH SOLVER AT ITS OWN RESOLVED DEFAULT. Every other arm in this file names its collector explicitly,
 # which is right for discrimination but means the DEFAULT-RESOLUTION path itself was never exercised --
@@ -261,7 +278,7 @@ echo
 #     Anderson unset -> active_set     Newton unset -> active_set     Picard unset -> explicit
 # Newton resolves to active_set because it now carries the matching semismooth tangent; only the Picard
 # operator lacks the pin. So the configuration PICARD actually runs in production had no budget
-# coverage at all, and it does not close.
+# coverage at all -- and it did not close until task #12 was fixed.
 #
 # The resolution itself is asserted from the log, not inferred from the residual: two collectors could
 # coincidentally give similar residuals, and this test's whole point is knowing WHICH one ran.
@@ -270,7 +287,7 @@ echo
 echo "-- each solver at its OWN resolved default (collector key UNSET) --"
 COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and -wtm_anderson
 COLL="" ARM_TOL=1e-5 check "Newton, unset -> active_set"         d_ntu -wtm_newton -wtm_dt_continuation
-COLL=""              xfail_broken "Picard, unset -> explicit"    d_pic 1.0 -wtm_picard -wtm_bdf2_on_V
+COLL=""              check "Picard, unset -> explicit"           d_pic -wtm_picard -wtm_bdf2_on_V
 COLL=implicit        check "Newton + continuation x implicit"    d_nt  -wtm_newton -wtm_dt_continuation
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
 # other two must NOT print it, or they have silently stopped testing the active-set default.
