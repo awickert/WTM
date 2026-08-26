@@ -50,6 +50,11 @@ struct ArrayPack {
   d2d infiltration_array;
   d2d rech;
   d2d runoff;
+  // SERIAL (rank-0) recharge path only: the runoff-ratio share held at NOMINAL step size, handed to
+  // FillSpillMerge at the top of the next coupling call scaled by the dt that step actually took. The
+  // distributed path keeps the equivalent in dmdapack.runoff_dist. Kept separate from `runoff` because
+  // that carrier is additive and already mixes contributors that are true depths.
+  d2d runoff_nominal;
   d2d transmissivity;
 
   // arrays recording various states of water table depth:

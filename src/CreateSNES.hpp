@@ -244,6 +244,12 @@ struct AppCtx {
   // evaluated at the old state. starting_wtd cannot be used directly: it stores 0 at ocean cells as a
   // MARKER rather than as a head. Lazily allocated under TR-BDF2 only.
   Vec  tr_head_old     = nullptr;
+  // The dt of the last ACCEPTED step. user_context.deltat is advanced to the NEXT step's size at the
+  // end of update(), so anything that runs after the solve and needs to know how long the step it is
+  // accounting for actually lasted must read THIS, not deltat. Currently that is the runoff-ratio
+  // handoff to FillSpillMerge, which happens in couple_surface_and_recharge -- outside update()
+  // entirely. Equal to params.deltat on every fixed-dt path.
+  double dt_committed  = 0.0;
 
   // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
@@ -303,6 +309,7 @@ struct AppCtx {
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
     VecDuplicate(x, &runoff_dist_vec);
+    VecSet(runoff_dist_vec, 0.0);  // read before the first distributed_recharge fills it
     VecDuplicate(x, &sink_removed_dist_vec);
     VecDuplicate(x, &exfiltration_vec);
     VecSet(exfiltration_vec, 0.0);

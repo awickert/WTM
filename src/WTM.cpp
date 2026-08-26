@@ -196,10 +196,9 @@ static void distributed_recharge(Parameters& params, ArrayPack& arp, AppCtx& use
   // Taper 2: when the smooth ET->open-water transition is on, evaporation is the implicit E_eff in
   // the solve, so the explicit recharge here is just the precip source (runoff still partitions it).
   const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
-  double     runoff_in_owned = 0.0;  // routed input channel, this rank's owned cells
 #pragma omp parallel for default(none) \
     shared(arp, params, dmdapack, precip, evap, open_water_evap, runoff_ratio, xs, ys, xm, ym, evap_taper) \
-    reduction(+ : runoff_in_owned) collapse(2)
+    collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
       // The DMDA vecs hold double(float) values scattered from the (float) arp
@@ -241,17 +240,13 @@ static void distributed_recharge(Parameters& params, ArrayPack& arp, AppCtx& use
         const double runoff        = rratio_f * dmdapack.rech_dist[j][i];
         dmdapack.runoff_dist[j][i] = runoff;
         dmdapack.rech_dist[j][i] -= runoff;
-        // Book the SURFACE-routed input channel where it is created. This is external water entering
-        // the domain exactly as much as the direct share is; it simply arrives via FillSpillMerge
-        // instead of as the step's source term. Counting only the direct share (which is what
-        // total_added_recharge did) left the routed water uncounted as an input while the lakes FSM
-        // builds from it still showed up in stored_volume. Owned cells only -> per-rank partial.
-        runoff_in_owned += runoff * arp.cell_area[j];
+        // NOT booked here. runoff_dist holds the NOMINAL depth; both the DELIVERY to FillSpillMerge and
+        // the col-20 booking happen together at the handoff (gather_runoff_to_zero), scaled by the dt
+        // the step actually took. Booking at preparation and delivering at the handoff would let the
+        // diagnostic and the physics disagree.
       }
     }
   }
-
-  arp.total_runoff_to_surface += runoff_in_owned;
 
   DMDAVecRestoreArray(user_context.da, user_context.precip_vec, &precip);
   DMDAVecRestoreArray(user_context.da, user_context.evap_vec, &evap);
@@ -304,6 +299,38 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
                                         bool distribute_recharge, double& fsm_seconds) {
   // Assemble the full wtd on rank 0 (the intermediate solves only touch each rank's owned cells).
   FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+
+  // Hand the runoff-ratio share of (P-ET) to FillSpillMerge for the step that just ran, SCALED by the
+  // dt that step actually took. It used to be handed over at the END of the previous call, at nominal
+  // step size and never scaled -- so under sub-stepping the model routed an amount proportional to the
+  // SOLVE COUNT rather than to elapsed time. Measured on tests/fsm_consistency at runoff_ratio 0.3:
+  // 1.36148e10 over 20 solves (fixed dt) against 9.53038e09 over 14 (adaptive), a ratio of 0.700
+  // against a solve-count ratio of 0.700. That was a MASS error, not a reporting one -- adaptive and
+  // fixed diverged 6.6% in stored volume with the routed channel on, against 0.16% with it off.
+  //
+  // Scaling here rather than at preparation is what makes it exact: at preparation the next step's dt
+  // is not final (the loop can still clamp it to the cycle remainder, and a rejected step re-runs
+  // smaller), whereas dt_committed is the dt of the step that has been ACCEPTED. Placed BEFORE the
+  // exfiltration gather so the accumulation order into arp.runoff is unchanged, keeping fixed-dt runs
+  // bit-identical (dt_committed == params.deltat there, so the scale is exactly 1).
+  if (params.fsm_on && params.runoff_ratio_on) {
+    const double dt_scale = (params.deltat > 0.0 && user_context.dt_committed > 0.0)
+                              ? user_context.dt_committed / params.deltat
+                              : 1.0;
+    if (distribute_recharge) {
+      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack, dt_scale);
+    } else if (mpi_rank == 0) {
+      // Serial rank-0 recharge path: same handoff, same scale, from arp.runoff_nominal instead of the
+      // distributed carrier. Rank 0 holds the whole grid and every other rank contributes 0, so the
+      // Allreduce in PrintValues still yields the correct global total for col 20.
+      for (int j = 0; j < params.ncells_y; j++)
+        for (int i = 0; i < params.ncells_x; i++) {
+          const double routed = arp.runoff_nominal(i, j) * dt_scale;
+          arp.runoff(i, j) += routed;
+          arp.total_runoff_to_surface += routed * arp.cell_area[j];
+        }
+    }
+  }
 
   // -wtm_fsm_delta_source (FSM-delta-source): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
   // row-major (matching arp.wtd.data()). Populated below in the FSM block; injected into rech_dist further down.
@@ -361,8 +388,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   MPI_Comm_rank(PETSC_COMM_WORLD, &rech_rank);
   if (!distribute_recharge && rech_rank == 0) {
     const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
-    double     serial_runoff_in = 0.0;
-#pragma omp parallel for default(none) shared(arp, params, evap_taper) reduction(+ : serial_runoff_in)
+#pragma omp parallel for default(none) shared(arp, params, evap_taper)
     for (unsigned int i = 0; i < arp.topo.size(); i++) {
       if (evap_taper) {
         arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
@@ -376,16 +402,13 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       }
       if (arp.rech(i) > 0) {
         const double rr = arp.runoff_ratio(i) * arp.rech(i);
-        arp.runoff(i) += rr;   // additive onto the zeroed carrier (approach B)
         arp.rech(i) -= rr;
-        // Routed input channel. Rank 0 holds the whole grid on this path, and every other rank
-        // contributes 0, so the Allreduce in PrintValues still yields the correct global total.
-        richdem::Array2D<float>::xy_t rx, ry;
-        arp.topo.iToxy(i, rx, ry);
-        serial_runoff_in += rr * arp.cell_area[ry];
+        // HELD, not delivered. Same reasoning as the distributed path: this is a NOMINAL step's depth,
+        // and the dt of the step it will be routed over is not final yet. Handed to FillSpillMerge --
+        // and booked into col 20 -- at the top of the next coupling call, scaled by dt_committed.
+        arp.runoff_nominal(i) = rr;
       }
     }
-    arp.total_runoff_to_surface += serial_runoff_in;
   }
   if (distribute_recharge) {
     distributed_recharge(params, arp, user_context, dmdapack);
@@ -408,8 +431,9 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     if (fsm_delta_source)
       accumulate_into_owned(user_context, fsm_delta_r0.data(), dmdapack.rech_dist);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
-    if (params.fsm_on && params.runoff_ratio_on)
-      FanDarcyGroundwater::gather_runoff_to_zero(params, arp, user_context, dmdapack);
+    // The runoff-ratio share is NO LONGER handed over here. runoff_dist is left holding the NOMINAL
+    // depth and is gathered at the TOP of the next call, scaled by the dt that step actually took --
+    // see the note there.
   }
 }
 

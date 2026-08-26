@@ -241,6 +241,7 @@ void InitialiseTest(Parameters& params, ArrayPack& arp) {
   arp.wtd_mid = arp.wtd;
 
   arp.runoff = rd::Array2D<double>(arp.ksat, 0);
+  arp.runoff_nominal = rd::Array2D<double>(arp.ksat, 0);
 
   // This is used to see how much change occurred in infiltration
   // portion of the code. Just informational.
@@ -444,6 +445,7 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
   arp.wtd_mid = arp.wtd;
 
   arp.runoff = rd::Array2D<double>(arp.ksat, 0);
+  arp.runoff_nominal = rd::Array2D<double>(arp.ksat, 0);
 
   // These are used to see how much change occurred in infiltration
   // and updating lakes portions of the code. Just informational.

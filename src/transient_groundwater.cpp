@@ -2171,6 +2171,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // when w^n and Y_gamma were both still live (the copy-back below has since overwritten w^n).
   if (!user_context.use_tr_bdf2) accumulate_ocean_outflow(user_context, arp, user_context.x, 1.0);
 
+  // Record the dt of the step just ACCEPTED, before deltat is advanced below. Read by the
+  // runoff-ratio handoff in couple_surface_and_recharge, which runs after this and needs the interval
+  // the water actually fell over.
+  user_context.dt_committed = user_context.deltat;
+
   // -wtm_dt_adaptive: NOW size the next step. Every accumulator above has finished accounting the step
   // just taken, so user_context.deltat is free to become the next step's. See the DEFERRED note in the
   // controller block for what went wrong when this happened up there.
@@ -2215,7 +2220,15 @@ void gather_wtd_to_all(Parameters& params, ArrayPack& arp, AppCtx& user_context,
 // only when runoff_ratio_on; otherwise this contribution is simply absent. Reuses the un-held wtd_global as
 // the gather scratch (after gather_wtd_to_all has finished with it -- the two run sequentially). See
 // DISTRIBUTED_ARP_DESIGN.md (2c).
-void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+// `dt_scale` = dt_committed / params.deltat. runoff_dist holds a NOMINAL step's depth
+// (runoff_ratio * rate * params.deltat), baked when the recharge for the next step was prepared -- at
+// which point the next step's dt is not yet final under adaptive stepping. So it is scaled HERE, at
+// consumption, where the accepted dt is known: the same LAZY treatment the direct channel already gets
+// via rech_dt_scale at the rech_vec assembly. Baking the scale in early instead would be wrong twice
+// over -- the adaptive loop can still clamp dt to the cycle remainder afterwards, and a rejected step
+// re-runs at a smaller dt after the water was already sized. Exactly 1.0 on every fixed-dt path.
+void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack,
+                           double dt_scale) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
   PetscScalar** wg;
   DMDAVecGetArray(user_context.da, user_context.wtd_global, &wg);
@@ -2231,8 +2244,16 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
   MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
   if (rank == 0)
     for (int j = 0; j < params.ncells_y; j++)
-      for (int i = 0; i < params.ncells_x; i++)
-        arp.runoff(i, j) += full[j * params.ncells_x + i];
+      for (int i = 0; i < params.ncells_x; i++) {
+        const double routed = full[j * params.ncells_x + i] * dt_scale;
+        arp.runoff(i, j) += routed;
+        // Book the routed INPUT CHANNEL (col 20) HERE, where the water is actually handed over and at
+        // the same scale -- not at preparation, where the nominal amount is baked. Booking it there
+        // made the diagnostic disagree with the physics the moment the delivery was scaled. rank 0
+        // holds the whole grid, every other rank contributes 0, so the Allreduce in PrintValues still
+        // yields the correct global total.
+        arp.total_runoff_to_surface += routed * arp.cell_area[j];
+      }
 }
 
 // Whether the implicit sub-surface sink is configured this run (taper 1). Lets the cycle loop
