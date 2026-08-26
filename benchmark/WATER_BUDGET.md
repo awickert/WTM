@@ -300,7 +300,36 @@ fix.
 
 `... total_recharge_added(9) total_loss_to_ocean(10) sum_of_water_tables(11) total_surface_removed(12)
 total_ocean_outflow(13) stored_volume(14) ocean_loss_closing(15) budget_residual(16)
-exact_budget_residual(17) total_evap_removed(18) recharge_direct(19) runoff_to_surface(20)`
+exact_budget_residual(17) total_evap_removed(18) recharge_direct(19) runoff_to_surface(20)
+elapsed_time_s(21) solves_done(22) rejects_done(23)`
+
+### Columns 21–23 are the denominators, and they exist to make one invariant checkable
+
+> **No cumulative quantity may be proportional to the SOLVE COUNT. Every one must be proportional to
+> ELAPSED TIME, or be a difference of states.**
+
+Three separate bugs violated that, and each showed up as a column tracking solves rather than time.
+With `elapsed_time_s` and `solves_done` both in the file, the violation is visible by inspection —
+run the same physical problem at fixed and adaptive `dt` and compare:
+
+| arm | elapsed_yr | solves | col 9 | col 19 direct | col 20 routed |
+|---|---|---|---|---|---|
+| `rr=0` fixed | 20.00 | 20 | 3.47464e10 | 3.47464e10 | 0 |
+| `rr=0` adaptive | 20.00 | 15 | 3.47464e10 | 3.47464e10 | 0 |
+| `rr=0.3` fixed | 20.00 | 20 | 3.79373e10 | 2.43225e10 | **1.36148e10** |
+| `rr=0.3` adaptive | 20.00 | 14 | 3.38529e10 | 2.43225e10 | **9.53038e09** |
+
+Columns 9 and 19 are invariant to the solve count; column 20 tracks it (0.700 against 14/20 = 0.700).
+That is the routed-channel mass defect above, legible without a special harness.
+
+**Deliberately no derived rate columns.** A rate computed as `Δ(cumulative)/Δt` is exactly recoverable
+from what is already here, so it adds convenience but no information — and no checking power, since a
+rate derived from a wrong amount is wrong in the same proportion. Only the denominators let you test
+the amount.
+
+**Off-by-one, stated because getting it wrong corrupts every rate a reader derives:**
+`elapsed_time_s = (cycles_done + 1) × report_seconds`. `PrintValues` is called for a cycle that has
+just *completed*, and `cycles_done` is incremented after the call.
 
 **Columns 19 and 20 are APPENDED, never inserted.** Three test scripts (`tests/budget_closure`,
 `tests/fsm_cascade`, `tests/fsm_conservation`) parse this file positionally, so every existing index
