@@ -284,6 +284,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (user_context.use_dt_adaptive) {
     PetscBool dt_tol_set = PETSC_FALSE;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, &dt_tol_set);
+    PetscBool dt_trace_flag = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_trace", &dt_trace_flag);
+    user_context.dt_trace = (dt_trace_flag == PETSC_TRUE);
     // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
     // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now
     // volume-weighted (storedVolume difference; see transient_groundwater.cpp). They still measure different

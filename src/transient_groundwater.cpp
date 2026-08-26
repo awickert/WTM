@@ -2051,7 +2051,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                       ? safety * std::pow(user_context.dt_tol / est, kI) * std::pow(prev / est, kP)
                       : user_context.dtc_grow;
     factor = std::min(user_context.dtc_grow, std::max(user_context.dtc_shrink, factor));
-    if (est > reject_margin * user_context.dt_tol) {  // LARGE overshoot: reject + retry (state NOT committed)
+    // -wtm_dt_trace: report the quantity that STEERS the integration. `est` was computed on every
+    // adaptive step and reported nowhere, so nothing could tell whether it responded to dt at all --
+    // which is how a generic-branch estimator of observed order p = 0.00 survived. One machine-readable
+    // line per step. REJECTED steps are included deliberately: they are where a mis-scaled estimate does
+    // its damage (grinding dt down against an error that will not shrink), and omitting them would hide
+    // exactly the failure this exists to expose. Consumed by tests/estimator_order.
+    const bool dt_accept = !(est > reject_margin * user_context.dt_tol);
+    if (user_context.dt_trace)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d\n",
+                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0);
+    if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
       user_context.deltat = dt_now * std::min(factor, 1.0);
       return -1;
     }
