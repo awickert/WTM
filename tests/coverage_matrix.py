@@ -44,12 +44,38 @@ BY_DESIGN = {
 }
 
 
+# The COMBINATION view: the (solver, collector, integrator) triple against run_type. This is the
+# question the pairwise tables CANNOT answer -- two pairs can each be covered while their combination
+# never runs. Asked directly ("does the table verify we use every combination ... for both equilibrium
+# and transient?") the pairwise answer was no, and this is what answers it.
+TRIPLE = ("solver", "collector", "integrator")
+
+
+def combination_rows(runs):
+    """[(triple, {run_type: count})], sorted, plus the run_types actually seen anywhere."""
+    seen = collections.defaultdict(collections.Counter)
+    for r in runs:
+        if all(k in r for k in TRIPLE) and "run_type" in r:
+            seen[tuple(r[k] for k in TRIPLE)][r["run_type"]] += 1
+    rts = sorted({rt for c in seen.values() for rt in c})
+    return sorted(seen.items()), rts
+
+
+def combination_table(runs):
+    rows, rts = combination_rows(runs)
+    out = ["| " + " | ".join(TRIPLE) + " | " + " | ".join(f"`{t}`" for t in rts) + " |",
+           "|" + "---|" * (len(TRIPLE) + len(rts))]
+    for triple, counts in rows:
+        cells = [f"`{v}`" for v in triple] + [str(counts[t]) if counts[t] else "**0**" for t in rts]
+        out.append("| " + " | ".join(cells) + " |")
+    return out, rows, rts
+
 BEGIN = "<!-- COVERAGE:BEGIN -->"
 END = "<!-- COVERAGE:END -->"
 
 # The README carries a COMPACT view: the crossings a reader actually needs to judge "which
 # configurations are tested?", not all eight tables. The full detail lives in tests/COVERAGE.md.
-README_CROSSINGS = [("solver", "collector"), ("integrator", "collector"), ("run_type", "solver")]
+README_CROSSINGS = [("solver", "collector")]
 
 
 def crossing_table(runs, a, b):
@@ -86,12 +112,23 @@ def write_readme(path, runs, gaps):
              f"combination: **0** marks a combination nothing tests, `n/a` one the model refuses by "
              f"design.*")
     B.append("")
-    B.append(f"**{len(runs)} runs** across **{ntests} tests**; **{len(gaps)}** reachable combinations "
-             f"are untested. Full detail, including every crossing and the gap list, is in "
+    ctab, crows, crts = combination_table(runs)
+    both = eqonly = 0
+    if "equilibrium" in crts and "transient" in crts:
+        both = sum(1 for _, c in crows if c["equilibrium"] and c["transient"])
+        eqonly = sum(1 for _, c in crows if c["equilibrium"] and not c["transient"])
+    B.append(f"**{len(runs)} runs** across **{ntests} tests**. **{len(crows)}** distinct "
+             f"(solver, collector, integrator) combinations are exercised; of those **{both}** run in "
+             f"both equilibrium and transient and **{eqonly}** are equilibrium-only. Full detail, "
+             f"every pairwise crossing and the gap list: "
              f"[`tests/COVERAGE.md`](tests/COVERAGE.md).")
+    B.append("")
+    B.append("**Which combinations are tested, and at which run type**")
+    B.append("")
+    B += ctab
     for a, b in README_CROSSINGS:
         B.append("")
-        B.append(f"**{a} × {b}**")
+        B.append(f"**Coarser view: {a} × {b}**")
         B.append("")
         B += crossing_table(runs, a, b)
     B += ["", END]
@@ -140,8 +177,28 @@ def main():
       "by hand; re-run the suite.\n")
     w(f"Runs recorded: **{len(runs)}** across **{len({r.get('test') for r in runs})}** tests.\n")
 
+    # ---- 0. combination coverage ------------------------------------------------------------------
+    w("\n## 1. Combination coverage: every (solver, collector, integrator) against run type\n")
+    w("The pairwise tables further down CANNOT answer this: two pairs can each be covered while their "
+      "combination never runs. **0** means that combination has never been run at that run type.\n")
+    ctab, crows, crts = combination_table(runs)
+    for line in ctab:
+        w(line)
+    if "equilibrium" in crts and "transient" in crts:
+        both = [t for t, c in crows if c["equilibrium"] and c["transient"]]
+        eqonly = [t for t, c in crows if c["equilibrium"] and not c["transient"]]
+        tronly = [t for t, c in crows if c["transient"] and not c["equilibrium"]]
+        w(f"\n**{len(crows)}** distinct combinations are exercised at all. Of those, **{len(both)}** run "
+          f"in BOTH equilibrium and transient, **{len(eqonly)}** are equilibrium-only and "
+          f"**{len(tronly)}** transient-only.\n")
+        if eqonly:
+            w("Equilibrium-only, i.e. never exercised on the transient path:\n")
+            for t in eqonly:
+                w("- `" + "` x `".join(t) + "`")
+            w("")
+
     # ---- 1. what each test covers -----------------------------------------------------------------
-    w("\n## 1. What each test covers\n")
+    w("\n## 2. What each test covers\n")
     by_test = collections.defaultdict(lambda: collections.defaultdict(set))
     for r in runs:
         for a in AXES:
@@ -155,7 +212,7 @@ def main():
         w(f"| `{t}` | " + " | ".join(cells) + " |")
 
     # ---- 2. crossings -----------------------------------------------------------------------------
-    w("\n## 2. Crossings\n")
+    w("\n## 3. Pairwise crossings\n")
     w("A blank cell is a combination **no run exercises**. `by design` marks the ones WTM refuses on "
       "purpose -- those blanks are correct, not gaps.\n")
     gaps = []
@@ -184,7 +241,7 @@ def main():
             w(f"| **{x}** | " + " | ".join(row) + " |")
 
     # ---- 3. the gap list --------------------------------------------------------------------------
-    w("\n## 3. Uncovered crossings\n")
+    w("\n## 4. Uncovered pairwise crossings\n")
     if not gaps:
         w("None: every crossing above is either exercised or refused by design.\n")
     else:

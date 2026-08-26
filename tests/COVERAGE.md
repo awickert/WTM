@@ -5,7 +5,48 @@
 Runs recorded: **144** across **30** tests.
 
 
-## 1. What each test covers
+## 1. Combination coverage: every (solver, collector, integrator) against run type
+
+The pairwise tables further down CANNOT answer this: two pairs can each be covered while their combination never runs. **0** means that combination has never been run at that run type.
+
+| solver | collector | integrator | `equilibrium` | `test` | `transient` |
+|---|---|---|---|---|---|
+| `anderson` | `active_set` | `bdf2_on_V` | 1 | **0** | 4 |
+| `anderson` | `active_set` | `be_volume` | 48 | 2 | 9 |
+| `anderson` | `active_set` | `tr_bdf2` | 9 | **0** | 3 |
+| `anderson` | `explicit` | `be_secant` | 7 | **0** | **0** |
+| `anderson` | `implicit` | `be_secant` | 14 | **0** | **0** |
+| `anderson` | `implicit` | `be_volume` | 2 | **0** | **0** |
+| `anderson` | `implicit` | `tr_bdf2` | 1 | **0** | **0** |
+| `anderson` | `legacy` | `be_secant` | 20 | **0** | **0** |
+| `anderson` | `off` | `be_secant` | 7 | **0** | **0** |
+| `newton` | `active_set` | `be_volume` | 6 | **0** | 2 |
+| `newton` | `explicit` | `be_secant` | 2 | **0** | **0** |
+| `newton` | `implicit` | `be_secant` | 2 | **0** | **0** |
+| `picard` | `explicit` | `bdf2_on_V` | 2 | **0** | **0** |
+| `picard` | `explicit` | `be_secant` | 1 | **0** | **0** |
+| `picard` | `implicit` | `bdf2_on_V` | 1 | **0** | **0** |
+| `picard` | `legacy` | `bdf2_on_V` | 1 | **0** | **0** |
+
+**16** distinct combinations are exercised at all. Of those, **4** run in BOTH equilibrium and transient, **12** are equilibrium-only and **0** transient-only.
+
+Equilibrium-only, i.e. never exercised on the transient path:
+
+- `anderson` x `explicit` x `be_secant`
+- `anderson` x `implicit` x `be_secant`
+- `anderson` x `implicit` x `be_volume`
+- `anderson` x `implicit` x `tr_bdf2`
+- `anderson` x `legacy` x `be_secant`
+- `anderson` x `off` x `be_secant`
+- `newton` x `explicit` x `be_secant`
+- `newton` x `implicit` x `be_secant`
+- `picard` x `explicit` x `bdf2_on_V`
+- `picard` x `explicit` x `be_secant`
+- `picard` x `implicit` x `bdf2_on_V`
+- `picard` x `legacy` x `bdf2_on_V`
+
+
+## 2. What each test covers
 
 | test | run_type | solver | integrator | dtctl | collector | fsm | runoff_ratio | ranks |
 |---|---|---|---|---|---|---|---|---|
@@ -40,7 +81,7 @@ Runs recorded: **144** across **30** tests.
 | `taper_determinism+smooth` | equilibrium | anderson | be_secant | fixed | legacy | 0,1 | 0 | 1,4 |
 | `water-budget_closure_(schemes)` | equilibrium | anderson,newton,picard | bdf2_on_V,be_secant,be_volume,tr_bdf2 | adaptive,continuation,fixed | active_set,explicit,implicit,legacy,off | 1 | 1 | 1 |
 
-## 2. Crossings
+## 3. Pairwise crossings
 
 A blank cell is a combination **no run exercises**. `by design` marks the ones WTM refuses on purpose -- those blanks are correct, not gaps.
 
@@ -108,7 +149,7 @@ A blank cell is a combination **no run exercises**. `by design` marks the ones W
 | **0** | 3 | 3 | 105 |
 | **1** | 4 | 2 | 27 |
 
-## 3. Uncovered crossings
+## 4. Uncovered pairwise crossings
 
 **31** combinations are reachable but exercised by nothing:
 
