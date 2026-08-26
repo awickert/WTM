@@ -472,9 +472,11 @@ void update(
     if (trans_rank == 0) {
       UpdateTransientArrays(params, arp);
       // with transient runs, we have to redo the depression hierarchy every time,
-      // since the topography is changing.
-      deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
-          arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
+      // since the topography is changing. Only when FillSpillMerge will actually use it -- see the
+      // equilibrium site for why the guard matters beyond saving the work.
+      if (params.fsm_on)
+        deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
+            arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
     }
     // Re-scatter topo/fdepth (and ksat, unchanged) from rank-0 arp to the solve's
     // DMDA vectors so the groundwater solve uses the CURRENT topography this cycle.
@@ -733,7 +735,13 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
   richdem::dephier::DepressionHierarchy<float> deps;
   PetscMPIInt deps_rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &deps_rank);
-  if (deps_rank == 0) {
+  // ONLY when FillSpillMerge will use it. deps feeds nothing else -- label/final_label/flowdirs are
+  // read by FSM alone -- so building it with surface water off was wasted work on every cycle of a
+  // transient run, and worse: GetDepressionHierarchy THROWS "No OCEAN cells found" on an all-land
+  // domain, so WTM could not run a closed basin at all even with the surface-water model switched off.
+  // That is a legitimate configuration (and the only way to test the lateral flux operator's
+  // conservation in isolation -- see tests/local_ledger arm B).
+  if (deps_rank == 0 && params.fsm_on) {
     deps = dh::GetDepressionHierarchy<float, rd::Topology::D8>(
         arp.topo, arp.cell_area, arp.label, arp.final_label, arp.flowdirs);
   }
