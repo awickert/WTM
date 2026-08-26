@@ -186,6 +186,29 @@ check "TR-BDF2"                    s_tr     -wtm_anderson -wtm_tr_bdf2
 # the residual, so it carries the solve's tolerance, not a conservation defect.
 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson -wtm_tr_bdf2 -wtm_active_set
 echo
+# ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
+# it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
+# own accounting had consumed it, so the BDF2 history ratio, both taper removals, the land->ocean flux
+# and TR-BDF2's step quadrature all read the wrong dt. Measured before the fix: -1.603 of recharge for
+# TR-BDF2 + adaptive and -0.417 for BDF2-on-V + adaptive, against ~2e-07 for the same schemes at fixed
+# dt. Adaptive dt is the robustness tool for at-scale spin-up, so an unchecked budget there is exactly
+# the gap that matters. BDF2-on-V is included as well as TR-BDF2 because the defect was
+# scheme-independent -- pinning only TR-BDF2 would let it come back on the other path.
+#
+# BOTH ARMS OVERRIDE THIS FIXTURE'S `implicit` COLLECTOR, and the reason is worth stating rather than
+# looking like a convenient choice. `implicit` + adaptive dt CANNOT COMPLETE -- it aborts with
+# "adaptive dt: step failed after max retries" for BOTH TR-BDF2 and BDF2-on-V. That is pre-existing
+# (verified: a binary built at 5c2422d, before any of this work, fails identically for both), and it
+# is not a bug in the controller: the `implicit` siphon's retained head is ~linear in dt, so shrinking
+# dt MOVES the solution instead of converging it, the local-error estimate never settles, and the
+# controller correctly refuses. It is the same dt-dependence that made active_set the default. So
+# these arms run the DEFAULT collector -- which is also the combination anyone would actually use.
+echo "-- adaptive dt (controller must not resize until accounting is done) --"
+ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
+    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive
+ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
+    -wtm_anderson -wtm_bdf2_on_V -wtm_active_set -wtm_dt_adaptive
+echo
 
 if [[ $fail -eq 0 ]]; then echo "BUDGET CLOSURE: ALL PASSED"; else echo "BUDGET CLOSURE: FAILED" >&2; fi
 exit $fail
