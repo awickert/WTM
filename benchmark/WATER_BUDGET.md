@@ -264,37 +264,42 @@ now the check *measures* it.
 - **Non-invasive:** the accounting only *reads* the converged head; the golden regression is
   byte-clean.
 
-### KNOWN DEFECT: the exact budget does not close under the `explicit` collector
+### RESOLVED: the post-solve collectors now close too
 
-Uncovered while building the TR-BDF2 arms above, and **not** a TR-BDF2 problem — it is
-scheme-independent and predates that work. Varying only the collector on `tests/fsm_consistency`,
-exact residual as a fraction of recharge:
+Uncovered while building the TR-BDF2 arms, fixed 2026-08-26. It was never TR-BDF2's, and it was never
+one collector: **both** post-solve removals — `explicit` and `legacy` — broke the exact budget, on
+**every** solver.
 
-| collector | backward Euler | TR-BDF2 |
-|---|---|---|
-| `implicit` | 6.5e-09 ✓ | −2.7e-08 ✓ |
-| `explicit` | **−14.30** ✗ | **−14.29** ✗ |
-| `off` | −2.7e-07 ✓ | −8.9e-08 ✓ |
-| `active_set` | −5.8e-07 ✓ | −2.1e-07 ✓ |
+| collector | Anderson | Picard | in the residual? |
+|---|---|---|---|
+| `active_set` | −3.744e-07 | hard error | yes (semismooth pin) |
+| `implicit` | +4.197e-09 | −1.890e-10 | yes (in-residual siphon) |
+| `off` | −1.753e-07 | −3.370e-10 | n/a |
+| `explicit` | −9.165e+00 → **−1.670e-07** | −9.331e+00 → **−3.328e-10** | **no — post-solve clamp** |
+| `legacy` | −7.998e+00 → **−8.461e-08** | −8.865e+00 → **−3.289e-10** | **no — post-solve clamp** |
 
-Backward Euler and TR-BDF2 fail *identically*, which is what identifies this as the collector rather
-than the integrator. The mechanism: `explicit` is a **post-solve clamp**, so its removal is not a
-term in the residual. `accumulate_budget_terms` reads the storage from `dmdapack.x`, the *pre-clamp*
-`w^{n+1}`, while the clamped water is added to `total_surface_removed` and subtracted from the
-identity — so the residual comes out equal to `total_surface_removed` almost exactly (3.477e11
-against a residual of 3.477e11). With FSM on, the same water is returned each step and re-skimmed,
-which is why the accumulated figure reaches 14× recharge.
+**The cause was a state mismatch, not a missing term.** `accumulate_budget_terms` read the storage
+from `dmdapack.x` — the *pre-clamp* `w^{n+1}` — while the commit loop then clamped and stored the
+post-clamp value. The budget therefore described a state the model does not carry forward. Under a
+post-solve collector the residual has no removal term, so the solve satisfies
 
-This matters more than a diagnostic bug usually would, because **`explicit` is the collector the
-Picard solver resolves to by default** (active-set cannot be carried by the Picard operator), and
-`tests/budget_closure`'s Picard arm pins `runoff_collector implicit` — so no arm covers the
-configuration Picard actually runs in production. The physical budget (column 16) is unaffected: it
-correctly treats `surface_removed` as an internal groundwater→FSM transfer rather than as a sink.
+```math
+\Delta V_{\text{pre}} = \text{solver\_recharge} - \text{ocean} - \text{evap}
+```
 
-Not fixed here: the repair is a decision about what the exact identity should mean when a removal
-happens outside the residual (measure storage post-clamp, or stop subtracting a post-solve transfer),
-and that is its own change with its own blast radius rather than something to tow behind a TR-BDF2
-fix.
+and the reported residual came out at exactly `−total_surface_removed`. With FSM on, the same water is
+returned and re-skimmed every step, so what accumulated was a **gross** flux — which is why the
+magnitude exceeded 1 rather than being a small percentage. Substituting the committed state,
+`ΔV_post = ΔV_pre − excess_depth`, closes the identity algebraically and in practice.
+
+**No water was ever lost.** `excess_depth` is handed to FillSpillMerge on the line above, so this was
+a defect in the conservation *check*, not in conservation. It mattered because `explicit` is what the
+**Picard** solver resolves to when the collection method is unset — so the budget was unusable in
+Picard's default production configuration.
+
+Every collector that already closed is unchanged to the digit, which is what makes the correction
+surgical. `tests/budget_closure` now covers all five collectors on both solvers, plus each solver at
+its own resolved default.
 
 ## 6. Reported columns (textfile)
 
