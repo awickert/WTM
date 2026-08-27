@@ -339,6 +339,29 @@ when recharge pushes cells up to the surface** (drainage, which is order 2, move
 from the surface and rarely lingers there). **Consequence:** this is NOT fixed by switching off
 `evap_mode 0` — FSM production hits the same kinks wherever the water table reaches the surface (wet
 regions/depressions). Scope limiter: deep/dry cells stay 2nd order. Next: clean re-test of whether
+
+> **⚠️ SUPERSEDED IN PART, 2026-08-26 — the "*both* surface treatments lose the order" half of this no
+> longer holds, and `evap_mode` can no longer express the experiment.**
+>
+> `evap_mode` is retired: the member is frozen at 0, `tests/emit_config.sh` **drops** the key, and it is
+> consulted only with `-wtm_evap_taper` off. `evap_mode 1` is therefore unreachable from a config, and
+> the two arms above had been emitting **byte-identical** configs — so the agreement that licensed
+> "not the removal" was a duplicate run, not a second measurement. The arm is now expressed with the
+> collector (`runoff_collector off` = nothing removes above-surface water), which reproduces the same
+> physical state: water piles to **+8.17 m**, against the **+8.15 m** recorded above.
+>
+> At that same state the order is now **2.05 / 1.97 / 1.93** (0.001313 mm at Δt = 1 yr) — **second**
+> order, where 2026-07 measured ~1 and 2× worse. Removal (arm B) still gives ~1
+> (1.11 / 0.98 / 0.93). So on today's code the order loss tracks **removal holding cells at wtd = 0**,
+> not crossing per se: a cell that rises past the surface and keeps going costs nothing; a cell pinned
+> *at* the boundary costs the order.
+>
+> Cause of the change **not established**. Leading candidate is `777326d` (2026-08-14, volume-based
+> recharge), which fixed surface-crossing recharge being re-scaled inconsistently by each scheme's
+> storativity — the same cells this arm is about. Verifying that is a bisect, not an assertion.
+>
+> What is unaffected: arms A, B, D and E still reproduce (2.07/2.01/2.00, ~1, ~1, and
+> 2.07/2.01/2.00 respectively), and §15's extended-soil result stands — see the 2026-08-26 note there.
 smoothing the wtd=0 kinks restores the order (D3 was contaminated).
 
 ## 15. RESOLVED — it is a FREE BOUNDARY, and extended-soil fixes it

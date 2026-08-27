@@ -17,11 +17,18 @@ The story, one experiment per section (order = self-convergence vs a dt=0.25 yr 
      is only 1st-order integrated" hypothesis (which was a stale-work-dir
      artifact; see the design note, section 13).
 
-  B. CROSSING, evap_mode 0 (surface water removed): order ~1. Same IC, same
+  B. CROSSING, surface water REMOVED (default collector): order ~1. Same IC, same
      solver -- only the recharge is now large enough to push cells up to wtd=0.
-  C. CROSSING, evap_mode 1 (surface water accumulates): order ~1. => The order
-     loss is NOT specific to how surface water is disposed of; both disposal
-     modes are 1st order. What they share is a cell sitting at the free boundary.
+  C. CROSSING, surface water NOT removed (collector off): order ~2 TODAY, and this
+     is a CHANGE. In 2026-07 the equivalent arm (evap_mode 1, water piling to
+     +8.15 m) measured order ~1, and B-and-C-agree is what licensed the design
+     note's claim that the order loss is not specific to how surface water is
+     disposed of. It is now measured at +8.17 m -- the same state -- and order
+     2.05/1.97/1.93. So the loss tracks REMOVAL holding cells at wtd=0, not
+     crossing per se. (evap_mode itself is retired: frozen at 0, dropped by the
+     config shim, unreachable -- B and C were emitting identical configs, so the
+     agreement they showed was a duplicate rather than a result.) Cause of the
+     change not established; leading candidate is 777326d, volume-based recharge.
 
   D. CROSSING + surface-kink smoothing: order ~1 (no help). Rounding the two C0
      coefficient kinks at the surface (ksat and storativity) does not restore
@@ -83,13 +90,14 @@ def set_precip(P):
 EMIT = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "emit_config.sh")
 
 
-def run(dt_yr, tag, supplied_wt, evap_mode, extra):
+def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
     steps = int(round(T / dt_yr))
     cfg = os.path.join(PRIV, f"{tag}.yaml")
     # total_time, not total_cycles: with report_interval 1 the cycle count is T/dt, and the schema
     # takes the window directly. Same run, current vocabulary.
     flat = (
         f"run_type equilibrium\nfsm_on 0\nevap_mode {evap_mode}\ninfiltration_on 0\nrunoff_ratio 0\n"
+        f"{f'runoff_collector {collector}' + chr(10) if collector else ''}"
         f"cells_per_degree 10\nsouthern_edge -45\ndeltat {int(dt_yr*YEAR)}\n"
         f"total_time {T}yr\nreport_interval 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
         f"time_start t0\ntime_end t0\nsurfdatadir {INP}\nregion equil128\nsupplied_wt {supplied_wt}\n"
@@ -124,11 +132,11 @@ def run(dt_yr, tag, supplied_wt, evap_mode, extra):
     return rasterio.open(outs[-1]).read(1)
 
 
-def order_study(P, evap_mode, extra, label, note):
+def order_study(P, evap_mode, extra, label, note, collector=None):
     """One controlled order sweep: fine-dt reference then coarser dt, all identical
     but for dt. Prints mean|err| over land and the observed convergence order."""
     set_precip(P)
-    ref = run(0.25, f"rfb_ref_{label}", 1, evap_mode, extra)
+    ref = run(0.25, f"rfb_ref_{label}", 1, evap_mode, extra, collector)
     lo, hi = ref[mask].min(), ref[mask].max()
     print(f"\n=== {label}: {note} ===")
     print(f"    P={P} m/yr, evap_mode={evap_mode}, flags={' '.join(extra)}")
@@ -136,7 +144,7 @@ def order_study(P, evap_mode, extra, label, note):
     print(f"    {'dt(yr)':>7}{'mean|err|_mm':>14}{'order':>8}")
     prev = prevdt = None
     for dt in DTS:
-        f = run(dt, f"rfb_{label}_{dt}", 1, evap_mode, extra)
+        f = run(dt, f"rfb_{label}_{dt}", 1, evap_mode, extra, collector)
         m = np.abs(f - ref)[mask].mean()
         o = f"{np.log(m/prev)/np.log(dt/prevdt):.2f}" if prev else ""
         print(f"    {dt:>7}{m*1000:>14.4g}{o:>8}")
@@ -163,10 +171,26 @@ SURF_SMOOTH = ["-wtm_ksat_surface_smoothing_width", "0.5",
 order_study(0.002, 0, V, "A_no_crossing",
             "recharge ON, water table stays below the surface -> expect order ~2")
 # B/C. Recharge large enough to reach the surface -> 1st order, both disposal modes.
-order_study(0.01, 0, V, "B_crossing_evap0",
+order_study(0.01, 0, V, "B_crossing_removed",
             "cells reach the surface, surface water REMOVED -> expect order ~1")
-order_study(0.01, 1, V, "C_crossing_evap1",
-            "cells reach the surface, surface water ACCUMULATES -> expect order ~1")
+# C USED TO BE `evap_mode 1` AND IS NOW EXPRESSED WITH THE COLLECTOR. evap_mode is retired: the member
+# is frozen at 0, the config shim DROPS the key (tests/emit_config.sh), and it is consulted only with
+# -wtm_evap_taper off -- so `evap_mode 1` is unreachable and B and C were emitting BYTE-IDENTICAL
+# configs. Two runs, one datum, and a "both disposal modes agree" conclusion drawn from a duplicate.
+# The modern way to vary surface-water disposal is the collector, so C now runs with it OFF (nothing
+# removes above-surface water) against B's default (water removed).
+#
+# THIS ARM'S ANSWER HAS CHANGED SINCE 2026-07-27, and that is the point of keeping it. Section 8 of
+# BDF2_RECHARGE_ORDER.md records evap_mode 1 piling water to +8.15 m and STILL measuring order ~1,
+# which is what licensed the claim that the order loss is not specific to how surface water is
+# disposed of. Measured now: collector off piles to +8.17 m -- the same state -- and gives order
+# 2.05/1.97/1.93 at 0.001313 mm. No-removal is SECOND order today. Cause not established; the leading
+# candidate is 777326d (2026-08-14, volume-based recharge), which fixed surface-crossing recharge
+# being re-scaled inconsistently per scheme. Consequence: the free-boundary order loss now appears
+# tied to REMOVAL holding cells at wtd=0, not to crossing per se.
+order_study(0.01, 0, V, "C_crossing_not_removed",
+            "cells reach the surface, surface water ACCUMULATES -> was ~1 in 2026-07, now ~2",
+            collector="off")
 # D. Smoothing the surface coefficient kinks does not help (not a smoothable kink).
 order_study(0.01, 0, V + SURF_SMOOTH, "D_kink_smoothing",
             "round the ksat & storativity kinks at wtd=0 -> expect NO help, order ~1")
@@ -187,5 +211,6 @@ order_study(0.01, 1, V + ["-wtm_extended_soil"], "E_extended_soil",
             collector="off")
 
 set_precip(0.0)  # leave the private fixture at zero forcing
-print("\nSummary: recharge is fine (A); crossing the surface breaks order (B,C);")
-print("it is the free boundary, not a smoothable kink (D); extending the soil fixes it (E).")
+print("\nSummary: recharge is fine (A); REMOVING water at the surface breaks order (B), while")
+print("letting it accumulate no longer does (C -- was ~1 in 2026-07, now ~2); it is the free")
+print("boundary, not a smoothable kink (D); extending the soil restores order 2 (E).")
