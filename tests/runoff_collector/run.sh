@@ -4,6 +4,9 @@
 #   implicit : in-residual exfiltration (direct_to_runoff) -- pins wtd=0, dt-independent, exact (Anderson today).
 #   explicit : post-solve clamp -- robust on every solver, a dt-lagged form of the same face.
 #   off      : no collection -- above-surface water piles up (NONPHYSICAL; warns).
+#   extended_soil : also piles, but continues the AQUIFER above the surface (storativity stays porosity,
+#              T never clamps), so it removes the wtd=0 free boundary instead of leaving it unenforced.
+#              NONPHYSICAL/[WIP]. `-wtm_extended_soil` is the legacy alias that selects it.
 # On a partial-exfiltration fixture (interior driven to the surface) these are distinguishable by the peak water
 # table. Asserts, on the matrix-free Anderson path unless noted:
 #   IMPLICIT : table pinned at the surface (0 <= max wtd < 0.5 m: a exfiltration constraint, not a pile) with exfiltrating cells.
@@ -61,18 +64,31 @@ run explicit "runoff_collector explicit" ""
 run off      "runoff_collector off"      ""
 run aset     "runoff_collector active_set" ""
 run unset    ""                          ""
+# extended_soil: the mode, the legacy alias that selects it, and the supersession when a config names
+# a different method. All three are needed -- the alias and the supersession are the halves that used
+# to fail SILENTLY, with -wtm_extended_soil printing its banner while a collector quietly overrode it.
+run xsoil_mode "runoff_collector extended_soil" ""
+run xsoil_flag ""                               "-wtm_extended_soil"
+run xsoil_sup  "runoff_collector explicit"      "-wtm_extended_soil"
 # explicit on the DEFAULT Picard path (no -wtm_anderson): must converge (no tangent needed)
 emit picard "runoff_collector explicit"
 "$WTM" "$WORK/picard.yaml" -wtm_eq_tol 0 > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }
 OFFWARN=$(grep -c "WARNING \[runoff_collector=off\]" "$WORK/off.log" || true)
+# The extended-soil mode must announce itself, and the superseded run must say so rather than silently
+# dropping the request. Both are asserted: a silent override is the exact defect these arms exist for.
+XSBANNER=$(grep -c "runoff_collector=extended_soil\]: NONPHYSICAL" "$WORK/xsoil_mode.log" || true)
+XSUPWARN=$(grep -c "SUPERSEDES it" "$WORK/xsoil_sup.log" || true)
 
 IM=$(ls "$WORK"/implicit_*.tif | tail -1); EX=$(ls "$WORK"/explicit_*.tif | tail -1)
 OF=$(ls "$WORK"/off_*.tif | tail -1);      UN=$(ls "$WORK"/unset_*.tif | tail -1)
 AS=$(ls "$WORK"/aset_*.tif | tail -1)
-OFFWARN="$OFFWARN" "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" <<'PY'
+XS=$(ls "$WORK"/xsoil_mode_*.tif | tail -1); XF=$(ls "$WORK"/xsoil_flag_*.tif | tail -1)
+XP=$(ls "$WORK"/xsoil_sup_*.tif | tail -1)
+OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" XSUPWARN="$XSUPWARN" \
+  "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" "$XS" "$XF" "$XP" <<'PY'
 import sys, os, numpy as np, rasterio
-im, ex, of, un, aset = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:6]]
+im, ex, of, un, aset, xs, xf, xp = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:9]]
 def interior(a): return a[1:-1, 1:-1]
 im_mx, ex_mx, of_mx, un_mx, as_mx = (float(interior(a).max()) for a in (im, ex, of, un, aset))
 im_seep = int((interior(im) > -1e-3).sum()); ex_seep = int((interior(ex) > -1e-3).sum())
@@ -96,6 +112,31 @@ check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < 1e-6,
       f"max wtd = {un_mx:.4f} m (== active_set {as_mx:.4f} m; implicit would be {im_mx:.4f} m)")
 check("AGREE implicit vs explicit",         agree < 0.1,
       f"max|implicit - explicit| = {agree:.3e} m")
+
+# --- extended_soil: mode, alias, supersession -----------------------------------------------------
+xs_mx, xf_mx, xp_mx = (float(interior(a).max()) for a in (xs, xf, xp))
+xs_banner = int(os.environ["XSBANNER"]) > 0
+xsup_warn = int(os.environ["XSUPWARN"]) > 0
+# It piles like `off` -- but NOT identically to it, and that difference is the point. Both leave wtd<=0
+# unenforced; extended soil additionally continues the aquifer upward, so above-surface water fills
+# pore space at porosity instead of standing as free surface water, and the same water makes a
+# DIFFERENT pile. Asserting "differs from off" keeps this arm from passing on a build where
+# extended_soil silently degrades to plain `off`.
+check("EXT_SOIL mode (piles, announces, and is NOT `off`)",
+      xs_mx > 5.0 and xs_banner and abs(xs_mx - of_mx) > 1e-6,
+      f"max wtd = {xs_mx:.2f} m (off = {of_mx:.2f} m), banner printed = {xs_banner}")
+# The legacy flag must SELECT the mode when no method is configured. Before extended soil joined the
+# enumeration this silently did nothing: the unset config resolved to the default collector, whose pin
+# held wtd<=0, and the flag printed its banner while being overridden.
+check("EXT_SOIL alias (-wtm_extended_soil alone == the mode)",
+      abs(xf_mx - xs_mx) < 1e-6,
+      f"flag-alone max wtd = {xf_mx:.4f} m (== mode {xs_mx:.4f} m; default would be {un_mx:.4f} m)")
+# A configured method wins over the flag, and SAYS so. The pair is contradictory -- one disposes of
+# surface water, the other declares there is none -- so the run must match plain `explicit` exactly and
+# must not resolve it in silence.
+check("EXT_SOIL supersession (explicit wins, and warns)",
+      abs(xp_mx - ex_mx) < 1e-6 and xsup_warn,
+      f"max wtd = {xp_mx:.4e} m (== explicit {ex_mx:.4e} m), warning printed = {xsup_warn}")
 print("PASS: runoff_collector modes behave as specified" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY
