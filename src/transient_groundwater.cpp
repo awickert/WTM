@@ -1271,10 +1271,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscBool extsoil = PETSC_FALSE;  // [WIP] -wtm_extended_soil: aquifer continues above surface (smooth GW step)
   PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
   g_extended_soil = (extsoil == PETSC_TRUE);
-  if (g_extended_soil)
-    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_extended_soil]: NONPHYSICAL developer mode -- the aquifer "
-                "continues above the land surface (no free boundary, no surface water). Testing/experiments only, "
-                "not for model runs.\n");
+  // The NONPHYSICAL banner is NOT printed here. It is printed by the collection-method selector below,
+  // where the mode is actually resolved -- because this flag is only one of the two ways in, and it is
+  // not authoritative. Warning here would (a) stay silent for `collection.method: extended_soil`, which
+  // reaches the same nonphysical physics through the config and got NO warning at all, and (b) announce
+  // the mode even when the selector is about to supersede the flag and switch it off. Warn where the
+  // mode is in force, not where a request for it is parsed. tests/runoff_collector asserts both.
 
   // -wtm_dev_allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp
   // entirely, so above-surface water is left to stand as nonphysical vertical COLUMNS above the land surface
@@ -1515,6 +1517,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // implemented. Do not use it for model runs; it is a diagnostic that establishes the order ceiling.
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;
+      PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=extended_soil]: NONPHYSICAL developer mode -- the "
+                  "aquifer continues above the land surface (no free boundary, no surface water). The above-surface "
+                  "mound is real storage the model owes to FSM, and the production half (truncate it at the FSM "
+                  "handoff) is NOT implemented. Testing/experiments only, not for model runs.\n");
     } else {  // "off"
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;
