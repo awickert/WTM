@@ -1425,11 +1425,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   //              lateral flow does not see the pin during the solve, so it is a lower-order (dt-lagged) form
   //              (~1 cm from implicit here, converging as dt->0).
   //   off      : no collection -- above-surface water piles up. NONPHYSICAL; warn loudly.
+  //   extended_soil : also lets water pile, but continues the AQUIFER above the surface (storativity stays
+  //              porosity, T never clamps, recharge always fills pore space), so the wtd=0 free boundary is
+  //              removed rather than merely unenforced. That is what restores BDF2's 2nd order. NONPHYSICAL
+  //              and [WIP]: the production half (truncate the mound at the FSM handoff, NOT per GW step) is
+  //              unimplemented. `-wtm_extended_soil` is the legacy alias that selects it.
   // NOTE the sub-surface band sink (taper 1, -wtm_surface_sink) is a SEPARATE strategy (keep wtd<0, dodge
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
   std::string rc = params.runoff_collector;
   if (rc.empty()) rc = "active_set";  // "" = the default (see parameters.hpp for why active_set)
+  // LEGACY ALIAS: -wtm_extended_soil SELECTS the extended_soil mode when no method was configured.
+  // It has to, or the flag would silently do nothing: extended soil is now one member of this
+  // enumeration, so an unset config resolving to active_set would switch it straight back off. This
+  // also repairs the flag's standalone behaviour -- before, `-wtm_extended_soil` alone left the
+  // default collector running, and the collector's pin at wtd<=0 defeated it. Measured: the flag
+  // alone used to give order 1.22/1.08/1.02 and max wtd 0.000 m; as a selected mode it gives
+  // 2.07/2.01/2.00 and a +23.4 m mound (benchmark/picard/recharge_free_boundary.py, arm E).
+  if (g_extended_soil && !params.runoff_collector_set) rc = "extended_soil";
   // SOLVER-DEPENDENT DEFAULT RESOLUTION. The active-set pin lives in the matrix-free (Anderson)
   // residual only -- the Picard operator and Newton Jacobian carry no tangent for it, and this block
   // also switches every collector removal off, so those solvers would run with the constraint
@@ -1455,8 +1468,21 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   const bool pre_sink  = g_surface_sink;
   const bool pre_direct = g_direct_to_runoff;
   const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
+  const bool pre_extsoil = g_extended_soil;
   if (rc != "legacy") {
     g_surface_sink = false;  // selector supersedes the band sink in every mode
+    // The selector OWNS extended soil now, exactly as it owns the three removals: exactly one mode is
+    // in force, so a config that names a different method turns extended soil off rather than leaving
+    // two contradictory mechanisms running and letting whichever clamps last win.
+    g_extended_soil = (rc == "extended_soil");
+    if (pre_extsoil && !g_extended_soil)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "WARNING: -wtm_extended_soil was given, but surface_water.collection.method=%s is set and "
+                  "SUPERSEDES it -- extended soil is OFF for this run. The two are alternatives, not layers: "
+                  "extended soil means above-surface water is stored in continued pore space and truncated at "
+                  "the FSM handoff, while a collector disposes of it. Select "
+                  "surface_water.collection.method: extended_soil to get it.\n",
+                  rc.c_str());
     if (rc == "implicit") {
       g_direct_to_runoff                     = true;
       g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
@@ -1477,6 +1503,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // itself moves with dt -- tests/multilake). Anderson residual only; Picard/Newton have no
       // tangent for the pin, warned below.
       collector_wants_active_set = true;
+    } else if (rc == "extended_soil") {
+      // Sibling of `off`: neither enforces wtd<=0, and above-surface water piles up. They differ in the
+      // PHYSICS above the surface. `off` keeps standard physics (storativity jumps porosity->1, T clamps
+      // at wtd=0), so the pile is surface water sitting on a kinked coefficient. `extended_soil`
+      // continues the aquifer upward (storativity stays porosity, T never clamps, recharge always fills
+      // pore space), which removes the wtd=0 free boundary entirely and is why it restores BDF2's 2nd
+      // order -- 2.07/2.01/2.00 against ~1 for a pinned surface (see BDF2_RECHARGE_ORDER.md section 15).
+      // NONPHYSICAL and [WIP]: the mound is real storage the model then owes to FSM, and the production
+      // half -- truncating it back to topography AT THE FSM HANDOFF (not per GW step) -- is not
+      // implemented. Do not use it for model runs; it is a diagnostic that establishes the order ceiling.
+      g_direct_to_runoff                     = false;
+      g_surface_exfiltration_to_runoff_array = false;
     } else {  // "off"
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;

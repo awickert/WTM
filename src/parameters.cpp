@@ -252,10 +252,21 @@ void Parameters::check() const {
   check_string_init("time_end", time_end);
   check_positive("total_time", total_time);
   check_positive("total_reports", total_reports);
+  // `extended_soil` is a member of this enumeration rather than a separate flag ON PURPOSE. It is a
+  // choice about what happens to water at and above the land surface, which is exactly what this
+  // selector decides, and it is a sibling of `off`: both let water pile up instead of enforcing
+  // wtd<=0, and they differ in the physics ABOVE the surface (`off` keeps the standard jump to
+  // storativity 1 and the T clamp; `extended_soil` continues the aquifer, storativity stays at
+  // porosity and T never clamps). Held as one enum value, "extended soil AND a collector" is
+  // unrepresentable rather than merely detected -- previously they were independent switches, both
+  // clamped, and the collector silently won, so -wtm_extended_soil printed its mode banner while
+  // doing nothing. See the resolution block in transient_groundwater.cpp.
   if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
-        || runoff_collector == "active_set" || runoff_collector == "off" || runoff_collector == "legacy")) {
-    throw std::runtime_error("runoff_collector must be one of: active_set, implicit, explicit, off, legacy. Got: '"
-                             + runoff_collector + "'");
+        || runoff_collector == "active_set" || runoff_collector == "off" || runoff_collector == "legacy"
+        || runoff_collector == "extended_soil")) {
+    throw std::runtime_error(
+        "runoff_collector must be one of: active_set, implicit, explicit, off, legacy, extended_soil. Got: '"
+        + runoff_collector + "'");
   }
 }
 
