@@ -48,7 +48,7 @@ NOTE: a benchmark diagnostic, NOT a unit test. It runs ~30 full model solves
 
 Usage:   python3 recharge_free_boundary.py      # self-contained; builds its own fixture
 """
-import os, subprocess, sys
+import glob, os, subprocess, sys
 import numpy as np, rasterio
 import paths  # noqa: F401
 from paths import WTM, WORK
@@ -75,18 +75,53 @@ def set_precip(P):
         d.write(np.full((128, 128), P, np.float32), 1)
 
 
+# The config emitter the test suite uses: legacy "key value" lines in, nested YAML out. Going
+# through it rather than hand-writing YAML here means this script rides along with any further
+# schema change instead of being orphaned by the next one -- which is exactly what happened:
+# this script wrote a flat .cfg, the config format migrated to nested YAML, and every model run
+# began failing. See the note on check-the-run below for why that was invisible for so long.
+EMIT = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "emit_config.sh")
+
+
 def run(dt_yr, tag, supplied_wt, evap_mode, extra):
     steps = int(round(T / dt_yr))
-    cfg = os.path.join(PRIV, f"{tag}.cfg")
-    open(cfg, "w").write(
-        f"run_type equilibrium\nfsm_on 0\nevap_mode {evap_mode}\ninfiltration_on 0\nrunoff_ratio_on 0\n"
+    cfg = os.path.join(PRIV, f"{tag}.yaml")
+    # total_time, not total_cycles: with report_interval 1 the cycle count is T/dt, and the schema
+    # takes the window directly. Same run, current vocabulary.
+    flat = (
+        f"run_type equilibrium\nfsm_on 0\nevap_mode {evap_mode}\ninfiltration_on 0\nrunoff_ratio 0\n"
         f"cells_per_degree 10\nsouthern_edge -45\ndeltat {int(dt_yr*YEAR)}\n"
-        f"total_cycles {steps}\nreport_interval 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
+        f"total_time {T}yr\nreport_interval 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
         f"time_start t0\ntime_end t0\nsurfdatadir {INP}\nregion equil128\nsupplied_wt {supplied_wt}\n"
+        # save_nreport_interval huge: WTM writes the first and LAST report regardless (verified: 80
+        # reports -> 2 tifs, index 0 and index 80), so the final state is always available. Do not set
+        # this to 1 "to be safe" -- at dt = 0.25 yr over 1000 yr that is 4000 tifs per run and ~120k
+        # across the sweep, which is pure I/O for one field we actually read.
         f"textfilename {PRIV}/{tag}_log.txt\noutfile_prefix {PRIV}/{tag}_out_\nsave_nreport_interval 9999999\n")
-    subprocess.run(["mpiexec", "-n", "1", WTM, cfg, *extra], capture_output=True, text=True, env=env)
-    tif = os.path.join(PRIV, f"{tag}_out_{steps:09d}.tif")
-    return rasterio.open(tif).read(1) if os.path.exists(tif) else None
+    emitted = subprocess.run(["bash", EMIT], input=flat, capture_output=True, text=True, check=True)
+    open(cfg, "w").write(emitted.stdout)
+    # -wtm_eq_tol 0 DISABLES the equilibrium early-stop, and it is load-bearing for an order study.
+    # An order is only meaningful between runs that cover the SAME model time. With the stop live, the
+    # dt = 0.25 yr reference converged by the equilibrium metric and halted at 374.5 yr while every
+    # coarser run went the full 1000 yr -- so "mean|err|" was a 626-year time gap, not a truncation
+    # error. It read as ~5000 mm, identical at every dt (order 0.00) in EVERY arm, including the
+    # control that must show order 2. A flat error is the signature: truncation error grows with dt,
+    # a time offset does not.
+    r = subprocess.run(["mpiexec", "-n", "1", WTM, cfg, "-wtm_eq_tol", "0", *extra],
+                       capture_output=True, text=True, env=env)
+    # CHECK THE RUN, LOUDLY. This used to swallow the model's exit status and return None when the
+    # output was missing, so a failing model surfaced ~80 lines later as an AttributeError on a
+    # NoneType -- a message pointing nowhere near the cause. A benchmark that cannot run must say so
+    # in its own voice, at the point of failure, or the result it documents quietly becomes
+    # unreproducible without anyone noticing.
+    outs = sorted(glob.glob(os.path.join(PRIV, f"{tag}_out_*.tif")))
+    if not outs:
+        raise RuntimeError(
+            f"model run '{tag}' produced no output (dt={dt_yr} yr, flags={' '.join(extra)}).\n"
+            f"  exit={r.returncode}\n  config: {cfg}\n"
+            f"  stderr tail: {(r.stderr or '').strip().splitlines()[-3:]}\n"
+            f"  stdout tail: {(r.stdout or '').strip().splitlines()[-3:]}")
+    return rasterio.open(outs[-1]).read(1)
 
 
 def order_study(P, evap_mode, extra, label, note):
@@ -136,8 +171,20 @@ order_study(0.01, 1, V, "C_crossing_evap1",
 order_study(0.01, 0, V + SURF_SMOOTH, "D_kink_smoothing",
             "round the ksat & storativity kinks at wtd=0 -> expect NO help, order ~1")
 # E. Extended soil removes the free boundary -> 2nd order restored (the fix).
+# collector="off" IS PART OF THE EXPERIMENT, not a convenience. Extended soil's premise is that there
+# IS no surface water -- the aquifer continues upward and the mound is left standing until FSM
+# truncates it at the cycle handoff. A runoff collector is the machinery that disposes of surface
+# water, so running one alongside extended soil asks for two contradictory things and the collector
+# wins: it pins wtd <= 0, the mound never forms, and the free boundary extended soil exists to remove
+# is reinstated. Measured: with the default collector, max wtd = 0.000 m and 0 cells above the surface;
+# with collector off, max wtd = +23.392 m over 4294 cells -- the "+23 m mound" section 15 describes.
+# A-D keep their default collector on purpose: they NEED surface disposal, because it is disposal that
+# holds cells AT wtd=0 and creates the moving free boundary whose kink costs them the order. Give A-D
+# collector=off too and all four rise to order ~2 (measured: B 2.05/1.97/1.93, D 2.06/2.02/2.01) --
+# the arms stop testing anything and E's order 2 proves nothing, since everything is order 2.
 order_study(0.01, 1, V + ["-wtm_extended_soil"], "E_extended_soil",
-            "continue the aquifer above the surface, no free boundary -> order ~2 RESTORED")
+            "continue the aquifer above the surface, no free boundary -> order ~2 RESTORED",
+            collector="off")
 
 set_precip(0.0)  # leave the private fixture at zero forcing
 print("\nSummary: recharge is fine (A); crossing the surface breaks order (B,C);")
