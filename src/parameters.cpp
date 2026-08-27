@@ -168,6 +168,10 @@ Parameters::Parameters(const std::string& config_file) {
   // surface_water.collection.sink, run.equilibrium_stop, output.verbosity/if_exists/directory -- are not read
   // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
+  if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {
+    const std::string v = n.as<std::string>();
+    if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
+  }
   if (auto n = root["solver"]["dt_max"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.dt_max"); dtc_dt_max_set = true; }

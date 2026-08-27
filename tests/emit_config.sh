@@ -30,6 +30,10 @@
 #   surface_sink_qmax     -> surface_water.collection.sink.qmax    (m/yr)
 #   surface_sink_width    -> surface_water.collection.sink.width   (m)
 #   extinction_depth      -> evaporation.extinction_depth          (m)
+#   adaptive_dt true|false -> solver.adaptive_dt
+#   dt_tol                -> solver.water_volume_timestep_error_tol
+#   dt_max                -> solver.dt_max
+#   t_bar true|false      -> solver.t_bar
 #   eq_frac               -> run.equilibrium_stop.frac
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
@@ -125,6 +129,15 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             have surface_sink_width && echo "      width: $(val surface_sink_width)"
         fi
     fi
+fi
+
+# --- solver ---------------------------------------------------------------------
+if have adaptive_dt || have dt_tol || have t_bar || have dt_max; then
+    echo "solver:"
+    have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
+    have dt_tol      && echo "  water_volume_timestep_error_tol: \"$(val dt_tol)\""
+    have dt_max      && echo "  dt_max: \"$(val dt_max)\""
+    have t_bar       && echo "  t_bar: $(val t_bar)"
 fi
 
 # --- evaporation ---------------------------------------------------------------

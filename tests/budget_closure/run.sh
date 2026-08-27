@@ -60,6 +60,7 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+${DT_TOL:+dt_tol $DT_TOL}
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -257,8 +258,8 @@ echo
 # producing FEWER steps is backwards. BDF2-on-V is monotonic (62 -> 356). Adaptive dt is the
 # robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive -wtm_dt_tol 0.005
+DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
+    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set -wtm_dt_adaptive
 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
     -wtm_anderson -wtm_bdf2_on_V -wtm_active_set -wtm_dt_adaptive
 echo

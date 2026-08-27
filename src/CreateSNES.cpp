@@ -283,8 +283,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                   user_context.eq_tol);
   }
   if (user_context.use_dt_adaptive) {
-    PetscBool dt_tol_set = PETSC_FALSE;
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dt_tol", &user_context.dt_tol, &dt_tol_set);
+    // config-owned (solver.water_volume_timestep_error_tol); unset keeps the eq_tol-tracking default
+    const bool dt_tol_set = params.dt_tol_set;
+    if (dt_tol_set) user_context.dt_tol = params.dt_tol;
     PetscBool dt_trace_flag = PETSC_FALSE;
     PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_trace", &dt_trace_flag);
     user_context.dt_trace = (dt_trace_flag == PETSC_TRUE);

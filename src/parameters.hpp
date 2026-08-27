@@ -60,6 +60,11 @@ struct Parameters {
   double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
   bool   surface_sink_width_set = false;
 
+  // solver.water_volume_timestep_error_tol: per-step local-error target in WATER volume. "auto" or an
+  // absent key leaves it unset so the consumer's own default (which tracks eq_tol) applies.
+  double dt_tol     = 0.1;
+  bool   dt_tol_set = false;
+
   // solver.dt_max: cap on the adaptive/continuation step [s]. "auto" (or an absent key) leaves this
   // UNSET, and each consumer keeps its own default -- they differ deliberately: the continuation ramp
   // caps at 1000*deltat, while the adaptive controller treats 0 as "no cap". A single shared default

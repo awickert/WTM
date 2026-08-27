@@ -81,6 +81,8 @@ time_end t0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/$1_
 runoff_collector active_set
+adaptive_dt true
+dt_tol 1e9
 EOF
     ../emit_config.sh < "$WORK/$1.yaml.in" > "$WORK/$1.yaml"
 }
@@ -88,8 +90,8 @@ EOF
 # One frozen-controller run; echoes "dt est" from the FIRST traced step, or nothing on failure.
 probe() { # $1 stem, $2 deltat, $3 fsm_on, $4 integrator flag
     mkcfg "$1" "$2" "$3"
-    "$WTM" "$WORK/$1.yaml" -wtm_anderson $4 -wtm_dt_adaptive -wtm_dt_trace \
-        -wtm_dt_tol 1e9 -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \
+    "$WTM" "$WORK/$1.yaml" -wtm_anderson $4 -wtm_dt_trace \
+        -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \
         -snes_stol 1e-12 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1
     grep -m1 DTTRACE "$WORK/$1.log" | sed -E 's/.*dt=([-0-9.e+]+) est=([-0-9.e+]+).*/\1 \2/'
 }

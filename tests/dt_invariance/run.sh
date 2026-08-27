@@ -41,6 +41,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = runoff_ratio
+    # dt_tol travels in the CONFIG now (solver.water_volume_timestep_error_tol); DT_TOL= per arm.
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 total_time 20yr
@@ -60,6 +61,7 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+${DT_TOL:+dt_tol $DT_TOL}
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -82,8 +84,8 @@ fail=0
 for rr_tag in "0:z" "0.3:r"; do
     rr="${rr_tag%%:*}"; p="${rr_tag##*:}"
     run "${p}fx"    "$rr"                                    || fail=1
-    run "${p}ad_lo" "$rr" -wtm_dt_adaptive -wtm_dt_tol 0.5   || fail=1
-    run "${p}ad_hi" "$rr" -wtm_dt_adaptive -wtm_dt_tol 0.02  || fail=1
+    DT_TOL=0.5  run "${p}ad_lo" "$rr" -wtm_dt_adaptive || fail=1
+    DT_TOL=0.02 run "${p}ad_hi" "$rr" -wtm_dt_adaptive || fail=1
 done
 [[ $fail -eq 0 ]] || { echo "DT INVARIANCE: FAILED (a run did not complete)"; exit 1; }
 
