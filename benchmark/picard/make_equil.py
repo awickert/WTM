@@ -23,11 +23,27 @@ REGION, TIME = f"equil{GRID}", "t0"
 WORK = os.environ.get("WTM_WORK", "/tmp/wtm_picard_bench")
 OUTDIR = os.path.join(WORK, f"equil{GRID}_inputs")
 os.makedirs(OUTDIR, exist_ok=True)
-transform = from_bounds(0, 0, NX, NY, NX, NY)
-
 # cells_per_degree for this grid (fixed 12.8-degree domain). Callers must set the
 # same value in the config's cells_per_degree.
 CPD = GRID / 12.8
+
+# GEOREFERENCING. This used to be `from_bounds(0, 0, NX, NY, NX, NY)` -- a pixel-space
+# placeholder -- and that was harmless while geometry came from the config's grid: block
+# (cells_per_degree + southern_edge) and the geotransform was decorative. #124 made the
+# geotransform AUTHORITATIVE (derive_grid_geometry in src/irf.cpp warns that grid: is now
+# deprecated and IGNORED whenever the raster carries one), which turned the placeholder into
+# the thing the model believes: 1-degree cells running from latitude 0 to 128, so every row
+# above 90 degrees got cos(lat) < 0 and the model aborted with "Cell with a negative area was
+# found!". Every script in this directory died there.
+#
+# So this is not a change of geometry -- it is writing down the geometry the fixture always
+# had. SOUTH = -45 and a 12.8-degree domain are exactly what the callers' configs specified
+# via southern_edge/cells_per_degree, and src/test_geometry.cpp pins that the geotransform
+# path reproduces the old cells_per_degree path. Keep SOUTH in step with the callers'
+# southern_edge; they describe one grid and must not drift apart.
+SOUTH  = -45.0                 # matches southern_edge in every caller's config
+DOMAIN = 12.8                  # degrees, fixed for all grids (see CPD above)
+transform = from_bounds(0.0, SOUTH, DOMAIN, SOUTH + DOMAIN, NX, NY)
 
 
 def w(path, data, dtype="float32"):
