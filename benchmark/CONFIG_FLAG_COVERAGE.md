@@ -27,13 +27,29 @@ alone."** The status column answers that.
 > `-wtm_dtc_dt_max` -- these have live CLI call sites across the suite (eq_tol alone has 61), so each
 > needs its callers moved to the config in the same commit.
 
+## "Superseded" means two different things — keep them apart
+
+An earlier draft of this document used one word for both, and the confusion produced a wrong
+retirement list. They are not the same claim:
+
+- **Classification** — *this flag's function is expressible as a YAML mode.* `-wtm_extended_soil`
+  corresponds to `collection.method: extended_soil`.
+- **Runtime** — *an explicitly configured method overrides a flag passed on the command line.*
+  `collection.method: explicit` plus `-wtm_extended_soil` gives you explicit, with a warning.
+
+The second is not evidence for the first. `method: explicit` does **not** imply extended soil — it is a
+mutually exclusive alternative that *disables* it. Citing the runtime override as though it showed the
+classification is what put three flags on a retirement list they did not belong on.
+
 ## Status legend
 
 | status | meaning |
 |---|---|
 | **1:1** | a YAML key sets exactly this flag; the flag is redundant |
 | **ABSTRACTED** | YAML expresses the *intent* at a higher level; the flag is an implementation detail of a YAML value and should never be user-facing |
-| **SUPERSEDED** | a YAML mode has replaced it; the flag survives as a legacy alias or a dead switch and is a **retirement candidate** |
+| **RETIRED** | done: the setting is a `Parameters` member, parsed from the config and schema-checked; flag and bridge entry deleted. Passing it now aborts |
+| **ALIAS** | a documented alternate entry point that RESOLVES to a YAML mode and warns when a configured method overrides it. Removable, but nothing is broken by keeping it |
+| **MODE INTERFACE** | the flag IS how a YAML mode is expressed. `collection.method: legacy` hands control back to these deliberately, so deleting the flag deletes the mode |
 | **GAP — user** | a setting a user could legitimately want, with no config path |
 | **GAP — advanced** | genuine tuning, and a candidate for the "expose advanced settings under the method that owns them" pattern rather than a top-level key |
 | **DEV** | developer/diagnostic escape hatch; exposing it in a user config would be wrong |
@@ -45,13 +61,15 @@ Counts are per FLAG and were computed from the tables below, not estimated; they
 
 | status | count |
 |---|---|
-| **1:1** | 17 |
+| **RETIRED** (done) | 10 |
+| **1:1** (remaining) | 7 |
 | **ABSTRACTED** | 8 |
-| **SUPERSEDED** — retirement candidates | 6 |
+| **ALIAS** | 2 |
+| **MODE INTERFACE** | 3 |
 | **GAP — user** | 7 |
 | **GAP — advanced** | 23 |
 | **DEV** | 4 |
-| **total** | **65** |
+| **total** | **64 rows / 65 flags** (`-wtm_dt_norm_rms` and `-wtm_dt_norm_max` share a row) |
 
 **Reachable from a config file today: 26.** That is not simply 1:1 + ABSTRACTED (25), and the two
 places it differs are worth stating rather than smoothing over:
@@ -115,7 +133,7 @@ Five flags, none reachable, all tuning one mechanism.
 | `-wtm_bdf2_on_V` | BDF2 applied to stored volume V(h) | ABSTRACTED | `solver.time_integration: bdf2` |
 | `-wtm_volume_storage` | backward-Euler storage as exact ΔV, not secant S·Δh | ABSTRACTED | `solver.storage: volume` |
 | `-wtm_Tbar` | time-averaged interblock transmissivity | 1:1 | `solver.t_bar` |
-| `-wtm_bdf2` | the ORIGINAL BDF2 (head form), pre-`bdf2_on_V` | SUPERSEDED | `time_integration: bdf2` resolves to `bdf2_on_V`; this flag reaches an older path nothing selects |
+| `-wtm_bdf2` | the ORIGINAL BDF2 (head form), pre-`bdf2_on_V` | GAP — advanced | none. It sets `use_bdf2` WITHOUT `use_bdf2_on_V` — head-form BDF2, a distinct scheme; `time_integration: bdf2` maps to `bdf2_on_V` |
 
 ## Adaptive dt and the step-size controller
 
@@ -148,12 +166,12 @@ decision is what produced the `extended_soil` collision.
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_direct_to_runoff` | in-residual exfiltration removal | SUPERSEDED | `collection.method: implicit` |
-| `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | SUPERSEDED | `collection.method: explicit` |
-| `-wtm_surface_sink` | sub-surface band sink | SUPERSEDED | `collection.method: legacy` |
-| `-wtm_extended_soil` | continue the aquifer above the surface | SUPERSEDED | `collection.method: extended_soil` (this flag is now its documented legacy alias) |
+| `-wtm_direct_to_runoff` | in-residual exfiltration removal | MODE INTERFACE | `collection.method: implicit` sets it — but under `method: legacy` the selector does not touch it and this flag IS the control |
+| `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | MODE INTERFACE | `collection.method: explicit` sets it — same: `legacy` hands control back to this flag |
+| `-wtm_surface_sink` | sub-surface band sink | MODE INTERFACE | `collection.method: legacy` — this flag is what that mode means |
+| `-wtm_extended_soil` | continue the aquifer above the surface | ALIAS | `collection.method: extended_soil`; selects the mode when no method is configured, warns when one is |
 | `-wtm_active_set` | semismooth exfiltration pin | 1:1 **and** ABSTRACTED — reachable **two ways** (`dev.active_set` *and* `collection.method: active_set`) | resolve to one |
-| `-wtm_dev_active_set` | the older name for the same thing | SUPERSEDED | `collection.method: active_set` |
+| `-wtm_dev_active_set` | the older name for the same thing | ALIAS | `collection.method: active_set`; already prints DEPRECATED, no callers — the one clean deletion |
 | `-wtm_surface_sink_qmax` | band-sink peak removal rate | **RETIRED** (was 1:1) | `collection.sink.qmax` |
 | `-wtm_surface_sink_width` | band width below the surface | **RETIRED** (was 1:1) | `collection.sink.width` |
 | `-wtm_fringe_source` | capillary-fringe width source | 1:1 | `collection.sink.fringe_source` |
@@ -211,18 +229,39 @@ can retune the sigmoid but cannot turn it off.
 
 ## What this suggests, in order
 
-1. **Retire the six SUPERSEDED flags.** They are duplicate channels for decisions a YAML mode already
-   owns, and duplicate channels are what produced the `extended_soil` collision. Zero capability lost.
-2. **Resolve `-wtm_active_set`'s two YAML routes** (`dev.active_set` vs `collection.method`). Same
-   hazard, already inside the config.
+**A correction to this document's own first draft, kept visible because it is the useful part.** The
+draft said six flags were "pure hazard, retire them, zero capability lost". Checking each against the
+code before deleting anything showed that was wrong for five of the six:
+
+- `-wtm_direct_to_runoff`, `-wtm_surface_exfiltration_to_runoff`, `-wtm_surface_sink` are the
+  **interface of `collection.method: legacy`** — the selector block is guarded `if (rc != "legacy")`,
+  and its own warning tells the user to *"set it to 'legacy' to hand control back to the -wtm_ surface
+  flags"*. Deleting them deletes the mode.
+- `-wtm_bdf2` is a **distinct scheme**, not a duplicate channel: it sets `use_bdf2` without
+  `use_bdf2_on_V`, i.e. head-form BDF2, while `time_integration: bdf2` maps to `bdf2_on_V`.
+- All of them, plus `-wtm_extended_soil`, **already warn** when a configured method supersedes them. The
+  silent collision that motivated the list was specific to `extended_soil`, and it is fixed.
+
+Only `-wtm_dev_active_set` was what the draft claimed. The lesson is cheap to state and was not cheap to
+learn: *a flag being expressible as a YAML mode does not make it redundant* — it may be how that mode is
+selected, or the only route to a behaviour the config cannot reach.
+
+1. **Finish the 1:1 retirement (7 left).** `dtc_dt_max` next — zero callers, and its complication (an
+   `auto` sentinel and unit parsing) lives in the parser rather than spread across tests. Then
+   `dt_tol`, `dt_adaptive`, `eq_metric`, `Tbar`, `active_set`, and `eq_tol` last (61 call sites).
+2. **Resolve `-wtm_active_set`'s two YAML routes** (`dev.active_set` vs `collection.method`). A
+   dual-channel hazard entirely inside the config.
 3. **Close the four user-facing gaps that block documented workflows**: `-wtm_dt_continuation` (Newton
    is unusable from YAML without it), the two taper toggles, and `-wtm_stiff` as a preset.
-4. **Group the advanced clusters under the method that owns them** rather than as top-level keys — the
-   step-size controller under `solver.adaptive_dt`, and the Anderson restart/handoff machinery under
-   `solver.method: anderson`. That is the pattern the schema already uses well elsewhere, and it keeps
-   the common path uncluttered.
-5. **Then, and only then, add a controlled flag list.** Once the remaining flags are known and few, an
-   unknown-flag check can be as strict as the YAML one is now, and the asymmetry closes.
+4. **Group the advanced clusters under the method that owns them** — the step-size controller under
+   `solver.adaptive_dt`, the Anderson restart/handoff machinery under `solver.method: anderson`.
+5. **Decide `-wtm_dev_active_set` and `-wtm_bdf2` on their own merits.** The first is a deprecated alias
+   with no callers; the second is a superseded *scheme*, so retiring it is a scientific call about
+   whether head-form BDF2 is worth keeping, not config hygiene.
+
+The unknown-flag check (`750ffb1`) is what makes any of this safe: a retired flag now aborts and names
+itself instead of being silently ignored, so a missed call site fails loudly on the first run.
+
 
 The three surface-smoothing widths are the judgement call: they are genuinely modelling choices rather
 than developer knobs, so they arguably belong in `transmissivity:` — but they are also default-off and
