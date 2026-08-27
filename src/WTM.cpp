@@ -29,6 +29,11 @@
 #include <filesystem>
 #include <unistd.h>  // gethostname (provenance)
 
+// Defined below, next to the config bridge it belongs with; declared here because the cycle loop
+// calls it after the first cycle.
+static void check_unconsumed_wtm_options();
+
+
 namespace dh = richdem::dephier;
 namespace rd = richdem;
 
@@ -779,7 +784,12 @@ void run(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pa
   }
 
   while (params.cycles_done < params.total_reports) {
+    const bool first_cycle = (params.cycles_done == 0);
     update(params, arp, user_context, dmdapack, deps);
+    // A -wtm_ flag that NOTHING read is an ERROR, checked once, here. It cannot be checked at init:
+    // update() re-reads the surface and solver options every cycle, so this is the first moment at which
+    // everything that will ever be queried has been. See check_unconsumed_wtm_options.
+    if (first_cycle) check_unconsumed_wtm_options();
     // output.verbosity: quiet suppresses the per-cycle progress line (the equilibrium-reached line and
     // warnings/errors still print); normal/verbose show it.
     if (params.verbosity != "quiet")
@@ -912,6 +922,52 @@ static void set_opt_if_unset(const char* flag, const char* val) {
 // built. Lives here (not parameters.cpp) so the PETSc-free dephier.x stays PETSc-free. TODO (Phase 2b cont.):
 // evaporation et_sigmoid/extinction_depth, surface_water.collection.sink; output.verbosity/if_exists are NEW
 // behavior (no existing flag).
+// REJECT a -wtm_ flag that nothing consumed. PETSc's options database accepts ANY string, so a
+// misspelled flag, a flag retired by a migration, and a flag whose parse site sits on a code path this
+// run did not take are all indistinguishable from not passing it: the run proceeds and reports success.
+//
+// That is the flag half of the same defect the YAML schema check fixes, and it has the same cost --
+// it makes NEGATIVE results untrustworthy. A sweep over a flag nothing reads returns "no effect" for a
+// reason unrelated to the model. This repo has one on record: -wtm_dtc_easy_iters was parsed only
+// inside `if (use_newton_continuation)`, so a sweep at 0 / 8 / 100000 on the adaptive path returned
+// byte-identical step counts and was written down as "the growth gate is inert on this fixture". With
+// the flag live the same sweep spans 57 steps to 229506 (fixed in 395915e).
+//
+// It is ALSO the safety net that makes retiring flags safe. Deleting a flag whose call sites have not
+// all moved to the config would otherwise leave those runs silently taking a default -- with
+// -wtm_eq_tol at 61 call sites, one miss means a test quietly running with eq_tol 0.001 instead of 0
+// and very possibly still reporting PASS.
+//
+// WHY NOT AT INIT: update() re-reads the surface/solver options on every cycle, so at init a great many
+// legitimately-passed flags have not been queried yet. The check runs after the FIRST cycle instead --
+// late enough that everything which will be read has been, early enough to abort the run.
+//
+// Only -wtm_ options are judged. PETSc's own (-snes_, -ksp_, -pc_, -mat_) are legitimately unused
+// depending on the solver path, and they are not ours to police.
+static void check_unconsumed_wtm_options() {
+  PetscInt n = 0;
+  char **names = nullptr, **values = nullptr;
+  PetscOptionsLeftGet(nullptr, &n, &names, &values);
+  std::vector<std::string> stale;
+  for (PetscInt i = 0; i < n; i++) {
+    if (!names[i]) continue;
+    const std::string nm(names[i]);  // PETSc reports names WITHOUT the leading dash
+    if (nm.rfind("wtm_", 0) == 0)
+      stale.push_back("  -" + nm + (values && values[i] ? std::string(" ") + values[i] : std::string()));
+  }
+  PetscOptionsLeftRestore(nullptr, &n, &names, &values);
+  if (stale.empty()) return;
+  std::string msg = "the run was given " + std::to_string(stale.size())
+                    + (stale.size() == 1 ? " -wtm_ flag that nothing read:\n" : " -wtm_ flags that nothing read:\n");
+  for (const auto& s : stale) msg += s + "\n";
+  msg += "\nA flag nothing consumes had NO effect on this run. Either it is misspelled, it has been\n"
+         "retired in favour of a config key (see benchmark/CONFIG_FLAG_COVERAGE.md), or its parse site\n"
+         "is on a code path this run did not take -- for example a controller knob passed without the\n"
+         "controller enabled. This aborts rather than warns so that a swept parameter can never be\n"
+         "silently doing nothing.";
+  throw std::runtime_error(msg);
+}
+
 void apply_config_petsc_options(const std::string& config_file) {
   YAML::Node root;
   try {
