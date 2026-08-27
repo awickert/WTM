@@ -59,3 +59,8 @@ perf.data*
 # Python bytecode (test fixtures import the shared spectral_terrain module)
 __pycache__/
 *.pyc
+
+# Model run outputs. Any run whose config sets output.directory creates results/<run>/ next to the
+# config; tests/config_schema makes them routinely because it runs the REFERENCE config.yaml unmodified
+# (which is the point of that arm -- validating the config as shipped). Artifacts, never source.
+results/
