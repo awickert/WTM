@@ -977,10 +977,9 @@ void apply_config_petsc_options(const std::string& config_file) {
   }
   if (!root.IsMap()) return;
 
-  // run.equilibrium_stop -> -wtm_eq_tol / -wtm_eq_metric / -wtm_eq_frac
+  // run.equilibrium_stop -> -wtm_eq_tol / -wtm_eq_metric  (.frac is config-owned; see Parameters)
   if (auto n = root["run"]["equilibrium_stop"]["tol"])    set_opt_if_unset("-wtm_eq_tol", n.as<std::string>().c_str());
   if (auto n = root["run"]["equilibrium_stop"]["metric"]) set_opt_if_unset("-wtm_eq_metric", n.as<std::string>().c_str());
-  if (auto n = root["run"]["equilibrium_stop"]["frac"])   set_opt_if_unset("-wtm_eq_frac", n.as<std::string>().c_str());
 
   // boundaries.land -> -wtm_land_boundary (translate the prototype value)
   if (auto n = root["boundaries"]["land"]) {
@@ -991,8 +990,6 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // evaporation.et_sigmoid (the always-on soil<->open-water ET transition) + extinction_depth. The taper
   // on/off toggles (-wtm_evap_taper / -wtm_extinction) stay default-on; only the parameters are exposed.
-  if (auto n = root["evaporation"]["extinction_depth"])
-    set_opt_if_unset("-wtm_extinction_depth", n.as<std::string>().c_str());
 
   // solver
   if (auto n = root["solver"]["method"]) {
@@ -1032,8 +1029,6 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // surface_water.collection.sink (legacy band-sink parameters; effective only with collection.method: legacy)
   if (auto s = root["surface_water"]["collection"]["sink"]) {
-    if (auto m = s["qmax"])             set_opt_if_unset("-wtm_surface_sink_qmax", m.as<std::string>().c_str());
-    if (auto m = s["width"])            set_opt_if_unset("-wtm_surface_sink_width", m.as<std::string>().c_str());
     if (auto m = s["fringe_source"])    set_opt_if_unset("-wtm_fringe_source", m.as<std::string>().c_str());
   }
 

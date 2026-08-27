@@ -82,7 +82,7 @@ oscillation). Measured trade (`eq_metric_compare.sh`; Esquibel warm, eq_tol = 0.
 | rms  | cycle 8  | 93  | 14.6 m (loose) |
 | **frac (99.9%)** | **cycle 22** | **231** | **4.3 m** |
 
-So the default is **`frac`** (converged when < `-wtm_eq_frac` = 0.1 % of land cells exceed `eq_tol`): the
+So the default is **`frac`** (converged when < `run.equilibrium_stop.frac` = 0.1 % of land cells exceed `eq_tol`): the
 only metric that both *fires* and stays precise. `-wtm_eq_metric max` restores the strict worst-cell
 criterion; `rms` is the loose/cheap bulk one. Applies on **every** spin-up pathway (fixed / Newton-
 continuation / adaptive).

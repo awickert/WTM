@@ -1,0 +1,47 @@
+# ===== WTM configuration =====  booleans: true/false; times: "500yr" / "1000s"
+
+run:                          # [stable]
+  type: equilibrium           # test | equilibrium | transient
+  total_time: 1000yr          # must be an integer number of report intervals
+  supplied_wt: true
+
+time:                         # [stable]
+  deltat: 31536000            # seconds per timestep !!!! AW note: should we allow this to also be other units, or require s for precision?
+  report_interval: 100        # steps (or a time) between equilibrium checks / logs
+  save_nreport_interval: 1    # save a raster every N reports
+
+grid:                         # [stable] !!!! AW note: do we permit there to be runs on non-lat-lon grids? I know Uma Ashrani has gotten this working, but I'm not sure if it's in trunk
+  cells_per_degree: 120
+  southern_edge: -52
+
+io:                           # [stable]
+  surfdatadir: surfdata/
+  region: Australia_
+  time_start: "021000"        # quoted -> leading zeros preserved
+  time_end: "021000"
+  outfile_prefix: prefix_
+  textfilename: log.txt
+
+physics:                      # [stable] — incl. the taper keys you wanted moved off the CLI
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  infiltration: false
+  evaporation:
+    mode: lakes               # lakes | remove
+    et_sigmoid:               # taper 2: the single continuous ET sigmoid (closes the evap flicker)
+      enabled: true
+      wtd_c: 0.05
+      s: 0.1
+    extinction:               # taper 3 !!!! DO WE WANT THIS?
+      enabled: true
+      depth: 8
+
+surface_water:                # [#119] — routing/seepage; grows as the lake-aware skim lands
+  fsm: true
+  runoff_ratio: false
+  seepage: active-set         # active-set | implicit | explicit | off | legacy   (was runoff_collector)  !!! THIS IS LIKE, THE OPPOSITE OF SEEPAGE, THOUGH
+
+solver:                       # [reserved] — most still -wtm_* CLI today; migrate flags in here over time
+  {}                          # e.g. later: method, time_integration, adaptive_dt, equilibrium:{tol,metric,frac}

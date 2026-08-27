@@ -27,6 +27,10 @@
 #   runoff_ratio_on 1     -> surface_water.runoff_ratio: raster  (require the raster)
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
+#   surface_sink_qmax     -> surface_water.collection.sink.qmax    (m/yr)
+#   surface_sink_width    -> surface_water.collection.sink.width   (m)
+#   extinction_depth      -> evaporation.extinction_depth          (m)
+#   eq_frac               -> run.equilibrium_stop.frac
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -54,6 +58,10 @@ val()  { printf '%s' "${V[$1]}"; }
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
+if have eq_frac; then
+    echo "  equilibrium_stop:"
+    echo "    frac: $(val eq_frac)"
+fi
 if have supplied_wt; then
     case "$(val supplied_wt)" in
         0) echo "  initial_water_table: saturated" ;;
@@ -108,7 +116,21 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
-    have runoff_collector && echo "  collection:" && echo "    method: $(val runoff_collector)"
+    if have runoff_collector || have surface_sink_qmax || have surface_sink_width; then
+        echo "  collection:"
+        have runoff_collector && echo "    method: $(val runoff_collector)"
+        if have surface_sink_qmax || have surface_sink_width; then
+            echo "    sink:"
+            have surface_sink_qmax  && echo "      qmax: $(val surface_sink_qmax)"
+            have surface_sink_width && echo "      width: $(val surface_sink_width)"
+        fi
+    fi
+fi
+
+# --- evaporation ---------------------------------------------------------------
+if have extinction_depth; then
+    echo "evaporation:"
+    echo "  extinction_depth: $(val extinction_depth)"
 fi
 
 # --- io ----------------------------------------------------------------------

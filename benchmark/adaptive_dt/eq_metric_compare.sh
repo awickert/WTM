@@ -50,7 +50,10 @@ CFG
 run ref  "$REFCAP" "-wtm_eq_tol 0"
 run max   "$CAP"   "-wtm_eq_metric max  -wtm_eq_tol $EQTOL"
 run rms   "$CAP"   "-wtm_eq_metric rms  -wtm_eq_tol $EQTOL"
-run frac  "$CAP"   "-wtm_eq_metric frac -wtm_eq_tol $EQTOL -wtm_eq_frac $EQFRAC"
+# NOTE: -wtm_eq_frac is retired; the fraction is now run.equilibrium_stop.frac in the config. This
+# script writes a legacy flat .cfg and therefore cannot run against the current model at all (same
+# breakage as benchmark/picard/*, see BDF2_RECHARGE_ORDER.md); fixing that is a separate job.
+run frac  "$CAP"   "-wtm_eq_metric frac -wtm_eq_tol $EQTOL"
 
 echo "=== precision: each stop-state vs the no-stop reference (highest-cycle tif) ==="
 python3 - "$OUT" <<'PY'

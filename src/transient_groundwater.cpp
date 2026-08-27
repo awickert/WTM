@@ -1381,19 +1381,20 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_sink", &sink, &sink_set);
   g_surface_sink         = (sink == PETSC_TRUE);
   double sink_qmax_yr    = 1.0;  // default peak removal 1 m/yr (~ precip/evap scale; supplied m/yr, stored m/s)
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_qmax", &sink_qmax_yr, nullptr);
+  sink_qmax_yr = params.surface_sink_qmax;  // config-owned; -wtm_surface_sink_qmax retired
   g_surface_sink_qmax = sink_qmax_yr / SECONDS_IN_A_YEAR;
   // Default sink width SCALES WITH the per-timestep removal depth: width = C * qmax * dt. The implicit
   // near-surface removal is a near-clamp, so its stable width tracks qmax*dt: if width < qmax*dt the
   // solve diverges (DIVERGED_MAX_IT on both paths), and if width is much larger the table is held too
   // far below the surface. C=2 gives stability headroom while keeping the table tight -- mm-cm at the
-  // small dt of the 2nd-order transient regime, only necessarily wider at a large equilibrium dt. A
-  // -wtm_surface_sink_width overrides. (Adaptive dt: uses the base deltat, conservative -- errs wide =
+  // small dt of the 2nd-order transient regime, only necessarily wider at a large equilibrium dt. An explicit
+  // surface_water.collection.sink.width overrides. (Adaptive dt: uses the base deltat, conservative -- errs wide =
   // stable.) NOTE (exfiltration): a tight width routes MORE water to FSM as exfiltration; if that
   // over-exfiltrates, revisit C or qmax. See SURFACE_SINK_DESIGN.md sec 11/14.
   constexpr double C_sink = 2.0;
   g_surface_sink_width = C_sink * g_surface_sink_qmax * params.deltat;
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_surface_sink_width", &g_surface_sink_width, nullptr);
+  // An absent width keeps the computed C*qmax*dt default above; only an explicit config value overrides.
+  if (params.surface_sink_width_set) g_surface_sink_width = params.surface_sink_width;
 
   // -wtm_direct_to_runoff: in-residual exfiltration removal (supersedes the qmax sink where on). Removes the
   // above-surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
@@ -2469,7 +2470,7 @@ void read_evap_taper_options(const Parameters& params) {
   PetscBool extinction = PETSC_TRUE;  // taper 3 default ON (off-switch: -wtm_extinction 0 / false)
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_extinction", &extinction, nullptr);
   g_extinction = (extinction == PETSC_TRUE);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_extinction_depth", &g_extinction_depth, nullptr);
+  g_extinction_depth = params.extinction_depth;  // config-owned; -wtm_extinction_depth retired
 
   // The taper works in BOTH evap_modes: evap_mode 0 also supplies open_water_evap (used for surface
   // recharge), so E_eff has the owe it needs, and the recharge paths check the taper first so it

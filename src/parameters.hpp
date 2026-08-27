@@ -50,6 +50,19 @@ struct Parameters {
   // so an explicit choice is always honoured (with a warning) and never silently downgraded.
   bool runoff_collector_set = false;
 
+  // Evaporation taper 3 (evaporation.extinction_depth): depth below which ET cannot reach the table [m].
+  double extinction_depth = 8.0;
+
+  // Legacy band sink (surface_water.collection.sink). qmax is supplied in m/yr, the intuitive unit, and
+  // converted to m/s at the consumer. width DEFAULTS TO A COMPUTED VALUE (C*qmax*dt), so it needs the
+  // was-it-set flag: an absent key must keep the dt-scaled default rather than overwrite it with 0.
+  double surface_sink_qmax  = 1.0;    // peak removal [m/yr]
+  double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
+  bool   surface_sink_width_set = false;
+
+  // Equilibrium stop: fraction of land cells allowed above eq_tol for the `frac` metric.
+  double eq_frac = 0.001;
+
   // Background (bedrock) transmissivity floor [m^2/s], 0 = off (v2.0.1 behaviour).
   double t_bedrock = 0.0;
 

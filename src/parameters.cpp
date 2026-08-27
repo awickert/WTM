@@ -168,6 +168,12 @@ Parameters::Parameters(const std::string& config_file) {
   // surface_water.collection.sink, run.equilibrium_stop, output.verbosity/if_exists/directory -- are not read
   // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
+  if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
+  if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();
+  if (auto n = root["surface_water"]["collection"]["sink"]["qmax"])  surface_sink_qmax = n.as<double>();
+  if (auto n = root["surface_water"]["collection"]["sink"]["width"])
+    { surface_sink_width = n.as<double>(); surface_sink_width_set = true; }
+
   // -------- transmissivity / surface-water sink (config-owned; formerly -wtm_ transport only) --------
   if (auto n = root["transmissivity"]["additive_background_transmissivity"]) t_bedrock = n.as<double>();
   if (auto n = root["surface_water"]["collection"]["sink"]["fringe_length"])

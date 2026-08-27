@@ -98,6 +98,8 @@ region {REGION}
 supplied_wt 1
 save_nreport_interval 9999
 runoff_collector legacy
+surface_sink_qmax 1.0
+surface_sink_width 1.0
 textfilename {txt}
 outfile_prefix {prefix}
 """
@@ -107,8 +109,11 @@ outfile_prefix {prefix}
 # (= qmax*dt, the marginal-stability point) is a deliberate Anderson-path stress; Picard would need
 # the dt-scaled default. Anderson is the opt-in path this test also keeps covered.
 # -wtm_eq_tol 0: run the full fixed cycle count (cross-rank determinism check; do not auto-stop).
-TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink", "-wtm_surface_sink_qmax", "1.0",
-               "-wtm_surface_sink_width", "1.0", "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]
+# qmax and width now travel in the CONFIG (surface_water.collection.sink.*); those flags are retired.
+# The width 1.0 stays the deliberate Anderson-path stress described above -- it just lives in the config
+# body now instead of on the command line.
+TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink",
+               "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]
 
 
 def _run(wtm, d, tag, n):
@@ -219,19 +224,19 @@ def _arid_fixture(d, ksat=1e-9):
         _write_tif(os.path.join(d, fname), np.asarray(arr), dt)
 
 
-def _arid_cfg(d, txt, prefix):
+def _arid_cfg(d, txt, prefix, extra=""):
     # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
     return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
             f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
             f"runoff_collector legacy\n"
-            f"textfilename {txt}\noutfile_prefix {prefix}\n")
+            f"textfilename {txt}\noutfile_prefix {prefix}\n" + extra)
 
 
-def _arid_run(wtm, d, tag, flags):
+def _arid_run(wtm, d, tag, flags, cfg_extra=""):
     cfg = os.path.join(d, f"cfg_{tag}.yaml")
-    _write_cfg(cfg, _arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_")))
+    _write_cfg(cfg, _arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_"), cfg_extra))
     subprocess.run([wtm, cfg] + flags, cwd=d, env={**os.environ, "OMP_NUM_THREADS": "1"},
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_") and f.endswith(".tif"))
@@ -253,8 +258,8 @@ def study_c(wtm):
         _arid_fixture(d)
         # taper 3 is default-on, so "taper 2 alone" must explicitly disable it (-wtm_extinction 0).
         w2 = float(_arid_run(wtm, d, "C2", E + ["-wtm_extinction", "0"])[c])
-        w8 = float(_arid_run(wtm, d, "C8", E + ["-wtm_extinction", "-wtm_extinction_depth", "8"])[c])
-        w4 = float(_arid_run(wtm, d, "C4", E + ["-wtm_extinction", "-wtm_extinction_depth", "4"])[c])
+        w8 = float(_arid_run(wtm, d, "C8", E + ["-wtm_extinction"], "extinction_depth 8\n")[c])
+        w4 = float(_arid_run(wtm, d, "C4", E + ["-wtm_extinction"], "extinction_depth 4\n")[c])
         runaway = w2 < -50.0                                          # no equilibrium without taper 3
         ok8 = -8.0 <= w8 <= -6.5                                      # clamped just inside d_ext = 8
         ok4 = -4.0 <= w4 <= -3.0                                      # clamped just inside d_ext = 4

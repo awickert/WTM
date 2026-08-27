@@ -194,7 +194,7 @@ what makes "ignore the overshoot for evaporation" defensible.
 | symbol | flag (proposed) | meaning | default (proposed) |
 |---|---|---|---|
 | `\lambda` | `-wtm_surface_sink_rate` | removal rate `[1/\mathrm{s}]`, or as `C=\lambda\Delta t` | `\lambda = C/\Delta t`, `C\approx`5 |
-| `\varepsilon` | `-wtm_surface_sink_width` | head smoothing scale `[\mathrm{m}]` of `S_\varepsilon` | a few cm (≥ `\delta`) |
+| `\varepsilon` | `surface_water.collection.sink.width` | head smoothing scale `[\mathrm{m}]` of `S_\varepsilon` | a few cm (≥ `\delta`) |
 
 The sink is meaningful only with extended-soil (it needs the smooth above-surface operator to be
 well-posed), so it is enabled together with `-wtm_extended_soil`. Whether extended-soil + sink becomes

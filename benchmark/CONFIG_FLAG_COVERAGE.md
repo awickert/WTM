@@ -19,6 +19,14 @@ user never sees the knobs. The useful question per flag is therefore not "is the
 name" but **"can a user express this intent, at the right level of abstraction, from the config
 alone."** The status column answers that.
 
+> **UPDATE 2026-08-27.** Ten of the seventeen 1:1 rows are now **RETIRED**: the setting moved onto
+> `Parameters`, is parsed from the config, is covered by the schema check, and is read directly by its
+> consumer; the flag and its bridge entry are deleted. Passing a retired flag now ABORTS (the
+> unconsumed-flag check, 750ffb1) rather than being silently ignored. Seven 1:1 rows remain:
+> `-wtm_eq_tol`, `-wtm_eq_metric`, `-wtm_Tbar`, `-wtm_active_set`, `-wtm_dt_adaptive`, `-wtm_dt_tol`,
+> `-wtm_dtc_dt_max` -- these have live CLI call sites across the suite (eq_tol alone has 61), so each
+> needs its callers moved to the config in the same commit.
+
 ## Status legend
 
 | status | meaning |
@@ -146,12 +154,12 @@ decision is what produced the `extended_soil` collision.
 | `-wtm_extended_soil` | continue the aquifer above the surface | SUPERSEDED | `collection.method: extended_soil` (this flag is now its documented legacy alias) |
 | `-wtm_active_set` | semismooth exfiltration pin | 1:1 **and** ABSTRACTED — reachable **two ways** (`dev.active_set` *and* `collection.method: active_set`) | resolve to one |
 | `-wtm_dev_active_set` | the older name for the same thing | SUPERSEDED | `collection.method: active_set` |
-| `-wtm_surface_sink_qmax` | band-sink peak removal rate | 1:1 | `collection.sink.qmax` |
-| `-wtm_surface_sink_width` | band width below the surface | 1:1 | `collection.sink.width` |
+| `-wtm_surface_sink_qmax` | band-sink peak removal rate | **RETIRED** (was 1:1) | `collection.sink.qmax` |
+| `-wtm_surface_sink_width` | band width below the surface | **RETIRED** (was 1:1) | `collection.sink.width` |
 | `-wtm_fringe_source` | capillary-fringe width source | 1:1 | `collection.sink.fringe_source` |
-| `-wtm_fringe_cap` | max ψ_a | 1:1 | `collection.sink.fringe_cap` |
-| `-wtm_fringe_ksat_coef` | ψ_a = C·√(n/ksat) | 1:1 | `collection.sink.fringe_ksat_coef` |
-| `-wtm_fringe_length` | uniform fringe length | 1:1 | `collection.sink.fringe_length` |
+| `-wtm_fringe_cap` | max ψ_a | **RETIRED** (was 1:1) | `collection.sink.fringe_cap` |
+| `-wtm_fringe_ksat_coef` | ψ_a = C·√(n/ksat) | **RETIRED** (was 1:1) | `collection.sink.fringe_ksat_coef` |
+| `-wtm_fringe_length` | uniform fringe length | **RETIRED** (was 1:1) | `collection.sink.fringe_length` |
 | `-wtm_fsm_delta_source` | carry FSM's Δwtd as a source in the next step | DEV | none — experimental |
 
 `-wtm_active_set` deserves attention: it is currently reachable from **two different YAML keys**
@@ -165,9 +173,9 @@ can retune the sigmoid but cannot turn it off.
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_evap_taper_wtdc` | sigmoid centre | 1:1 | `evaporation.et_sigmoid.wtd_center` |
-| `-wtm_evap_taper_s` | sigmoid width | 1:1 | `evaporation.et_sigmoid.logistic_width` |
-| `-wtm_extinction_depth` | extinction depth | 1:1 | `evaporation.extinction_depth` |
+| `-wtm_evap_taper_wtdc` | sigmoid centre | **RETIRED** (was 1:1) | `evaporation.et_sigmoid.wtd_center` |
+| `-wtm_evap_taper_s` | sigmoid width | **RETIRED** (was 1:1) | `evaporation.et_sigmoid.logistic_width` |
+| `-wtm_extinction_depth` | extinction depth | **RETIRED** (was 1:1) | `evaporation.extinction_depth` |
 | `-wtm_evap_taper` | taper 2 **on/off** | **GAP — user** | none — parameters are configurable, the switch is not |
 | `-wtm_extinction` | taper 3 **on/off** | **GAP — user** | none — same |
 
@@ -175,7 +183,7 @@ can retune the sigmoid but cannot turn it off.
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_T_bedrock` | additive background transmissivity | 1:1 | `transmissivity.additive_background_transmissivity` |
+| `-wtm_T_bedrock` | additive background transmissivity | **RETIRED** (was 1:1) | `transmissivity.additive_background_transmissivity` |
 | `-wtm_land_boundary` | land boundary condition | ABSTRACTED | `boundaries.land` (value translated) |
 | `-wtm_ksat_surface_smoothing_width` | round the ksat kink at the surface | GAP — user | none — a modelling choice, not a developer knob |
 | `-wtm_ksat_soilbottom_smoothing_width` | round the ksat kink at −1.5 m | GAP — user | none — same |
@@ -187,7 +195,7 @@ can retune the sigmoid but cannot turn it off.
 |---|---|---|---|
 | `-wtm_eq_tol` | equilibrium stop tolerance | 1:1 | `run.equilibrium_stop.tol` |
 | `-wtm_eq_metric` | which metric judges equilibrium | 1:1 | `run.equilibrium_stop.metric` |
-| `-wtm_eq_frac` | fraction-of-cells threshold | 1:1 | `run.equilibrium_stop.frac` |
+| `-wtm_eq_frac` | fraction-of-cells threshold | **RETIRED** (was 1:1) | `run.equilibrium_stop.frac` |
 | `-wtm_snes_volume_conv` | judge the SNES step in water, not head | GAP — advanced | none |
 | `-wtm_snes_volume_conv_govern` | make that judgement authoritative | GAP — advanced | none |
 | `-wtm_snes_vol_tol` | its relative tolerance | GAP — advanced | none |

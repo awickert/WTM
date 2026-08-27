@@ -242,7 +242,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // (huge head swing, ~zero water moved) can no longer pin the stop, so it is FV-consistent and comparable
   // across cc and tr. eq_tol is therefore a WATER depth (default 0.001 = 1 mm). DEFAULT frac (converged when
   // < eq_frac of land cells exceed eq_tol) -- the measured best trade: max is worst-cell-hostage, rms is loose
-  // (bulk only), frac both fires and stays precise. -wtm_eq_frac sets the fraction (default 0.1%). Raw head is
+  // (bulk only), frac both fires and stays precise. run.equilibrium_stop.frac sets the fraction (default 0.1%). Raw head is
   // still printed each cycle as a diagnostic. See benchmark/adaptive_dt.
   char eq_metric_str[16] = "frac";
   PetscOptionsGetString(nullptr, nullptr, "-wtm_eq_metric", eq_metric_str, sizeof(eq_metric_str), nullptr);
@@ -257,7 +257,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 eq_metric_str, user_context.eq_metric == 1 ? "rms" : "max");
   }
   else user_context.eq_metric = 2;  // "frac" (default)
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_frac", &user_context.eq_frac, nullptr);
+  user_context.eq_frac = params.eq_frac;  // config-owned; -wtm_eq_frac retired
   if (user_context.use_newton_continuation) {
     double dt0 = params.deltat / 200.0;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);

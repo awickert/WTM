@@ -163,7 +163,7 @@ struct AppCtx {
   // 2=frac (DEFAULT: converged when < eq_frac of cells exceed eq_tol; robust + still precise -- the
   // measured best trade, see benchmark/adaptive_dt).
   int    eq_metric               = 2;      // frac (99.9% of cells) -- the measured default
-  double eq_frac                 = 0.001;  // -wtm_eq_frac: allowed fraction above eq_tol for eq_metric=frac (0.1%)
+  double eq_frac                 = 0.001;  // run.equilibrium_stop.frac: allowed fraction above eq_tol (0.1%)
 
   // --- BDF2 time integration (gated behind -wtm_bdf2; implies the Picard path) ---
   // Second-order backward differentiation: (3h^{n+1} - 4h^n + h^{n-1})/(2dt) = RHS.
