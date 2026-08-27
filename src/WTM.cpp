@@ -988,16 +988,9 @@ void apply_config_petsc_options(const std::string& config_file) {
     set_opt_if_unset("-wtm_land_boundary", (b == "dirichlet_sea_level") ? "dirichlet" : "neumann_toposlope");
   }
 
-  // transmissivity.additive_background_transmissivity -> -wtm_T_bedrock
-  if (auto n = root["transmissivity"]["additive_background_transmissivity"])
-    set_opt_if_unset("-wtm_T_bedrock", n.as<std::string>().c_str());
 
   // evaporation.et_sigmoid (the always-on soil<->open-water ET transition) + extinction_depth. The taper
   // on/off toggles (-wtm_evap_taper / -wtm_extinction) stay default-on; only the parameters are exposed.
-  if (auto n = root["evaporation"]["et_sigmoid"]["wtd_center"])
-    set_opt_if_unset("-wtm_evap_taper_wtdc", n.as<std::string>().c_str());
-  if (auto n = root["evaporation"]["et_sigmoid"]["logistic_width"])
-    set_opt_if_unset("-wtm_evap_taper_s", n.as<std::string>().c_str());
   if (auto n = root["evaporation"]["extinction_depth"])
     set_opt_if_unset("-wtm_extinction_depth", n.as<std::string>().c_str());
 
@@ -1042,9 +1035,6 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (auto m = s["qmax"])             set_opt_if_unset("-wtm_surface_sink_qmax", m.as<std::string>().c_str());
     if (auto m = s["width"])            set_opt_if_unset("-wtm_surface_sink_width", m.as<std::string>().c_str());
     if (auto m = s["fringe_source"])    set_opt_if_unset("-wtm_fringe_source", m.as<std::string>().c_str());
-    if (auto m = s["fringe_cap"])       { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_cap", m.as<std::string>().c_str()); }
-    if (auto m = s["fringe_ksat_coef"]) { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_ksat_coef", m.as<std::string>().c_str()); }
-    if (auto m = s["fringe_length"])    { if (!m.IsNull()) set_opt_if_unset("-wtm_fringe_length", m.as<std::string>().c_str()); }
   }
 
   // output.verbosity: verbose -> per-solve PETSc monitors. (quiet-level suppression of WTM's own per-cycle

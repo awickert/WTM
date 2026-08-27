@@ -1341,7 +1341,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // integrated over the active flow thickness; it removes the deep-cell operator singularity by capping
   // T's dynamic range (e.g. 1e-8 -> ~3.7 orders vs surface). See the block above depthIntegratedTransmissivity.
   // Incompatible with -wtm_kirchhoff (Φ + T_bedrock·wtd is not analytically invertible for the Φ variable).
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_T_bedrock", &g_T_bedrock, nullptr);
+  // Config-owned (transmissivity.additive_background_transmissivity); the -wtm_T_bedrock flag is GONE.
+  g_T_bedrock = params.t_bedrock;
   if (g_T_bedrock < 0.0)
     throw std::runtime_error("-wtm_T_bedrock must be >= 0 (it is an additive transmissivity floor in m^2/s).");
   if (g_T_bedrock > 0.0 && g_kirchhoff)
@@ -1693,9 +1694,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     if (fmode == 3)
       throw std::runtime_error("-wtm_fringe_source file: not yet implemented (use none|fixed|ksat).");
     g_fringe_source = static_cast<int>(fmode);  // 0 none, 1 fixed, 2 ksat (matches FringeSource)
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_length", &g_fringe_length, nullptr);
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_ksat_coef", &g_fringe_ksat_coef, nullptr);
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_fringe_cap", &g_fringe_cap, nullptr);
+    // Config-owned (surface_water.collection.sink.*). The -wtm_fringe_* flags are GONE: they had no
+    // callers in the repo and existed only as transport for these YAML keys.
+    g_fringe_length    = params.fringe_length;
+    g_fringe_ksat_coef = params.fringe_ksat_coef;
+    g_fringe_cap       = params.fringe_cap;
 
     // Populate w = psi_a / KAPPA_SINK per cell (content-match). none -> uniform g_surface_sink_width
     // (byte-identical); fixed -> uniform; ksat -> psi_a = C*sqrt(n/ksat), capped at g_fringe_cap.
@@ -2454,8 +2457,13 @@ void read_evap_taper_options(const Parameters& params) {
   PetscBool evap_taper = PETSC_TRUE;  // taper 2 default ON (off-switch: -wtm_evap_taper 0 / false)
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_evap_taper", &evap_taper, nullptr);
   g_evap_taper = (evap_taper == PETSC_TRUE);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_wtdc", &g_evap_taper_wtdc, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_evap_taper_s", &g_evap_taper_s, nullptr);
+  // Config-owned (evaporation.et_sigmoid). The -wtm_evap_taper_wtdc / -wtm_evap_taper_s flags are GONE:
+  // they had no callers anywhere in the repo and existed only as transport for these two YAML keys, which
+  // the bridge pushed into PETSc's options DB for this line to read back. Reading Parameters directly
+  // means the value is stored, schema-checked, and appears in the resolved-config log -- none of which
+  // was true while it lived only in the options database.
+  g_evap_taper_wtdc = params.evap_taper_wtdc;
+  g_evap_taper_s    = params.evap_taper_s;
 
   // Taper 3: accessibility / extinction-depth clamp (awickert/WTM#4). Own on/off toggle plus the depth.
   PetscBool extinction = PETSC_TRUE;  // taper 3 default ON (off-switch: -wtm_extinction 0 / false)

@@ -168,6 +168,19 @@ Parameters::Parameters(const std::string& config_file) {
   // surface_water.collection.sink, run.equilibrium_stop, output.verbosity/if_exists/directory -- are not read
   // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
+  // -------- transmissivity / surface-water sink (config-owned; formerly -wtm_ transport only) --------
+  if (auto n = root["transmissivity"]["additive_background_transmissivity"]) t_bedrock = n.as<double>();
+  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_length"])
+    { if (!n.IsNull()) fringe_length = n.as<double>(); }
+  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_ksat_coef"])
+    { if (!n.IsNull()) fringe_ksat_coef = n.as<double>(); }
+  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_cap"])
+    { if (!n.IsNull()) fringe_cap = n.as<double>(); }
+
+  // -------- evaporation --------
+  if (auto n = root["evaporation"]["et_sigmoid"]["wtd_center"])     evap_taper_wtdc = n.as<double>();
+  if (auto n = root["evaporation"]["et_sigmoid"]["logistic_width"]) evap_taper_s    = n.as<double>();
+
   // -------- run --------
   if (auto n = root["run"]["type"]) run_type = n.as<std::string>();
   // initial_water_table: "saturated" -> start at the surface (wtd = 0); any other value names a supplied

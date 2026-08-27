@@ -50,6 +50,22 @@ struct Parameters {
   // so an explicit choice is always honoured (with a warning) and never silently downgraded.
   bool runoff_collector_set = false;
 
+  // Background (bedrock) transmissivity floor [m^2/s], 0 = off (v2.0.1 behaviour).
+  double t_bedrock = 0.0;
+
+  // Capillary-fringe parameters for the legacy band sink (surface_water.collection.sink). Effective only
+  // with collection.method: legacy; kept configurable because that mode still exists.
+  double fringe_length    = 0.1;    // fixed fringe height psi_a [m]
+  double fringe_ksat_coef = 5e-4;   // C [SI] in psi_a = C*sqrt(n/ksat)
+  double fringe_cap       = 2.0;    // max psi_a [m]
+
+  // Evaporation: the always-on soil<->open-water ET sigmoid (evaporation.et_sigmoid). Config-owned --
+  // these were reached only through -wtm_evap_taper_wtdc / -wtm_evap_taper_s, which the YAML bridge set
+  // from these very keys, so the flags were pure transport with no CLI callers anywhere in the repo.
+  // Held here instead: the value is stored, schema-checked, and printed in the resolved-config log.
+  double evap_taper_wtdc = 0.05;  // wtd_c: half-rate depth [m] (small +, pond->exposed)
+  double evap_taper_s    = 0.1;   // s: logistic transition width [m]
+
   // Grid geometry. cells_per_degree / southern_edge are DEPRECATED config inputs (the `grid:` block),
   // kept only as an override for inputs that lack georeferencing. By default the geometry is derived from
   // the input topography's GDAL geotransform (#124): ns_deg_per_cell / ew_deg_per_cell are the true
