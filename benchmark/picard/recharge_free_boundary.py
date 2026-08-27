@@ -195,20 +195,22 @@ order_study(0.01, 0, V, "C_crossing_not_removed",
 order_study(0.01, 0, V + SURF_SMOOTH, "D_kink_smoothing",
             "round the ksat & storativity kinks at wtd=0 -> expect NO help, order ~1")
 # E. Extended soil removes the free boundary -> 2nd order restored (the fix).
-# collector="off" IS PART OF THE EXPERIMENT, not a convenience. Extended soil's premise is that there
-# IS no surface water -- the aquifer continues upward and the mound is left standing until FSM
-# truncates it at the cycle handoff. A runoff collector is the machinery that disposes of surface
-# water, so running one alongside extended soil asks for two contradictory things and the collector
-# wins: it pins wtd <= 0, the mound never forms, and the free boundary extended soil exists to remove
-# is reinstated. Measured: with the default collector, max wtd = 0.000 m and 0 cells above the surface;
-# with collector off, max wtd = +23.392 m over 4294 cells -- the "+23 m mound" section 15 describes.
+# Extended soil is SELECTED AS A MODE, not layered on top of one. It is a member of
+# surface_water.collection.method -- the same enumeration as active_set/implicit/explicit/off -- because
+# it is a choice about what happens to water at the surface, and exactly one such choice can be in
+# force. Its premise is that there IS no surface water: the aquifer continues upward and the mound is
+# left standing until FSM truncates it at the cycle handoff. Asking for it AND a collector is
+# contradictory, and the selector now says so and supersedes rather than letting both clamp.
+# (`-wtm_extended_soil` is the legacy alias and selects this mode when no method is configured, so it
+# also works alone; passing it alongside `collector="off"` would be superseded BY off and silently
+# disable extended soil -- which is why this arm names the mode instead.)
 # A-D keep their default collector on purpose: they NEED surface disposal, because it is disposal that
 # holds cells AT wtd=0 and creates the moving free boundary whose kink costs them the order. Give A-D
 # collector=off too and all four rise to order ~2 (measured: B 2.05/1.97/1.93, D 2.06/2.02/2.01) --
 # the arms stop testing anything and E's order 2 proves nothing, since everything is order 2.
-order_study(0.01, 1, V + ["-wtm_extended_soil"], "E_extended_soil",
+order_study(0.01, 1, V, "E_extended_soil",
             "continue the aquifer above the surface, no free boundary -> order ~2 RESTORED",
-            collector="off")
+            collector="extended_soil")
 
 set_precip(0.0)  # leave the private fixture at zero forcing
 print("\nSummary: recharge is fine (A); REMOVING water at the surface breaks order (B), while")
