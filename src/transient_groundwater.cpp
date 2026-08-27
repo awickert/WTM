@@ -2198,12 +2198,28 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       //       the solve, then clamped to the surface here = A_legacy but with a PER-STEP collect instead
       //       of waiting for FSM's cadence. The robust variant. (Turn the sink off to use it: else the
       //       sink holds wtd<=0 and this never fires.)
-      //   -wtm_extended_soil   : EXTENDED-soil physics (no T-clamp -> T GROWS above the surface). Tested
-      //       NEGATIVE (2026-08-10): the un-clamped T conducts laterally = a new stiffness (slower,
-      //       diverges at large dt). Kept as a documented dead-end; the clamp variant is the one to use.
+      // -wtm_extended_soil USED TO SELECT THIS TOO, AND MUST NOT. That pairing was added 2026-08-10 as a
+      // second post-solve mode (EXTENDED-soil physics: no T-clamp, so T GROWS above the surface) and was
+      // recorded in the same breath as a failure -- "Tested NEGATIVE: the un-clamped T conducts laterally
+      // = a new stiffness (slower, diverges at large dt). Kept as a documented dead-end; the clamp variant
+      // is the one to use." The dead end was kept, but it was left wired to -wtm_extended_soil, which
+      // already meant something else and something CONTRADICTORY: remove the wtd=0 free boundary so the GW
+      // step is smooth and BDF2 recovers 2nd order (a6a33f9, 2026-07-27; benchmark/BDF2_RECHARGE_ORDER.md
+      // section 15, which states the truncation belongs at the FSM/cycle handoff, NOT per GW step).
+      // Truncating the mound here every step reinstates exactly the temporal kink the flag exists to
+      // remove, so the dead-end experiment silently defeated the validated fix. Measured on the design
+      // note's own harness (benchmark/picard/recharge_free_boundary.py, arm E), order in dt:
+      //     with extended_soil selecting this block : 1.22  1.08  1.02  0.92   err 1.647 mm at dt=1 yr
+      //     without (this line)                     : 2.07  2.01  2.00  2.01   err 0.002031 mm
+      // against the section-15 record of 2.07/2.07/2.00 and 0.0019 mm -- i.e. restored. The mound returns
+      // with it: max wtd +23.392 m over 4294 cells, the "+23 m mound" section 15 describes.
+      // NOTE the second, independent clamp: a runoff COLLECTOR also pins wtd<=0 and defeats extended soil
+      // on its own, so both must be off to see the effect (that is why single-variable elimination reads
+      // as "no change" here -- each masks the other). extended_soil + a collector is a contradictory
+      // request the model does not currently refuse.
       // Excess = storedVolume(wtd) - storedVolume(0): the real above-surface storage under the ACTIVE
       // storativity (~wtd surface-water depth in standard physics; porosity*wtd in extended soil).
-      if ((g_surface_exfiltration_to_runoff_array || g_extended_soil) && dmdapack.starting_wtd[j][i] > 0.0) {
+      if (g_surface_exfiltration_to_runoff_array && dmdapack.starting_wtd[j][i] > 0.0) {
         const double poro         = dmdapack.porosity_vec[j][i];
         const double excess_depth = storedVolume(dmdapack.starting_wtd[j][i], poro) - storedVolume(0.0, poro);
         arp.total_surface_removed += excess_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
