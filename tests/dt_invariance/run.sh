@@ -62,6 +62,7 @@ region fsm_test
 time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
+${ADAPT:+adaptive_dt true}
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -84,8 +85,8 @@ fail=0
 for rr_tag in "0:z" "0.3:r"; do
     rr="${rr_tag%%:*}"; p="${rr_tag##*:}"
     run "${p}fx"    "$rr"                                    || fail=1
-    DT_TOL=0.5  run "${p}ad_lo" "$rr" -wtm_dt_adaptive || fail=1
-    DT_TOL=0.02 run "${p}ad_hi" "$rr" -wtm_dt_adaptive || fail=1
+    ADAPT=1 DT_TOL=0.5  run "${p}ad_lo" "$rr" || fail=1
+    ADAPT=1 DT_TOL=0.02 run "${p}ad_hi" "$rr" || fail=1
 done
 [[ $fail -eq 0 ]] || { echo "DT INVARIANCE: FAILED (a run did not complete)"; exit 1; }
 

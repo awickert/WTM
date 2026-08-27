@@ -114,7 +114,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE, adaptive_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_picard", &picard_flag);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2", &bdf2_flag);
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_adaptive", &adaptive_flag);
+  // config-owned (solver.adaptive_dt); the -wtm_dt_adaptive flag is retired. Kept as a PetscBool
+  // because the surrounding path-resolution logic below is written in PetscBool terms.
+  adaptive_flag = params.adaptive_dt ? PETSC_TRUE : PETSC_FALSE;
   PetscBool bdf2v_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2_on_V", &bdf2v_flag);
 

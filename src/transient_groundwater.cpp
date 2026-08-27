@@ -1328,9 +1328,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // antiderivative), so it is incompatible with ksat smoothing, extended soil, and the Kirchhoff change
   // of variable (which redefines the solve variable). Applies on the Anderson residual, the Picard
   // operator, and the Newton Jacobian.
-  PetscBool tbar = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_Tbar", &tbar);
-  g_Tbar = (tbar == PETSC_TRUE);
+  // config-owned (solver.t_bar); the -wtm_Tbar flag is retired
+  g_Tbar = params.t_bar;
   if (g_Tbar && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 ||
                  g_extended_soil || g_kirchhoff))
     throw std::runtime_error("-wtm_Tbar requires the piecewise Fan transmissivity: remove "

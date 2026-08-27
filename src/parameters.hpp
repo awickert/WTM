@@ -60,6 +60,10 @@ struct Parameters {
   double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
   bool   surface_sink_width_set = false;
 
+  // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
+  bool t_bar       = false;
+  bool adaptive_dt = false;
+
   // solver.water_volume_timestep_error_tol: per-step local-error target in WATER volume. "auto" or an
   // absent key leaves it unset so the consumer's own default (which tracks eq_tol) applies.
   double dt_tol     = 0.1;

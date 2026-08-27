@@ -1009,8 +1009,6 @@ void apply_config_petsc_options(const std::string& config_file) {
     else if (t == "bdf2") set_opt_if_unset("-wtm_bdf2_on_V", "true");
     // "backward-euler" = default (no flag)
   }
-  if (auto n = root["solver"]["adaptive_dt"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dt_adaptive", "true"); }
-  if (auto n = root["solver"]["t_bar"])   { if (n.as<bool>()) set_opt_if_unset("-wtm_Tbar", "true"); }
   if (auto n = root["solver"]["storage"]) { if (n.as<std::string>() == "volume") set_opt_if_unset("-wtm_volume_storage", "true"); }
 
   // dev

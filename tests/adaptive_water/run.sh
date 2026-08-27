@@ -18,6 +18,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+${ADAPT:+adaptive_dt true}
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -43,10 +44,10 @@ EOF
 }
 
 BB="-wtm_anderson"
-emit cc; emit adapt; emit water
+emit cc; ADAPT=1 emit adapt; emit water
 "$WTM" "$WORK/cc.yaml"    $BB -wtm_eq_metric rms       -wtm_eq_tol 0.001  > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
-"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 -wtm_dt_adaptive -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
+"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
   || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
 "$WTM" "$WORK/water.yaml" $BB -wtm_eq_metric rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
