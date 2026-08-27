@@ -1,0 +1,10 @@
+run:
+  started: 2026-08-27T14:36:23
+  hostname: verse
+  mpi_ranks: 1
+build:
+  git_commit: 8e3d350241f7cf612e32aae6ab8e989e222ca948
+  git_state: dirty
+  petsc_version: 3.19.6
+command: /home/awickert/models/WTM/build/wtm.x /home/awickert/models/WTM/config.yaml
+config_file: /home/awickert/models/WTM/config.yaml
