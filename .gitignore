@@ -60,7 +60,15 @@ perf.data*
 __pycache__/
 *.pyc
 
-# Model run outputs. Any run whose config sets output.directory creates results/<run>/ next to the
+# Model run outputs. Any run whose config sets output.directory writes results/<run>/ beside the
 # config; tests/config_schema makes them routinely because it runs the REFERENCE config.yaml unmodified
-# (which is the point of that arm -- validating the config as shipped). Artifacts, never source.
-results/
+# (which is the point of that arm -- validating the config as shipped).
+#
+# SCOPED ON PURPOSE, not a blanket `results/`. benchmark/adaptive_dt/results/ holds TRACKED csv
+# summaries (adapt_bench_spinup.csv, adapt_bench_transient.csv -- the record of those benchmarks) and
+# has no local ignore rule, so a bare `results/`, which matches at any depth, would silently stop new
+# benchmark data there from ever being committed. Verified with git check-ignore both ways.
+# (benchmark/esquibel/results/scaling/ is separately ignored by its own pre-existing .gitignore; that
+# is the repo's existing choice there, not this rule's doing.)
+/results/
+tests/*/results/
