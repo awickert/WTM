@@ -8,7 +8,10 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <map>
+#include <set>
 #include <string>
+#include <vector>
 
 // Parse a simulated-time value with an explicit unit ("500yr" / "1000s"); a bare number defaults to YEARS
 // with a loud warning so the assumption is never silent. Returns seconds. (Exposed for the Phase-2b config
@@ -22,6 +25,120 @@ double parse_time_seconds(const std::string& v, const char* key) {
             << "yr). Set '" << v << "yr' or '<seconds>s' to silence.\n";
   return std::stod(v) * 31536000.0;
 }
+
+namespace {
+
+// THE CONFIG DICTIONARY: every key the model understands, indexed by its parent path ("" = top level).
+// A key absent from here is REJECTED -- see validate_config_keys below for why that is worth an abort.
+//
+// Keeping this in step with the readers is the maintenance cost, and it is deliberately paid in ONE
+// place. Two readers consume this file: Parameters (member-backed keys, this file) and
+// apply_config_config_petsc_options (the YAML->PetscOptions bridge in WTM.cpp, which owns solver / dev /
+// parallel / boundaries / evaporation / run.equilibrium_stop / surface_water.collection.sink /
+// output.verbosity). Both are covered here, so a key that only the bridge reads still validates.
+// tests/config_schema asserts that this table and the reference config.yaml agree in both directions,
+// which is what catches a key added to one and not the other.
+const std::map<std::string, std::set<std::string>>& config_schema() {
+  static const std::map<std::string, std::set<std::string>> schema = {
+      {"", {"run", "time", "grid", "transmissivity", "surface_water", "evaporation", "boundaries", "solver",
+            "dev", "parallel", "io", "output"}},
+      {"run", {"type", "initial_water_table", "equilibrium_stop"}},
+      {"run.equilibrium_stop", {"tol", "metric", "frac"}},
+      {"time", {"deltat", "total", "report_interval", "save_every_n_reports"}},
+      {"grid", {"cells_per_degree", "southern_edge"}},
+      {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
+      {"transmissivity.fdepth", {"a", "b", "fmin"}},
+      {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection"}},
+      {"surface_water.collection", {"method", "sink"}},
+      {"surface_water.collection.sink",
+       {"qmax", "width", "fringe_source", "fringe_cap", "fringe_ksat_coef", "fringe_length"}},
+      {"evaporation", {"et_sigmoid", "extinction_depth"}},
+      {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
+      {"boundaries", {"land"}},
+      {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt", "dt_max",
+                  "water_volume_timestep_error_tol", "t_bar", "storage"}},
+      {"dev", {"active_set", "allow_aboveground_water_columns", "padded_dirichlet"}},
+      {"parallel", {"threads_per_rank"}},
+      {"io", {"source", "region", "time_start", "time_end"}},
+      {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity"}},
+  };
+  return schema;
+}
+
+// Levenshtein, for "did you mean". Small strings; the naive two-row version is plenty.
+int edit_distance(const std::string& a, const std::string& b) {
+  std::vector<int> prev(b.size() + 1), cur(b.size() + 1);
+  for (size_t j = 0; j <= b.size(); j++) prev[j] = static_cast<int>(j);
+  for (size_t i = 1; i <= a.size(); i++) {
+    cur[0] = static_cast<int>(i);
+    for (size_t j = 1; j <= b.size(); j++)
+      cur[j] = std::min({prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)});
+    prev = cur;
+  }
+  return prev[b.size()];
+}
+
+// Walk the tree and collect EVERY unrecognised key, with its full dotted path.
+void collect_unknown_keys(const YAML::Node& node, const std::string& path, std::vector<std::string>& errs) {
+  const auto& schema = config_schema();
+  const auto it = schema.find(path);
+  if (it == schema.end()) {
+    // A mapping we have no dictionary for. This is a bug in the table above, not in the user's file, and
+    // saying so is better than silently accepting anything nested under it.
+    errs.push_back("  " + path + ": (internal) no schema entry for this section; the dictionary in "
+                                 "src/parameters.cpp is incomplete");
+    return;
+  }
+  for (const auto& kv : node) {
+    const std::string key  = kv.first.as<std::string>();
+    const std::string full = path.empty() ? key : path + "." + key;
+    if (!it->second.count(key)) {
+      // Suggest the nearest sibling if it is close enough to be a plausible typo.
+      std::string best;
+      int best_d = 1000;
+      for (const auto& cand : it->second) {
+        const int d = edit_distance(key, cand);
+        if (d < best_d) { best_d = d; best = cand; }
+      }
+      std::string msg = "  unknown key '" + full + "'";
+      if (best_d <= 3 && best_d < static_cast<int>(key.size()))
+        msg += "  -- did you mean '" + (path.empty() ? best : path + "." + best) + "'?";
+      msg += "\n      known keys in " + (path.empty() ? std::string("<top level>") : "'" + path + "'") + ": ";
+      bool first = true;
+      for (const auto& cand : it->second) { msg += (first ? "" : ", ") + cand; first = false; }
+      errs.push_back(msg);
+      continue;  // do not descend into an unknown section; its children would all be noise
+    }
+    if (kv.second.IsMap()) collect_unknown_keys(kv.second, full, errs);
+  }
+}
+
+// REJECT unrecognised keys instead of ignoring them. yaml-cpp reads by lookup, so anything not looked up
+// is simply never seen: a typo, a key retired by a schema migration, or a setting a user believes is in
+// force all behave identically to not writing them at all, and the run proceeds and reports success.
+//
+// That is worse than a lost setting, because it makes NEGATIVE results untrustworthy. A parameter sweep
+// over a key nothing reads returns "no effect" for a reason that has nothing to do with the model, and it
+// is indistinguishable from a real finding. Two of those happened here: `total_cycles` (retired when the
+// schema went nested) sat in ten benchmark scripts doing nothing, and a controller sweep reported
+// byte-identical results because the flag it varied was parsed on a different code path.
+//
+// Failing loudly costs a user one clear error message; accepting silently costs whoever has to work out
+// later why a documented experiment cannot be reproduced.
+void validate_config_keys(const YAML::Node& root, const std::string& config_file) {
+  std::vector<std::string> errs;
+  collect_unknown_keys(root, "", errs);
+  if (errs.empty()) return;
+  std::string msg = "config file '" + config_file + "' has " + std::to_string(errs.size())
+                    + (errs.size() == 1 ? " unrecognised key:\n" : " unrecognised keys:\n");
+  for (const auto& e : errs) msg += e + "\n";
+  msg += "\nEvery key is checked against the schema in src/parameters.cpp; see config.yaml for the full\n"
+         "documented set. If a key was recently renamed, the old spelling is gone rather than ignored --\n"
+         "this abort exists so that a setting you wrote can never be silently doing nothing.";
+  throw std::runtime_error(msg);
+}
+
+}  // namespace
 
 // Real initializer
 Parameters::Parameters(const std::string& config_file) {
@@ -37,6 +154,9 @@ Parameters::Parameters(const std::string& config_file) {
                              "surface_water / solver / ...) -- see config.yaml. (A legacy 'key value' .cfg "
                              "will trip this.)");
   }
+  // Before reading anything: reject keys the model does not understand, so a typo or a retired key can
+  // never sit in a config quietly doing nothing. See validate_config_keys.
+  validate_config_keys(root, config_file);
 
   // Each key is read only if present; an absent key keeps the member's default, and check() below enforces
   // the ones that must be set (matching the previous parser's behavior). Chained operator[] on an absent
