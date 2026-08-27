@@ -265,7 +265,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
     user_context.dtc_dt_max = 1000.0 * params.deltat;
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
+    // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
+    if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
     // The bundle defaults the early-stop to 1 mm-water/step (gated on dt in WTM.cpp so it cannot fire during
@@ -303,7 +304,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // needs -wtm_dtc_grow 1 -wtm_dtc_shrink 1 to freeze dt and refine it from a fixed state.
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt_max", &user_context.dtc_dt_max, nullptr);
+    // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
+    if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
     // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now

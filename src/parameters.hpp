@@ -60,6 +60,13 @@ struct Parameters {
   double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
   bool   surface_sink_width_set = false;
 
+  // solver.dt_max: cap on the adaptive/continuation step [s]. "auto" (or an absent key) leaves this
+  // UNSET, and each consumer keeps its own default -- they differ deliberately: the continuation ramp
+  // caps at 1000*deltat, while the adaptive controller treats 0 as "no cap". A single shared default
+  // would silently change one of them, so the was-it-set flag carries that distinction.
+  double dtc_dt_max     = 0.0;
+  bool   dtc_dt_max_set = false;
+
   // Equilibrium stop: fraction of land cells allowed above eq_tol for the `frac` metric.
   double eq_frac = 0.001;
 
