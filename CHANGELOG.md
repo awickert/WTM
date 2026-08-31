@@ -16,12 +16,36 @@ capabilities remain experimental and off by default.
 format. Settings are grouped into sections — `run` / `time` / `io` / `output` / `boundaries`
 / `transmissivity` / `evaporation` / `surface_water` / `solver` / `parallel` / `dev` — see the
 annotated `config.yaml`. Grid geometry is derived from the input's GDAL geotransform (the
-`grid` block is deprecated). Solver and numerics choices are now config keys (mapped onto the
-underlying `-wtm_*` / `-snes_*` options; an explicit CLI flag still overrides the config). The
-regression suite is **mid-migration** to the new format and is not currently green end-to-end;
-individual changes are verified with targeted checks.
+`grid` block is deprecated). Solver and numerics choices are now config keys. Seventeen
+settings that were previously reachable only through a `-wtm_*` flag are now config-owned and the
+flags are **removed**; the flags that remain still override the config when passed. The
+regression suite is fully migrated to the new format and is **green end-to-end** (34/34 suites, all
+configs built through `tests/emit_config.sh`).
 
 ### Changed
+
+- **BREAKING — an unrecognised YAML key now ABORTS the run.** Previously a key nobody read was simply
+  never seen: a typo, a key retired by the schema migration, and a setting a user believed was in force
+  all behaved identically to not writing it, and the run reported success. The abort names every
+  offending key with its full dotted path, lists the valid keys for that section, and suggests the
+  nearest match:
+
+      config file 'x.yaml' has 1 unrecognised key:
+        unknown key 'time.detlat'  -- did you mean 'time.deltat'?
+            known keys in 'time': deltat, report_interval, save_every_n_reports, total
+
+  **If you have an existing config with a stale or misspelled key, it will now stop rather than quietly
+  ignore it.** That is the point: the cost of the old behaviour was not a lost setting but a lost
+  NEGATIVE RESULT — a parameter sweep over a key nothing reads returns "no effect" for a reason that has
+  nothing to do with the model, and reads exactly like a finding.
+
+- **BREAKING — a `-wtm_*` flag that nothing consumed now ABORTS the run.** PETSc's options database
+  accepts any string, so a misspelled flag, a retired flag, or a flag whose parse site sits on a code
+  path the run did not take had no effect and said nothing. Checked once, after the first cycle
+  (`update()` re-reads options every cycle, so at init many legitimately-passed flags have not been
+  queried yet). PETSc's own options (`-snes_`, `-ksp_`, `-pc_`, `-mat_`) are deliberately not policed —
+  they are legitimately unused depending on the solver path.
+
 
 - **DEFAULT surface-water enforcement is now `active_set`** (`surface_water.collection.method`),
   replacing `implicit`. The semismooth exfiltration constraint is solved *inside* the residual rather
@@ -495,6 +519,36 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   aborting once restarts are exhausted. Regression: `tests/adaptive_restart/`.
 
 ### Removed
+
+- **Seventeen `-wtm_*` flags, replaced by config keys.** Each setting is now parsed from the config,
+  schema-checked, and read directly by its consumer. Passing a removed flag aborts by name (see the
+  unconsumed-flag check above), so a stale script fails loudly rather than silently taking a default:
+
+  | removed flag | config key |
+  |---|---|
+  | `-wtm_eq_tol` | `run.equilibrium_stop.tol` |
+  | `-wtm_eq_metric` | `run.equilibrium_stop.metric` |
+  | `-wtm_eq_frac` | `run.equilibrium_stop.frac` |
+  | `-wtm_dt_adaptive` | `solver.adaptive_dt` |
+  | `-wtm_dt_tol` | `solver.water_volume_timestep_error_tol` |
+  | `-wtm_dtc_dt_max` | `solver.dt_max` |
+  | `-wtm_Tbar` | `solver.t_bar` |
+  | `-wtm_T_bedrock` | `transmissivity.additive_background_transmissivity` |
+  | `-wtm_evap_taper_wtdc` | `evaporation.et_sigmoid.wtd_center` |
+  | `-wtm_evap_taper_s` | `evaporation.et_sigmoid.logistic_width` |
+  | `-wtm_extinction_depth` | `evaporation.extinction_depth` |
+  | `-wtm_surface_sink_qmax` | `surface_water.collection.sink.qmax` |
+  | `-wtm_surface_sink_width` | `surface_water.collection.sink.width` |
+  | `-wtm_fringe_source` | `surface_water.collection.sink.fringe_source` |
+  | `-wtm_fringe_cap` | `surface_water.collection.sink.fringe_cap` |
+  | `-wtm_fringe_ksat_coef` | `surface_water.collection.sink.fringe_ksat_coef` |
+  | `-wtm_fringe_length` | `surface_water.collection.sink.fringe_length` |
+
+  Motivation beyond tidiness: while a setting lived only in PETSc's options database it was in no
+  `Parameters` field and no resolved-configuration line, so a CLI flag that discarded a configured value
+  left no trace anywhere. `benchmark/CONFIG_FLAG_COVERAGE.md` classifies all 65 `-wtm_*` flags and
+  records which remain and why.
+
 - The `-wtm_const_storativity` diagnostic path.
 
 [Unreleased]: https://github.com/KCallaghan/WTM/compare/v2.0.1...HEAD
