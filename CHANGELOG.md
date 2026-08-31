@@ -24,8 +24,8 @@ configs built through `tests/emit_config.sh`).
 
 ### Known limitations
 
-Two accuracy bounds measured during this work. Both are properties of the model as it stands, not
-defects to be worked around, and either can invalidate a naive dt-refinement argument.
+Three limits measured during this work. All are properties of the model as it stands rather than
+defects to be worked around, and the first two can invalidate a naive dt-refinement argument.
 
 - **With FillSpillMerge on, first-order operator splitting caps the whole scheme at order 1**,
   regardless of integrator. Measured by solution convergence at fixed model time: TR-BDF2 gives
