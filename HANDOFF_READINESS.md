@@ -5,16 +5,20 @@ up and use. Not a design note and not a changelog: it answers one question — *
 today, where would a new user get stuck?* Each item is either done (with the evidence), in progress, or
 open with its blast radius stated.
 
+**Scope: the model code and the surfaces a user touches** — configuration, discoverability, trustworthy
+numbers, reproducible documented results. At-scale validation runs are a separate activity and are
+deliberately not on this list. They are not a prerequisite for finishing the code, and while they were
+listed they kept dragging the plan toward themselves.
+
 Kept in the repo rather than in a session log because the answer outlives any one working session.
 
 ---
 
 ## The goal, stated plainly
 
-Completing the model and handing it off for use. **Not** "run Esquibel" — the Esquibel and North
-America spin-ups are *validation runs before* handoff, not the objective. A model is ready when
-someone who did not write it can configure it, run it, trust its numbers, reproduce its documented
-results, and discover what it can do without reading the source.
+Completing the model and handing it off for use. A model is ready when someone who did not write it
+can configure it, run it, trust its numbers, reproduce its documented results, and discover what it can
+do without reading the source.
 
 That framing decides priority. Work that removes a way for a new user to be silently wrong outranks
 work that makes an existing result slightly better.
@@ -100,14 +104,6 @@ mode was three silent breakages deep. That one script is now repaired and reprod
 
 A handed-off model whose benchmark suite does not execute is incomplete, and its claims decay into
 folklore.
-
-## 5. Validation before handoff
-
-- **#9 Esquibel at 384k cells** — validate the active-set default at scale. All evidence to date is
-  ≤ 8775 cells.
-- **#10 North America 30-arcsecond spin-up** — the production configuration end to end.
-
-Both are deliberately deferred until the above is settled. They are the *last* step, not the goal.
 
 ---
 
