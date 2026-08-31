@@ -22,6 +22,27 @@ flags are **removed**; the flags that remain still override the config when pass
 regression suite is fully migrated to the new format and is **green end-to-end** (34/34 suites, all
 configs built through `tests/emit_config.sh`).
 
+### Known limitations
+
+Two accuracy bounds measured during this work. Both are properties of the model as it stands, not
+defects to be worked around, and either can invalidate a naive dt-refinement argument.
+
+- **With FillSpillMerge on, first-order operator splitting caps the whole scheme at order 1**,
+  regardless of integrator. Measured by solution convergence at fixed model time: TR-BDF2 gives
+  ~2.0 with FSM off and **1.04 / 1.00** with it on. Refining `deltat` therefore buys first-order
+  accuracy in any production configuration, whatever the integrator claims.
+
+- **The adaptive controller's error estimate is invalid on non-TR integrators when FSM is on.** A
+  history-based estimate must difference two states, and in an operator-split step every such pair
+  straddles the FSM handoff, so the jump — which does not shrink with `dt` — lands in the estimate.
+  Measured order of the estimate itself: **0.00** (constant in `dt` across a 64× refinement). TR-BDF2 is
+  immune structurally, its estimate being embedded within a single step, and measures 2.00. Pinned as an
+  expected failure in `tests/estimator_order` so it fails loudly if it changes in either direction.
+  **Practical consequence: prefer `solver.time_integration: tr-bdf2` when using `solver.adaptive_dt`.**
+
+- **The default surface-water enforcement is validated only at small scale.** Every result supporting
+  `collection.method: active_set` as the default comes from fixtures of 8775 cells or fewer.
+
 ### Changed
 
 - **BREAKING — an unrecognised YAML key now ABORTS the run.** Previously a key nobody read was simply
@@ -82,6 +103,33 @@ configs built through `tests/emit_config.sh`).
   between decompositions), where `implicit` reproduced below 1e-6.
 
 ### Fixed
+
+- **`-wtm_extended_soil` was defeated by a second mechanism wired to the same flag.** A post-solve
+  surface-truncation experiment added later keyed off `g_extended_soil` and clamped the above-surface
+  mound back to the surface every GW step — reinstating exactly the `wtd = 0` free boundary that
+  extended soil exists to remove. The flag therefore printed its mode banner while doing the opposite of
+  what it claimed. Measured on the design note's own harness (`benchmark/picard/recharge_free_boundary.py`,
+  arm E), order in dt: **1.22 / 1.08 / 1.02** with the collision, **2.07 / 2.01 / 2.00** without, against
+  the recorded 2.07/2.07/2.00. Extended soil is now a member of `surface_water.collection.method`, so
+  "extended soil AND a collector" — the contradictory request underneath this — is unrepresentable
+  rather than merely detected. It remains `[WIP]` and nonphysical: its production half (truncating the
+  mound at the FSM handoff rather than per step) is still unimplemented.
+
+- **The step-size controller's own knobs were unreachable on the adaptive path.** `-wtm_dtc_grow`,
+  `-wtm_dtc_shrink`, `-wtm_dtc_dt_max` and `-wtm_dtc_easy_iters` were parsed only inside
+  `if (use_newton_continuation)`, yet the adaptive controller reads all four on every step. On a plain
+  `-wtm_dt_adaptive` run PETSc accepted them and nothing consumed them, so the controller silently ran
+  on compiled-in defaults. Effect once live, same fixture: `-wtm_dtc_easy_iters` 0 / 4 / 8 / 100000
+  gives 229506 (still running) / 2464 / 57 / 57 steps, where all four previously gave 57.
+
+- **`benchmark/picard/recharge_free_boundary.py` had not run since two migrations.**
+  `BDF2_RECHARGE_ORDER.md` §15 tells the reader to reproduce its result with that script; the script had
+  been broken for weeks by the nested-YAML config change and by #124 making the GDAL geotransform
+  authoritative (its fixture wrote a pixel-space transform, giving latitudes past 90° and negative cell
+  areas). Neither failed loudly, because the harness swallowed the model's exit status. Repaired, and it
+  now reproduces §15 to within **0.002031 mm** against the recorded **0.0019 mm**. Roughly 25 other
+  scripts under `benchmark/` share this breakage and are **not** yet repaired.
+
 
 - **The runoff-ratio share was routed by solve count, not by elapsed time.** It was handed to
   FillSpillMerge at full *nominal* step size on every accepted sub-step and never scaled, so under
@@ -146,6 +194,12 @@ configs built through `tests/emit_config.sh`).
   aquifer and the surface agree on the amount transferred.
 
 ### Added
+
+- **`-wtm_dt_trace`** — reports `(dt, est, tol, factor, iters, accepted)` for every adaptive step,
+  accepted or rejected, in a machine-readable line. The local-error estimate steers the whole
+  integration and was previously computed each step and reported nowhere, so nothing could see whether
+  it responded to `dt` at all. Off by default.
+
 
 - **TR-BDF2 now has an exact per-step water budget** (`exact_budget_residual`, column 17), where it
   previously reported `nan` on the grounds that two stages have no single-step identity. They do:
@@ -519,6 +573,13 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   aborting once restarts are exhausted. Regression: `tests/adaptive_restart/`.
 
 ### Removed
+
+- **`evap_mode` is no longer a config key.** The member is frozen at 0 and is consulted only with the
+  evaporation taper switched off, so the key could not express what it named. `tests/emit_config.sh`
+  drops it. Note for anyone comparing against older runs: two benchmark arms that differed only by
+  `evap_mode` were emitting byte-identical configs, so any "these agree" conclusion drawn from that pair
+  was reading one measurement twice.
+
 
 - **Seventeen `-wtm_*` flags, replaced by config keys.** Each setting is now parsed from the config,
   schema-checked, and read directly by its consumer. Passing a removed flag aborts by name (see the
