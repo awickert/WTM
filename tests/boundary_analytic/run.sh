@@ -42,6 +42,8 @@ surfdatadir $INP
 region $2
 supplied_wt 0
 runoff_collector off
+eq_tol 1e-8
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -49,7 +51,7 @@ EOF
 # constant-T regime: flat sea-level topo + uniform recharge mounded above the surface (ponding via
 # runoff_collector=off, ALL wtd-dependent removals off) -> only constant-T diffusion + uniform source -> exact
 # parabola. runoff_collector=off is the physical successor to -wtm_dev_allow_aboveground_water_columns.
-FL="-wtm_anderson -wtm_evap_taper 0 -wtm_surface_sink 0 -wtm_extinction 0 -wtm_eq_metric rms -wtm_eq_tol 1e-8"
+FL="-wtm_anderson -wtm_evap_taper 0 -wtm_surface_sink 0 -wtm_extinction 0"
 
 emit dir anbcD; "$WTM" "$WORK/dir.yaml" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
 emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }

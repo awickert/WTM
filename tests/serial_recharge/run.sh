@@ -70,6 +70,7 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -78,7 +79,7 @@ EOF
 run() { # $1 = stem, $2 = infiltration_on, $3 = ranks
     local stem="$1" inf="$2" n="$3"
     mkcfg "$stem" "$inf"; rm -f "$WORK/$stem.txt"
-    if ! mpirun -n "$n" "$WTM" "$WORK/$stem.yaml" -wtm_anderson -snes_stol 1e-8 -wtm_eq_tol 0 \
+    if ! mpirun -n "$n" "$WTM" "$WORK/$stem.yaml" -wtm_anderson -snes_stol 1e-8 \
             > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; grep -iE "what\(\)|ERROR" "$WORK/$stem.log" | head -2 | sed 's/^/        /'
         return 1

@@ -235,9 +235,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // in full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value
   // to override. Parsed for ALL solver paths (was previously only inside the Newton block below, so it was
   // silently ignored on the default Anderson/Picard path). run() checks the PER-CYCLE change against it.
-  PetscBool eq_tol_set = PETSC_FALSE;
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_eq_tol", &user_context.eq_tol, &eq_tol_set);  // [m water]; 0 = off
-  if (!eq_tol_set)
+  // config-owned (run.equilibrium_stop.tol); an absent key keeps the run-type default below
+  if (params.eq_tol_set) user_context.eq_tol = params.eq_tol;
+  if (!params.eq_tol_set)
     user_context.eq_tol = (params.run_type == "equilibrium") ? 0.001 : 0.0;
   // -wtm_eq_metric max|rms|frac: how the per-cycle change is aggregated for the equilibrium stop. ALL three
   // now judge the change in PURE-WATER DEPTH (|S*Δwtd|, m of water), NOT head -- deep low-storativity cells
@@ -246,8 +246,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // < eq_frac of land cells exceed eq_tol) -- the measured best trade: max is worst-cell-hostage, rms is loose
   // (bulk only), frac both fires and stays precise. run.equilibrium_stop.frac sets the fraction (default 0.1%). Raw head is
   // still printed each cycle as a diagnostic. See benchmark/adaptive_dt.
-  char eq_metric_str[16] = "frac";
-  PetscOptionsGetString(nullptr, nullptr, "-wtm_eq_metric", eq_metric_str, sizeof(eq_metric_str), nullptr);
+  // config-owned (run.equilibrium_stop.metric)
+  char eq_metric_str[16];
+  std::strncpy(eq_metric_str, params.eq_metric.c_str(), sizeof(eq_metric_str) - 1);
+  eq_metric_str[sizeof(eq_metric_str) - 1] = ' ';
   if (std::strcmp(eq_metric_str, "rms") == 0) user_context.eq_metric = 1;
   else if (std::strcmp(eq_metric_str, "max") == 0) user_context.eq_metric = 0;
   else if (std::strcmp(eq_metric_str, "water") == 0 || std::strcmp(eq_metric_str, "water-max") == 0 ||

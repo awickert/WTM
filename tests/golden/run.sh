@@ -93,12 +93,13 @@ run_case() { # name nranks -> sets $PREFIX
     local cfg="$WORK/${name}_n${n}.yaml"
     PREFIX="$WORK/${name}_n${n}_"
     { case_cfg "$name" | sed "s|__X__|x|"
+      echo "eq_tol 0"
       echo "textfilename   $WORK/${name}_n${n}.txt"
       echo "outfile_prefix $PREFIX"
     } | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${name}_n${n}.log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$WORK/${name}_n${n}.log" 2>&1 )
 }
 
 # Per-case cross-rank comparison tolerance (metres). All cases use the default (~1e-6, above FP-

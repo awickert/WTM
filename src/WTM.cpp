@@ -978,8 +978,6 @@ void apply_config_petsc_options(const std::string& config_file) {
   if (!root.IsMap()) return;
 
   // run.equilibrium_stop -> -wtm_eq_tol / -wtm_eq_metric  (.frac is config-owned; see Parameters)
-  if (auto n = root["run"]["equilibrium_stop"]["tol"])    set_opt_if_unset("-wtm_eq_tol", n.as<std::string>().c_str());
-  if (auto n = root["run"]["equilibrium_stop"]["metric"]) set_opt_if_unset("-wtm_eq_metric", n.as<std::string>().c_str());
 
   // boundaries.land -> -wtm_land_boundary (translate the prototype value)
   if (auto n = root["boundaries"]["land"]) {
@@ -1018,7 +1016,6 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // surface_water.collection.sink (legacy band-sink parameters; effective only with collection.method: legacy)
   if (auto s = root["surface_water"]["collection"]["sink"]) {
-    if (auto m = s["fringe_source"])    set_opt_if_unset("-wtm_fringe_source", m.as<std::string>().c_str());
   }
 
   // output.verbosity: verbose -> per-solve PETSc monitors. (quiet-level suppression of WTM's own per-cycle

@@ -63,6 +63,7 @@ surfdatadir $INP
 region rech_test
 supplied_wt 1
 runoff_collector $3
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -93,7 +94,7 @@ REFUSALS="${WTM_COVERAGE_LOG:-$WORK/refusals.txt}"
 attempt() { # $1 stem, $2 extra flags...
     local stem="$1"; shift
     MSG=""
-    if sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 \
+    if sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
             > "$WORK/$stem.log" 2>&1; then
         return 0
     fi

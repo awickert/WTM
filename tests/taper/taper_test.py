@@ -113,7 +113,7 @@ outfile_prefix {prefix}
 # The width 1.0 stays the deliberate Anderson-path stress described above -- it just lives in the config
 # body now instead of on the command line.
 TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink",
-               "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]
+               "-wtm_evap_taper", "-snes_stol", "1e-8"]
 
 
 def _run(wtm, d, tag, n):
@@ -231,7 +231,7 @@ def _arid_cfg(d, txt, prefix, extra=""):
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
             f"runoff_collector legacy\n"
-            f"textfilename {txt}\noutfile_prefix {prefix}\n" + extra)
+            f"eq_tol 0\n" f"textfilename {txt}\noutfile_prefix {prefix}\n" + extra)
 
 
 def _arid_run(wtm, d, tag, flags, cfg_extra=""):
@@ -251,7 +251,7 @@ def study_c(wtm):
     the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
     fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
     print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
-    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8", "-wtm_eq_tol", "0"]  # full 60-cycle clamp run
+    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8"]  # full 60-cycle clamp run
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:

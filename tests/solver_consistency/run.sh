@@ -45,6 +45,8 @@ time_end tb
 surfdatadir $INP
 region sconsist
 supplied_wt 0
+eq_tol 0.0001
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -55,7 +57,8 @@ EOF
 # eq_tol water sits ~eq_tol/S in wtd from truth. Newton's dt-continuation path lands it on the far side of
 # that ball from Anderson (Picard, on a near-identical path, agrees to ~1e-7). eq_tol=1e-4 water puts all
 # three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
-BB="-wtm_eq_metric rms -wtm_eq_tol 0.0001"
+# eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
+BB=""
 emit anderson; emit picard; emit newton
 run() { # arm  extra-flags...
   local arm="$1"; shift

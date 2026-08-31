@@ -88,6 +88,7 @@ surfdatadir $DOM
 region Esquibel
 time_start 010000
 time_end 010000
+eq_tol 0
 textfilename $OUT/$1.txt
 outfile_prefix $OUT/${1}_
 EOF
@@ -136,7 +137,7 @@ for entry in "${SCHEMES[@]}"; do
     mkcfg "$stem" "$cfgextra"; rm -f "$OUT/$stem.txt"
     t0=$(date +%s.%N)
     # shellcheck disable=SC2086
-    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS $COLLECTOR_FLAGS -snes_stol 1e-8 -wtm_eq_tol 0 \
+    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS $COLLECTOR_FLAGS -snes_stol 1e-8 \
         > "$OUT/$stem.log" 2>&1
     rc=$?
     t1=$(date +%s.%N)

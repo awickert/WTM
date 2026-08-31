@@ -50,13 +50,14 @@ time_end tb
 surfdatadir $INP
 region rcoll
 supplied_wt 1
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
 run() { # stem  collector-line  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 run implicit "runoff_collector implicit" ""
@@ -72,7 +73,7 @@ run xsoil_flag ""                               "-wtm_extended_soil"
 run xsoil_sup  "runoff_collector explicit"      "-wtm_extended_soil"
 # explicit on the DEFAULT Picard path (no -wtm_anderson): must converge (no tangent needed)
 emit picard "runoff_collector explicit"
-"$WTM" "$WORK/picard.yaml" -wtm_eq_tol 0 > "$WORK/picard.log" 2>&1 \
+"$WTM" "$WORK/picard.yaml" > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }
 OFFWARN=$(grep -c "WARNING \[runoff_collector=off\]" "$WORK/off.log" || true)
 # The extended-soil mode must announce itself, and the superseded run must say so rather than silently

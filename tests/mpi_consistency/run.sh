@@ -53,6 +53,7 @@ time_end           t0
 surfdatadir        $(readlink -f "$INPUTS")
 region             ghost_cell_test
 supplied_wt        0
+eq_tol 0
 textfilename       __TXT__
 outfile_prefix     __OUT__
 save_nreport_interval     9999
@@ -66,7 +67,7 @@ run_case() { # fsm runoff_ratio nranks tag
         | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
     # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/${tag}.log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 >"$WORK/${tag}.log" 2>&1 )
 }
 
 echo "=== MPI-consistency regression ==="

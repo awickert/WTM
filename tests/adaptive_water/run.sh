@@ -38,18 +38,20 @@ time_end tb
 surfdatadir $INP
 region adwater
 supplied_wt 0
+eq_tol ${EQ_TOL:-0.001}
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
 
 BB="-wtm_anderson"
-emit cc; ADAPT=1 emit adapt; emit water
-"$WTM" "$WORK/cc.yaml"    $BB -wtm_eq_metric rms       -wtm_eq_tol 0.001  > "$WORK/cc.log"    2>&1 \
+emit cc; ADAPT=1 emit adapt; EQ_TOL=0.0005 emit water
+"$WTM" "$WORK/cc.yaml"    $BB > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
-"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 -wtm_eq_metric rms -wtm_eq_tol 0.001 > "$WORK/adapt.log" 2>&1 \
+"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 > "$WORK/adapt.log" 2>&1 \
   || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
-"$WTM" "$WORK/water.yaml" $BB -wtm_eq_metric rms -wtm_eq_tol 0.0005 > "$WORK/water.log" 2>&1 \
+"$WTM" "$WORK/water.yaml" $BB > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
 
 # (1) adaptive must have actually reached equilibrium (not hit the total_time cap)

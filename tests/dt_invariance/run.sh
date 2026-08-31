@@ -63,6 +63,7 @@ time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
 ${ADAPT:+adaptive_dt true}
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -71,7 +72,7 @@ EOF
 run() { # $1 = stem, $2 = runoff_ratio, $3.. = extra flags
     local stem="$1" rr="$2"; shift 2
     mkcfg "$stem" "$rr"; rm -f "$WORK/$stem.txt"
-    if ! "$WTM" "$WORK/$stem.yaml" -wtm_anderson -wtm_tr_bdf2 "$@" -snes_stol 1e-8 -wtm_eq_tol 0 \
+    if ! "$WTM" "$WORK/$stem.yaml" -wtm_anderson -wtm_tr_bdf2 "$@" -snes_stol 1e-8 \
             > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; return 1
     fi

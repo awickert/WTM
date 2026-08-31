@@ -67,6 +67,7 @@ surfdatadir $INP
 region multilake
 time_start t0
 time_end t0
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -75,7 +76,7 @@ EOF
 run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = solver flags
     local stem="$1" dt="$2" ri="$3" coll="$4"; shift 4
     mkcfg "$stem" "$dt" "$ri" "$coll"
-    mpirun -n "$RANKS" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 \
+    mpirun -n "$RANKS" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
         > "$WORK/$stem.log" 2>&1 || { echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log"; return 1; }
 }
 

@@ -49,6 +49,7 @@ time_end           t0
 surfdatadir        __SD__
 region             fsm_test
 supplied_wt        1
+eq_tol 0
 textfilename       __TXT__
 outfile_prefix     __OUT__
 save_nreport_interval     9999
@@ -57,7 +58,7 @@ EOF
 
 # -wtm_eq_tol 0: pin the full fixed cycle count so the cross-rank comparison is at the same cycle (the
 # equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
-run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.yaml" -snes_stol 1e-8 -wtm_eq_tol 0 >"$WORK/n${n}.log" 2>&1 ); }
+run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.yaml" -snes_stol 1e-8 >"$WORK/n${n}.log" 2>&1 ); }
 
 echo "=== FillSpillMerge MPI-consistency regression ==="
 echo "binary: $WTM   rank counts vs n=1: ${RANKS[*]}"

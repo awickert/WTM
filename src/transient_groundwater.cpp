@@ -1690,7 +1690,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   {
     const char *fringe_modes[] = {"none", "fixed", "ksat", "file"};
     PetscInt    fmode          = 0;
-    PetscOptionsGetEList(nullptr, nullptr, "-wtm_fringe_source", fringe_modes, 4, &fmode, nullptr);
+      // config-owned (surface_water.collection.sink.fringe_source)
+      for (int k = 0; k < 4; k++)
+        if (params.fringe_source == fringe_modes[k]) fmode = k;
     if (fmode == 3)
       throw std::runtime_error("-wtm_fringe_source file: not yet implemented (use none|fixed|ksat).");
     g_fringe_source = static_cast<int>(fmode);  // 0 none, 1 fixed, 2 ksat (matches FringeSource)

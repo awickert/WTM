@@ -48,13 +48,14 @@ time_end tb
 surfdatadir $INP
 region dtsens
 supplied_wt 1
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
 run() { # stem deltat cycles collector extra_flags
   emit "$1" "$2" "$3" "$4"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $5 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" -wtm_anderson $5 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 COARSE=31536000; FINE=7884000   # 1 yr, 0.25 yr

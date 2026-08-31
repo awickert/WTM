@@ -68,6 +68,7 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+eq_tol ${EQ_TOL:-0}
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -89,7 +90,7 @@ fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
 mkcfg pre active_set "2yr"
-"$WTM" "$WORK/pre.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 -wtm_eq_tol 0 \
+"$WTM" "$WORK/pre.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
 if awk -v r="$REM" 'BEGIN{exit !(r > 0)}'; then
@@ -126,10 +127,10 @@ else
 fi
 
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
-mkcfg eq_and  active_set "2000yr"
-mkcfg eq_newt active_set "2000yr"
-"$WTM" "$WORK/eq_and.yaml"  -wtm_anderson                 -snes_stol 1e-10 -wtm_eq_tol 1e-4 > "$WORK/eq_and.log"  2>&1
-"$WTM" "$WORK/eq_newt.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 -wtm_eq_tol 1e-4 > "$WORK/eq_newt.log" 2>&1
+EQ_TOL=1e-4 mkcfg eq_and  active_set "2000yr"
+EQ_TOL=1e-4 mkcfg eq_newt active_set "2000yr"
+"$WTM" "$WORK/eq_and.yaml"  -wtm_anderson                 -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
+"$WTM" "$WORK/eq_newt.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
 import glob, os, sys
 import numpy as np, rasterio
@@ -152,7 +153,7 @@ mkcfg contract active_set "2yr"
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
-if sh -c '"$0" "$1" -wtm_newton -snes_stol 1e-10 -wtm_eq_tol 0' \
+if sh -c '"$0" "$1" -wtm_newton -snes_stol 1e-10' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
     echo "  FAIL  CONTRACT   plain -wtm_newton CONVERGED -- it no longer needs -wtm_dt_continuation."
     echo "        That is good news; update this arm and the docs that say otherwise."

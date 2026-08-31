@@ -52,13 +52,14 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
 run() { # stem  collector  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 -wtm_eq_tol 0 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 # Without active-set: the collector choice is a live variable (the BITE).

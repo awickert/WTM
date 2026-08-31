@@ -52,11 +52,12 @@ region mb
 time_start t0
 time_end t0
 supplied_wt 0
+eq_tol 0
 textfilename $tf
 outfile_prefix /tmp/${tag}_
 EOF
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
-    OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-6 -wtm_eq_tol 0 >/dev/null 2>&1
+    OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-6 >/dev/null 2>&1
     rm -f "$cfg"
     awk 'NF>=11 && $1 ~ /^[0-9]+$/ {r=$9; o=$10} END{print r, o}' "$tf"
 }

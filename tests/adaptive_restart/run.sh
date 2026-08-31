@@ -39,12 +39,14 @@ time_end tb
 surfdatadir $INP
 region arestart
 supplied_wt 0
+eq_tol 0.001
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_eq_metric rms -wtm_eq_tol 0.001 -wtm_anderson"
+BB="-wtm_anderson"
 emit ar; emit base
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
 "$WTM" "$WORK/ar.yaml" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \

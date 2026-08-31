@@ -168,6 +168,10 @@ Parameters::Parameters(const std::string& config_file) {
   // surface_water.collection.sink, run.equilibrium_stop, output.verbosity/if_exists/directory -- are not read
   // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
+  if (auto n = root["run"]["equilibrium_stop"]["tol"])    { eq_tol = n.as<double>(); eq_tol_set = true; }
+  if (auto n = root["run"]["equilibrium_stop"]["metric"]) eq_metric = n.as<std::string>();
+  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_source"])
+    fringe_source = n.as<std::string>();
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
   if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {

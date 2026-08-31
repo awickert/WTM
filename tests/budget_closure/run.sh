@@ -62,6 +62,7 @@ time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
 ${ADAPT:+adaptive_dt true}
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -73,7 +74,7 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL f
     local label="$1" stem="$2"; shift 2
     local tol="${ARM_TOL:-$TOL}"
     mkcfg "$stem" "${COLL-implicit}"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
     TOL="$tol" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
@@ -103,7 +104,7 @@ PY
 check_nan() { # TR-BDF2 must report the exact residual as unavailable, not as a number
     local label="$1" stem="$2"; shift 2
     mkcfg "$stem"
-    "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1
+    "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1
     LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 label = os.environ["LABEL"]
@@ -127,7 +128,7 @@ PY
 xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags
     local label="$1" stem="$2" floor="$3"; shift 3
     mkcfg "$stem" "${COLL-implicit}"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 -wtm_eq_tol 0 > "$WORK/$stem.log" 2>&1; then
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
     FLOOR="$floor" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PYX' || fail=1

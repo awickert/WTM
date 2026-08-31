@@ -54,11 +54,13 @@ time_end tb
 surfdatadir $3
 region $2
 supplied_wt 0
+eq_tol 1e-8
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
-BB="-wtm_anderson -wtm_eq_metric rms -wtm_eq_tol 1e-8"
+BB="-wtm_anderson"
 SE_PAD=$("$PY" -c "print(-1.0/$CPD)")   # padded grid one cell further south
 
 emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.yaml" -wtm_anderson $BB -wtm_land_boundary dirichlet         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }

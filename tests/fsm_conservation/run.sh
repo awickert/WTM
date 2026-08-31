@@ -44,10 +44,11 @@ surfdatadir $INP
 region fsm_test
 time_start t0
 time_end t0
+eq_tol 0
 textfilename $WORK/c.txt
 outfile_prefix $WORK/c_
 EOF
-"$WTM" "$WORK/c.yaml" -wtm_anderson -wtm_active_set -wtm_eq_tol 0 > "$WORK/c.log" 2>&1 \
+"$WTM" "$WORK/c.yaml" -wtm_anderson -wtm_active_set > "$WORK/c.log" 2>&1 \
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
 TIF=$(ls "$WORK"/c_*.tif | tail -1)

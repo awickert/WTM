@@ -35,6 +35,9 @@
 #   dt_max                -> solver.dt_max
 #   t_bar true|false      -> solver.t_bar
 #   eq_frac               -> run.equilibrium_stop.frac
+#   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
+#   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
+#   fringe_source         -> surface_water.collection.sink.fringe_source (none|fixed|ksat)
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -62,9 +65,11 @@ val()  { printf '%s' "${V[$1]}"; }
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
-if have eq_frac; then
+if have eq_frac || have eq_tol || have eq_metric; then
     echo "  equilibrium_stop:"
-    echo "    frac: $(val eq_frac)"
+    have eq_tol    && echo "    tol: $(val eq_tol)"
+    have eq_metric && echo "    metric: $(val eq_metric)"
+    have eq_frac   && echo "    frac: $(val eq_frac)"
 fi
 if have supplied_wt; then
     case "$(val supplied_wt)" in
@@ -120,13 +125,14 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
-    if have runoff_collector || have surface_sink_qmax || have surface_sink_width; then
+    if have runoff_collector || have surface_sink_qmax || have surface_sink_width || have fringe_source; then
         echo "  collection:"
         have runoff_collector && echo "    method: $(val runoff_collector)"
-        if have surface_sink_qmax || have surface_sink_width; then
+        if have surface_sink_qmax || have surface_sink_width || have fringe_source; then
             echo "    sink:"
             have surface_sink_qmax  && echo "      qmax: $(val surface_sink_qmax)"
             have surface_sink_width && echo "      width: $(val surface_sink_width)"
+            have fringe_source      && echo "      fringe_source: $(val fringe_source)"
         fi
     fi
 fi

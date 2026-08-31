@@ -57,6 +57,7 @@ time_end tb
 surfdatadir $INP
 region flickevap
 supplied_wt 1
+eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -64,10 +65,10 @@ EOF
 POND="-wtm_dev_allow_aboveground_water_columns"   # surface clamp off: let the owe branch fire (FSM off)
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
 emit managed
-"$WTM" "$WORK/managed.yaml" -wtm_anderson $POND -wtm_eq_tol 0 > "$WORK/managed.log" 2>&1 \
+"$WTM" "$WORK/managed.yaml" -wtm_anderson $POND > "$WORK/managed.log" 2>&1 \
   || { echo "RUN FAILED: managed"; tail -3 "$WORK/managed.log"; exit 2; }
 emit bare
-"$WTM" "$WORK/bare.yaml" -wtm_anderson $POND -wtm_evap_taper 0 -wtm_extinction 0 -wtm_eq_tol 0 > "$WORK/bare.log" 2>&1 \
+"$WTM" "$WORK/bare.yaml" -wtm_anderson $POND -wtm_evap_taper 0 -wtm_extinction 0 > "$WORK/bare.log" 2>&1 \
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.

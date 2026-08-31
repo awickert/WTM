@@ -46,12 +46,14 @@ time_end tb
 surfdatadir $2
 region snaptest
 supplied_wt $3
+eq_tol ${EQ_TOL:-0.001}
+eq_metric rms
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/$1_
 EOF
 }
 stop_cycle() { grep -oE "stopping at cycle [0-9]+" "$1" | grep -oE "[0-9]+$"; }
-BB="-wtm_anderson -wtm_eq_tol 0.001 -wtm_eq_metric rms"
+BB="-wtm_anderson"
 
 # --- cold full run (saves every cycle) ---
 emit cold "$INP" 0
@@ -64,9 +66,9 @@ C_COLD=$(stop_cycle "$WORK/cold.log")
 # which broke when the default collector became active_set: that converges ~3x faster (2 cycles here
 # vs 7 under implicit), so cycles 3 and 5 no longer existed. A filename-format assertion should not
 # depend on convergence speed.
-emit fname "$INP" 0
+EQ_TOL=0 emit fname "$INP" 0
 sed -i "s#^  total:.*#  total: '6yr'#" "$WORK/fname.yaml"
-"$WTM" "$WORK/fname.yaml" -wtm_anderson -wtm_eq_tol 0 > "$WORK/fname.log" 2>&1 \
+"$WTM" "$WORK/fname.yaml" -wtm_anderson > "$WORK/fname.log" 2>&1 \
   || { echo "RUN FAILED: fname"; tail -3 "$WORK/fname.log"; exit 2; }
 for k in 1 3 5; do
   f=$(printf "%s/fname_%09d_%dyr.tif" "$WORK" "$k" "$k")

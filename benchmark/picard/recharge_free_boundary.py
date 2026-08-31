@@ -105,7 +105,7 @@ def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
         # reports -> 2 tifs, index 0 and index 80), so the final state is always available. Do not set
         # this to 1 "to be safe" -- at dt = 0.25 yr over 1000 yr that is 4000 tifs per run and ~120k
         # across the sweep, which is pure I/O for one field we actually read.
-        f"textfilename {PRIV}/{tag}_log.txt\noutfile_prefix {PRIV}/{tag}_out_\nsave_nreport_interval 9999999\n")
+        f"eq_tol 0\n" f"textfilename {PRIV}/{tag}_log.txt\noutfile_prefix {PRIV}/{tag}_out_\nsave_nreport_interval 9999999\n")
     emitted = subprocess.run(["bash", EMIT], input=flat, capture_output=True, text=True, check=True)
     open(cfg, "w").write(emitted.stdout)
     # -wtm_eq_tol 0 DISABLES the equilibrium early-stop, and it is load-bearing for an order study.
@@ -115,7 +115,7 @@ def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
     # error. It read as ~5000 mm, identical at every dt (order 0.00) in EVERY arm, including the
     # control that must show order 2. A flat error is the signature: truncation error grows with dt,
     # a time offset does not.
-    r = subprocess.run(["mpiexec", "-n", "1", WTM, cfg, "-wtm_eq_tol", "0", *extra],
+    r = subprocess.run(["mpiexec", "-n", "1", WTM, cfg, *extra],
                        capture_output=True, text=True, env=env)
     # CHECK THE RUN, LOUDLY. This used to swallow the model's exit status and return None when the
     # output was missing, so a failing model surfaced ~80 lines later as an AttributeError on a

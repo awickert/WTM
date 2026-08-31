@@ -60,6 +60,17 @@ struct Parameters {
   double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
   bool   surface_sink_width_set = false;
 
+  // run.equilibrium_stop: tol is a WATER depth [m] (0 = the stop is off). Its DEFAULT is run-type
+  // dependent -- 0.001 for equilibrium, 0 for transient (a time-evolution run must play out in full) --
+  // so the was-it-set flag is required: an absent key must reach that per-run-type default, not a
+  // constant. metric selects how the per-cycle change is aggregated (max|rms|frac).
+  double      eq_tol     = 0.0;
+  bool        eq_tol_set = false;
+  std::string eq_metric  = "frac";
+
+  // surface_water.collection.sink.fringe_source: none|fixed|ksat (file is not implemented).
+  std::string fringe_source = "none";
+
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;
