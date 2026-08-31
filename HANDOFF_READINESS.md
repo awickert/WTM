@@ -85,6 +85,13 @@ that are currently undiscoverable. `tests/config_schema` reports the list on eve
 - **`-wtm_extended_soil` restores GW-step order 2 but its production half was never implemented** — the
   above-surface mound must be truncated at the FSM handoff, and is not. It remains `[WIP]` and
   nonphysical: honour restored, utility not.
+- **The default surface-water enforcement has only been validated at small scale.** `active_set` is the
+  default `collection.method`, and every result supporting that choice comes from fixtures of **8775
+  cells or fewer**. It is the only enforcement whose equilibrium carries no spurious dt-dependence,
+  which is why it is the default — but nothing here demonstrates it at production grid sizes. A user
+  running a large domain should know that, and should watch the per-cycle convergence metric rather
+  than assume the small-domain behaviour carries over. (Establishing this at scale is a validation run,
+  deliberately out of scope for this checklist; the caveat is in scope.)
 - **With FSM on, first-order Lie splitting caps the whole scheme at order 1** regardless of integrator.
   Measured: TR-BDF2 drops from ~2.0 to 1.00 when FSM is switched on. This bounds every
   dt-refinement accuracy argument anyone will make, and is worth stating wherever accuracy is claimed.
