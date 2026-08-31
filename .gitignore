@@ -72,3 +72,10 @@ __pycache__/
 # is the repo's existing choice there, not this rule's doing.)
 /results/
 tests/*/results/
+
+# Generated benchmark fixture: benchmark/mass_balance_test.sh regenerates it via
+# make_mass_balance_inputs.py whenever it is absent, so it is an artifact, not source.
+benchmark/mb_inputs/
+
+# Personal scratch config kept in the working tree.
+/input_test_aw.yaml
