@@ -27,6 +27,11 @@ alone."** The status column answers that.
 > `-wtm_dtc_dt_max` -- these have live CLI call sites across the suite (eq_tol alone has 61), so each
 > needs its callers moved to the config in the same commit.
 
+> **UPDATE 2026-09-01.** All **seventeen** 1:1 rows are now RETIRED -- the seven listed above followed.
+> Separately, `-wtm_active_set`'s SECOND YAML route (`dev.active_set`) was removed; see the
+> surface-water table below. The 2026-08-27 note above is kept as written: it records the state on
+> that date, not the state now.
+
 ## "Superseded" means two different things — keep them apart
 
 An earlier draft of this document used one word for both, and the confusion produced a wrong
@@ -132,7 +137,7 @@ Five flags, none reachable, all tuning one mechanism.
 | `-wtm_tr_bdf2` | TR-BDF2, L-stable 2nd order | ABSTRACTED | `solver.time_integration: tr-bdf2` |
 | `-wtm_bdf2_on_V` | BDF2 applied to stored volume V(h) | ABSTRACTED | `solver.time_integration: bdf2` |
 | `-wtm_volume_storage` | backward-Euler storage as exact ΔV, not secant S·Δh | ABSTRACTED | `solver.storage: volume` |
-| `-wtm_Tbar` | time-averaged interblock transmissivity | 1:1 | `solver.t_bar` |
+| `-wtm_Tbar` | time-averaged interblock transmissivity | **RETIRED** (was 1:1) | `solver.t_bar` |
 | `-wtm_bdf2` | the ORIGINAL BDF2 (head form), pre-`bdf2_on_V` | GAP — advanced | none. It sets `use_bdf2` WITHOUT `use_bdf2_on_V` — head-form BDF2, a distinct scheme; `time_integration: bdf2` maps to `bdf2_on_V` |
 
 ## Adaptive dt and the step-size controller
@@ -143,9 +148,9 @@ byte-identical results at every setting because the flag was parsed only on the 
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_dt_adaptive` | enable the adaptive controller | 1:1 | `solver.adaptive_dt` |
-| `-wtm_dt_tol` | per-step local-error target, in water volume | 1:1 | `solver.water_volume_timestep_error_tol` |
-| `-wtm_dtc_dt_max` | cap on dt | 1:1 | `solver.dt_max` |
+| `-wtm_dt_adaptive` | enable the adaptive controller | **RETIRED** (was 1:1) | `solver.adaptive_dt` |
+| `-wtm_dt_tol` | per-step local-error target, in water volume | **RETIRED** (was 1:1) | `solver.water_volume_timestep_error_tol` |
+| `-wtm_dtc_dt_max` | cap on dt | **RETIRED** (was 1:1) | `solver.dt_max` |
 | `-wtm_dtc_grow` | growth factor on an easy step | GAP — advanced | none |
 | `-wtm_dtc_shrink` | shrink factor on a reject | GAP — advanced | none |
 | `-wtm_dtc_easy_iters` | iteration count below which dt may grow | GAP — advanced | none |
@@ -181,19 +186,22 @@ decision is what produced the `extended_soil` collision.
 | `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | MODE INTERFACE | `collection.method: explicit` sets it — same: `legacy` hands control back to this flag |
 | `-wtm_surface_sink` | sub-surface band sink | MODE INTERFACE | `collection.method: legacy` — this flag is what that mode means |
 | `-wtm_extended_soil` | continue the aquifer above the surface | ALIAS | `collection.method: extended_soil`; selects the mode when no method is configured, warns when one is |
-| `-wtm_active_set` | semismooth exfiltration pin | 1:1 **and** ABSTRACTED — reachable **two ways** (`dev.active_set` *and* `collection.method: active_set`) | resolve to one |
+| `-wtm_active_set` | semismooth exfiltration pin | ABSTRACTED | `collection.method: active_set` (the default). The second route, `dev.active_set`, was **removed 2026-09-01** — it silently overrode an explicit method |
 | `-wtm_dev_active_set` | the older name for the same thing | ALIAS | `collection.method: active_set`; already prints DEPRECATED, no callers — the one clean deletion |
 | `-wtm_surface_sink_qmax` | band-sink peak removal rate | **RETIRED** (was 1:1) | `collection.sink.qmax` |
 | `-wtm_surface_sink_width` | band width below the surface | **RETIRED** (was 1:1) | `collection.sink.width` |
-| `-wtm_fringe_source` | capillary-fringe width source | 1:1 | `collection.sink.fringe_source` |
+| `-wtm_fringe_source` | capillary-fringe width source | **RETIRED** (was 1:1) | `collection.sink.fringe_source` |
 | `-wtm_fringe_cap` | max ψ_a | **RETIRED** (was 1:1) | `collection.sink.fringe_cap` |
 | `-wtm_fringe_ksat_coef` | ψ_a = C·√(n/ksat) | **RETIRED** (was 1:1) | `collection.sink.fringe_ksat_coef` |
 | `-wtm_fringe_length` | uniform fringe length | **RETIRED** (was 1:1) | `collection.sink.fringe_length` |
 | `-wtm_fsm_delta_source` | carry FSM's Δwtd as a source in the next step | DEV | none — experimental |
 
-`-wtm_active_set` deserves attention: it is currently reachable from **two different YAML keys**
-(`dev.active_set` and `collection.method: active_set`). That is the same two-channel shape as the bug
-just fixed, only entirely inside the config. One of them should go.
+**RESOLVED 2026-09-01.** `-wtm_active_set` had been reachable from **two different YAML keys**
+(`dev.active_set` and `collection.method: active_set`) — the same two-channel shape as the bug that
+prompted this document, only entirely inside the config. It was worse than a duplicate: `dev.active_set`
+silently *overrode* an explicit `collection.method`, so a config asking for `explicit` ran `active_set`,
+differing on 54 of 256 cells (max 0.127 m) with nothing in the log. `dev.active_set` is removed from the
+schema and the bridge; a config still carrying it aborts and names it.
 
 ## Evaporation and tapers
 
@@ -222,8 +230,8 @@ can retune the sigmoid but cannot turn it off.
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_eq_tol` | equilibrium stop tolerance | 1:1 | `run.equilibrium_stop.tol` |
-| `-wtm_eq_metric` | which metric judges equilibrium | 1:1 | `run.equilibrium_stop.metric` |
+| `-wtm_eq_tol` | equilibrium stop tolerance | **RETIRED** (was 1:1) | `run.equilibrium_stop.tol` |
+| `-wtm_eq_metric` | which metric judges equilibrium | **RETIRED** (was 1:1) | `run.equilibrium_stop.metric` |
 | `-wtm_eq_frac` | fraction-of-cells threshold | **RETIRED** (was 1:1) | `run.equilibrium_stop.frac` |
 | `-wtm_snes_volume_conv` | judge the SNES step in water, not head | GAP — advanced | none |
 | `-wtm_snes_volume_conv_govern` | make that judgement authoritative | GAP — advanced | none |
@@ -260,8 +268,10 @@ selected, or the only route to a behaviour the config cannot reach.
 1. **Finish the 1:1 retirement (7 left).** `dtc_dt_max` next — zero callers, and its complication (an
    `auto` sentinel and unit parsing) lives in the parser rather than spread across tests. Then
    `dt_tol`, `dt_adaptive`, `eq_metric`, `Tbar`, `active_set`, and `eq_tol` last (61 call sites).
-2. **Resolve `-wtm_active_set`'s two YAML routes** (`dev.active_set` vs `collection.method`). A
-   dual-channel hazard entirely inside the config.
+2. **DONE 2026-09-01 — `-wtm_active_set`'s two YAML routes resolved to one.** `dev.active_set` is
+   removed from the schema and the bridge. It did not merely duplicate `collection.method`, it silently
+   OVERRODE it: 54/256 cells and 0.127 m max on tests/fsm_consistency, with no log line. Pinned by the
+   `RETIRED` arm of `tests/config_schema`.
 3. **Close the four user-facing gaps that block documented workflows**: `-wtm_dt_continuation` (Newton
    is unusable from YAML without it), the two taper toggles, and `-wtm_stiff` as a preset.
 4. **Group the advanced clusters under the method that owns them** — the step-size controller under

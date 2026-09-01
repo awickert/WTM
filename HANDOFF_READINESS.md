@@ -40,18 +40,27 @@ command-line flags, many duplicating config keys, with no record anywhere of whi
 - **17 of 17 "1:1" flags retired.** Each setting is now a `Parameters` member, parsed from the config,
   schema-checked, and read directly by its consumer; flag and bridge entry deleted. See
   `benchmark/CONFIG_FLAG_COVERAGE.md` for the full classification of all 65 flags.
+- **`solver.method: newton` works from YAML alone.** It had been a documented config value that
+  crashed: Newton does not converge from a cold start without dt-continuation, which the config could
+  not express, so `solver.method: newton` aborted with `DIVERGED_LINE_SEARCH`. The config value now
+  means the working recipe and is byte-identical to `-wtm_newton -wtm_dt_continuation`.
+- **All eight ABSTRACTED flags are verified equal to their config key**, byte-for-byte
+  (`tests/route_equality`). That claim -- "the config expresses this, the flag is the primitive" -- had
+  never been tested; the suite covered each mechanism but never the equivalence of the two routes to it.
+- **The active-set dual route is closed.** `dev.active_set` is removed. It was a second YAML key for
+  the same enforcement, and it silently *overrode* an explicit `collection.method` — measured at 54 of
+  256 cells and 0.127 m max, with nothing in the log to say so. An old config carrying the key now
+  aborts and names it (`tests/config_schema`, `RETIRED` arm, shown to fail with the key restored).
+- **Every run states its surface-water enforcement, with the source named.** It was previously written
+  only to the coverage file, so a run's own output could not say which boundary condition produced it.
 - **`extended_soil` is a collection *mode*, not a rival switch.** It joined the
   `surface_water.collection.method` enumeration, so "extended soil AND a collector" — a contradiction
   that silently cost a day of debugging — is now unrepresentable rather than merely detected.
 
 **Open**
 
-- **`-wtm_active_set` is reachable from two YAML keys** (`dev.active_set` and
-  `collection.method: active_set`). The same dual-channel hazard, entirely inside the config. Resolve
-  to one.
-- **Four gaps block documented workflows.** `-wtm_dt_continuation` has no config route, and Newton does
-  not converge without it — so `solver.method: newton` is *unusable from YAML alone*. The two
-  evaporation taper toggles are configurable in their parameters but not their on/off switch.
+- **Three gaps block documented workflows** (was four; the Newton one is fixed, see Done). The two
+  evaporation taper toggles are configurable in their parameters but not their on/off switch, and
   `-wtm_stiff` is a preset, and presets belong in a config.
 - **~24 advanced flags have no config expression at all** — the step-size controller (`dtc_*`,
   `dt_norm_*`) and the Anderson restart/handoff machinery (`ar_*`, `handoff*`, `aa_picard`). These want
@@ -60,8 +69,14 @@ command-line flags, many duplicating config keys, with no record anywhere of whi
 
 ## 2. Discoverability — can a user find what exists?
 
-**Open, and this is a defect rather than a matter of taste.** `config.yaml` is the reference a new user
-reads, and **17 keys the model accepts do not appear in it**. Some absences are deliberate (`grid:` is
+**Partly fixed; the remainder is still open.** The worst of it is closed: `config.yaml` had been
+shipping `method: implicit` — the *former* default, and the one enforcement measured to carry a spurious
+dt-dependence — while the real default `active_set` appeared neither as the value nor in the enumeration.
+A reference config that is present and *wrong* is worse than a missing key, and it now ships `active_set`
+with all six modes described.
+
+**Still open:** `config.yaml` is the reference a new user reads, and **16 keys the model accepts do not
+appear in it** (17 before `dev.active_set` was removed). Some absences are deliberate (`grid:` is
 deprecated, `dev:` is developer-only, `collection.sink` is legacy), but `solver.dt_max`,
 `solver.water_volume_timestep_error_tol` and `surface_water.runoff_ratio` are ordinary user settings
 that are currently undiscoverable. `tests/config_schema` reports the list on every run.
