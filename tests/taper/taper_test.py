@@ -97,9 +97,7 @@ surfdatadir {d}
 region {REGION}
 supplied_wt 1
 save_nreport_interval 9999
-runoff_collector legacy
-surface_sink_qmax 1.0
-surface_sink_width 1.0
+runoff_collector active_set
 textfilename {txt}
 outfile_prefix {prefix}
 """
@@ -112,8 +110,15 @@ outfile_prefix {prefix}
 # qmax and width now travel in the CONFIG (surface_water.collection.sink.*); those flags are retired.
 # The width 1.0 stays the deliberate Anderson-path stress described above -- it just lives in the config
 # body now instead of on the command line.
-TAPER_FLAGS = ["-wtm_anderson", "-wtm_surface_sink",
-               "-wtm_evap_taper", "-snes_stol", "1e-8"]
+# snes_stol 1e-10, NOT 1e-8. Study A's cross-rank determinism check (rtol 1e-9) is tighter than the
+# solve it judges: under active_set the two rank decompositions land at different points inside a loose
+# tolerance ball, so at 1e-8 the summed water table disagreed by 4.18e-09 at owe = precip. That is
+# tolerance-limited, not nondeterminism -- it tracks snes_stol and then FLOORS (4.18e-09 -> 8.63e-10 ->
+# 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), the same signature budget_closure documents for its legacy
+# arm. The taper this study was written for hid the need: holding wtd < 0 everywhere kept the solve off
+# the crossing, where it is stiffest. Judge determinism where the algebraic error cannot masquerade as it.
+TAPER_FLAGS = ["-wtm_anderson",
+               "-wtm_evap_taper", "-snes_stol", "1e-10"]
 
 
 def _run(wtm, d, tag, n):
