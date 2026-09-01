@@ -97,7 +97,7 @@ Anderson is the default and needs no flag, which is why `-wtm_anderson` is ABSTR
 | flag | what it does | status | YAML today |
 |---|---|---|---|
 | `-wtm_picard` | semi-implicit Picard (SPD operator, CG+GAMG) | ABSTRACTED | `solver.method: picard` |
-| `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton` |
+| `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton`, which means `-wtm_newton -wtm_dt_continuation` (the working recipe). The BARE flag stays plain Newton -- three things pin that |
 | `-wtm_anderson` | Anderson mixing, matrix-free | ABSTRACTED | `solver.method: anderson` (the default) |
 | `-wtm_aa_picard` | Anderson-accelerated GAMG-Picard (nonlinear preconditioning) | GAP — advanced | none — a fourth strategy `solver.method` does not offer |
 | `-wtm_handoff` | run Anderson, then hand the best iterate to a finisher | GAP — advanced | none |
@@ -151,12 +151,23 @@ byte-identical results at every setting because the flag was parsed only on the 
 | `-wtm_dtc_easy_iters` | iteration count below which dt may grow | GAP — advanced | none |
 | `-wtm_dtc_max_retries` | consecutive rejects before giving up | GAP — advanced | none |
 | `-wtm_dtc_dt0` | starting dt for the continuation ramp | GAP — advanced | none |
-| `-wtm_dt_continuation` | Newton's dt ramp | **GAP — user** | none — and Newton does **not converge without it** on these fixtures (pinned by `tests/newton_solver`), so a config-only user cannot run Newton at all |
+| `-wtm_dt_continuation` | Newton's dt ramp | ABSTRACTED | implied by `solver.method: newton`; `solver.dt_continuation: false` opts out (warns) |
 | `-wtm_dt_norm_rms` / `-wtm_dt_norm_max` | adaptive error norm: RMS (default) or MAX | GAP — advanced | none |
 | `-wtm_dt_trace` | report (dt, est, tol, factor, iters, accepted) per step | DEV | none — diagnostic |
 
-`-wtm_dt_continuation` is the row to look at first. It is not advanced tuning; it is a *requirement*
-of a strategy the config offers, and its absence makes `solver.method: newton` unusable from YAML alone.
+**RESOLVED 2026-09-01.** `-wtm_dt_continuation` was the row to look at first: not advanced tuning but a
+*requirement* of a strategy the config offers, and its absence made `solver.method: newton` unusable from
+YAML alone -- measured on tests/fsm_consistency as `DIVERGED_LINE_SEARCH` after 4 iterations (rc 134),
+against rc 0 the moment the flag was added. `solver.method: newton` now means the working recipe,
+`-wtm_newton -wtm_dt_continuation`, and is byte-identical to it (tests/route_equality).
+
+The asymmetry is deliberate and is NOT the `dev.active_set` dual-route hazard. The bare `-wtm_newton`
+still means PLAIN Newton, because three things depend on that meaning: `tests/newton_solver`'s CONTRACT
+arm pins that plain `-wtm_newton` does NOT converge, `benchmark/scheme_bench` measures a "Newton (plain)"
+arm, and `EQUILIBRIUM_ROBUSTNESS.md` documents plain Newton as the thing that needs the recipe. The flags
+stay the primitive layer; the config key is the abstraction over them -- exactly the relation
+`collection.method: legacy` has to the `-wtm_` surface flags. `solver.dt_continuation: false` opts out
+and warns, since Newton as a warm finisher is a real mode where continuation is wasted.
 
 ## Surface water
 

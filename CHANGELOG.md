@@ -104,6 +104,18 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Fixed
 
+- **`solver.method: newton` was a documented config value that crashed.** Newton does not converge from
+  a cold start without dt-continuation, and `-wtm_dt_continuation` had no config expression — so
+  selecting Newton from YAML alone aborted with `DIVERGED_LINE_SEARCH` after 4 iterations. The config
+  value now means the *working recipe*: `solver.method: newton` implies
+  `-wtm_newton -wtm_dt_continuation` and is byte-identical to it. `solver.dt_continuation: false` opts
+  out — legitimate for a warm finish, where continuation is wasted — and warns that a cold start will
+  diverge. The bare `-wtm_newton` flag is **unchanged** and still means plain Newton: `tests/newton_solver`
+  pins a contract that it does not converge, `benchmark/scheme_bench` measures it, and
+  `EQUILIBRIUM_ROBUSTNESS.md` documents it as the thing that needs the recipe. The flags remain the
+  primitive layer and the config key is the abstraction over them, as `collection.method: legacy`
+  already is for the `-wtm_` surface flags.
+
 - **A stray NUL byte made `src/CreateSNES.cpp` invisible to every text search.** A scripted edit had
   written a raw NUL where the source should read `'\0'`, so the file was `data` rather than text: `grep`,
   `file` and every code-search tool skipped it silently. It compiled and ran correctly, which is why it

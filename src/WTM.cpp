@@ -995,7 +995,39 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (m == "picard")      set_opt_if_unset("-wtm_picard", "true");
     else if (m == "newton") set_opt_if_unset("-wtm_newton", "true");
     // "anderson" = default (no flag)
+
+    // solver.method: newton MEANS "-wtm_newton -wtm_dt_continuation" -- the working recipe, not the bare
+    // path. Newton does NOT converge from a cold start without dt-continuation: on tests/fsm_consistency
+    // `solver.method: newton` alone aborts with DIVERGED_LINE_SEARCH after 4 iterations, and adding the
+    // flag alone takes it to rc=0. Shipping a documented config value that crashes is not a default.
+    // The codebase already held this knowledge -- -wtm_stiff is shorthand for
+    // "-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01" (CreateSNES.cpp) -- but only the CLI could say it.
+    //
+    // THE ABSTRACTION IS DELIBERATELY ASYMMETRIC, and that is not the dual-route hazard of dev.active_set.
+    // The bare flag `-wtm_newton` still means PLAIN Newton and is untouched: tests/newton_solver pins a
+    // CONTRACT that plain -wtm_newton does NOT converge, benchmark/scheme_bench measures a "Newton (plain)"
+    // arm, and EQUILIBRIUM_ROBUSTNESS.md documents plain Newton as the thing that NEEDS the recipe. Those
+    // are deliberate, and auto-enabling for the flag would flip all three. So the flags stay the primitive
+    // layer and the config key is the abstraction over them -- the same relationship
+    // `collection.method: legacy` has with the -wtm_ surface flags. The equality to test is therefore
+    // `solver.method: newton` == `-wtm_newton -wtm_dt_continuation`, not == `-wtm_newton`.
+    //
+    // solver.dt_continuation: false opts out (giving plain Newton) because Newton as a WARM FINISHER is a
+    // real mode where continuation is wasted; it warns rather than aborts, since the trap is a cold start.
+    if (m == "newton") {
+      bool want_cont = true, explicit_off = false;
+      if (auto c = root["solver"]["dt_continuation"]) { want_cont = c.as<bool>(); explicit_off = !want_cont; }
+      if (want_cont) set_opt_if_unset("-wtm_dt_continuation", "true");
+      if (explicit_off)
+        PetscPrintf(PETSC_COMM_WORLD,
+                    "WARNING [solver.method: newton + solver.dt_continuation: false]: dt-continuation is OFF, "
+                    "so this is PLAIN Newton. It converges from a WARM start but typically DIVERGES from a cold "
+                    "one (DIVERGED_LINE_SEARCH). Remove solver.dt_continuation to get the working recipe.\n");
+    }
   }
+  // Allow dt_continuation to be requested on its own; CreateSNES warns if the Newton path is not selected.
+  if (auto n = root["solver"]["dt_continuation"])
+    if (n.as<bool>()) set_opt_if_unset("-wtm_dt_continuation", "true");
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
   if (auto n = root["solver"]["max_iterations"]) {
     const std::string v = n.as<std::string>();

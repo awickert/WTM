@@ -65,9 +65,13 @@ surface_water:
     #   legacy      hand control back to the old -wtm_ surface flags
     method: active_set
 
-
 solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton
+                               # newton means the WORKING recipe: the analytic-Jacobian path WITH
+                               # dt-continuation, which it needs to converge from a cold start.
+  # dt_continuation: true      # only meaningful with method: newton, where it is ON by default.
+                               # Set false for PLAIN Newton (valid as a warm finisher; typically
+                               # DIVERGES from a cold start -- the run warns if you do this).
   tolerance: 1e-6              # per-solve convergence step tolerance (-> snes_stol)
   max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
   time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2
