@@ -68,4 +68,5 @@ parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 
 # dev (experimental; off by default):
-# dev: { active_set: false, allow_aboveground_water_columns: false, padded_dirichlet: false }
+# dev: { allow_aboveground_water_columns: false, padded_dirichlet: false }
+# (dev.active_set was removed: select it with surface_water.collection.method: active_set, above.)

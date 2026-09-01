@@ -123,6 +123,24 @@ else
     fail=1
 fi
 
+# ---- RETIRED: a key that was REMOVED must abort, not drift ------------------------------------------
+# dev.active_set was a SECOND YAML route to the same enforcement as surface_water.collection.method,
+# and it silently OVERRODE an explicit method: with `method: explicit` plus `dev: {active_set: true}`
+# the run used active_set instead, differing on 54 of 256 cells (max 0.127 m) with NO log line. It was
+# removed 2026-09-01. This arm pins the REMOVAL: a config carrying the old key must say so and stop.
+# Distinct from REJECT above, which uses an invented key -- this one is a real spelling that used to
+# work, which is exactly the case a user upgrading an old config will hit.
+inject "$WORK/retired.yaml" dev.active_set
+OUT=$(msg "$WORK/retired.yaml")
+if echo "$OUT" | grep -q "unrecognised key" && echo "$OUT" | grep -q "dev.active_set"; then
+    echo "  PASS  RETIRED    the removed key 'dev.active_set' aborts and is named"
+else
+    echo "  FAIL  RETIRED    'dev.active_set' was accepted. It is a SECOND route to the active-set"
+    echo "        enforcement and silently overrides surface_water.collection.method -- if it is back in"
+    echo "        the schema, the dual-route defect is back. See task #28."
+    fail=1
+fi
+
 # ---- SHIM: the suite's own config emitter must agree with the dictionary ---------------------------
 # Every legacy key tests/emit_config.sh maps, in one config. If the dictionary and the shim disagree,
 # this catches it HERE instead of as a mass failure across every other test in the suite.

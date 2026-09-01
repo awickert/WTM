@@ -112,6 +112,18 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   "which flags does the model read?" came back missing 26 of 48 flags with no indication anything had been
   skipped. One byte; the fix is `'\0'`.
 
+- **BREAKING — `dev.active_set` is removed; it silently overrode an explicit
+  `surface_water.collection.method`.** The active-set exfiltration enforcement was reachable from two
+  YAML keys at once, and the developer key won without saying so: a config asking for
+  `collection.method: explicit` while also setting `dev: {active_set: true}` ran **active_set**. Measured
+  on `tests/fsm_consistency` (256 cells, 5 yr, Anderson + TR-BDF2), the two configs differ on **54 of 256
+  cells, max 0.127 m, rms 0.0106 m** — with no NOTE, no WARNING, and nothing in the log to distinguish
+  them. This is the same dual-channel hazard as the flag-versus-config ambiguity the nested-YAML
+  migration set out to remove, but living entirely inside the config. One setting, one key: select the
+  enforcement with `surface_water.collection.method: active_set`, which is the documented route and
+  already the default. An existing config carrying the old key now aborts and names it, rather than
+  drifting. Pinned by the `RETIRED` arm of `tests/config_schema`.
+
 - **`-wtm_extended_soil` was defeated by a second mechanism wired to the same flag.** A post-solve
   surface-truncation experiment added later keyed off `g_extended_soil` and clamped the above-surface
   mound back to the surface every GW step — reinstating exactly the `wtd = 0` free boundary that

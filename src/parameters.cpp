@@ -57,7 +57,11 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt", "dt_max",
                   "water_volume_timestep_error_tol", "t_bar", "storage"}},
-      {"dev", {"active_set", "allow_aboveground_water_columns", "padded_dirichlet"}},
+      // dev.active_set was REMOVED 2026-09-01: it was a SECOND YAML route to the same enforcement as
+      // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
+      // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
+      // what makes an old config say so instead of drifting.
+      {"dev", {"allow_aboveground_water_columns", "padded_dirichlet"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
       {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity"}},
