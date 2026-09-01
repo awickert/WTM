@@ -249,7 +249,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // config-owned (run.equilibrium_stop.metric)
   char eq_metric_str[16];
   std::strncpy(eq_metric_str, params.eq_metric.c_str(), sizeof(eq_metric_str) - 1);
-  eq_metric_str[sizeof(eq_metric_str) - 1] = ' ';
+  eq_metric_str[sizeof(eq_metric_str) - 1] = '\0';
   if (std::strcmp(eq_metric_str, "rms") == 0) user_context.eq_metric = 1;
   else if (std::strcmp(eq_metric_str, "max") == 0) user_context.eq_metric = 0;
   else if (std::strcmp(eq_metric_str, "water") == 0 || std::strcmp(eq_metric_str, "water-max") == 0 ||

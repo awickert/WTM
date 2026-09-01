@@ -104,6 +104,14 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Fixed
 
+- **A stray NUL byte made `src/CreateSNES.cpp` invisible to every text search.** A scripted edit had
+  written a raw NUL where the source should read `'\0'`, so the file was `data` rather than text: `grep`,
+  `file` and every code-search tool skipped it silently. It compiled and ran correctly, which is why it
+  survived — but the file holds **16 of the model's 32 option-parse sites** (exactly half), including the whole adaptive
+  step-size controller (`dtc_*`, `dt_norm_*`) and the Anderson restart/handoff machinery, so an audit of
+  "which flags does the model read?" came back missing 26 of 48 flags with no indication anything had been
+  skipped. One byte; the fix is `'\0'`.
+
 - **`-wtm_extended_soil` was defeated by a second mechanism wired to the same flag.** A post-solve
   surface-truncation experiment added later keyed off `g_extended_soil` and clamped the above-surface
   mound back to the surface every GW step — reinstating exactly the `wtd = 0` free boundary that
