@@ -650,6 +650,49 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
 
 ### Removed
 
+- **BREAKING — the taper-1 sub-surface band sink is retired**, together with
+  `surface_water.collection.method: legacy`, the flags `-wtm_surface_sink`, `-wtm_direct_to_runoff` and
+  `-wtm_surface_exfiltration_to_runoff`, the `-wtm_fringe_*` capillary-fringe knobs, and the whole
+  `surface_water.collection.sink` config section. Fork issue #7, now closed.
+
+  The sink held the water table in a band *below* the land surface so that no cell ever crossed
+  `wtd = 0`, buying 2nd-order time accuracy by **dodging** the free boundary rather than solving it. Its
+  band width is `2·qmax·dt` and that dt-scaling is intrinsic — a fixed width overshoots for a rate-capped
+  smooth sink — so its equilibrium water table moved with the time step: a plateau interior at **−1.56 m**
+  at `dt` = 1 yr against **−0.79 m** at `dt` = 0.25 yr, while the pure groundwater solve is dt-independent
+  to six decimals. That also disqualified it as an accuracy diagnostic, since second-order convergence
+  toward a dt-dependent target measures nothing.
+
+  Its niche — a differentiable tangent letting Picard and Newton cross the surface — is filled by
+  `collection.method: active_set`, the primal-dual active-set / semismooth treatment of
+  `wtd ≤ 0 ⊥ seepage ≥ 0` that issue #7 itself prescribed as the way to "let the taper go for good". That
+  is the default, and the pin is in the analytic Newton Jacobian.
+
+  **Two things went differently from the plan in that issue**, and both are recorded there. The
+  replacement is `active_set`, **not** `implicit`: #7 called `implicit` the dt-independent exact face, but
+  its retained head is itself ~linear in `dt` (**1.97 / 0.68 / 0.34 m** at `dt` = 1, 1/3, 1/6 week, FSM
+  off), and with FSM on the *lake count* moves with `dt` — so that swap would have traded one
+  dt-dependence for another. And it was **not** the golden regold the issue and the source comment both
+  predicted: golden configs select no collector, so they already resolved to the default and the selector
+  had been forcing the sink off for them.
+
+  `legacy` was removed only after it was shown to have no content left: with the sink off it collapsed
+  **exactly** onto the modes it wrapped (`legacy` + flag == `explicit` / `implicit`, `max|Δ| = 0.000e+00`,
+  zero cells differing), and `budget_closure`'s two `legacy` arms had become bit-identical duplicates of
+  their `explicit` counterparts, so they were deleted rather than kept as coverage.
+
+  **Upgrading:** replace `collection.method: legacy` with `explicit` or `implicit` — or leave the key out
+  and take the `active_set` default, which is the recommended choice. All the removed keys and flags now
+  abort by name rather than being silently ignored.
+
+  `tests/taper` studies A and B, written to validate the sink, were **re-pointed at `active_set`** rather
+  than deleted: they assert properties rather than values — cross-rank determinism swept through
+  `owe = precip`, monotonicity, and a pond forming with a cross-rank-identical shoreline — and those
+  invariants matter more under an enforcement that sits *on* the crossing than under a taper that never
+  engaged it. `benchmark/SURFACE_SINK_DESIGN.md` is kept as the record of the mechanism and its
+  mathematics.
+
+
 - **`evap_mode` is no longer a config key.** The member is frozen at 0 and is consulted only with the
   evaporation taper switched off, so the key could not express what it named. `tests/emit_config.sh`
   drops it. Note for anyone comparing against older runs: two benchmark arms that differed only by
