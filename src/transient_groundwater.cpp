@@ -1270,7 +1270,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     throw std::runtime_error("-wtm_kirchhoff requires the piecewise Fan transmissivity: remove "
                              "-wtm_ksat_*_smoothing_width and surface_water.collection.method: extended_soil.");
   if (kirchhoff == PETSC_TRUE && !user_context.use_newton)
-    throw std::runtime_error("-wtm_kirchhoff is a Newton-path option; also pass -wtm_newton.");
+    throw std::runtime_error("-wtm_kirchhoff is a Newton-path option; also set solver.method: newton.");
 
   // -wtm_Tbar: use the step-time-averaged interblock transmissivity T̄ (Kirchhoff-potential difference;
   // see interblockTransmissivity). Composes with any solver. Requires the piecewise Fan T (Φ is its
@@ -1630,11 +1630,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                     FormPicardOperator, &user_context);
     }
 
-    // Newton-Krylov path (-wtm_newton): register the analytic Jacobian of FormFunctionLocal. The
+    // Newton-Krylov path (solver.method: newton): register the analytic Jacobian of FormFunctionLocal. The
     // Jacobian (FormJacobianLocal) is the exact ∂F/∂x of the conservative-FV residual including the
     // sink/evap-taper tangents; verify it against FD with -snes_test_jacobian (see FormJacobianLocal).
     // Anderson (snes_type == SNESANDERSON) is matrix-free and skips this. Any OTHER non-Anderson
-    // type reaching here WITHOUT -wtm_newton is refused: it would drive a Newton solve with no
+    // type reaching here WITHOUT solver.method: newton is refused: it would drive a Newton solve with no
     // registered Jacobian (PETSc would fall back to a full FD Jacobian -- prohibitively slow).
     SNESType snes_type;
     SNESGetType(user_context.snes, &snes_type);
@@ -1643,8 +1643,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       if (!user_context.use_newton) {
         throw std::runtime_error(
             std::string("The Newton-Krylov solver (-snes_type ") + snes_type +
-            ") needs -wtm_newton to register its analytic Jacobian. Use the default Anderson solver, "
-            "solver.method: picard for the semi-implicit (BDF2-on-V) path, or -wtm_newton for true Newton.");
+            ") needs solver.method: newton to register its analytic Jacobian. Use the default Anderson solver, "
+            "solver.method: picard for the semi-implicit (BDF2-on-V) path, or solver.method: newton.");
       }
       DMDASNESSetJacobianLocal(
           user_context.da,
@@ -2767,7 +2767,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
 /* ------------------------------------------------------------------- */
 /*
    FormJacobianLocal - Analytic 5-point Jacobian of FormFunctionLocal (the exact ∂F/∂x of the
-   conservative-FV head-form residual). Registered on the opt-in Newton-Krylov path (-wtm_newton;
+   conservative-FV head-form residual). Registered on the opt-in Newton-Krylov path (solver.method: newton;
    see update()); the SNESSolve constant b = hⁿ is independent of x, so J(F − b) = J(F).
 
    Residual (land cells): f = (x_c − rech) + dt·N/(A_j·S) + dt·removal/S, with

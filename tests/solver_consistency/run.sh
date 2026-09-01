@@ -72,7 +72,7 @@ run() { # arm  extra-flags...
 }
 run anderson -wtm_anderson
 run picard
-run newton   -wtm_newton
+run newton
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" <<'PY'

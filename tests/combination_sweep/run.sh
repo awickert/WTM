@@ -77,7 +77,7 @@ EOF
 # for instance, so the requested and resolved integrator differ).
 declare -A SOLVERS=( [anderson]="-wtm_anderson"
                      [picard]=""   # solver.method: picard -- config, via METHOD=
-                     [newton]="-wtm_newton" )  # continuation via DTC=
+                     [newton]="" )   # solver.method: newton (implies continuation) -- via METHOD=
 declare -A INTEGS=(  [be]=""
                      [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
                      [bdf2v]="-wtm_bdf2_on_V"
@@ -116,8 +116,7 @@ for rt in "${RUNTYPES[@]}"; do
         # they applied to the first call only, and the retry silently ran the DEFAULT solver: that turned
         # "picard cannot converge" into a false "picard runs at dt/8" for 12 combinations.
         STORAGE=$([ "$ig" = volume ] && echo volume)
-        METHOD=$([ "$sv" = picard ] && echo picard)
-        DTC=$([ "$sv" = newton ] && echo true)
+        METHOD=$([ "$sv" != anderson ] && echo "$sv")
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))

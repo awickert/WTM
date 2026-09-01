@@ -73,8 +73,8 @@ struct Parameters {
   bool volume_storage = false;
 
   // solver.method: the solver path. "" = unset, which resolves to the matrix-free Anderson default.
-  // The -wtm_picard / -wtm_newton / -wtm_anderson flags are retired one at a time; while any remain,
-  // CreateSNES ORs this member with the surviving flags rather than replacing them outright.
+  // -wtm_picard and -wtm_newton are RETIRED; -wtm_anderson remains a flag for now (it FORCES the
+  // matrix-free path and is the last of the three), so CreateSNES still ORs this member with it.
   std::string solver_method;
 
   // solver.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:

@@ -322,9 +322,9 @@ COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and -wtm_ande
 #     1e-8         3.097e-07     1.279e-05   <- what this suite runs
 #     1e-10        1.588e-07     2.078e-06
 #     1e-12        1.588e-07     2.078e-06   <- floors
-COLL="" DTC=true ARM_TOL=1e-4 check "Newton, unset -> active_set [loose tol, see note]" d_ntu -wtm_newton
+COLL="" METHOD=newton ARM_TOL=1e-4 check "Newton, unset -> active_set [loose tol, see note]" d_ntu
 COLL="" METHOD=picard check "Picard, unset -> explicit" d_pic -wtm_bdf2_on_V
-COLL=implicit DTC=true check "Newton + continuation x implicit" d_nt -wtm_newton
+COLL=implicit METHOD=newton check "Newton + continuation x implicit" d_nt
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
 # other two must NOT print it, or they have silently stopped testing the active-set default.
 for arm in d_and:absent d_ntu:absent d_pic:present; do

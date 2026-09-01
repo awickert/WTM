@@ -128,7 +128,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // (backward-Euler cc), the right choice for equilibrium (a 2nd-order step oscillates at the free surface).
   // Opt into the semi-implicit volume-form BDF2-on-V/Picard path (large, ~dt-independent, 2nd-order steps) with
   // -wtm_bdf2_on_V, matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with
-  // -wtm_newton. Any explicit path flag takes precedence.
+  // solver.method: newton. Any explicit path flag takes precedence.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
   // -wtm_tr_bdf2: L-stable strong-damping 2nd-order on the matrix-free Anderson path (two staged solves
@@ -150,10 +150,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool predict_guess_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_predict_guess", &predict_guess_flag);
   user_context.use_predict_guess = (predict_guess_flag == PETSC_TRUE);
-  // -wtm_newton: opt-in true Newton-Krylov path (analytic Jacobian). Like -wtm_anderson it selects a
+  // solver.method: newton -- true Newton-Krylov path (analytic Jacobian). Like -wtm_anderson it selects a
   // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
   PetscBool newton_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_newton", &newton_flag);
+  // config-owned (solver.method: newton); the -wtm_newton flag is retired. NOTE the config value means
+  // the WORKING RECIPE -- it implies solver.dt_continuation -- whereas the bare flag meant PLAIN Newton.
+  // A caller that wanted plain Newton must now say `dt_continuation: false` explicitly.
+  newton_flag = (params.solver_method == "newton") ? PETSC_TRUE : PETSC_FALSE;
   // -wtm_handoff: Anderson globalizes, then hands off its best iterate to a Newton/Picard finisher
   // near convergence (see AppCtx). Selects the matrix-free Anderson MAIN path (phase 1); the finisher
   // SNES is built after SNESSetFromOptions below. -wtm_handoff_picard uses a Picard (CG+GAMG) finisher
@@ -169,7 +172,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &adaptive_restart_flag);
   if (adaptive_restart_flag) force_anderson = PETSC_TRUE;  // rho-adaptive is an Anderson strategy
   // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
-  // "-wtm_newton -wtm_dt_continuation -wtm_eq_tol 0.01": the analytic-Jacobian Newton path, dt-continuation
+  // solver.method: newton + solver.dt_continuation + an equilibrium stop: the analytic-Jacobian path
   // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
   // run terminates at equilibrium without hand-tuning total_time. Each piece stays individually
   // overridable; an explicit Picard/Anderson path flag still takes precedence (Newton is exclusive with
@@ -185,12 +188,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // path taken when neither Picard nor Newton is selected. It is 1st-order-in-time (backward-Euler cc,
     // the right choice for equilibrium, where a 2nd-order step oscillates at the free surface). Opt into
     // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with -wtm_bdf2_on_V,
-    // matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with -wtm_newton.
+    // matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or solver.method: newton.
     PetscPrintf(
         PETSC_COMM_WORLD,
         "Defaulting to the matrix-free Anderson solver (robust across regimes; the production worker;\n"
         "  1st-order-in-time). Opt into BDF2-on-V/Picard (2nd-order, large steps) with -wtm_bdf2_on_V,\n"
-        "  or Newton with -wtm_newton.\n");
+        "  or Newton with solver.method: newton.\n");
   }
 
   user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);

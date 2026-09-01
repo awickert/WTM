@@ -51,6 +51,7 @@ export OMP_NUM_THREADS=1
 mkcfg() { # $1 = stem, $2 = collector, $3 = total_time   [env: DTC=true for the continuation arms]
     { cat <<EOF
 ${DTC:+dt_continuation $DTC}
+${METHOD:+solver_method $METHOD}
 run_type equilibrium
 total_time $3
 supplied_wt 1
@@ -78,7 +79,7 @@ EOF
 
 # PETSc prints the ratio per Jacobian evaluation; take the worst.
 fd_ratio() { # $1 = stem
-    "$WTM" "$WORK/$1.yaml" -wtm_newton \
+    "$WTM" "$WORK/$1.yaml" \
         -wtm_ksat_surface_smoothing_width 0.5 -wtm_ksat_soilbottom_smoothing_width 0.5 \
         -snes_test_jacobian -snes_max_it 1 2>&1 | tee "$WORK/$1.fd.log" \
       | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1
@@ -90,8 +91,8 @@ echo
 fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
-DTC=true mkcfg pre active_set "2yr"
-"$WTM" "$WORK/pre.yaml" -wtm_newton -snes_stol 1e-10 \
+METHOD=newton DTC=true mkcfg pre active_set "2yr"
+"$WTM" "$WORK/pre.yaml" -snes_stol 1e-10 \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
 if awk -v r="$REM" 'BEGIN{exit !(r > 0)}'; then
@@ -104,7 +105,7 @@ fi
 
 # ---- 2. Jacobian vs finite differences, per collector --------------------------------------------
 for coll in active_set explicit; do
-    mkcfg "j_$coll" "$coll" "2yr"
+    METHOD=newton DTC=false mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
     R=$(fd_ratio "j_$coll")
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
@@ -115,7 +116,7 @@ for coll in active_set explicit; do
     fi
 done
 
-mkcfg j_implicit implicit "2yr"
+METHOD=newton DTC=false mkcfg j_implicit implicit "2yr"
 R=$(fd_ratio j_implicit)
 WARNED=$(grep -c "NOT the Newton Jacobian" "$WORK/j_implicit.fd.log" || true)
 if awk -v r="${R:-0}" 'BEGIN{exit !(r+0 > 0.1)}' && [ "$WARNED" -gt 0 ]; then
@@ -129,9 +130,9 @@ fi
 
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
 EQ_TOL=1e-4 mkcfg eq_and  active_set "2000yr"
-EQ_TOL=1e-4 DTC=true mkcfg eq_newt active_set "2000yr"
+EQ_TOL=1e-4 METHOD=newton DTC=true mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"  -wtm_anderson                 -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
-"$WTM" "$WORK/eq_newt.yaml" -wtm_newton -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
+"$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
 import glob, os, sys
 import numpy as np, rasterio
@@ -150,19 +151,19 @@ sys.exit(0 if ok else 1)
 PY
 
 # ---- 4. CONTRACT: Newton needs dt-continuation ----------------------------------------------------
-mkcfg contract active_set "2yr"
+METHOD=newton DTC=false mkcfg contract active_set "2yr"   # PLAIN Newton: the recipe minus continuation
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
-if sh -c '"$0" "$1" -wtm_newton -snes_stol 1e-10' \
+if sh -c '"$0" "$1" -snes_stol 1e-10' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
-    echo "  FAIL  CONTRACT   plain -wtm_newton CONVERGED -- it no longer needs solver.dt_continuation."
+    echo "  FAIL  CONTRACT   plain Newton CONVERGED -- it no longer needs solver.dt_continuation."
     echo "        That is good news; update this arm and the docs that say otherwise."
     fail=1
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
-    echo "  PASS  CONTRACT   plain -wtm_newton fails as documented; solver.dt_continuation is required"
+    echo "  PASS  CONTRACT   plain Newton fails as documented; solver.dt_continuation is required"
 else
-    echo "  FAIL  CONTRACT   plain -wtm_newton failed for an UNEXPECTED reason:"
+    echo "  FAIL  CONTRACT   plain Newton failed for an UNEXPECTED reason:"
     grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'
     fail=1
 fi

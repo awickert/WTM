@@ -125,9 +125,6 @@ echo
 
 arm "solver.method: anderson      " "-wtm_anderson"                "solver: { method: anderson }"
 # See the header: newton's config value abstracts BOTH flags, because the bare path does not converge.
-# -wtm_dt_continuation is retired, so the flag side takes the continuation from ITS config: what is
-# still under test is that the FLAG-selected solver reaches the same run as the CONFIG-selected one.
-arm "solver.method: newton        " "-wtm_newton" "solver: { method: newton }" "solver: { dt_continuation: true }"
 arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { time_integration: tr-bdf2 }"
 arm "solver.time_integration: bdf2" "-wtm_bdf2_on_V"               "solver: { time_integration: bdf2 }"
 

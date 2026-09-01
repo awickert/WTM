@@ -28,8 +28,10 @@ PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem cycles
+emit() { # stem cycles   [env: METHOD=, DTC=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+${METHOD:+solver_method $METHOD}
+${DTC:+dt_continuation $DTC}
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -67,9 +69,11 @@ emit cc_nN 120
   || { echo "RUN FAILED: cc n=$NPROCS"; tail -3 "$WORK/cc_nN.log"; exit 2; }
 
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
-declare -A FLAG=( [cc]="-wtm_anderson" [tr]="-wtm_anderson -wtm_tr_bdf2" [bdf2v]="-wtm_anderson -wtm_bdf2_on_V" [newton]="-wtm_newton" )
+declare -A FLAG=( [cc]="-wtm_anderson" [tr]="-wtm_anderson -wtm_tr_bdf2" [bdf2v]="-wtm_anderson -wtm_bdf2_on_V" [newton]="" )
+# newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined
+declare -A CFG=(  [cc]="" [tr]="" [bdf2v]="" [newton]="newton" )
 for s in tr bdf2v newton; do
-  emit "$s" 120
+  METHOD="${CFG[$s]}" DTC=$([ -n "${CFG[$s]}" ] && echo false) emit "$s" 120
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
     || { echo "RUN FAILED: $s"; tail -3 "$WORK/$s.log"; exit 2; }
 done
@@ -97,8 +101,8 @@ PY
 [ $? -ne 0 ] && fail=1
 
 # ---- 3. Newton Jacobian FD check (ghost boundary ON, smooth T so the tangent is exact) ---------------
-emit jac 1
-JR=$("$WTM" "$WORK/jac.yaml" -wtm_newton $GB \
+METHOD=newton DTC=false emit jac 1   # PLAIN Newton: the FD check wants the raw Jacobian
+JR=$("$WTM" "$WORK/jac.yaml" $GB \
         -wtm_ksat_surface_smoothing_width 0.5 -wtm_ksat_soilbottom_smoothing_width 0.5 \
         -snes_test_jacobian -snes_max_it 1 2>&1 \
      | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1)

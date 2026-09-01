@@ -984,12 +984,8 @@ void apply_config_petsc_options(const std::string& config_file) {
   // on/off toggles (-wtm_evap_taper / -wtm_extinction) stay default-on; only the parameters are exposed.
 
   // solver
-  if (auto n = root["solver"]["method"]) {
-    const std::string m = require_enum(n.as<std::string>(), "solver.method",
-                                       {"anderson", "picard", "newton"});
-    if (m == "newton") set_opt_if_unset("-wtm_newton", "true");  // picard is config-owned now
-    // "anderson" = default (no flag)
-  }
+  // solver.method is fully config-owned (Parameters::solver_method); no flag bridge remains. The
+  // validation still lives in Parameters, so an unknown value aborts naming the legal ones.
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
   if (auto n = root["solver"]["max_iterations"]) {
     const std::string v = n.as<std::string>();

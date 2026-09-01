@@ -30,6 +30,8 @@ emit() { # stem region surfdir southern_edge   [env: LAND_BC=dirichlet for the D
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 land_boundary ${LAND_BC:-neumann_toposlope}
+${METHOD:+solver_method $METHOD}
+${DTC:+dt_continuation $DTC}
 fsm_on 0
 # Pinned to 'explicit' on purpose. This test's subject is the land-edge BOUNDARY CONDITION, not the
 # exfiltration enforcement. Its Newton arm uses PLAIN Newton deliberately (the comment below explains
@@ -71,7 +73,7 @@ emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" -wtm_anderson $BB > "
 # tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary). PLAIN Newton: this
 # small well-posed problem converges directly (cycle ~3), so dt-continuation is unnecessary -- and at eq_tol 1e-8
 # the continuation ramp never satisfies the full-stride eq-stop, grinding to the total_time cap (minutes).
-LAND_BC=dirichlet emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" -wtm_newton $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
+LAND_BC=dirichlet METHOD=newton DTC=false emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'

@@ -107,7 +107,7 @@ SCHEMES=(
   "picard_tbar|Picard BDF2-on-V + Tbar|-wtm_bdf2_on_V|solver_method picard;t_bar true"
   "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson -wtm_tr_bdf2|"
   "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson -wtm_tr_bdf2|adaptive_dt true"
-  "newton|Newton (plain)|-wtm_newton|"
+  "newton|Newton (plain)||solver_method newton;dt_continuation false"
   "newton_cont|Newton + dt-continuation|-wtm_stiff|"
 )
 # NOTE on fairness: Picard and Newton are known to fail from a COLD start at production dt -- plain
