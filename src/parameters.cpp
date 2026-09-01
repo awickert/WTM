@@ -144,6 +144,15 @@ void validate_config_keys(const YAML::Node& root, const std::string& config_file
 
 }  // namespace
 
+const std::string& require_enum(const std::string& value, const char* key,
+                                std::initializer_list<const char*> allowed) {
+  for (const char* a : allowed)
+    if (value == a) return value;
+  std::string list;
+  for (const char* a : allowed) { if (!list.empty()) list += " | "; list += a; }
+  throw std::runtime_error("config: " + std::string(key) + " must be " + list + ", got '" + value + "'");
+}
+
 // Real initializer
 Parameters::Parameters(const std::string& config_file) {
   YAML::Node root;
@@ -173,7 +182,11 @@ Parameters::Parameters(const std::string& config_file) {
   // here yet; they remain -wtm_* / PETSc CLI flags until the YAML->PetscOptions bridge lands (Phase 2b).
 
   if (auto n = root["run"]["equilibrium_stop"]["tol"])    { eq_tol = n.as<double>(); eq_tol_set = true; }
-  if (auto n = root["run"]["equilibrium_stop"]["metric"]) eq_metric = n.as<std::string>();
+  // max | rms | frac, plus three RETIRED spellings that the consumer maps with a NOTE (all metrics judge
+  // water now). Without this, an unrecognised metric fell through to "frac" and the run reported success.
+  if (auto n = root["run"]["equilibrium_stop"]["metric"])
+    eq_metric = require_enum(n.as<std::string>(), "run.equilibrium_stop.metric",
+                             {"max", "rms", "frac", "water", "water-max", "water-rms"});
   if (auto n = root["surface_water"]["collection"]["sink"]["fringe_source"])
     fringe_source = n.as<std::string>();
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();

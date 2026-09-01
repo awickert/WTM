@@ -71,6 +71,22 @@ yaml.safe_dump(cfg, open(out, "w"), default_flow_style=False)
 PY
 }
 
+
+# Set a dotted path to a VALUE (same round-trip rationale as inject above).
+setval() { # $1 out-file, $2 dotted path, $3 value
+    python3 - "$REF" "$1" "$2" "$3" <<'PY2'
+import sys, yaml
+ref, out, path, val = sys.argv[1:5]
+cfg = yaml.safe_load(open(ref))
+d = cfg
+ks = path.split(".")
+for k in ks[:-1]:
+    d = d.setdefault(k, {})
+d[ks[-1]] = val
+yaml.safe_dump(cfg, open(out, "w"), default_flow_style=False)
+PY2
+}
+
 # ---- REFERENCE: a valid config must NOT be rejected ------------------------------------------------
 if msg "$REF" | grep -q "unrecognised key"; then
     echo "  FAIL  REFERENCE  the repo's own config.yaml is REJECTED by the schema:"
@@ -122,6 +138,51 @@ else
     echo "  FAIL  MULTI      only the first offender was reported; fix the whole file in one pass"
     fail=1
 fi
+
+# ---- ENUM: a key's VALUE must be checked, not just its name ----------------------------------------
+# The schema above validates KEYS. That left the same defect one level down: `solver.method: pickard`
+# fell through the bridge's if/else chain to the DEFAULT and the run reported success, so a sweep over a
+# misspelled solver silently compared Anderson with Anderson -- the lost-negative-result cost again, on
+# the setting most likely to be swept. Five keys behaved that way (solver.method, time_integration,
+# storage, boundaries.land, run.equilibrium_stop.metric); five others already validated.
+#
+# BOTH HALVES MATTER. A validator that rejected everything would pass a reject-only test, so every legal
+# value is exercised too -- including the three RETIRED eq_metric spellings, which must keep working
+# (the consumer maps them with a NOTE) rather than becoming errors.
+ENUM_BAD=(solver.method solver.time_integration solver.storage boundaries.land run.equilibrium_stop.metric)
+for k in "${ENUM_BAD[@]}"; do
+    setval "$WORK/enum.yaml" "$k" "definitely_not_a_value"
+    # CAPTURE FIRST. `msg ... | grep -q` would take the MODEL's exit status under `set -o pipefail`
+    # (134 from the very abort being tested), so the test would fail whenever it should pass -- and its
+    # ENUM-OK counterpart would pass vacuously. Every other arm in this file captures for the same reason.
+    OUT=$(msg "$WORK/enum.yaml")
+    if echo "$OUT" | command grep -q "config: $k must be"; then
+        echo "  PASS  ENUM-BAD   $k rejects an unknown value and lists the legal ones"
+    else
+        echo "  FAIL  ENUM-BAD   $k ACCEPTED 'definitely_not_a_value'. It falls through to the default and"
+        echo "        the run reports success -- a swept parameter that silently does nothing."
+        fail=1
+    fi
+done
+
+ENUM_OK=("solver.method anderson" "solver.method picard" "solver.method newton"
+         "solver.time_integration backward-euler" "solver.time_integration bdf2"
+         "solver.time_integration tr-bdf2" "solver.storage volume" "solver.storage secant"
+         "boundaries.land neumann_toposlope" "boundaries.land dirichlet_sea_level"
+         "run.equilibrium_stop.metric max" "run.equilibrium_stop.metric rms"
+         "run.equilibrium_stop.metric frac" "run.equilibrium_stop.metric water"
+         "run.equilibrium_stop.metric water-max" "run.equilibrium_stop.metric water-rms")
+bad_ok=0
+for kv in "${ENUM_OK[@]}"; do
+    set -- $kv
+    setval "$WORK/enum.yaml" "$1" "$2"
+    OUT=$(msg "$WORK/enum.yaml")
+    if echo "$OUT" | command grep -q "config: $1 must be"; then
+        echo "  FAIL  ENUM-OK    $1: $2 is a LEGAL value but was rejected"
+        bad_ok=1; fail=1
+    fi
+done
+[ $bad_ok -eq 0 ] && echo "  PASS  ENUM-OK    all ${#ENUM_OK[@]} legal values across the 5 enums are still accepted"
 
 # ---- RETIRED: a key that was REMOVED must abort, not drift ------------------------------------------
 # dev.active_set was a SECOND YAML route to the same enforcement as surface_water.collection.method,

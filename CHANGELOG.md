@@ -104,6 +104,23 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Fixed
 
+- **BREAKING — an invalid config ENUM VALUE now aborts.** The schema check validated config KEYS; it did
+  not validate their VALUES, which left the same defect one level down. `solver.method: pickard` fell
+  through the bridge's `if/else` chain to the DEFAULT and the run reported success — so a sweep over a
+  misspelled solver silently compared Anderson with Anderson, and `solver.method: newtno` silently lost
+  the dt-continuation the correct spelling now implies. Five keys behaved this way: `solver.method`,
+  `solver.time_integration`, `solver.storage`, `boundaries.land` and `run.equilibrium_stop.metric`. Five
+  others (`run.type`, `surface_water.mode`, `collection.method`, `output.verbosity`, `output.if_exists`)
+  already validated, so the message form follows theirs:
+
+      config: solver.method must be anderson | picard | newton, got 'pickard'
+
+  `solver.storage` gains an explicit name for its second value, `secant` — the codebase's own term for
+  the S·Δh form — which was previously reachable only by writing something the model did not recognise.
+  The three retired `eq_metric` spellings (`water`, `water-max`, `water-rms`) remain accepted and keep
+  self-announcing. Covered by ENUM-BAD and ENUM-OK arms in `tests/config_schema`; both were shown to
+  fail, ENUM-BAD by removing a validator and ENUM-OK by dropping a legal value from one.
+
 - **`solver.method: newton` was a documented config value that crashed.** Newton does not converge from
   a cold start without dt-continuation, and `-wtm_dt_continuation` had no config expression — so
   selecting Newton from YAML alone aborted with `DIVERGED_LINE_SEARCH` after 4 iterations. The config

@@ -77,7 +77,7 @@ solver:
   time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2
   adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
-  storage: volume              # mass-conserving storage form
+  storage: volume              # volume (exact dV, mass-conserving) | secant (S*dh, the 1st-order form)
 
 parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).

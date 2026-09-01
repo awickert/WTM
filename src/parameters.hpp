@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <string>
 
@@ -184,6 +185,13 @@ struct Parameters {
 
 // Parse a simulated-time value ("500yr" / "1000s"; a bare number = years, with a warning) into seconds.
 double parse_time_seconds(const std::string& v, const char* key);
+
+// Validate a config ENUM. The schema check in parameters.cpp validates KEYS; this validates VALUES, which
+// is the same defect one level down: `solver.method: pickard` used to fall through the bridge's if/else
+// chain to the DEFAULT and report success, so a sweep over a misspelled solver silently compared Anderson
+// with Anderson. Throws naming the key, the allowed values, and what was actually given.
+const std::string& require_enum(const std::string& value, const char* key,
+                                std::initializer_list<const char*> allowed);
 
 // Phase 2b: translate the CLI-flag-backed config sections (solver / dev / boundaries / equilibrium_stop /
 // transmissivity background / parallel.threads_per_rank) into PETSc options + omp_set_num_threads. Call once,

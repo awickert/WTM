@@ -981,7 +981,8 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // boundaries.land -> -wtm_land_boundary (translate the prototype value)
   if (auto n = root["boundaries"]["land"]) {
-    const std::string b = n.as<std::string>();
+    const std::string b = require_enum(n.as<std::string>(), "boundaries.land",
+                                       {"neumann_toposlope", "dirichlet_sea_level"});
     set_opt_if_unset("-wtm_land_boundary", (b == "dirichlet_sea_level") ? "dirichlet" : "neumann_toposlope");
   }
 
@@ -991,7 +992,8 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // solver
   if (auto n = root["solver"]["method"]) {
-    const std::string m = n.as<std::string>();
+    const std::string m = require_enum(n.as<std::string>(), "solver.method",
+                                       {"anderson", "picard", "newton"});
     if (m == "picard")      set_opt_if_unset("-wtm_picard", "true");
     else if (m == "newton") set_opt_if_unset("-wtm_newton", "true");
     // "anderson" = default (no flag)
@@ -1034,12 +1036,15 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (v != "auto") set_opt_if_unset("-snes_max_it", v.c_str());
   }
   if (auto n = root["solver"]["time_integration"]) {
-    const std::string t = n.as<std::string>();
+    const std::string t = require_enum(n.as<std::string>(), "solver.time_integration",
+                                       {"backward-euler", "bdf2", "tr-bdf2"});
     if (t == "tr-bdf2")   set_opt_if_unset("-wtm_tr_bdf2", "true");
     else if (t == "bdf2") set_opt_if_unset("-wtm_bdf2_on_V", "true");
     // "backward-euler" = default (no flag)
   }
-  if (auto n = root["solver"]["storage"]) { if (n.as<std::string>() == "volume") set_opt_if_unset("-wtm_volume_storage", "true"); }
+  if (auto n = root["solver"]["storage"])
+    if (require_enum(n.as<std::string>(), "solver.storage", {"volume", "secant"}) == "volume")
+      set_opt_if_unset("-wtm_volume_storage", "true");
 
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
