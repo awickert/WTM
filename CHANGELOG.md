@@ -243,6 +243,17 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Added
 
+- **`tests/route_equality` — a config key and the flag it abstracts must produce the same run.** All
+  eight `ABSTRACTED` flags are now asserted **byte-identical** between their two routes, plus a positive
+  control that `solver.method: newton` runs from YAML alone. The claim that the config expresses what a
+  flag does had never been tested: the suite covered every mechanism but never the *equivalence of the
+  two routes to it*, which is precisely where this repo's config defects have lived (`dev.active_set`
+  overriding an explicit method; `-wtm_extended_soil` and the post-solve truncation masking each other).
+  Subsumes the redundant triplicated budget-closure check across three active-set arms, which
+  re-established closure three times while never asserting the property actually at stake — that the
+  three routes agree.
+
+
 - **`-wtm_dt_trace`** — reports `(dt, est, tol, factor, iters, accepted)` for every adaptive step,
   accepted or rejected, in a machine-readable line. The local-error estimate steers the whole
   integration and was previously computed each step and reported nowhere, so nothing could see whether

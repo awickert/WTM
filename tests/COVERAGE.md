@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **315** across **32** tests.
+Runs recorded: **333** across **33** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -12,8 +12,8 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 | solver | collector | integrator | `equilibrium` | `test` | `transient` |
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2_on_V` | 10 | **0** | 5 |
-| `anderson` | `active_set` | `be_volume` | 50 | 2 | 11 |
-| `anderson` | `active_set` | `tr_bdf2` | 21 | **0** | 5 |
+| `anderson` | `active_set` | `be_volume` | 58 | 2 | 11 |
+| `anderson` | `active_set` | `tr_bdf2` | 23 | **0** | 5 |
 | `anderson` | `explicit` | `bdf2_on_V` | 1 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | 9 | **0** | 1 |
 | `anderson` | `explicit` | `be_volume` | 1 | **0** | 1 |
@@ -31,7 +31,7 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 | `anderson` | `off` | `be_secant` | 14 | **0** | 1 |
 | `anderson` | `off` | `be_volume` | 1 | **0** | 1 |
 | `anderson` | `off` | `tr_bdf2` | 2 | **0** | 2 |
-| `newton` | `active_set` | `be_volume` | 8 | **0** | 4 |
+| `newton` | `active_set` | `be_volume` | 12 | **0** | 4 |
 | `newton` | `active_set` | `tr_bdf2` | 1 | **0** | 1 |
 | `newton` | `explicit` | `be_secant` | 3 | **0** | 1 |
 | `newton` | `explicit` | `be_volume` | 1 | **0** | 1 |
@@ -45,8 +45,8 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 | `newton` | `off` | `be_secant` | 1 | **0** | 1 |
 | `newton` | `off` | `be_volume` | 1 | **0** | 1 |
 | `newton` | `off` | `tr_bdf2` | 1 | **0** | 1 |
-| `picard` | `explicit` | `bdf2_on_V` | 6 | **0** | 4 |
-| `picard` | `explicit` | `be_secant` | 3 | **0** | 2 |
+| `picard` | `explicit` | `bdf2_on_V` | 8 | **0** | 4 |
+| `picard` | `explicit` | `be_secant` | 5 | **0** | 2 |
 | `picard` | `explicit` | `be_volume` | 2 | **0** | 2 |
 | `picard` | `implicit` | `bdf2_on_V` | 5 | **0** | 4 |
 | `picard` | `implicit` | `be_secant` | 2 | **0** | 2 |
@@ -81,6 +81,7 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `boundary:_dirichlet≡padding` | equilibrium | anderson,newton | be_secant | fixed | explicit | 0 | 0 | 1 |
 | `cascade_A->B->ocean_(skim)` | equilibrium | anderson | be_volume | fixed | active_set | 1 | 0 | 1,4 |
 | `combination_sweep` | equilibrium,transient | anderson,newton,picard | bdf2_on_V,be_secant,be_volume,tr_bdf2 | continuation,fixed | active_set,explicit,implicit,legacy,off | 1 | 0 | 1 |
+| `config/flag_route_equality` | equilibrium | anderson,newton,picard | bdf2_on_V,be_secant,be_volume,tr_bdf2 | continuation,fixed | active_set,explicit | 1 | 1 | 1 |
 | `dt-sensitivity_(active-set)` | equilibrium | anderson | be_secant,be_volume | fixed | active_set,legacy | 0 | 0 | 1 |
 | `flicker_1:_storativity_jump` | transient | anderson | bdf2_on_V,be_volume | fixed | active_set | 0 | 0 | 1 |
 | `flicker_2:_evap_discontinuity` | equilibrium | anderson | be_secant | fixed | implicit | 0 | 0 | 1 |
@@ -111,32 +112,32 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | legacy | off |
 |---|---|---|---|---|---|---|
-| **anderson** | 104 | 18 | 2 | 27 | 30 | 23 |
-| **newton** | 14 | 8 |   | 8 | 6 | 6 |
-| **picard** | by design | 19 |   | 17 | 17 | 16 |
+| **anderson** | 114 | 18 | 2 | 27 | 30 | 23 |
+| **newton** | 18 | 8 |   | 8 | 6 | 6 |
+| **picard** | by design | 23 |   | 17 | 17 | 16 |
 
 ### integrator x collector
 
 | integrator \ collector | active_set | explicit | extended_soil | implicit | legacy | off |
 |---|---|---|---|---|---|---|
-| **bdf2_on_V** | 15 | 12 |   | 11 | 11 | 10 |
-| **be_secant** | by design | 19 | 2 | 24 | 28 | 21 |
-| **be_volume** | 75 | 8 |   | 10 | 8 | 8 |
-| **tr_bdf2** | 28 | 6 |   | 7 | 6 | 6 |
+| **bdf2_on_V** | 15 | 14 |   | 11 | 11 | 10 |
+| **be_secant** | by design | 21 | 2 | 24 | 28 | 21 |
+| **be_volume** | 87 | 8 |   | 10 | 8 | 8 |
+| **tr_bdf2** | 30 | 6 |   | 7 | 6 | 6 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | legacy | off |
 |---|---|---|---|---|---|---|
 | **adaptive** | 25 |   |   |   |   |   |
-| **continuation** | 10 | 6 |   | 7 | 6 | 6 |
-| **fixed** | 83 | 39 | 2 | 45 | 47 | 39 |
+| **continuation** | 13 | 6 |   | 7 | 6 | 6 |
+| **fixed** | 94 | 43 | 2 | 45 | 47 | 39 |
 
 ### run_type x collector
 
 | run_type \ collector | active_set | explicit | extended_soil | implicit | legacy | off |
 |---|---|---|---|---|---|---|
-| **equilibrium** | 90 | 29 | 2 | 36 | 37 | 29 |
+| **equilibrium** | 104 | 33 | 2 | 36 | 37 | 29 |
 | **test** | 2 |   |   |   |   |   |
 | **transient** | 26 | 16 |   | 16 | 16 | 16 |
 
@@ -144,15 +145,15 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ integrator | bdf2_on_V | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 23 | 65 | 73 | 43 |
-| **newton** |   | 12 | 20 | 10 |
-| **picard** | 36 | 17 | 16 |   |
+| **anderson** | 23 | 65 | 81 | 45 |
+| **newton** |   | 12 | 24 | 10 |
+| **picard** | 38 | 19 | 16 |   |
 
 ### run_type x solver
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 161 | 25 | 37 |
+| **equilibrium** | 171 | 29 | 41 |
 | **test** | 2 |   |   |
 | **transient** | 41 | 17 | 32 |
 
@@ -161,14 +162,14 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | fsm \ collector | active_set | explicit | extended_soil | implicit | legacy | off |
 |---|---|---|---|---|---|---|
 | **0** | 42 | 8 | 2 | 7 | 5 | 12 |
-| **1** | 76 | 37 |   | 45 | 48 | 33 |
+| **1** | 90 | 41 |   | 45 | 48 | 33 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
 | **0** | 3 | 33 | 225 |
-| **1** | 22 | 2 | 30 |
+| **1** | 22 | 5 | 45 |
 
 ## 4. Uncovered pairwise crossings
 
