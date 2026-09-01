@@ -504,7 +504,6 @@ condition is selectable; the legacy sea-level-padding method is retained only as
 |---|---|---|---|
 | `-wtm_land_boundary` | `neumann_toposlope` | opt-in | Land-edge boundary condition: `neumann_toposlope` (terrain-following no-flow) or `dirichlet` (sea-level `h = 0` via ghost nodes — a land edge behaves as ocean). Ocean edges are always Dirichlet regardless. Works on all solver paths; not compatible with `-wtm_kirchhoff`. |
 | `-wtm_dev_padded_dirichlet` | off | developer | Verification only: reproduce the legacy "1-cell sea-level padding" boundary (force every domain edge to ocean `h = 0`). **Requires an all-ocean domain boundary** and fails otherwise (it would discard edge land). On an ocean-ringed domain it coincides with the default mask-aware boundary — that equivalence is what it verifies. |
-| `-wtm_extended_soil` | off | developer | Let transmissivity keep growing above the surface (skips the `wtd > 0` clamp). Testing only; prints a warning; refused with `-wtm_Tbar` / `-wtm_kirchhoff`. |
 
 ## Outputs
 The program outputs a text file that provides information on the current minimum and maximum water table elevation, the changes in surface water and groundwater within the past iteration, and the number of iterations passed.

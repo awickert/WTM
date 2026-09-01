@@ -92,8 +92,8 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   `use_picard` alone. `tests/budget_closure` now asserts which collector each solver resolves to, from
   the log rather than by inference.) An explicit choice is always honoured, with a warning on the
   solver that cannot enforce it consistently.
-- `runoff_collector` accepts a new `active_set` value; `-wtm_active_set` is the new flag spelling and
-  `-wtm_dev_active_set` still works.
+- `runoff_collector` accepts a new `active_set` value; `-wtm_active_set` is the flag spelling. The
+  older `-wtm_dev_active_set` was retired before release and now aborts by name.
 - **Golden references regenerated** for the surface-water cases. `below_ground` (no surface water) is
   unchanged, as it must be. Changes are ≤1 m except the `transient` case, where 52 cells move >1 m
   (max 21.7 m) at cells previously held near the surface by the siphon and now free to drain — the
@@ -321,7 +321,7 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   `cycles_to_save` (deprecated), which are no longer coupling intervals now that FillSpillMerge runs every
   timestep (see *Changed*). Per-report `t GW time / FSM time` lines are summed from timers around each GW and
   each FSM step.
-- **`-wtm_dev_active_set` (EXPERIMENTAL, off by default)** — semismooth active-set exfiltration constraint: enforces
+- **`surface_water.collection.method: active_set`** — semismooth active-set exfiltration constraint: enforces
   `wtd ≤ 0` as a min-NCP constraint *inside* the matrix-free Anderson solve (`f = max(w_c, f)`), pinning the
   free surface every iteration rather than via a post-solve clamp (`explicit`) or in-residual siphon
   (`implicit`). dt-independent to machine precision, mass-conserving (captured exfiltration → FillSpillMerge), and
@@ -428,7 +428,7 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   even though the bulk has converged (diagnosed as a metric artifact, not a physical oscillation). Measured
   trade at `eq_tol` 0.05 m: `max` never stops, `rms` stops early but loose (14.6 m worst-cell residual),
   `frac` stops with a 4.3 m worst-cell residual — the robust middle. See `benchmark/adaptive_dt/`.
-- **Extended-soil option** (`-wtm_extended_soil`, _experimental_): continues the aquifer above the
+- **Extended-soil option** (`collection.method: extended_soil`, _experimental_): continues the aquifer above the
   land surface to remove the water-table-depth = 0 free boundary from the groundwater step.
 - **Configurable transmissivity / storativity smoothing** (`-wtm_ksat_soilbottom_smoothing_width`,
   `-wtm_ksat_surface_smoothing_width`, `-wtm_storativity_surface_smoothing_width`): optional rounding
@@ -649,6 +649,16 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   aborting once restarts are exhausted. Regression: `tests/adaptive_restart/`.
 
 ### Removed
+
+- **BREAKING — the two alias flags are retired: `-wtm_extended_soil` and `-wtm_dev_active_set`.** Both
+  were older spellings for something the config names directly, and both now abort by name rather than
+  being honoured with a deprecation notice — a deprecation warning is only useful while something still
+  reads it. Use `surface_water.collection.method: extended_soil` and `: active_set` (the latter is the
+  default). `-wtm_extended_soil` did more than alias: it *selected* the mode when no method was
+  configured, and a configured method superseded it with a warning; both halves go with the flag, so the
+  mode is now set only where it is resolved. Two error messages that told you to "remove
+  `-wtm_extended_soil`" — the `-wtm_Tbar` and `-wtm_kirchhoff` guards — now name the config key instead.
+  With this, the ALIAS category is empty and **22 of the 65 originally classified flags are retired**.
 
 - **BREAKING — the taper-1 sub-surface band sink is retired**, together with
   `surface_water.collection.method: legacy`, the flags `-wtm_surface_sink`, `-wtm_direct_to_runoff` and

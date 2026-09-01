@@ -191,9 +191,9 @@ max|Δ| = 0.000e+00), so nothing was lost. Two channels for one decision is what
 | `-wtm_direct_to_runoff` | in-residual exfiltration removal | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
 | `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
 | `-wtm_surface_sink` | sub-surface band sink | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
-| `-wtm_extended_soil` | continue the aquifer above the surface | ALIAS | `collection.method: extended_soil`; selects the mode when no method is configured, warns when one is |
+| `-wtm_extended_soil` | continue the aquifer above the surface | **RETIRED** (was ALIAS) | `collection.method: extended_soil` — retired 2026-09-01; aborts by name |
 | `-wtm_active_set` | semismooth exfiltration pin | ABSTRACTED | `collection.method: active_set` (the default). The second route, `dev.active_set`, was **removed 2026-09-01** — it silently overrode an explicit method |
-| `-wtm_dev_active_set` | the older name for the same thing | ALIAS | `collection.method: active_set`; already prints DEPRECATED, no callers — the one clean deletion |
+| `-wtm_dev_active_set` | the older name for the same thing | **RETIRED** (was ALIAS) | `collection.method: active_set` — retired 2026-09-01; aborts by name |
 | `-wtm_surface_sink_qmax` | band-sink peak removal rate | **RETIRED** (was 1:1) | `collection.sink.qmax` |
 | `-wtm_surface_sink_width` | band width below the surface | **RETIRED** (was 1:1) | `collection.sink.width` |
 | `-wtm_fringe_source` | capillary-fringe width source | **RETIRED** (was 1:1) | `collection.sink.fringe_source` |
