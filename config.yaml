@@ -53,7 +53,18 @@ surface_water:
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false
   collection:
-    method: implicit           # implicit (in-residual exfiltration) | explicit | off | legacy
+    # How the wtd <= surface constraint is ENFORCED. active_set is the DEFAULT and the recommended
+    # choice: it is the only enforcement measured to leave no spurious dt-dependence (implicit's
+    # in-residual siphon removes at rate max(0,wtd)/dt, so its retained head is ~linear in dt and FSM
+    # routes that dt-dependent excess into a different set of lakes -- the lake COUNT moves with dt).
+    #   active_set  in-residual semismooth pin (DEFAULT; Anderson/Newton -- Picard falls back to explicit)
+    #   explicit    post-solve clamp; robust on every solver, dt-lagged
+    #   implicit    in-residual siphon; the FORMER default, dt-dependent -- prefer active_set
+    #   off         no collection; above-surface water piles up. NONPHYSICAL, warns
+    #   extended_soil  aquifer continues above the surface. NONPHYSICAL, [WIP], diagnostics only
+    #   legacy      hand control back to the old -wtm_ surface flags
+    method: active_set
+
 
 solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton

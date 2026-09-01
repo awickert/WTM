@@ -133,6 +133,13 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
       surface-water exfiltration enforcement: explicit  [surface_water.collection.method]
 
+- **`config.yaml` shipped the wrong collector and an incomplete list.** The reference config a new user
+  copies carried `method: implicit` — the *former* default, and the one enforcement measured to leave a
+  spurious dt-dependence — while the actual default, `active_set`, appeared neither as the value nor in
+  the commented enumeration (nor did `extended_soil`). Distinct from a merely undocumented key: the
+  reference was present and steering users to the wrong value. Now ships `active_set` with all six modes
+  described.
+
 - **`-wtm_extended_soil` was defeated by a second mechanism wired to the same flag.** A post-solve
   surface-truncation experiment added later keyed off `g_extended_soil` and clamped the above-surface
   mound back to the surface every GW step — reinstating exactly the `wtd = 0` free boundary that
