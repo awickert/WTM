@@ -189,7 +189,7 @@ evap_mode          1                    # 1 to use a grid of potential evaporati
 #How is above-surface water routed to runoff (the exfiltration constraint)? Optional; default is
 #active_set on Anderson, explicit on Picard/Newton. See "Solution modes" and "Surface-water routing" below.
 #See "Surface-water routing" below.
-runoff_collector   implicit              # implicit (in-residual exfiltration, exact; default) | explicit (post-solve clamp) | off (nonphysical) | legacy (old band sink)
+runoff_collector   active_set            # active_set (in-residual semismooth pin; DEFAULT) | explicit (post-solve clamp) | implicit (in-residual siphon, dt-dependent) | off (nonphysical) | extended_soil (nonphysical, [WIP])
 ```
 
 ## Surface-water transition (smooth tapers, on by default)
@@ -197,14 +197,16 @@ At the land surface (water-table depth `wtd = 0`) WTM smooths the transition bet
 surface water with implicit, order-preserving **tapers**, which replace the old hard `wtd = 0` switch.
 The **evaporation** tapers (2 & 3) are **on by default** and are controlled by command-line `-wtm_*` flags
 (each disabled with `<flag> 0`). The **exfiltration** at the surface — taper 1's old job — is now the
-`runoff_collector` config-file selector (see "Surface-water routing" below; default is the exact in-residual
-face). The legacy sub-surface band sink is reached with `runoff_collector legacy`:
+`runoff_collector` config-file selector (see "Surface-water routing" below; the default is the exact
+in-residual semismooth pin).
 
-- **Taper 1 — sub-surface band sink** (`-wtm_surface_sink`; the legacy exfiltration, off unless
-  `runoff_collector legacy`): a smooth removal in a band that holds the table at/below the surface and hands
-  exfiltrated water to Fill-Spill-Merge. Preserves 2nd-order time accuracy across the surface, but its band
-  width scales with `deltat` (so the equilibrium is dt-dependent — the reason `runoff_collector` replaced it).
-  Peak removal `-wtm_surface_sink_qmax` (default 1 m/yr); band width `-wtm_surface_sink_width`.
+> **Taper 1, the sub-surface band sink, is RETIRED** (fork issue #7), together with
+> `runoff_collector legacy` and the `-wtm_surface_sink*` / `-wtm_fringe_*` flags. It held the table in a
+> band *below* the surface so no cell ever crossed `wtd = 0`, which bought 2nd-order accuracy by dodging
+> the free boundary rather than solving it. That band's width is `2·qmax·dt` and the dt-scaling is
+> intrinsic, so its equilibrium water table moved with the time step. `active_set` — the semismooth pin
+> the issue prescribed — solves the same constraint exactly and carries no such dependence. See
+> `SURFACE_SINK_DESIGN.md` for the record of the mechanism.
 - **Taper 2 — demand-identity evaporation** (`-wtm_evap_taper`): a single smooth transition from
   land-surface evapotranspiration (below the surface) to open-water evaporation (at/above it),
   replacing the hard ET↔open-water switch. This is what makes lake formation identical regardless of
@@ -252,7 +254,6 @@ route you take — and all four routes have been measured:
 
 | enforcement | smooth? | SPD? | dt-independent? | evidence |
 |---|---|---|---|---|
-| band sink (`legacy`) | yes | yes | **no** — the *stable* width is `C·qmax·dt` | `SURFACE_SINK_DESIGN.md` §14g |
 | `implicit` | kink, but its one-sided derivative sits in the diagonal | yes (diagonal ≥ 0) | **no** — retained head ∝ `dt` (1.97 / 0.68 / 0.34 m) | `SURFACE_WATER_ROUTING.md` |
 | `active_set` | **no** | **no** (neighbours keep entries in the pinned column) | yes | needs multiplier recovery; see below |
 | **`explicit`** | **yes** | **yes** | **yes** (lake topology 6 → 6 under halved `dt`) | `tests/multilake` |
@@ -386,7 +387,11 @@ land below sea level, and the land surface elsewhere. The config key
 - **`explicit`** (the robust clamp) — a post-solve clamp: works on **every** solver, and is `dt`-stable
   in lake topology. Lower-order (the flow field never feels the pin during the solve).
 - **`off`** — no collection; above-surface water piles up. **Nonphysical**, testing only (warns loudly).
-- **`legacy`** — the pre-selector `-wtm_surface_sink` band-sink defaults (dt-scaled; kept for the taper tests).
+- **`extended_soil`** — the sibling of `off`: it also lets water pile up, but continues the *aquifer*
+  above the land surface (storativity stays porosity, `T` never clamps), removing the `wtd = 0` free
+  boundary rather than leaving it unenforced. That is what restores BDF2's 2nd order. **Nonphysical**
+  and `[WIP]` — the production half, truncating the mound at the FSM handoff, is not implemented.
+  Diagnostics only.
 
 The modes are mutually exclusive (no hidden backstop), so a misbehaving enforcement shows visibly
 rather than being masked. See `benchmark/SURFACE_WATER_ROUTING.md` for the measurements.
@@ -401,7 +406,7 @@ Every runtime option below is a PETSc-style flag passed **after** the config fil
 
 The model runs correctly with **no flags at all** (the default column marks what is active out of the box).
 Standard PETSc `-snes_*` / `-ksp_*` / `-pc_*` options are also accepted and override the WTM defaults. Boolean
-tapers that are on by default are disabled by passing the flag with a `0` argument (e.g. `-wtm_surface_sink 0`).
+tapers that are on by default are disabled by passing the flag with a `0` argument (e.g. `-wtm_evap_taper 0`).
 
 The **Status** column is a guide to intended audience:
 *default* = active unless switched off · *opt-in* = production-supported, off by default · *tuning* = a numeric
@@ -483,27 +488,12 @@ plus optional routing modes. `-wtm_direct_to_runoff` supersedes the taper-1 sink
 
 | Flag | Default | Status | Effect |
 |---|---|---|---|
-| `-wtm_surface_sink` | **on** | default | Taper 1: smoothly holds the table at/below the surface, handing exfiltrated water to Fill-Spill-Merge. |
-| `-wtm_surface_sink_qmax` | 1 m/yr | tuning | Peak removal rate of the taper-1 sink (also sets its default band width). |
-| `-wtm_surface_sink_width` | auto (`2·qmax·deltat`) | tuning | Override the sink's band width below the surface. |
 | `-wtm_evap_taper` | **on** | default | Taper 2: single smooth land-ET ↔ open-water-evaporation transition (makes lakes rank-count-independent). |
 | `-wtm_evap_taper_wtdc` | 0.05 m | tuning | Half-rate depth of the ET transition. |
 | `-wtm_evap_taper_s` | 0.1 m | tuning | Width of the ET transition. |
 | `-wtm_extinction` | **on** | default | Taper 3: limits arid draw-down to within the extinction depth (requires taper 2). |
 | `-wtm_extinction_depth` | 8 m | tuning | Depth below which phreatic ET is inaccessible. |
-| `-wtm_direct_to_runoff` | off | opt-in | In-residual exfiltration constraint: route above-surface excess `max(0,wtd)/dt` straight to runoff (supersedes the taper-1 sink). |
-| `-wtm_surface_exfiltration_to_runoff` | **on** (all paths) | default | Post-solve clamp: pin the table at/below the surface and route exact above-surface water to the runoff accumulator, keeping T clamped. Disable with `-wtm_surface_exfiltration_to_runoff false`. |
 | `-wtm_dev_allow_aboveground_water_columns` | off | developer | Leave above-surface water unmanaged as nonphysical vertical columns (limit-cycles). Switches the two runoff clamps off; prints a warning. |
-
-### Capillary fringe (taper-1 sink band width)
-The `-wtm_fringe_*` knobs only take effect when `-wtm_fringe_source` is set to `fixed` or `ksat`.
-
-| Flag | Default | Status | Effect |
-|---|---|---|---|
-| `-wtm_fringe_source` | `none` | opt-in | Per-cell sink band width: `none` (uniform `surface_sink_width`), `fixed` (uniform `fringe_length`), or `ksat` (capillary height from a pedotransfer estimate). |
-| `-wtm_fringe_length` | 0.1 m | tuning | Uniform fringe height for `fringe_source fixed`. |
-| `-wtm_fringe_ksat_coef` | 5e-4 | tuning | Coefficient in the `ksat` capillary-height estimate ψ_a = C·√(n/ksat). |
-| `-wtm_fringe_cap` | 2 m | tuning | Upper cap on the `ksat` capillary height. |
 
 ### Boundary conditions and developer modes
 Domain edges use the **mask-aware ghost-node boundary** by default (no flag needed): ocean edges are always
