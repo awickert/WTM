@@ -62,7 +62,6 @@ surface_water:
     #   implicit    in-residual siphon; the FORMER default, dt-dependent -- prefer active_set
     #   off         no collection; above-surface water piles up. NONPHYSICAL, warns
     #   extended_soil  aquifer continues above the surface. NONPHYSICAL, [WIP], diagnostics only
-    #   legacy      hand control back to the old -wtm_ surface flags
     method: active_set
 
 solver:
