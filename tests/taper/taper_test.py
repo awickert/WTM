@@ -3,7 +3,7 @@
 
 These exercise the smooth surface-water transition -- the sub-surface sink (-wtm_surface_sink,
 taper 1) plus the demand-identity evaporation taper (-wtm_evap_taper, taper 2) -- on the matrix-free
-Anderson solver (forced with -wtm_anderson; the default is now Picard). This validates the tapers on
+Anderson solver (forced with solver.method: anderson; the default is now Picard). This validates the tapers on
 the matrix-free path specifically (the Picard-path tapers are exercised by the golden suite). It is
 the path whose hard wtd=0 switch used to make FillSpillMerge lake formation flip with the MPI rank
 count near the evaporation threshold.
@@ -98,6 +98,7 @@ region {REGION}
 supplied_wt 1
 save_nreport_interval 9999
 runoff_collector active_set
+solver_method anderson
 textfilename {txt}
 outfile_prefix {prefix}
 """
@@ -117,7 +118,7 @@ outfile_prefix {prefix}
 # 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), the same signature budget_closure documents for its legacy
 # arm. The taper this study was written for hid the need: holding wtd < 0 everywhere kept the solve off
 # the crossing, where it is stiffest. Judge determinism where the algebraic error cannot masquerade as it.
-TAPER_FLAGS = ["-wtm_anderson",
+TAPER_FLAGS = [
                "-wtm_evap_taper", "-snes_stol", "1e-10"]
 
 
@@ -235,7 +236,10 @@ def _arid_cfg(d, txt, prefix, extra=""):
             f"cells_per_degree 10\nsouthern_edge -45\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
-            f"runoff_collector legacy\n"
+            # `legacy` was retired with the taper-1 band sink (fork issue #7). This is an ARID drawdown
+            # with fsm_on 0: the table falls and no cell crosses the surface, so the collector is
+            # incidental here. `explicit` is the surviving half of what legacy meant (the post-solve clamp).
+            f"runoff_collector explicit\nsolver_method anderson\n"
             f"eq_tol 0\n" f"textfilename {txt}\noutfile_prefix {prefix}\n" + extra)
 
 
@@ -256,7 +260,7 @@ def study_c(wtm):
     the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
     fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
     print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
-    E = ["-wtm_anderson", "-wtm_evap_taper", "-snes_stol", "1e-8"]  # full 60-cycle clamp run
+    E = ["-wtm_evap_taper", "-snes_stol", "1e-8"]  # full 60-cycle clamp run
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:

@@ -36,6 +36,7 @@ export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 report_interval, $7 runoff_ratio
     { cat <<EOF
+solver_method anderson
 run_type equilibrium
 total_time $3
 supplied_wt 1
@@ -74,7 +75,7 @@ echo "=== local-in-space water ledger ==="
 echo "WTM binary: $WTM"
 echo
 fail=0
-run place  ledgerA "2yr"  15768000 ""    1 0 -wtm_anderson || fail=1   # dt = 0.5 yr, 4 steps
+run place  ledgerA "2yr"  15768000 ""    1 0 || fail=1   # dt = 0.5 yr, 4 steps
 # Arm B pins runoff_collector=off ON PURPOSE, to isolate the lateral flux operator. Under the default
 # active_set the multiplier max(0, -f*Sy) is captured for EVERY cell, not only pinned ones, so
 # freely-solving cells contribute the RECTIFIED part of their converged residual noise -- a small,
@@ -82,7 +83,7 @@ run place  ledgerA "2yr"  15768000 ""    1 0 -wtm_anderson || fail=1   # dt = 0.
 # surface and nothing can exfiltrate (measured 31.27 m^3 against 2.16e11 m^3 stored, i.e. 1.4e-10).
 # It does not move any water -- stored_volume drift is 0.000e+00 either way -- but it would make the
 # CLOSED precondition below meaningless. See task #17.
-run redist ledgerB "20yr" 31536000 "off" 1 0 -wtm_anderson || fail=1   # dt = 1 yr, 20 steps
+run redist ledgerB "20yr" 31536000 "off" 1 0 || fail=1   # dt = 1 yr, 20 steps
 
 # C. CADENCE -- and be precise about WHOSE cadence, because it is easy to get wrong.
 #
@@ -105,8 +106,8 @@ run redist ledgerB "20yr" 31536000 "off" 1 0 -wtm_anderson || fail=1   # dt = 1 
 # and 1 cycles -- because the FIRST interval's split was deposited in arp.runoff by irf.cpp's
 # initialisation and zeroed by couple_surface_and_recharge before the handoff read it.
 for RI in 1 2 4; do
-    run "cad0_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0   -wtm_anderson || fail=1
-    run "cad3_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0.3 -wtm_anderson || fail=1
+    run "cad0_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0   || fail=1
+    run "cad3_$RI" ledgerA "4yr" 31536000 "off" "$RI" 0.3 || fail=1
 done
 [[ $fail -eq 0 ]] || { echo "LOCAL LEDGER: FAILED (a run did not complete)"; exit 1; }
 

@@ -64,7 +64,7 @@ ${DT_TOL:+dt_tol $DT_TOL}
 ${ADAPT:+adaptive_dt true}
 ${STORAGE:+storage $STORAGE}
 ${DTC:+dt_continuation $DTC}
-${METHOD:+solver_method $METHOD}
+solver_method ${METHOD:-anderson}
 ${INTEG:+time_integration $INTEG}
 eq_tol 0
 textfilename $WORK/$1.txt
@@ -154,13 +154,13 @@ echo "=== water-budget closure (exact per-step identity; runoff_ratio 0.3, FSM o
 echo "WTM binary: $WTM"
 echo
 echo "-- overwrite coupling (default) --"
-check "Anderson BE (secant)"       s_and    -wtm_anderson
-STORAGE=volume check "Anderson BE (volume dV)" s_vol -wtm_anderson
+check "Anderson BE (secant)"       s_and   
+STORAGE=volume check "Anderson BE (volume dV)" s_vol
 METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
 echo "-- FSM-delta-source coupling (#116) --"
-check "Anderson BE (secant)"       f_and    -wtm_anderson -wtm_fsm_delta_source
-STORAGE=volume check "Anderson BE (volume dV)" f_vol -wtm_anderson -wtm_fsm_delta_source
+check "Anderson BE (secant)"       f_and    -wtm_fsm_delta_source
+STORAGE=volume check "Anderson BE (volume dV)" f_vol -wtm_fsm_delta_source
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
@@ -199,7 +199,7 @@ echo "-- active-set exfiltration constraint --"
 # run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # -wtm_fsm_delta_source exists to address.
-COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson
+COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as
 echo
 # TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
 # reported the exact residual as `nan`. That was true and worth pinning while the two stages' balances
@@ -214,12 +214,12 @@ echo
 # (unused) because the guard it tests is still in the code as a backstop for a future scheme that
 # genuinely has no per-step identity.
 echo "-- TR-BDF2 (two stages, telescoped) --"
-INTEG=tr-bdf2 check "TR-BDF2" s_tr -wtm_anderson
+INTEG=tr-bdf2 check "TR-BDF2" s_tr
 # The combination that was leaking, and the reason this arm exists: active-set puts a multiplier in
 # BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
 # the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
 # the residual, so it carries the solve's tolerance, not a conservation defect.
-COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson
+COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as
 echo
 # ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
 # it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
@@ -265,9 +265,9 @@ echo
 # robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
 COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-    -wtm_anderson
+   
 COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
-    -wtm_anderson
+   
 echo
 
 
@@ -285,10 +285,10 @@ echo
 # These were xfail_broken arms until then, and the guards are what reported the fix
 # ("NOW CLOSES: promote to check()").
 echo "-- collector sweep (conservation must not depend on the enforcement) --"
-COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as  -wtm_anderson
-COLL=implicit                check "Anderson x implicit"        c_im  -wtm_anderson
-COLL=off                     check "Anderson x off"             c_off -wtm_anderson
-COLL=explicit                check "Anderson x explicit"        c_ex  -wtm_anderson
+COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as 
+COLL=implicit                check "Anderson x implicit"        c_im 
+COLL=off                     check "Anderson x off"             c_off
+COLL=explicit                check "Anderson x explicit"        c_ex 
 # `legacy` on Anderson keeps the band sink AND the clamp, and its per-cycle residual is
 # TOLERANCE-LIMITED rather than defective -- the same signature as the active-set arm above. Verified
 # by scaling the solve on this fixture:
@@ -315,7 +315,7 @@ echo
 # Newton needs -wtm_dt_continuation to converge on this fixture; without it every collector aborts with
 # "The SNES solver has not converged".
 echo "-- each solver at its OWN resolved default (collector key UNSET) --"
-COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and -wtm_anderson
+COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # Newton's per-cycle residual is looser than Anderson's on the same collector because
 # -wtm_dt_continuation SUB-STEPS, and the active-set multiplier carries the solve tolerance on every
 # sub-step. TOLERANCE-LIMITED, verified by scaling the solve:

@@ -24,6 +24,7 @@ WORK=$(mktemp -d /tmp/ff_XXXX); trap 'rm -rf "$WORK"' EXIT
 PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 100yr
 supplied_wt 1
@@ -45,14 +46,14 @@ textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
-run() { emit "$1"; "$WTM" "$WORK/$1.yaml" -wtm_anderson $2 > "$WORK/$1.err" 2>&1 \
+run() { emit "$1"; "$WTM" "$WORK/$1.yaml" $2 > "$WORK/$1.err" 2>&1 \
         || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.err"; exit 2; }; }
 run plain ""
 run skim  ""
 # MPI consistency of the skim: n=4 must match n=1 byte-for-byte. The skim reads per-cell starting_wtd and
 # hands its captured water to a rank-0 FillSpillMerge, so this exercises the gather/scatter round-trip.
 emit skim4
-mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson \
+mpirun -n 4 "$WTM" "$WORK/skim4.yaml" \
     -da_processors_x 2 -da_processors_y 2 > "$WORK/skim4.err" 2>&1 \
     || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 

@@ -18,6 +18,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # stem surfdir supplied_wt
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 fsm_on 0
 # Pinned to the FORMER default collector on purpose. This test's subject is snapshot/restart
@@ -53,7 +54,7 @@ outfile_prefix $WORK/$1_
 EOF
 }
 stop_cycle() { grep -oE "stopping at cycle [0-9]+" "$1" | grep -oE "[0-9]+$"; }
-BB="-wtm_anderson"
+BB=""
 
 # --- cold full run (saves every cycle) ---
 emit cold "$INP" 0
@@ -68,7 +69,7 @@ C_COLD=$(stop_cycle "$WORK/cold.log")
 # depend on convergence speed.
 EQ_TOL=0 emit fname "$INP" 0
 sed -i "s#^  total:.*#  total: '6yr'#" "$WORK/fname.yaml"
-"$WTM" "$WORK/fname.yaml" -wtm_anderson > "$WORK/fname.log" 2>&1 \
+"$WTM" "$WORK/fname.yaml" > "$WORK/fname.log" 2>&1 \
   || { echo "RUN FAILED: fname"; tail -3 "$WORK/fname.log"; exit 2; }
 for k in 1 3 5; do
   f=$(printf "%s/fname_%09d_%dyr.tif" "$WORK" "$k" "$k")

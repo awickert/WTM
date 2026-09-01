@@ -19,6 +19,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # $1 stem  [env: INTEG=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 ${INTEG:+time_integration $INTEG}
 ${ADAPT:+adaptive_dt true}
 run_type equilibrium
@@ -47,7 +48,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_anderson"
+BB=""
 emit cc; ADAPT=1 INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
 "$WTM" "$WORK/cc.yaml"    $BB > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }

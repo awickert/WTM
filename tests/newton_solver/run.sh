@@ -131,7 +131,7 @@ fi
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
 EQ_TOL=1e-4 mkcfg eq_and  active_set "2000yr"
 EQ_TOL=1e-4 METHOD=newton DTC=true mkcfg eq_newt active_set "2000yr"
-"$WTM" "$WORK/eq_and.yaml"  -wtm_anderson                 -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
+"$WTM" "$WORK/eq_and.yaml"                  -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
 import glob, os, sys

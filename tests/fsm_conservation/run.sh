@@ -26,6 +26,7 @@ TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 ../emit_config.sh > "$WORK/c.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 24yr
 supplied_wt 1
@@ -48,7 +49,7 @@ eq_tol 0
 textfilename $WORK/c.txt
 outfile_prefix $WORK/c_
 EOF
-"$WTM" "$WORK/c.yaml" -wtm_anderson > "$WORK/c.log" 2>&1 \
+"$WTM" "$WORK/c.yaml" > "$WORK/c.log" 2>&1 \
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
 TIF=$(ls "$WORK"/c_*.tif | tail -1)

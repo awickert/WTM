@@ -28,6 +28,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # $1 stem  [env: INTEG=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 ${INTEG:+time_integration $INTEG}
 run_type transient
 fsm_on 0
@@ -52,7 +53,7 @@ textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
-BB="-wtm_anderson"
+BB=""
 QUIET="${QUIET:-1e-4}"   # metres; final per-cycle |Δwtd| below this = settled (a limit cycle would stay large)
 emit cc; INTEG=bdf2 emit bd
 "$WTM" "$WORK/cc.yaml" $BB                > "$WORK/cc.log" 2>&1 || { echo "RUN FAILED: cc"; tail -3 "$WORK/cc.log"; exit 2; }

@@ -30,6 +30,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # stem  collector-line
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -57,7 +58,7 @@ EOF
 }
 run() { # stem  collector-line  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" $3 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 run implicit "runoff_collector implicit" ""
@@ -69,7 +70,7 @@ run unset    ""                          ""
 # warning were retired 2026-09-01 with the rest of the alias flags; the RETIRED arm below replaces the
 # two arms that covered them, asserting the flag now aborts rather than silently doing nothing.
 run xsoil_mode "runoff_collector extended_soil" ""
-# explicit on the DEFAULT Picard path (no -wtm_anderson): must converge (no tangent needed)
+# explicit on the DEFAULT Picard path (no): must converge (no tangent needed)
 emit picard "runoff_collector explicit"
 "$WTM" "$WORK/picard.yaml" > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }

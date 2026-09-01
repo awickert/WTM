@@ -37,6 +37,7 @@ trap 'rm -rf "$WORK"' EXIT
 emit_cfg() { # sdir region extra... -> stdout config
     local sdir="$1" region="$2"; shift 2
     cat <<EOF
+solver_method anderson
 run_type           equilibrium
 fsm_on             0
 evap_mode          0
@@ -109,7 +110,7 @@ run_case() { # name nranks -> sets $PREFIX
 # no per-case relaxation is needed. (This is a Picard win: under the older matrix-free Anderson
 # default those two fixtures sat near a routing threshold where Anderson's larger cross-rank GW noise
 # was amplified by the discontinuous routing into ~mm-cm differences and needed physical tolerances;
-# if you run the tests under -wtm_anderson, expect that to return.)
+# if you run the tests under, expect that to return.)
 # Per-case tolerance override (empty = golden.py's default 1e-6 m).
 #
 # transient: 1e-5 m. Under the default active_set enforcement this case reproduces across MPI rank

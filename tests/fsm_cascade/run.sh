@@ -22,6 +22,7 @@ WORK=$(mktemp -d /tmp/casc_XXXX); trap 'rm -rf "$WORK"' EXIT
 PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 120yr
 supplied_wt 1
@@ -44,10 +45,10 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 emit skim
-"$WTM" "$WORK/skim.yaml" -wtm_anderson > "$WORK/skim.err" 2>&1 \
+"$WTM" "$WORK/skim.yaml" > "$WORK/skim.err" 2>&1 \
   || { echo "RUN FAILED: skim"; tail -3 "$WORK/skim.err"; exit 2; }
 emit skim4
-mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson \
+mpirun -n 4 "$WTM" "$WORK/skim4.yaml" \
     -da_processors_x 2 -da_processors_y 2 > "$WORK/skim4.err" 2>&1 \
   || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 

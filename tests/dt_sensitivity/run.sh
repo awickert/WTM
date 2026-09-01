@@ -39,6 +39,7 @@ export OMP_NUM_THREADS=1
 # sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, report_interval fixed).
 emit() { # stem  deltat  total_cycles  collector
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -66,7 +67,7 @@ EOF
 }
 run() { # stem deltat cycles collector extra_flags
   emit "$1" "$2" "$3" "$4"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $5 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" $5 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 COARSE=31536000; FINE=7884000   # 1 yr, 0.25 yr

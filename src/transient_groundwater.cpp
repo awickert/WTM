@@ -2500,7 +2500,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
   PetscScalar** my_exfiltration = nullptr;  // -wtm_active_set: per-cell captured exfiltration depth (m) -> FSM post-solve
   if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->exfiltration_vec, &my_exfiltration));
-  // Matrix-free 2nd-order-in-time (-wtm_anderson solver.time_integration: bdf2): once a history exists, the storage
+  // Matrix-free 2nd-order-in-time (solver.method: anderson solver.time_integration: bdf2): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
   // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
   // BDF2-on-V operator (verified). The bootstrap step (no history) uses backward Euler. See

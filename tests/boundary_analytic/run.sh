@@ -22,6 +22,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # stem region
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 fsm_on 0
 evap_mode 1
@@ -51,7 +52,7 @@ EOF
 # constant-T regime: flat sea-level topo + uniform recharge mounded above the surface (ponding via
 # runoff_collector=off, ALL wtd-dependent removals off) -> only constant-T diffusion + uniform source -> exact
 # parabola. runoff_collector=off is the physical successor to -wtm_dev_allow_aboveground_water_columns.
-FL="-wtm_anderson -wtm_evap_taper 0 -wtm_extinction 0"  # taper-1 sink retired (fork issue #7)
+FL="-wtm_evap_taper 0 -wtm_extinction 0"  # taper-1 sink retired (fork issue #7)
 
 emit dir anbcD; "$WTM" "$WORK/dir.yaml" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
 emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL  > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }

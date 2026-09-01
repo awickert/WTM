@@ -15,6 +15,7 @@ PY="${PY:-python3}"
 emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
   local flags="$1" dt="$2" cyc="$3" stem="$4"
   ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
+solver_method anderson
 run_type transient
 ${INTEG:+time_integration $INTEG}
 fsm_on 0
@@ -43,7 +44,7 @@ EOF
 # T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" )
 declare -A INTEG_CFG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" )
-BASE="-wtm_anderson -snes_anderson_restart_type none -snes_stol 1e-8"
+BASE="-snes_anderson_restart_type none -snes_stol 1e-8"
 WK=604800
 for s in cc tr bdf2v; do
   INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $WK        8  "${s}_coarse"

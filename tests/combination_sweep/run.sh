@@ -76,7 +76,7 @@ EOF
 # Solver and integrator are given as FLAG SETS; which integrator each actually resolves to is recorded
 # by the model's own coverage fingerprint, not assumed here (active_set auto-enables volume storage,
 # for instance, so the requested and resolved integrator differ).
-declare -A SOLVERS=( [anderson]="-wtm_anderson"
+declare -A SOLVERS=( [anderson]=""
                      [picard]=""   # solver.method: picard -- config, via METHOD=
                      [newton]="" )   # solver.method: newton (implies continuation) -- via METHOD=
 declare -A INTEGS=(  [be]=""
@@ -117,7 +117,7 @@ for rt in "${RUNTYPES[@]}"; do
         # they applied to the first call only, and the retry silently ran the DEFAULT solver: that turned
         # "picard cannot converge" into a false "picard runs at dt/8" for 12 combinations.
         STORAGE=$([ "$ig" = volume ] && echo volume)
-        METHOD=$([ "$sv" != anderson ] && echo "$sv")
+        METHOD="$sv"
         case "$ig" in bdf2v) INTEG=bdf2 ;; trbdf2) INTEG=tr-bdf2 ;; *) INTEG= ;; esac
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then

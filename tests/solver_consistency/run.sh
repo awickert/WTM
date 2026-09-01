@@ -70,7 +70,7 @@ run() { # arm  extra-flags...
   grep -q "equilibrium reached" "$WORK/$arm.log" \
     || { echo "FAIL: $arm ran but never reached equilibrium (hit the cycle cap)"; exit 1; }
 }
-run anderson -wtm_anderson
+run anderson
 run picard
 run newton
 

@@ -49,6 +49,7 @@ RANKS="${RANKS:-4}"
 # reporting cadence (and therefore the FSM/coupling cadence per report) is held fixed.
 mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = runoff_collector
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 150yr
 supplied_wt 1
@@ -82,11 +83,11 @@ run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = s
 
 echo "=== multi-lake: four lakes at different stages, vs the time step ==="
 fail=0
-run A1 15768000 10 active_set -wtm_anderson || fail=1   # dt = 0.5   yr
-run A2  7884000 20 active_set -wtm_anderson || fail=1   # dt = 0.25  yr
-run A4  3942000 40 active_set -wtm_anderson || fail=1   # dt = 0.125 yr
-run I1 15768000 10 implicit   -wtm_anderson || fail=1   # implicit, dt = 0.5  yr
-run I2  7884000 20 implicit   -wtm_anderson || fail=1   # implicit, dt = 0.25 yr
+run A1 15768000 10 active_set || fail=1   # dt = 0.5   yr
+run A2  7884000 20 active_set || fail=1   # dt = 0.25  yr
+run A4  3942000 40 active_set || fail=1   # dt = 0.125 yr
+run I1 15768000 10 implicit   || fail=1   # implicit, dt = 0.5  yr
+run I2  7884000 20 implicit   || fail=1   # implicit, dt = 0.25 yr
 [[ $fail -eq 0 ]] || { echo "MULTI-LAKE: FAILED (a run did not complete)"; exit 1; }
 
 WORK="$WORK" INP="$INP" "$PY" - <<'PY'

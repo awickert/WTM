@@ -60,6 +60,7 @@ LADDER="31536000 7884000 1971000 492750"
 
 mkcfg() { # $1 stem, $2 deltat, $3 fsm_on
     cat > "$WORK/$1.yaml.in" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 20yr
 supplied_wt 1
@@ -92,7 +93,7 @@ EOF
 # One frozen-controller run; echoes "dt est" from the FIRST traced step, or nothing on failure.
 probe() { # $1 stem, $2 deltat, $3 fsm_on, $4 integrator flag
     mkcfg "$1" "$2" "$3"
-    "$WTM" "$WORK/$1.yaml" -wtm_anderson $4 -wtm_dt_trace \
+    "$WTM" "$WORK/$1.yaml" $4 -wtm_dt_trace \
         -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \
         -snes_stol 1e-12 > "$WORK/$1.log" 2>&1
     grep -m1 DTTRACE "$WORK/$1.log" | sed -E 's/.*dt=([-0-9.e+]+) est=([-0-9.e+]+).*/\1 \2/'

@@ -73,7 +73,7 @@ struct Parameters {
   bool volume_storage = false;
 
   // solver.method: the solver path. "" = unset, which resolves to the matrix-free Anderson default.
-  // -wtm_picard and -wtm_newton are RETIRED; -wtm_anderson remains a flag for now (it FORCES the
+  // -wtm_picard and -wtm_newton are RETIRED; solver.method: anderson remains a flag for now (it FORCES the
   // matrix-free path and is the last of the three), so CreateSNES still ORs this member with it.
   std::string solver_method;
 

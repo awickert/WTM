@@ -34,6 +34,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # stem  collector
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 total_time 6yr
 supplied_wt 1
@@ -59,7 +60,7 @@ EOF
 }
 run() { # stem  collector  extra-flags
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" -wtm_anderson $3 > "$WORK/$1.log" 2>&1 \
+  "$WTM" "$WORK/$1.yaml" $3 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 # Without active-set: the collector choice is a live variable (the BITE).

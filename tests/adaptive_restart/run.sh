@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Adaptive-restart robustness regression. The ρ-triggered proactive Anderson restart controller
-# (-wtm_anderson -wtm_adaptive_restart) must run an equilibrium spin-up to completion and settle to the
+# (-wtm_adaptive_restart) must run an equilibrium spin-up to completion and settle to the
 # SAME water table as a plain Anderson solve.
 #
 # Bug this guards (robust-finish fix): near equilibrium the Anderson step floors just ABOVE the relative
@@ -20,6 +20,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+solver_method anderson
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -46,7 +47,7 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 
-BB="-wtm_anderson"
+BB=""
 emit ar; emit base
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
 "$WTM" "$WORK/ar.yaml" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \
