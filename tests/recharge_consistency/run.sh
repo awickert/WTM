@@ -12,10 +12,11 @@ WORK=$(mktemp -d /tmp/rechtest_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-0.05}"           # metres; cross-scheme agreement required at fine dt
 PY="${PY:-python3}"
 
-emit() { # scheme dt_seconds cycles stem
+emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
   local flags="$1" dt="$2" cyc="$3" stem="$4"
   ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
 run_type transient
+${INTEG:+time_integration $INTEG}
 fsm_on 0
 evap_mode 0
 infiltration_on 0
@@ -40,12 +41,13 @@ EOF
 }
 
 # T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
-declare -A FLAG=( [cc]="" [tr]="-wtm_tr_bdf2" [bdf2v]="-wtm_bdf2_on_V" )
+declare -A FLAG=( [cc]="" [tr]="-wtm_tr_bdf2" [bdf2v]="" )
+declare -A INTEG_CFG=([cc]="" [tr]="" [bdf2v]="bdf2" )
 BASE="-wtm_anderson -snes_anderson_restart_type none -snes_stol 1e-8"
 WK=604800
 for s in cc tr bdf2v; do
-  emit "${FLAG[$s]}" $WK        8  "${s}_coarse"
-  emit "${FLAG[$s]}" $((WK/4)) 32  "${s}_fine"
+  INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $WK        8  "${s}_coarse"
+  INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $((WK/4)) 32  "${s}_fine"
   for d in coarse fine; do
     "$WTM" "$WORK/${s}_${d}.yaml" $BASE ${FLAG[$s]} > "$WORK/${s}_${d}.log" 2>&1 \
       || { echo "RUN FAILED: $s $d"; tail -3 "$WORK/${s}_${d}.log"; exit 2; }

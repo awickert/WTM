@@ -77,6 +77,11 @@ struct Parameters {
   // matrix-free path and is the last of the three), so CreateSNES still ORs this member with it.
   std::string solver_method;
 
+  // solver.time_integration: backward-euler (default) | bdf2 | tr-bdf2. "" = unset = backward-euler.
+  // solver.time_integration: bdf2 and -wtm_tr_bdf2 are retired one at a time; while either remains, CreateSNES ORs this
+  // member with the surviving flag rather than replacing it.
+  std::string time_integration;
+
   // solver.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
   // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
   // (DIVERGED_LINE_SEARCH). solver.dt_continuation: false opts out -- legitimate for a warm finish --

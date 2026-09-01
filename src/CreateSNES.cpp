@@ -120,14 +120,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // because the surrounding path-resolution logic below is written in PetscBool terms.
   adaptive_flag = params.adaptive_dt ? PETSC_TRUE : PETSC_FALSE;
   PetscBool bdf2v_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2_on_V", &bdf2v_flag);
+  // config-owned (solver.time_integration: bdf2); the solver.time_integration: bdf2 flag is retired.
+  bdf2v_flag = (params.time_integration == "bdf2") ? PETSC_TRUE : PETSC_FALSE;
 
   // The DEFAULT solver is the matrix-free Anderson path (selected ~60 lines below when no path flag is given):
   // the production worker -- robust across regimes, no preconditioner to tune, bit-exact across ranks, and it
   // carries the exact in-residual exfiltration constraint (runoff_collector=implicit). It is 1st-order-in-time
   // (backward-Euler cc), the right choice for equilibrium (a 2nd-order step oscillates at the free surface).
   // Opt into the semi-implicit volume-form BDF2-on-V/Picard path (large, ~dt-independent, 2nd-order steps) with
-  // -wtm_bdf2_on_V, matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or Newton with
+  // solver.time_integration: bdf2, matrix-free 2nd-order Anderson with -wtm_anderson solver.time_integration: bdf2, or Newton with
   // solver.method: newton. Any explicit path flag takes precedence.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
@@ -187,12 +188,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // in-residual exfiltration constraint (runoff_collector=implicit). No flag is set here: Anderson is simply the
     // path taken when neither Picard nor Newton is selected. It is 1st-order-in-time (backward-Euler cc,
     // the right choice for equilibrium, where a 2nd-order step oscillates at the free surface). Opt into
-    // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with -wtm_bdf2_on_V,
-    // matrix-free 2nd-order Anderson with -wtm_anderson -wtm_bdf2_on_V, or solver.method: newton.
+    // the semi-implicit BDF2-on-V/Picard solver (large stable steps, 2nd-order) with solver.time_integration: bdf2,
+    // matrix-free 2nd-order Anderson with -wtm_anderson solver.time_integration: bdf2, or solver.method: newton.
     PetscPrintf(
         PETSC_COMM_WORLD,
         "Defaulting to the matrix-free Anderson solver (robust across regimes; the production worker;\n"
-        "  1st-order-in-time). Opt into BDF2-on-V/Picard (2nd-order, large steps) with -wtm_bdf2_on_V,\n"
+        "  1st-order-in-time). Opt into BDF2-on-V/Picard (2nd-order, large steps) with solver.time_integration: bdf2,\n"
         "  or Newton with solver.method: newton.\n");
   }
 
@@ -202,10 +203,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // BDF2 residual. The integrator (cc backward-Euler / TR-BDF2 / BDF2-on-V) is selected by its own flags,
   // and the controller sizes dt for whichever one is active (see the estimate/controller split in
   // transient_groundwater.cpp update()). So `-wtm_anderson -wtm_dt_adaptive` is 1st-order adaptive-cc,
-  // `-wtm_tr_bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `-wtm_bdf2_on_V -wtm_dt_adaptive` is BDF2-on-V.
+  // `-wtm_tr_bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `solver.time_integration: bdf2 -wtm_dt_adaptive` is BDF2-on-V.
   user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE) || user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: -wtm_anderson
-  // -wtm_bdf2_on_V gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
+  // solver.time_integration: bdf2 gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.
   user_context.use_picard      = (picard_flag == PETSC_TRUE || user_context.use_bdf2) && force_anderson != PETSC_TRUE;
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
@@ -376,7 +377,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
   }
   // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
-  // Anderson residual (-wtm_anderson -wtm_bdf2_on_V) -- by the predictor-seeded guess, AND by the detached
+  // Anderson residual (-wtm_anderson solver.time_integration: bdf2) -- by the predictor-seeded guess, AND by the detached
   // adaptive controller's generic linear-history error estimate (any non-TR integrator). Allocate it
   // whenever BDF2, the predictor, or adaptive dt is on, independent of use_picard.
   if (user_context.use_bdf2 || user_context.use_predict_guess || user_context.use_dt_adaptive) {

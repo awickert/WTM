@@ -65,6 +65,7 @@ ${ADAPT:+adaptive_dt true}
 ${STORAGE:+storage $STORAGE}
 ${DTC:+dt_continuation $DTC}
 ${METHOD:+solver_method $METHOD}
+${INTEG:+time_integration $INTEG}
 eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
@@ -155,7 +156,7 @@ echo
 echo "-- overwrite coupling (default) --"
 check "Anderson BE (secant)"       s_and    -wtm_anderson
 STORAGE=volume check "Anderson BE (volume dV)" s_vol -wtm_anderson
-METHOD=picard check "Picard BDF2-on-V" s_pic -wtm_bdf2_on_V
+METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
 echo "-- FSM-delta-source coupling (#116) --"
 check "Anderson BE (secant)"       f_and    -wtm_anderson -wtm_fsm_delta_source
@@ -265,8 +266,8 @@ echo
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
 COLL=active_set ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
     -wtm_anderson -wtm_tr_bdf2
-COLL=active_set ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
-    -wtm_anderson -wtm_bdf2_on_V
+COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
+    -wtm_anderson
 echo
 
 
@@ -298,7 +299,7 @@ COLL=explicit                check "Anderson x explicit"        c_ex  -wtm_ander
 # It tracks snes_stol and then floors, which is what a tolerance-limited quantity does and what a
 # conservation defect does not. Per-ARM tolerance rather than a tighter snes_stol, so this arm's
 # numbers stay comparable with the others.
-COLL=explicit METHOD=picard check "Picard x explicit" c_pex -wtm_bdf2_on_V
+COLL=explicit METHOD=picard INTEG=bdf2 check "Picard x explicit" c_pex
 echo
 # EACH SOLVER AT ITS OWN RESOLVED DEFAULT. Every other arm in this file names its collector explicitly,
 # which is right for discrimination but means the DEFAULT-RESOLUTION path itself was never exercised --
@@ -323,7 +324,7 @@ COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and -wtm_ande
 #     1e-10        1.588e-07     2.078e-06
 #     1e-12        1.588e-07     2.078e-06   <- floors
 COLL="" METHOD=newton ARM_TOL=1e-4 check "Newton, unset -> active_set [loose tol, see note]" d_ntu
-COLL="" METHOD=picard check "Picard, unset -> explicit" d_pic -wtm_bdf2_on_V
+COLL="" METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
 COLL=implicit METHOD=newton check "Newton + continuation x implicit" d_nt
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
 # other two must NOT print it, or they have silently stopped testing the active-set default.

@@ -47,6 +47,7 @@ mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume
 run_type $2
 ${STORAGE:+storage $STORAGE}
 ${METHOD:+solver_method $METHOD}
+${INTEG:+time_integration $INTEG}
 ${DTC:+dt_continuation $DTC}
 fsm_on 1
 infiltration_on 0
@@ -80,7 +81,7 @@ declare -A SOLVERS=( [anderson]="-wtm_anderson"
                      [newton]="" )   # solver.method: newton (implies continuation) -- via METHOD=
 declare -A INTEGS=(  [be]=""
                      [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
-                     [bdf2v]="-wtm_bdf2_on_V"
+                     [bdf2v]=""   # solver.time_integration: bdf2 -- via INTEG=
                      [trbdf2]="-wtm_tr_bdf2" )
 COLLECTORS=(active_set explicit implicit off)
 RUNTYPES=(equilibrium transient)
@@ -117,6 +118,7 @@ for rt in "${RUNTYPES[@]}"; do
         # "picard cannot converge" into a false "picard runs at dt/8" for 12 combinations.
         STORAGE=$([ "$ig" = volume ] && echo volume)
         METHOD=$([ "$sv" != anderson ] && echo "$sv")
+        INTEG=$([ "$ig" = bdf2v ] && echo bdf2)
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))

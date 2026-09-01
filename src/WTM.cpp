@@ -995,7 +995,6 @@ void apply_config_petsc_options(const std::string& config_file) {
     const std::string t = require_enum(n.as<std::string>(), "solver.time_integration",
                                        {"backward-euler", "bdf2", "tr-bdf2"});
     if (t == "tr-bdf2")   set_opt_if_unset("-wtm_tr_bdf2", "true");
-    else if (t == "bdf2") set_opt_if_unset("-wtm_bdf2_on_V", "true");
     // "backward-euler" = default (no flag)
   }
 

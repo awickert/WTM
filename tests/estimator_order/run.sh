@@ -84,6 +84,7 @@ outfile_prefix $WORK/$1_
 runoff_collector active_set
 adaptive_dt true
 dt_tol 1e9
+${INTEG:+time_integration $INTEG}
 EOF
     ../emit_config.sh < "$WORK/$1.yaml.in" > "$WORK/$1.yaml"
 }
@@ -102,13 +103,15 @@ echo "WTM binary: $WTM"
 echo
 fail=0
 
-arm() { # $1 label, $2 integrator flag, $3 fsm_on, $4 expected p, $5 mode (check|xfail)
-    local label="$1" ig="$2" fsm="$3" want="$4" mode="$5"
+arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 integrator CONFIG value]
+    # $6 exists because the integrators are being moved from flags to solver.time_integration one at a
+    # time; an arm names its integrator by whichever channel that one still uses.
+    local label="$1" ig="$2" fsm="$3" want="$4" mode="$5" integ="${6:-}"
     local stem tag pdt="" pe="" line="" p="" n=0
     tag=$(echo "$label" | tr -c 'a-zA-Z0-9' '_')
     for d in $LADDER; do
         stem="${tag}_${d}"
-        read -r dt e <<< "$(probe "$stem" "$d" "$fsm" "$ig")"
+        read -r dt e <<< "$(INTEG="$integ" probe "$stem" "$d" "$fsm" "$ig")"
         if [ -z "${e:-}" ]; then
             echo "  FAIL  $label -- no DTTRACE at deltat=$d (is -wtm_dt_trace wired?)"
             tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
@@ -165,9 +168,9 @@ arm "TR-BDF2   fsm off" "-wtm_tr_bdf2"   0 2.0 check
 # The generic linear-history predictor. With FSM OFF it converges -- at FIRST order, not the O(dt^2)
 # its own source comment claims, which is a second and separate discrepancy worth keeping in view
 # (candidate: active-set switching leaves the trajectory only C^1 in time). Pinned at what it MEASURES.
-arm "BDF2-on-V fsm off" "-wtm_bdf2_on_V" 0 1.0 check
+arm "BDF2-on-V fsm off" "" 0 1.0 check bdf2
 # ... and with FSM ON it does not respond to dt at all. See the KNOWN HOLE note at the top.
-arm "BDF2-on-V fsm on " "-wtm_bdf2_on_V" 1 0.0 xfail
+arm "BDF2-on-V fsm on " "" 1 0.0 xfail bdf2
 
 echo
 if [[ $fail -eq 0 ]]; then echo "ESTIMATOR ORDER: ALL PASSED"; else echo "ESTIMATOR ORDER: FAILED" >&2; fi

@@ -269,7 +269,7 @@ struct AppCtx {
   };
   AcceptedStep step;
 
-  // BDF2-on-V (-wtm_bdf2_on_V; implies BDF2 -> Picard): discretize the nonlinear storage with the
+  // BDF2-on-V (solver.time_integration: bdf2; implies BDF2 -> Picard): discretize the nonlinear storage with the
   // 3-level BDF2 difference of the stored volume V ((3V^{n+1}-4V^n+V^{n-1})/2dt = flux), using the
   // TANGENT dV/dh on the operator diagonal -- instead of the 2-level backward-Euler secant
   // storativity, which caps the achieved order at 1. Restores genuine 2nd order, physics-preserving

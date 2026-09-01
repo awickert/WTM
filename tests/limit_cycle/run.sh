@@ -26,7 +26,9 @@ WORK=$(mktemp -d /tmp/lc_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-1e-4}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+emit() { # $1 stem  [env: INTEG=]
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+${INTEG:+time_integration $INTEG}
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -52,9 +54,9 @@ EOF
 }
 BB="-wtm_anderson"
 QUIET="${QUIET:-1e-4}"   # metres; final per-cycle |Δwtd| below this = settled (a limit cycle would stay large)
-emit cc; emit bd
+emit cc; INTEG=bdf2 emit bd
 "$WTM" "$WORK/cc.yaml" $BB                > "$WORK/cc.log" 2>&1 || { echo "RUN FAILED: cc"; tail -3 "$WORK/cc.log"; exit 2; }
-"$WTM" "$WORK/bd.yaml" $BB -wtm_bdf2_on_V > "$WORK/bd.log" 2>&1 || { echo "RUN FAILED: bd"; tail -3 "$WORK/bd.log"; exit 2; }
+"$WTM" "$WORK/bd.yaml" $BB > "$WORK/bd.log" 2>&1 || { echo "RUN FAILED: bd"; tail -3 "$WORK/bd.log"; exit 2; }
 
 # SETTLING: the final per-cycle |wtd change| (col 5) must be small -- a limit cycle would keep it large.
 for a in cc bd; do
