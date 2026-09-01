@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DIRECT-TO-RUNOFF gathering -- the routing-success view of the free-surface flicker (FSM off).
 # See benchmark/FREE_SURFACE_FLICKER.md. The flicker is not a numerical problem when above-surface water has
-# somewhere to GO: with -wtm_direct_to_runoff the in-residual exfiltration constraint routes the excess (max(0,wtd)/dt)
+# somewhere to GO: with collection.method: implicit the in-residual exfiltration constraint routes the excess (max(0,wtd)/dt)
 # into the runoff array, holding the table AT the surface (wtd = 0) instead of letting it pile up and slosh.
 # POSITIVE test of that success, with a bite proving the routing is load-bearing. Asserts:
 #   SETTLING     : with the routing on, the run reaches equilibrium (per-cycle |Δwtd| decays; no limit cycle).

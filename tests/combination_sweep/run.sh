@@ -79,7 +79,7 @@ declare -A INTEGS=(  [be]=""
                      [volume]="-wtm_volume_storage"
                      [bdf2v]="-wtm_bdf2_on_V"
                      [trbdf2]="-wtm_tr_bdf2" )
-COLLECTORS=(active_set explicit implicit legacy off)
+COLLECTORS=(active_set explicit implicit off)
 RUNTYPES=(equilibrium transient)
 
 echo "=== combination sweep: solver x integrator x collector x run_type ==="

@@ -295,9 +295,7 @@ COLL=explicit                check "Anderson x explicit"        c_ex  -wtm_ander
 # It tracks snes_stol and then floors, which is what a tolerance-limited quantity does and what a
 # conservation defect does not. Per-ARM tolerance rather than a tighter snes_stol, so this arm's
 # numbers stay comparable with the others.
-COLL=legacy   ARM_TOL=1e-5   check "Anderson x legacy [loose tol, see note]" c_lg -wtm_anderson
 COLL=explicit                check "Picard x explicit"          c_pex -wtm_picard -wtm_bdf2_on_V
-COLL=legacy                  check "Picard x legacy"            c_plg -wtm_picard -wtm_bdf2_on_V
 echo
 # EACH SOLVER AT ITS OWN RESOLVED DEFAULT. Every other arm in this file names its collector explicitly,
 # which is right for discrimination but means the DEFAULT-RESOLUTION path itself was never exercised --

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Surface-transition taper tests: cross-rank determinism + smoothness of the smooth surface-water
-# transition (-wtm_surface_sink + -wtm_evap_taper) on the Anderson default path. This is the
+# transition (-wtm_evap_taper, tapers 2+3) on the Anderson default path. This is the
 # SURFACE_SINK_DESIGN sec 14d experiment sequence, made into an assertion. See taper_test.py.
 #
 #   tests/taper/run.sh [wtm.x] [nrank ...]
