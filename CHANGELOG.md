@@ -122,10 +122,11 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   fail, ENUM-BAD by removing a validator and ENUM-OK by dropping a legal value from one.
 
 - **`solver.method: newton` was a documented config value that crashed.** Newton does not converge from
-  a cold start without dt-continuation, and `-wtm_dt_continuation` had no config expression — so
+  a cold start without dt-continuation, and at the time `-wtm_dt_continuation` had no config expression — so
   selecting Newton from YAML alone aborted with `DIVERGED_LINE_SEARCH` after 4 iterations. The config
   value now means the *working recipe*: `solver.method: newton` implies
-  `-wtm_newton -wtm_dt_continuation` and is byte-identical to it. `solver.dt_continuation: false` opts
+  `solver.dt_continuation: true` and is byte-identical to it (the flag has since been retired too).
+  `solver.dt_continuation: false` opts
   out — legitimate for a warm finish, where continuation is wasted — and warns that a cold start will
   diverge. The bare `-wtm_newton` flag is **unchanged** and still means plain Newton: `tests/newton_solver`
   pins a contract that it does not converge, `benchmark/scheme_bench` measures it, and

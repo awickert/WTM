@@ -79,10 +79,12 @@ EOF
 return 0
 }
 
-arm() { # $1 label, $2 cli flags, $3 yaml lines
+arm() { # $1 label, $2 cli flags, $3 yaml lines, [$4 yaml lines for the FLAG side]
+    # $4 exists because flags are being retired one at a time: a setting the flag route can no longer
+    # express has to come from the config on BOTH sides, or the comparison stops being expressible at all.
     local tag rc_f rc_y a b
     tag=$(echo "$1" | tr -c 'a-zA-Z0-9' '_')
-    mk "${tag}_f" ""   ; "$WTM" "$WORK/${tag}_f.yaml" $2 > "$WORK/${tag}_f.log" 2>&1; rc_f=$?
+    mk "${tag}_f" "${4:-}"   ; "$WTM" "$WORK/${tag}_f.yaml" $2 > "$WORK/${tag}_f.log" 2>&1; rc_f=$?
     mk "${tag}_y" "$3" ; "$WTM" "$WORK/${tag}_y.yaml"    > "$WORK/${tag}_y.log" 2>&1; rc_y=$?
     if [ $rc_f -ne 0 ] || [ $rc_y -ne 0 ]; then
         echo "  FAIL  $1 -- a route did not complete (flag rc=$rc_f, config rc=$rc_y)"
@@ -124,7 +126,9 @@ echo
 arm "solver.method: picard        " "-wtm_picard"                  "solver: { method: picard }"
 arm "solver.method: anderson      " "-wtm_anderson"                "solver: { method: anderson }"
 # See the header: newton's config value abstracts BOTH flags, because the bare path does not converge.
-arm "solver.method: newton        " "-wtm_newton -wtm_dt_continuation" "solver: { method: newton }"
+# -wtm_dt_continuation is retired, so the flag side takes the continuation from ITS config: what is
+# still under test is that the FLAG-selected solver reaches the same run as the CONFIG-selected one.
+arm "solver.method: newton        " "-wtm_newton" "solver: { method: newton }" "solver: { dt_continuation: true }"
 arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { time_integration: tr-bdf2 }"
 arm "solver.time_integration: bdf2" "-wtm_bdf2_on_V"               "solver: { time_integration: bdf2 }"
 arm "collection.method: active_set" "-wtm_active_set"              "surface_water: { collection: { method: active_set } }"

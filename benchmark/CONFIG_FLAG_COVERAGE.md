@@ -106,7 +106,7 @@ Anderson is the default and needs no flag, which is why `-wtm_anderson` is ABSTR
 | flag | what it does | status | YAML today |
 |---|---|---|---|
 | `-wtm_picard` | semi-implicit Picard (SPD operator, CG+GAMG) | ABSTRACTED | `solver.method: picard` |
-| `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton`, which means `-wtm_newton -wtm_dt_continuation` (the working recipe). The BARE flag stays plain Newton -- three things pin that |
+| `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton`, which implies `solver.dt_continuation` (the working recipe). The BARE flag stays plain Newton -- three things pin that |
 | `-wtm_anderson` | Anderson mixing, matrix-free | ABSTRACTED | `solver.method: anderson` (the default) |
 | `-wtm_aa_picard` | Anderson-accelerated GAMG-Picard (nonlinear preconditioning) | GAP — advanced | none — a fourth strategy `solver.method` does not offer |
 | `-wtm_handoff` | run Anderson, then hand the best iterate to a finisher | GAP — advanced | none |
@@ -140,7 +140,7 @@ Five flags, none reachable, all tuning one mechanism.
 |---|---|---|---|
 | `-wtm_tr_bdf2` | TR-BDF2, L-stable 2nd order | ABSTRACTED | `solver.time_integration: tr-bdf2` |
 | `-wtm_bdf2_on_V` | BDF2 applied to stored volume V(h) | ABSTRACTED | `solver.time_integration: bdf2` |
-| `-wtm_volume_storage` | backward-Euler storage as exact ΔV, not secant S·Δh | ABSTRACTED | `solver.storage: volume` |
+| `-wtm_volume_storage` | backward-Euler storage as exact ΔV, not secant S·Δh | **RETIRED** (was ABSTRACTED) | `solver.storage: volume` |
 | `-wtm_Tbar` | time-averaged interblock transmissivity | **RETIRED** (was 1:1) | `solver.t_bar` |
 | `-wtm_bdf2` | the ORIGINAL BDF2 (head form), pre-`bdf2_on_V` | GAP — advanced | none. It sets `use_bdf2` WITHOUT `use_bdf2_on_V` — head-form BDF2, a distinct scheme; `time_integration: bdf2` maps to `bdf2_on_V` |
 
@@ -160,7 +160,7 @@ byte-identical results at every setting because the flag was parsed only on the 
 | `-wtm_dtc_easy_iters` | iteration count below which dt may grow | GAP — advanced | none |
 | `-wtm_dtc_max_retries` | consecutive rejects before giving up | GAP — advanced | none |
 | `-wtm_dtc_dt0` | starting dt for the continuation ramp | GAP — advanced | none |
-| `-wtm_dt_continuation` | Newton's dt ramp | ABSTRACTED | implied by `solver.method: newton`; `solver.dt_continuation: false` opts out (warns) |
+| `-wtm_dt_continuation` | Newton's dt ramp | **RETIRED** (was ABSTRACTED) | implied by `solver.method: newton`; `solver.dt_continuation: false` opts out (warns) |
 | `-wtm_dt_norm_rms` / `-wtm_dt_norm_max` | adaptive error norm: RMS (default) or MAX | GAP — advanced | none |
 | `-wtm_dt_trace` | report (dt, est, tol, factor, iters, accepted) per step | DEV | none — diagnostic |
 
@@ -227,7 +227,7 @@ can retune the sigmoid but cannot turn it off.
 | flag | what it does | status | YAML today |
 |---|---|---|---|
 | `-wtm_T_bedrock` | additive background transmissivity | **RETIRED** (was 1:1) | `transmissivity.additive_background_transmissivity` |
-| `-wtm_land_boundary` | land boundary condition | ABSTRACTED | `boundaries.land` (value translated) |
+| `-wtm_land_boundary` | land boundary condition | **RETIRED** (was ABSTRACTED) | `boundaries.land` (value translated) |
 | `-wtm_ksat_surface_smoothing_width` | round the ksat kink at the surface | GAP — user | none — a modelling choice, not a developer knob |
 | `-wtm_ksat_soilbottom_smoothing_width` | round the ksat kink at −1.5 m | GAP — user | none — same |
 | `-wtm_storativity_surface_smoothing_width` | round the storativity kink at the surface | GAP — user | none — same |

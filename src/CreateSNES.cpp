@@ -220,16 +220,23 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 "  Newton path it selects. Drop the Picard/Anderson flag to use the stiff cold-start recipe.\n");
   }
 
-  // Newton dt-continuation (-wtm_dt_continuation; needs -wtm_newton): equilibrium PTC that starts
+  // Newton dt-continuation (solver.dt_continuation; needs solver.method: newton): equilibrium PTC that starts
   // deltat small (diagonally dominant -> non-singular Jacobian from a far guess) and grows it after
   // each converged step. Start dt defaults to params.deltat/200 (-wtm_dtc_dt0 overrides, seconds);
   // growth 1.5x/step (-wtm_dtc_grow); cap 1000*params.deltat (-wtm_dtc_dt_max). deltat persists across
   // cycles, so it ramps toward equilibrium. The WTM.cpp cycle loop drives the ramp. See
   // benchmark/EQUILIBRIUM_ROBUSTNESS.md.
-  PetscBool dtc_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_continuation", &dtc_flag);
-  if (stiff_flag) dtc_flag = PETSC_TRUE;  // the bundle enables dt-continuation
-  user_context.use_newton_continuation = (dtc_flag == PETSC_TRUE) && user_context.use_newton;
+  // Config-owned (solver.dt_continuation), resolved in Parameters -- solver.method: newton implies it.
+  // -wtm_stiff still forces it on: that flag is a PRESET and has not been migrated yet (task #31).
+  bool dtc_on = params.dt_continuation || (stiff_flag == PETSC_TRUE);
+  user_context.use_newton_continuation = dtc_on && user_context.use_newton;
+  // The opt-out warning lives here, not in the YAML bridge, because only this scope knows whether the
+  // Newton path was actually selected.
+  if (user_context.use_newton && params.dt_continuation_set && !params.dt_continuation)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "WARNING [solver.method: newton + solver.dt_continuation: false]: dt-continuation is OFF, "
+                "so this is PLAIN Newton. It converges from a WARM start but typically DIVERGES from a "
+                "cold one (DIVERGED_LINE_SEARCH). Remove solver.dt_continuation to get the working recipe.\n");
   // Convergence-based early stop (-wtm_eq_tol, a WATER depth in metres). Default ON for equilibrium runs
   // (0.001 m = 1 mm of water |S*Δwtd| per cycle), OFF for transient runs (a time-evolution run must play out
   // in full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value
@@ -277,7 +284,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // the ramp); a user -wtm_eq_tol below still wins.
     if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.001;
     PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
+                "solver.dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",
                 dt0, user_context.dtc_grow, user_context.dtc_easy_iters, user_context.dtc_shrink,
                 user_context.dtc_dt_max);

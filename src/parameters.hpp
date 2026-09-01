@@ -72,6 +72,14 @@ struct Parameters {
   // enforcement needs a b=0 residual path and auto-enables volume storage on top of it (with a NOTE).
   bool volume_storage = false;
 
+  // solver.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
+  // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
+  // (DIVERGED_LINE_SEARCH). solver.dt_continuation: false opts out -- legitimate for a warm finish --
+  // and CreateSNES warns. The `_set` flag distinguishes "the user declined" from "nobody asked", which
+  // is what makes the newton default overridable rather than sticky.
+  bool dt_continuation     = false;
+  bool dt_continuation_set = false;
+
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;

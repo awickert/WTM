@@ -48,8 +48,9 @@ JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it
 AGREE_TOL="${AGREE_TOL:-0.05}"   # metres; same band tests/recharge_consistency uses cross-scheme
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
+mkcfg() { # $1 = stem, $2 = collector, $3 = total_time   [env: DTC=true for the continuation arms]
     { cat <<EOF
+${DTC:+dt_continuation $DTC}
 run_type equilibrium
 total_time $3
 supplied_wt 1
@@ -89,8 +90,8 @@ echo
 fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
-mkcfg pre active_set "2yr"
-"$WTM" "$WORK/pre.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 \
+DTC=true mkcfg pre active_set "2yr"
+"$WTM" "$WORK/pre.yaml" -wtm_newton -snes_stol 1e-10 \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
 if awk -v r="$REM" 'BEGIN{exit !(r > 0)}'; then
@@ -128,9 +129,9 @@ fi
 
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
 EQ_TOL=1e-4 mkcfg eq_and  active_set "2000yr"
-EQ_TOL=1e-4 mkcfg eq_newt active_set "2000yr"
+EQ_TOL=1e-4 DTC=true mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"  -wtm_anderson                 -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
-"$WTM" "$WORK/eq_newt.yaml" -wtm_newton -wtm_dt_continuation -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
+"$WTM" "$WORK/eq_newt.yaml" -wtm_newton -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
 import glob, os, sys
 import numpy as np, rasterio
@@ -155,11 +156,11 @@ mkcfg contract active_set "2yr"
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
 if sh -c '"$0" "$1" -wtm_newton -snes_stol 1e-10' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
-    echo "  FAIL  CONTRACT   plain -wtm_newton CONVERGED -- it no longer needs -wtm_dt_continuation."
+    echo "  FAIL  CONTRACT   plain -wtm_newton CONVERGED -- it no longer needs solver.dt_continuation."
     echo "        That is good news; update this arm and the docs that say otherwise."
     fail=1
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
-    echo "  PASS  CONTRACT   plain -wtm_newton fails as documented; -wtm_dt_continuation is required"
+    echo "  PASS  CONTRACT   plain -wtm_newton fails as documented; solver.dt_continuation is required"
 else
     echo "  FAIL  CONTRACT   plain -wtm_newton failed for an UNEXPECTED reason:"
     grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'

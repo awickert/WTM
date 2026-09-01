@@ -37,6 +37,7 @@
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
 #   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
 #   storage               -> solver.storage (volume | secant)
+#   dt_continuation       -> solver.dt_continuation
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -142,13 +143,14 @@ if have land_boundary; then
 fi
 
 # --- solver ---------------------------------------------------------------------
-if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage; then
+if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage || have dt_continuation; then
     echo "solver:"
     have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
     have dt_tol      && echo "  water_volume_timestep_error_tol: \"$(val dt_tol)\""
     have dt_max      && echo "  dt_max: \"$(val dt_max)\""
     have t_bar       && echo "  t_bar: $(val t_bar)"
     have storage     && echo "  storage: $(val storage)"
+    have dt_continuation && echo "  dt_continuation: $(val dt_continuation)"
 fi
 
 # --- evaporation ---------------------------------------------------------------
