@@ -189,6 +189,8 @@ Parameters::Parameters(const std::string& config_file) {
     land_boundary_dirichlet = (require_enum(n.as<std::string>(), "boundaries.land",
                                             {"neumann_toposlope", "dirichlet_sea_level"})
                                == "dirichlet_sea_level");
+  if (auto n = root["solver"]["storage"])
+    volume_storage = (require_enum(n.as<std::string>(), "solver.storage", {"volume", "secant"}) == "volume");
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
   if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {

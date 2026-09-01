@@ -41,10 +41,11 @@ INP="$RECH/inputs"
 WORK=$(mktemp -d /tmp/combo_XXXX); trap 'rm -rf "$WORK"' EXIT
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat
+mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume]
     local tend="ta"; [ "$2" = transient ] && tend="tb"
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type $2
+${STORAGE:+storage $STORAGE}
 fsm_on 1
 infiltration_on 0
 runoff_ratio 0
@@ -76,7 +77,7 @@ declare -A SOLVERS=( [anderson]="-wtm_anderson"
                      [picard]="-wtm_picard"
                      [newton]="-wtm_newton -wtm_dt_continuation" )
 declare -A INTEGS=(  [be]=""
-                     [volume]="-wtm_volume_storage"
+                     [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
                      [bdf2v]="-wtm_bdf2_on_V"
                      [trbdf2]="-wtm_tr_bdf2" )
 COLLECTORS=(active_set explicit implicit off)
@@ -107,7 +108,8 @@ for rt in "${RUNTYPES[@]}"; do
     for ig in be volume bdf2v trbdf2; do
       for cl in "${COLLECTORS[@]}"; do
         stem="${rt:0:2}_${sv}_${ig}_${cl}"
-        mkcfg "$stem" "$rt" "$cl" 31536000
+        # the `volume` integrator is a config value (solver.storage), not a flag
+        STORAGE=$([ "$ig" = volume ] && echo volume) mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))
         elif [ -z "$MSG" ]; then

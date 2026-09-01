@@ -267,7 +267,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // rising to the surface still contributes its true rise (bounding dt in Anderson's stable range), a pinned
 // cell contributes ~0. Keeps ALL cells in the norm (excluding them would unbound dt -> Anderson can't take the
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
-static bool             g_volume_storage              = false; // -wtm_volume_storage: BE storage as exact volume ΔV, not secant S·Δh
+static bool             g_volume_storage              = false; // solver.storage: volume -- BE storage as exact volume ΔV, not secant S·Δh
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
 static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL, SUPERSEDED for its original purpose]: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy); ACTIVE_SET now removes that shock by itself -- shock ratio 0.985 -> 3.6e-13 -- so this no longer has a shock to smooth and is NOT recommended for that. Retained because its source-delivery machinery is the mechanism for DECOUPLING FSM CADENCE from the GW step, if the serial-FSM ceiling is ever attacked (option B of the lake-coupling design). Incompatible with active_set (guarded in update()). See the FSM-delta-source work (backlog item, NOT a GitHub issue) and benchmark/scheme_bench/README.md.
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
@@ -812,7 +812,7 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
   // structure. Without this guard the pair -wtm_tr_bdf2 -wtm_bdf2 would silently take 3-level weights.
   const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history && !user_context.use_tr_bdf2;
   // Mirror the residual's branch choice -- but note that only BDF2 actually needs a separate volume
-  // form. -wtm_volume_storage is a backward Euler whose storage is the exact volume change
+  // form. solver.storage: volume is a backward Euler whose storage is the exact volume change
   // V(w^{n+1}) - V(w^n), and the secant branch below already computes exactly that: by definition
   // updateEffectiveStorativity(w^n, w^{n+1}) IS the secant (V(w^{n+1}) - V(w^n)) / (w^{n+1} - w^n)
   // (pinned in src/test_storage_math.cpp), and h^{n+1} - h^n = w^{n+1} - w^n, so
@@ -1432,16 +1432,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
-  // -wtm_volume_storage: use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
+  // solver.storage: volume -- use the EXACT stored-volume change ΔV = V(w^{n+1}) − V(w^n) in the backward-Euler
   // (default Anderson) storage term, instead of the SECANT effective storativity S·Δh. Below the surface
   // both agree (V is linear, S = porosity), but at a surface CROSSING the secant S·Δh ≠ ΔV, so the secant
   // BE converges (dt→0) to a different water table than the volume-based TR-BDF2 / BDF2-on-V schemes
   // (Esquibel: mean ~0.11 m, tails ~19 m). ΔV is the physically exact storage; this flag makes the BE
   // baseline consistent with the volume schemes. First-order in time like the secant BE (no BDF2 history);
   // matrix-free Anderson only for now (FormFunctionLocal + zero RHS). Off by default (byte-identical).
-  PetscBool volstore = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_volume_storage", &volstore, nullptr);
-  g_volume_storage = (volstore == PETSC_TRUE);
+  g_volume_storage = params.volume_storage;  // config-owned (solver.storage); active_set may add to it below
 
   // -wtm_active_set [EXPERIMENTAL]: enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET / semismooth
   // constraint INSIDE the matrix-free (Anderson) solve -- a cell whose iterate rises above the land surface
@@ -1481,7 +1479,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the exact volume-storage BE (b=0, 1st-order, same limit as TR-BDF2/BDF2-on-V; see finding_cc_secant_...).
   if (g_active_set && !user_context.use_bdf2_on_V && !user_context.use_tr_bdf2 && !g_volume_storage) {
     g_volume_storage = true;
-    PetscPrintf(PETSC_COMM_WORLD, "NOTE [-wtm_active_set]: auto-enabled -wtm_volume_storage (a b=0 residual "
+    PetscPrintf(PETSC_COMM_WORLD, "NOTE [collection.method: active_set]: auto-enabled solver.storage: volume (a b=0 residual "
                 "path is required for the semismooth exfiltration constraint).\n");
   }
   // Active-set IS the exfiltration enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
@@ -2455,7 +2453,7 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
   // matrix-free BDF2-on-V path instead folds the FULL 3-level storage (V^{n+1},V^n,V^{n-1}) into the
   // residual itself, so its RHS is zero. The bootstrap step (no history yet) still uses the BE RHS.
   const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
-  // -wtm_volume_storage folds the FULL storage ΔV into the residual (like bdf2v), so its RHS is 0 too.
+  // solver.storage: volume folds the FULL storage ΔV into the residual (like bdf2v), so its RHS is 0 too.
   const bool zero_rhs = bdf2v || user_context->use_tr_bdf2 || g_volume_storage;
 #pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, zero_rhs) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
@@ -2665,7 +2663,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
           f[j][i] = storage - my_rech[j][i] / Sy + user_context->deltat * net_outflow / (A_j * Sy)
                     + user_context->deltat * removal / Sy;
         } else if (vol_storage) {
-          // -wtm_volume_storage: backward Euler (1st-order in time, NO BDF2 history) but with the EXACT
+          // solver.storage: volume -- backward Euler (1st-order in time, NO BDF2 history) but with the EXACT
           // stored-volume change ΔV = V(w^{n+1}) − V(w^n) instead of the secant S·Δh below. Identical in
           // form to the bdf2v branch with (a_c,b_c,c_c)=(1,1,0). Head-scaled by Sy = dV/dh so the residual
           // stays O(metres) for Anderson (a positive per-cell scale leaves the root unchanged); RHS b=0

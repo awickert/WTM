@@ -127,7 +127,6 @@ arm "solver.method: anderson      " "-wtm_anderson"                "solver: { me
 arm "solver.method: newton        " "-wtm_newton -wtm_dt_continuation" "solver: { method: newton }"
 arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { time_integration: tr-bdf2 }"
 arm "solver.time_integration: bdf2" "-wtm_bdf2_on_V"               "solver: { time_integration: bdf2 }"
-arm "solver.storage: volume       " "-wtm_volume_storage"          "solver: { storage: volume }"
 arm "collection.method: active_set" "-wtm_active_set"              "surface_water: { collection: { method: active_set } }"
 
 # NEWTON COLD-START CONTRACT, from the config side. `solver.method: newton` must be USABLE FROM YAML

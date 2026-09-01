@@ -67,6 +67,11 @@ struct Parameters {
   // terrain-following no-flow). Stored resolved: the consumer only ever asks which of the two it is.
   bool land_boundary_dirichlet = false;
 
+  // solver.storage: `volume` uses the EXACT stored-volume change dV in the backward-Euler storage term
+  // instead of the secant S*dh. NOTE this is a STARTING value, not the last word: the active-set
+  // enforcement needs a b=0 residual path and auto-enables volume storage on top of it (with a NOTE).
+  bool volume_storage = false;
+
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;

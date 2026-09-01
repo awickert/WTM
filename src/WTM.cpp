@@ -1035,9 +1035,6 @@ void apply_config_petsc_options(const std::string& config_file) {
     else if (t == "bdf2") set_opt_if_unset("-wtm_bdf2_on_V", "true");
     // "backward-euler" = default (no flag)
   }
-  if (auto n = root["solver"]["storage"])
-    if (require_enum(n.as<std::string>(), "solver.storage", {"volume", "secant"}) == "volume")
-      set_opt_if_unset("-wtm_volume_storage", "true");
 
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }

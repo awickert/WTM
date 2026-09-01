@@ -2,7 +2,7 @@
 """Fixture for the SECANT ≡ VOLUME backward-Euler storage equivalence test.
 
 WTM's default (Callaghan) backward Euler writes the storage term as S·Δh with the EXACT secant
-effective storativity S = (V(wⁿ⁺¹) − V(wⁿ))/(wⁿ⁺¹ − wⁿ); the -wtm_volume_storage / BDF2-on-V schemes use
+effective storativity S = (V(wⁿ⁺¹) − V(wⁿ))/(wⁿ⁺¹ − wⁿ); the solver.storage: volume / BDF2-on-V schemes use
 the stored-volume change ΔV directly. Because S is the exact secant, S·Δh ≡ ΔV *identically* -- even across
 the surface where the specific yield jumps from porosity to ~1. So on a WELL-BEHAVED (non-oscillating)
 domain the two forms must give the identical water table to machine precision. (They diverge only in a

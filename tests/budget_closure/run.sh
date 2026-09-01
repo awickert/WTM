@@ -62,6 +62,7 @@ time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
 ${ADAPT:+adaptive_dt true}
+${STORAGE:+storage $STORAGE}
 eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
@@ -151,12 +152,12 @@ echo "WTM binary: $WTM"
 echo
 echo "-- overwrite coupling (default) --"
 check "Anderson BE (secant)"       s_and    -wtm_anderson
-check "Anderson BE (volume dV)"    s_vol    -wtm_anderson -wtm_volume_storage
+STORAGE=volume check "Anderson BE (volume dV)" s_vol -wtm_anderson
 check "Picard BDF2-on-V"           s_pic    -wtm_picard -wtm_bdf2_on_V
 echo
 echo "-- FSM-delta-source coupling (#116) --"
 check "Anderson BE (secant)"       f_and    -wtm_anderson -wtm_fsm_delta_source
-check "Anderson BE (volume dV)"    f_vol    -wtm_anderson -wtm_volume_storage -wtm_fsm_delta_source
+STORAGE=volume check "Anderson BE (volume dV)" f_vol -wtm_anderson -wtm_fsm_delta_source
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
