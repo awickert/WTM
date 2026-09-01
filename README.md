@@ -228,7 +228,7 @@ selects the bundle; you only override a piece if you mean to.
 
 | | **Anderson** (default) | **Picard** (BDF2-on-V) | **Newton** (analytic Jacobian) |
 |---|---|---|---|
-| select with | *(default)* | `-wtm_picard -wtm_bdf2_on_V` | `-wtm_newton` |
+| select with | *(default)* | `solver.method: picard` + `-wtm_bdf2_on_V` | `-wtm_newton` |
 | solve | matrix-free | assembled operator + linear solve | assembled Jacobian + linear solve |
 | exfiltration enforcement | **`active_set`** | **`explicit`** — by design, see below | **`active_set`** or `explicit` |
 | cold start from far | works as-is | needs **`-wtm_Tbar`** (log-mean transmissivity) | needs **dt-continuation** (`-wtm_stiff`) |
@@ -422,7 +422,6 @@ explicit path flag wins, and Newton is mutually exclusive with Picard/Anderson.
 | `-wtm_anderson` | **on** | default | Matrix-free Anderson mixing. Robust across regimes, bit-exact across MPI ranks, carries the exact in-residual exfiltration constraint. 1st-order-in-time unless `-wtm_bdf2_on_V` is added. |
 | `-wtm_bdf2_on_V` | off | opt-in | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time; cross-rank deterministic (the golden reference). |
 | `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, needs `solver.dt_continuation` (implied by `solver.method: newton`). |
-| `-wtm_picard` | off | opt-in | Force the frozen-coefficient backward-Euler Picard operator explicitly (it is also the operator behind the default). |
 | `-wtm_bdf2` | off | opt-in | Bare backward-looking BDF2 in head form (secant storativity), Picard operator. |
 | `-wtm_tr_bdf2` | off | opt-in | L-stable TR-BDF2 (two staged solves per step) on the matrix-free residual; larger stable step, no ringing. |
 | `-wtm_stiff` | off | opt-in | Convenience bundle for hard cold starts: `-wtm_newton` + `solver.dt_continuation` + an equilibrium stop tolerance. |
@@ -477,7 +476,6 @@ convergence (the "flail"). All force the Anderson path.
 | `-wtm_Tbar` | off | experimental | Use each cell's step-time-averaged transmissivity (Kirchhoff-potential difference over the step) for interblock flux; damps stiff-step oscillation. Requires piecewise T (refused with the smoothing / extended-soil / Kirchhoff options). |
 | `-wtm_T_bedrock` | 0 | opt-in | Additive background transmissivity floor (Manning–Ingebritsen); collapses the deep exponential-T range. |
 | `-wtm_kirchhoff` | off | experimental | Solve in the discharge-potential variable Φ = ∫T dwtd on the Newton path. Retained for study; it worsens conditioning in practice. |
-| `-wtm_volume_storage` | off | experimental | Anderson-only: use the exact volume change ΔV for backward-Euler storage instead of secant `S·Δh`. Identical below the surface; differs at a surface crossing. |
 | `-wtm_relax` | 1.0 (off) | tuning | Post-solve under-relaxation `w ← a·w_solved + (1−a)·w_prev` (all solver paths); damps free-surface flicker. |
 
 ### Surface-water handling
@@ -501,7 +499,6 @@ condition is selectable; the legacy sea-level-padding method is retained only as
 
 | Flag | Default | Status | Effect |
 |---|---|---|---|
-| `-wtm_land_boundary` | `neumann_toposlope` | opt-in | Land-edge boundary condition: `neumann_toposlope` (terrain-following no-flow) or `dirichlet` (sea-level `h = 0` via ghost nodes — a land edge behaves as ocean). Ocean edges are always Dirichlet regardless. Works on all solver paths; not compatible with `-wtm_kirchhoff`. |
 | `-wtm_dev_padded_dirichlet` | off | developer | Verification only: reproduce the legacy "1-cell sea-level padding" boundary (force every domain edge to ocean `h = 0`). **Requires an all-ocean domain boundary** and fails otherwise (it would discard edge land). On an ocean-ringed domain it coincides with the default mask-aware boundary — that equivalence is what it verifies. |
 
 ## Outputs

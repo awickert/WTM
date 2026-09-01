@@ -27,6 +27,17 @@ alone."** The status column answers that.
 > `-wtm_dtc_dt_max` -- these have live CLI call sites across the suite (eq_tol alone has 61), so each
 > needs its callers moved to the config in the same commit.
 
+> **UPDATE 2026-09-01 (latest).** Five of the nine ABSTRACTED flags are RETIRED as well --
+> `-wtm_land_boundary`, `-wtm_volume_storage`, `-wtm_dt_continuation`, `-wtm_picard`,
+> `-wtm_active_set`. **27 of the 65 flags are gone.** Four ABSTRACTED remain (`newton`, `bdf2_on_V`,
+> `tr_bdf2`, `anderson`), then GAP-user 6, GAP-advanced 24, DEV 4.
+>
+> Each was proved equivalent BEFORE removal, not asserted: the flag route and the config route were run
+> and required byte-identical. `-wtm_picard` additionally needed a 96-combination bisect, because the
+> first attempt produced a false IMPROVEMENT -- the sweep's dt/8 retry had silently reverted to the
+> default solver, since a setting that moves from flag to config reaches only the config-construction
+> sites, and that harness has two.
+
 > **UPDATE 2026-09-01 (later).** The three MODE INTERFACE flags are RETIRED too, with
 > `collection.method: legacy` and the taper-1 band sink (fork issue #7). 20 of the 65 flags are now gone.
 > The `-wtm_fringe_*` rows below describe knobs that no longer exist: they sized the sink's band.
@@ -105,7 +116,7 @@ Anderson is the default and needs no flag, which is why `-wtm_anderson` is ABSTR
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_picard` | semi-implicit Picard (SPD operator, CG+GAMG) | ABSTRACTED | `solver.method: picard` |
+| `-wtm_picard` | semi-implicit Picard (SPD operator, CG+GAMG) | **RETIRED** (was ABSTRACTED) | `solver.method: picard` |
 | `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton`, which implies `solver.dt_continuation` (the working recipe). The BARE flag stays plain Newton -- three things pin that |
 | `-wtm_anderson` | Anderson mixing, matrix-free | ABSTRACTED | `solver.method: anderson` (the default) |
 | `-wtm_aa_picard` | Anderson-accelerated GAMG-Picard (nonlinear preconditioning) | GAP — advanced | none — a fourth strategy `solver.method` does not offer |
@@ -192,7 +203,7 @@ max|Δ| = 0.000e+00), so nothing was lost. Two channels for one decision is what
 | `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
 | `-wtm_surface_sink` | sub-surface band sink | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
 | `-wtm_extended_soil` | continue the aquifer above the surface | **RETIRED** (was ALIAS) | `collection.method: extended_soil` — retired 2026-09-01; aborts by name |
-| `-wtm_active_set` | semismooth exfiltration pin | ABSTRACTED | `collection.method: active_set` (the default). The second route, `dev.active_set`, was **removed 2026-09-01** — it silently overrode an explicit method |
+| `-wtm_active_set` | semismooth exfiltration pin | **RETIRED** (was ABSTRACTED) | `collection.method: active_set` (the default). The second route, `dev.active_set`, was **removed 2026-09-01** — it silently overrode an explicit method |
 | `-wtm_dev_active_set` | the older name for the same thing | **RETIRED** (was ALIAS) | `collection.method: active_set` — retired 2026-09-01; aborts by name |
 | `-wtm_surface_sink_qmax` | band-sink peak removal rate | **RETIRED** (was 1:1) | `collection.sink.qmax` |
 | `-wtm_surface_sink_width` | band width below the surface | **RETIRED** (was 1:1) | `collection.sink.width` |

@@ -92,8 +92,8 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   `use_picard` alone. `tests/budget_closure` now asserts which collector each solver resolves to, from
   the log rather than by inference.) An explicit choice is always honoured, with a warning on the
   solver that cannot enforce it consistently.
-- `runoff_collector` accepts a new `active_set` value; `-wtm_active_set` is the flag spelling. The
-  older `-wtm_dev_active_set` was retired before release and now aborts by name.
+- `runoff_collector` accepts a new `active_set` value, and it is the DEFAULT. Both flag spellings
+  (`-wtm_active_set`, `-wtm_dev_active_set`) were retired before release and now abort by name.
 - **Golden references regenerated** for the surface-water cases. `below_ground` (no surface water) is
   unchanged, as it must be. Changes are ≤1 m except the `transient` case, where 52 cells move >1 m
   (max 21.7 m) at cells previously held near the surface by the siphon and now free to drain — the
@@ -346,7 +346,7 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   `benchmark/SURFACE_WATER_ROUTING.md`.
 
 #### Boundary conditions
-- **Selectable land-edge boundary condition** (`-wtm_land_boundary neumann_toposlope|dirichlet`): ocean edges
+- **Selectable land-edge boundary condition** (`boundaries.land: neumann_toposlope | dirichlet_sea_level`): ocean edges
   are always Dirichlet `h = 0`; land edges default to terrain-following no-flow (`neumann_toposlope`) but can be
   set to sea-level Dirichlet (`dirichlet`), where a land edge behaves exactly as an ocean neighbour (head 0 and
   surface transmissivity via ghost nodes). Wired into all solver paths — the matrix-free residual, the Newton
@@ -650,6 +650,28 @@ hard-switch model). See `benchmark/SURFACE_SINK_DESIGN.md`.
   aborting once restarts are exhausted. Regression: `tests/adaptive_restart/`.
 
 ### Removed
+
+- **BREAKING — five more `-wtm_*` flags are retired in favour of their config keys**, continuing the move
+  to a single configuration surface. **27 of the 65 flags are now gone.**
+
+  | retired flag | config key |
+  |---|---|
+  | `-wtm_land_boundary` | `boundaries.land` (`dirichlet` → `dirichlet_sea_level`) |
+  | `-wtm_volume_storage` | `solver.storage: volume` |
+  | `-wtm_dt_continuation` | `solver.dt_continuation`, implied by `solver.method: newton` |
+  | `-wtm_picard` | `solver.method: picard` |
+  | `-wtm_active_set` | `surface_water.collection.method: active_set` (the default) |
+
+  Each was proved equivalent **before** removal rather than after: the flag route and the config route
+  were run and required byte-identical. Passing any of them now aborts by name.
+
+  **`-wtm_active_set` was not a synonym for its mode**, and that matters to anyone porting a script. As a
+  flag it was an *orthogonal switch* that superseded whatever collector was configured; as a member of the
+  `collection.method` enumeration it is one mode among six, mutually exclusive with the rest. "Active set
+  AND a collector" is now unrepresentable rather than resolved by precedence — the intended end state, but
+  a retired behaviour rather than a renamed one. Two regression arms that tested the supersession were
+  replaced rather than deleted: `tests/active_set` now asserts active_set *differs* from both plain
+  collectors, and `tests/dt_sensitivity`'s positive control moved from the retired band sink to `implicit`.
 
 - **BREAKING — the two alias flags are retired: `-wtm_extended_soil` and `-wtm_dev_active_set`.** Both
   were older spellings for something the config names directly, and both now abort by name rather than
