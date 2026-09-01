@@ -54,8 +54,7 @@ esac
 #                 inconsistent here, exactly as Newton is under `implicit`. Reported, not hidden.
 COLLECTOR="${COLLECTOR:-implicit}"
 case "$COLLECTOR" in
-  implicit)   COLLECTOR_FLAGS="" ;;
-  active_set) COLLECTOR_FLAGS="-wtm_active_set" ;;
+  implicit|active_set) COLLECTOR_FLAGS="" ;;  # the collector is a CONFIG value; see runoff_collector below
   *) echo "ERROR: COLLECTOR must be 'implicit' or 'active_set' (got '$COLLECTOR')"; exit 1 ;;
 esac
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
@@ -68,7 +67,7 @@ export OMP_NUM_THREADS=1     # pure MPI: OpenMP x MPI oversubscription hangs thi
 # Cold start from a saturated table (supplied_wt 0) -- the spin-up regime, where the schemes actually
 # differ. deltat 1 week matches production. eq_tol 0 disables the auto-stop so every arm runs the
 # same budget and we see each one's floor rather than where it chose to quit.
-mkcfg() {  # $1 = stem, $2 = extra legacy config lines (may be empty)
+mkcfg() {  # $1 = stem, $2 = extra legacy config lines, ';'-separated (may be empty)
     { cat <<EOF
 run_type equilibrium
 total_time $((604800 * CYCLES))s
@@ -83,7 +82,7 @@ fdepth_b 150
 fdepth_fmin 2.5
 fsm_on 1
 infiltration_on 0
-runoff_collector implicit
+runoff_collector $COLLECTOR
 surfdatadir $DOM
 region Esquibel
 time_start 010000
@@ -92,7 +91,7 @@ eq_tol 0
 textfilename $OUT/$1.txt
 outfile_prefix $OUT/${1}_
 EOF
-      [ -n "${2:-}" ] && echo "$2"; } | ../../tests/emit_config.sh > "$OUT/$1.yaml"
+      [ -n "${2:-}" ] && printf '%s\n' "$2" | tr ';' '\n'; } | ../../tests/emit_config.sh > "$OUT/$1.yaml"
 }
 
 # stem | human label | solver flags | config lines (settings that are config keys, not flags)
@@ -103,9 +102,9 @@ EOF
 # one place, which is what makes the rows comparable.
 SCHEMES=(
   "and_be|Anderson BE (secant)|-wtm_anderson|"
-  "and_vol|Anderson BE (volume dV)|-wtm_anderson -wtm_volume_storage|"
-  "picard|Picard BDF2-on-V (plain)|-wtm_picard -wtm_bdf2_on_V|"
-  "picard_tbar|Picard BDF2-on-V + Tbar|-wtm_picard -wtm_bdf2_on_V|t_bar true"
+  "and_vol|Anderson BE (volume dV)|-wtm_anderson|storage volume"
+  "picard|Picard BDF2-on-V (plain)|-wtm_bdf2_on_V|solver_method picard"
+  "picard_tbar|Picard BDF2-on-V + Tbar|-wtm_bdf2_on_V|solver_method picard;t_bar true"
   "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson -wtm_tr_bdf2|"
   "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson -wtm_tr_bdf2|adaptive_dt true"
   "newton|Newton (plain)|-wtm_newton|"

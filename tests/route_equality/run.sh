@@ -130,7 +130,6 @@ arm "solver.method: anderson      " "-wtm_anderson"                "solver: { me
 arm "solver.method: newton        " "-wtm_newton" "solver: { method: newton }" "solver: { dt_continuation: true }"
 arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { time_integration: tr-bdf2 }"
 arm "solver.time_integration: bdf2" "-wtm_bdf2_on_V"               "solver: { time_integration: bdf2 }"
-arm "collection.method: active_set" "-wtm_active_set"              "surface_water: { collection: { method: active_set } }"
 
 # NEWTON COLD-START CONTRACT, from the config side. `solver.method: newton` must be USABLE FROM YAML
 # ALONE. Before dt-continuation was wired into the abstraction this aborted with DIVERGED_LINE_SEARCH

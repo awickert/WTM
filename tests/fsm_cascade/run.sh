@@ -33,7 +33,7 @@ fdepth_b 150
 fdepth_fmin 2
 infiltration_on 0
 fsm_on 1
-runoff_collector implicit
+runoff_collector active_set  # was: implicit + the retired -wtm_active_set flag
 surfdatadir $INP
 region fsm_cascade
 time_start t0
@@ -44,10 +44,10 @@ outfile_prefix $WORK/${1}_
 EOF
 }
 emit skim
-"$WTM" "$WORK/skim.yaml" -wtm_anderson -wtm_active_set > "$WORK/skim.err" 2>&1 \
+"$WTM" "$WORK/skim.yaml" -wtm_anderson > "$WORK/skim.err" 2>&1 \
   || { echo "RUN FAILED: skim"; tail -3 "$WORK/skim.err"; exit 2; }
 emit skim4
-mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson -wtm_active_set \
+mpirun -n 4 "$WTM" "$WORK/skim4.yaml" -wtm_anderson \
     -da_processors_x 2 -da_processors_y 2 > "$WORK/skim4.err" 2>&1 \
   || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 

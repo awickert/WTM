@@ -65,33 +65,39 @@ run() { # stem  collector  extra-flags
 # Without active-set: the collector choice is a live variable (the BITE).
 run imp_plain implicit ""
 run exp_plain explicit ""
-# With lake-aware active-set: it supersedes the collector, so all three must agree exactly AND keep the lake.
-run imp_as implicit "-wtm_active_set"
-run exp_as explicit "-wtm_active_set"
-run off_as off      "-wtm_active_set"
+# Lake-aware active-set, now selected as a MODE (collection.method: active_set) rather than by a flag
+# that superseded whatever collector was configured.
+#
+# THE COLLECTOR-INDEPENDENCE ARM IS GONE, and deliberately, not by oversight. It ran implicit/explicit/off
+# each with -wtm_active_set on top and asserted the three agreed to 1e-9: the flag was an ORTHOGONAL
+# switch, so "which collector did you ask for" was a live variable that active-set had to dissolve. As a
+# member of the collection.method enumeration, active_set is mutually exclusive with the other five -- the
+# three configs would now be textually identical and the assertion could not fail. That is a genuine loss
+# of a property, not a rename: the supersession it tested no longer exists to be tested.
+run as active_set ""
 
 IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | tail -1)
-IA=$(ls "$WORK"/imp_as_*.tif | tail -1);    EA=$(ls "$WORK"/exp_as_*.tif | tail -1)
-OA=$(ls "$WORK"/off_as_*.tif | tail -1)
-"$PY" - "$IP" "$EP" "$IA" "$EA" "$OA" <<'PY'
+IA=$(ls "$WORK"/as_*.tif | tail -1)
+"$PY" - "$IP" "$EP" "$IA" <<'PY'
 import sys, numpy as np, rasterio
-ip, ep, ia, ea, oa = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:6]]
+ip, ep, ia = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 def interior(a): return a[1:-1, 1:-1]
-ip, ep, ia, ea, oa = map(interior, (ip, ep, ia, ea, oa))
+ip, ep, ia = map(interior, (ip, ep, ia))
 lake_head = float(ia.max())
-indep     = max(float(np.max(np.abs(ia - ea))), float(np.max(np.abs(ia - oa))))
 bite      = float(np.max(np.abs(ip - ep)))
+# active_set must also DIFFER from both plain collectors -- otherwise this arm is measuring nothing.
+differs   = min(float(np.max(np.abs(ia - ip))), float(np.max(np.abs(ia - ep))))
 ok = True
 def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
 check("LAKE PERSISTS (head kept, not flattened)", lake_head > 1.0,
       f"max wtd with active-set = {lake_head:.4f} m (lake stage; the pre-lake-aware pin gave 0)")
-check("COLLECTOR-INDEPENDENT (active-set)",       indep < 1e-9,
-      f"max spread implicit/explicit/off = {indep:.3e} m")
+check("DISTINCT (active-set is not either plain collector)", differs > 1e-6,
+      f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m")
 check("BITE (collectors diverge without active-set)", bite > 0.05,
       f"max|implicit - explicit| (no active-set) = {bite:.4f} m")
-print("PASS: lake-aware active-set keeps the lake's head and dissolves the collector x FSM ambiguity"
+print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

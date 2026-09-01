@@ -1441,20 +1441,19 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // matrix-free Anderson only for now (FormFunctionLocal + zero RHS). Off by default (byte-identical).
   g_volume_storage = params.volume_storage;  // config-owned (solver.storage); active_set may add to it below
 
-  // -wtm_active_set [EXPERIMENTAL]: enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET / semismooth
-  // constraint INSIDE the matrix-free (Anderson) solve -- a cell whose iterate rises above the land surface
-  // is pinned at wtd=0 by overriding its residual with f = w_c (mirroring the ocean Dirichlet), instead of a
-  // post-solve clamp (`explicit`) or an in-residual siphon (`implicit`). Enforcement-independent: aims to give
-  // ONE exfiltration BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
-  // for now; the pinned exfiltration flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
-  PetscBool activeset = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_active_set", &activeset, nullptr);
-  // -wtm_dev_active_set, the older `dev_`-prefixed spelling, is RETIRED. It had no callers, and it now
-  // aborts by name through the unconsumed-flag check rather than being honoured with a deprecation
-  // NOTE -- which is the better outcome: a deprecation warning is only useful while something reads it.
-  // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
-  g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
-  g_collector_resolved = (activeset == PETSC_TRUE && rc != "active_set") ? "active_set" : rc;
+  // collection.method: active_set -- enforce the wtd<=0 exfiltration constraint as an ACTIVE-SET /
+  // semismooth constraint INSIDE the solve: a cell whose iterate rises above the land surface is pinned at
+  // wtd=0 by overriding its residual with f = w_c (mirroring the ocean Dirichlet), instead of a post-solve
+  // clamp (`explicit`) or an in-residual siphon (`implicit`). It is the DEFAULT, and the only enforcement
+  // measured to leave no spurious dt-dependence.
+  //
+  // -wtm_active_set and -wtm_dev_active_set are both RETIRED. The flag used to be an ORTHOGONAL switch that
+  // superseded whatever collector was configured; as a member of the collection.method enumeration it is
+  // simply one mode among six, mutually exclusive with the others. That is the point -- "active_set AND a
+  // collector" is now unrepresentable rather than resolved by precedence -- but it does mean the old
+  // supersession behaviour is gone rather than renamed.
+  g_active_set         = collector_wants_active_set;
+  g_collector_resolved = rc;
 
   // STATE THE ENFORCEMENT, ONCE PER RUN. This is the single most consequential surface-water choice --
   // it moves the equilibrium head and, through FSM, the LAKE COUNT (tests/multilake) -- and until now a
@@ -1466,9 +1465,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     static bool announced = false;
     if (!announced) {
       announced = true;
-      const char* src = (activeset == PETSC_TRUE && rc != "active_set") ? "-wtm_active_set flag, overriding the config"
-                      : params.runoff_collector_set                     ? "surface_water.collection.method"
-                                                                       : "default -- no method configured";
+      const char* src = params.runoff_collector_set ? "surface_water.collection.method"
+                                                    : "default -- no method configured";
       PetscPrintf(PETSC_COMM_WORLD, "surface-water exfiltration enforcement: %s  [%s]\n",
                   g_collector_resolved.c_str(), src);
     }

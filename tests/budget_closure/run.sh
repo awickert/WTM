@@ -198,7 +198,7 @@ echo "-- active-set exfiltration constraint --"
 # run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # -wtm_fsm_delta_source exists to address.
-ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson -wtm_active_set
+COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as -wtm_anderson
 echo
 # TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
 # reported the exact residual as `nan`. That was true and worth pinning while the two stages' balances
@@ -218,7 +218,7 @@ check "TR-BDF2"                    s_tr     -wtm_anderson -wtm_tr_bdf2
 # BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
 # the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
 # the residual, so it carries the solve's tolerance, not a conservation defect.
-ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson -wtm_tr_bdf2 -wtm_active_set
+COLL=active_set ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson -wtm_tr_bdf2
 echo
 # ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
 # it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
@@ -263,10 +263,10 @@ echo
 # producing FEWER steps is backwards. BDF2-on-V is monotonic (62 -> 356). Adaptive dt is the
 # robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-    -wtm_anderson -wtm_tr_bdf2 -wtm_active_set
-ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
-    -wtm_anderson -wtm_bdf2_on_V -wtm_active_set
+COLL=active_set ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
+    -wtm_anderson -wtm_tr_bdf2
+COLL=active_set ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
+    -wtm_anderson -wtm_bdf2_on_V
 echo
 
 
