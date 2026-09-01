@@ -356,7 +356,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
 
   // Hand this step's above-surface removal (sink / extended-soil / exfiltration / direct-to-runoff) into
   // rank-0 arp.runoff so FillSpillMerge routes it. No-op when all are off (stays 0).
-  if (params.fsm_on && (FanDarcyGroundwater::surface_sink_on() || FanDarcyGroundwater::extended_soil_on()
+  if (params.fsm_on && (FanDarcyGroundwater::extended_soil_on()
                         || FanDarcyGroundwater::surface_exfiltration_to_runoff_on()
                         || FanDarcyGroundwater::direct_to_runoff_on()
                         || FanDarcyGroundwater::active_set_on()))
