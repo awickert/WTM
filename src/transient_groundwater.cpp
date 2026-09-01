@@ -1472,8 +1472,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   const bool pre_direct = g_direct_to_runoff;
   const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
   const bool pre_extsoil = g_extended_soil;
+  // RETIRED (fork issue #7): the taper-1 band sink is now OFF unconditionally, in `legacy` too. Its band
+  // width is w = 2*qmax*dt and that dt-scaling is INTRINSIC -- a fixed width overshoots for a rate-capped
+  // smooth sink -- so its equilibrium water table is dt-DEPENDENT (measured in #7: a plateau interior at
+  // -1.56 m at dt = 1 yr vs -0.79 m at dt = 0.25 yr, against a dt-independent pure groundwater solve).
+  // Its purpose was to dodge the wtd=0 free boundary rather than solve it, giving Picard/Newton a
+  // differentiable tangent. #7 prescribed the replacement -- "a primal-dual active-set / semismooth
+  // Newton for the complementarity wtd <= 0 _|_ seepage >= 0 ... no smoothing, dt-independent" -- and
+  // that is -wtm_active_set, now the DEFAULT and carrying the pin in the Newton Jacobian
+  // (FormJacobianLocal). The niche is gone. With the sink off, `legacy` collapses exactly onto
+  // explicit/implicit (verified byte-identical, max|d| = 0.000e+00).
+  g_surface_sink = false;
   if (rc != "legacy") {
-    g_surface_sink = false;  // selector supersedes the band sink in every mode
     // The selector OWNS extended soil now, exactly as it owns the three removals: exactly one mode is
     // in force, so a config that names a different method turns extended soil off rather than leaving
     // two contradictory mechanisms running and letting whichever clamps last win.
