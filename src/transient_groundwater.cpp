@@ -1586,6 +1586,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
   g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
   g_collector_resolved = (activeset == PETSC_TRUE && rc != "active_set") ? "active_set" : rc;
+
+  // STATE THE ENFORCEMENT, ONCE PER RUN. This is the single most consequential surface-water choice --
+  // it moves the equilibrium head and, through FSM, the LAKE COUNT (tests/multilake) -- and until now a
+  // run recorded it NOWHERE that a user sees: g_collector_resolved went only to the coverage file. A run
+  // whose log cannot say which boundary condition produced it is not reproducible from its own output.
+  // Naming the SOURCE as well as the value is the point: "active_set (default)" and "active_set (config)"
+  // are different runs to anyone auditing a result later.
+  {
+    static bool announced = false;
+    if (!announced) {
+      announced = true;
+      const char* src = (activeset == PETSC_TRUE && rc != "active_set") ? "-wtm_active_set flag, overriding the config"
+                      : params.runoff_collector_set                     ? "surface_water.collection.method"
+                      : g_extended_soil && rc == "extended_soil"        ? "-wtm_extended_soil legacy alias"
+                                                                       : "default -- no method configured";
+      PetscPrintf(PETSC_COMM_WORLD, "surface-water exfiltration enforcement: %s  [%s]\n",
+                  g_collector_resolved.c_str(), src);
+    }
+  }
   // Active-set needs a b=0 residual path (the SNES RHS = 0), so the residual f driven to zero IS the mass
   // balance -- the semismooth max(w_c, f) and the captured exfiltration f*Sy are only meaningful then. The default
   // secant backward-Euler uses RHS b = h^n (f != residual). If no b=0 scheme is already selected, auto-enable

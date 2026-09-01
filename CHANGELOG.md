@@ -124,6 +124,15 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   already the default. An existing config carrying the old key now aborts and names it, rather than
   drifting. Pinned by the `RETIRED` arm of `tests/config_schema`.
 
+- **Every run now states which surface-water enforcement it used.** The resolved
+  `collection.method` — the single most consequential surface-water choice, since it moves the
+  equilibrium head and through FSM the lake count — was written only to the coverage file, so an
+  ordinary run's output could not say which boundary condition produced it. It is now announced once per
+  run, with its source named, because `active_set [default]` and `active_set [config]` are different runs
+  to anyone auditing a result later:
+
+      surface-water exfiltration enforcement: explicit  [surface_water.collection.method]
+
 - **`-wtm_extended_soil` was defeated by a second mechanism wired to the same flag.** A post-solve
   surface-truncation experiment added later keyed off `g_extended_soil` and clamped the above-surface
   mound back to the surface every GW step — reinstating exactly the `wtd = 0` free boundary that
