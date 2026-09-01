@@ -1227,15 +1227,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
-  PetscBool extsoil = PETSC_FALSE;  // [WIP] -wtm_extended_soil: aquifer continues above surface (smooth GW step)
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_extended_soil", &extsoil);
-  g_extended_soil = (extsoil == PETSC_TRUE);
-  // The NONPHYSICAL banner is NOT printed here. It is printed by the collection-method selector below,
-  // where the mode is actually resolved -- because this flag is only one of the two ways in, and it is
-  // not authoritative. Warning here would (a) stay silent for `collection.method: extended_soil`, which
-  // reaches the same nonphysical physics through the config and got NO warning at all, and (b) announce
-  // the mode even when the selector is about to supersede the flag and switch it off. Warn where the
-  // mode is in force, not where a request for it is parsed. tests/runoff_collector asserts both.
+  // -wtm_extended_soil is RETIRED: `surface_water.collection.method: extended_soil` is the one way in.
+  // g_extended_soil is now set ONLY by the selector below, where the mode is resolved and where its
+  // NONPHYSICAL banner is printed -- warn where the mode is in force, not where a request for it is parsed.
 
   // -wtm_dev_allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp
   // entirely, so above-surface water is left to stand as nonphysical vertical COLUMNS above the land surface
@@ -1275,7 +1269,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_kirchhoff = (kirchhoff == PETSC_TRUE) && user_context.use_newton;
   if (g_kirchhoff && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 || g_extended_soil))
     throw std::runtime_error("-wtm_kirchhoff requires the piecewise Fan transmissivity: remove "
-                             "-wtm_ksat_*_smoothing_width and -wtm_extended_soil.");
+                             "-wtm_ksat_*_smoothing_width and surface_water.collection.method: extended_soil.");
   if (kirchhoff == PETSC_TRUE && !user_context.use_newton)
     throw std::runtime_error("-wtm_kirchhoff is a Newton-path option; also pass -wtm_newton.");
 
@@ -1289,7 +1283,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (g_Tbar && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 ||
                  g_extended_soil || g_kirchhoff))
     throw std::runtime_error("-wtm_Tbar requires the piecewise Fan transmissivity: remove "
-                             "-wtm_ksat_*_smoothing_width, -wtm_extended_soil, and -wtm_kirchhoff.");
+                             "-wtm_ksat_*_smoothing_width, collection.method: extended_soil, and -wtm_kirchhoff.");
 
   // -wtm_T_bedrock: additive background (bedrock) transmissivity floor [m²/s]; default 0 = v2.0.1 (no
   // floor). A constant added to T everywhere, representing the deep crust's small nonzero conductance
@@ -1362,20 +1356,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   //              porosity, T never clamps, recharge always fills pore space), so the wtd=0 free boundary is
   //              removed rather than merely unenforced. That is what restores BDF2's 2nd order. NONPHYSICAL
   //              and [WIP]: the production half (truncate the mound at the FSM handoff, NOT per GW step) is
-  //              unimplemented. `-wtm_extended_soil` is the legacy alias that selects it.
+  //              unimplemented. (`-wtm_extended_soil`, the legacy alias, is RETIRED.)
   // NOTE the sub-surface band sink (taper 1, -wtm_surface_sink) is a SEPARATE strategy (keep wtd<0, dodge
   // the free boundary, stay 2nd-order); the selector turns it OFF in every mode. Retiring it fully (and making
   // a mode the default) is a later, regold-bearing step.
   std::string rc = params.runoff_collector;
   if (rc.empty()) rc = "active_set";  // "" = the default (see parameters.hpp for why active_set)
-  // LEGACY ALIAS: -wtm_extended_soil SELECTS the extended_soil mode when no method was configured.
-  // It has to, or the flag would silently do nothing: extended soil is now one member of this
-  // enumeration, so an unset config resolving to active_set would switch it straight back off. This
-  // also repairs the flag's standalone behaviour -- before, `-wtm_extended_soil` alone left the
-  // default collector running, and the collector's pin at wtd<=0 defeated it. Measured: the flag
-  // alone used to give order 1.22/1.08/1.02 and max wtd 0.000 m; as a selected mode it gives
-  // 2.07/2.01/2.00 and a +23.4 m mound (benchmark/picard/recharge_free_boundary.py, arm E).
-  if (g_extended_soil && !params.runoff_collector_set) rc = "extended_soil";
   // SOLVER-DEPENDENT DEFAULT RESOLUTION. The active-set pin lives in the matrix-free (Anderson)
   // residual only -- the Picard operator and Newton Jacobian carry no tangent for it, and this block
   // also switches every collector removal off, so those solvers would run with the constraint
@@ -1397,7 +1383,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
   bool collector_wants_active_set = false;  // set by rc == "active_set"; enabling happens below
-  const bool pre_extsoil = g_extended_soil;
   // RETIRED (fork issue #7): the taper-1 band sink is now OFF unconditionally, in `legacy` too. Its band
   // width is w = 2*qmax*dt and that dt-scaling is INTRINSIC -- a fixed width overshoots for a rate-capped
   // smooth sink -- so its equilibrium water table is dt-DEPENDENT (measured in #7: a plateau interior at
@@ -1413,14 +1398,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // in force, so a config that names a different method turns extended soil off rather than leaving
     // two contradictory mechanisms running and letting whichever clamps last win.
     g_extended_soil = (rc == "extended_soil");
-    if (pre_extsoil && !g_extended_soil)
-      PetscPrintf(PETSC_COMM_WORLD,
-                  "WARNING: -wtm_extended_soil was given, but surface_water.collection.method=%s is set and "
-                  "SUPERSEDES it -- extended soil is OFF for this run. The two are alternatives, not layers: "
-                  "extended soil means above-surface water is stored in continued pore space and truncated at "
-                  "the FSM handoff, while a collector disposes of it. Select "
-                  "surface_water.collection.method: extended_soil to get it.\n",
-                  rc.c_str());
     if (rc == "implicit") {
       g_direct_to_runoff                     = true;
       g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
@@ -1482,21 +1459,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // post-solve clamp (`explicit`) or an in-residual siphon (`implicit`). Enforcement-independent: aims to give
   // ONE exfiltration BC for FSM on and off (see finding_collector_fsm_coupling_divergence). Anderson residual only
   // for now; the pinned exfiltration flux (mass accounting) and the Picard/Newton tangents are DEFERRED.
-  PetscBool activeset = PETSC_FALSE, activeset_legacy = PETSC_FALSE;
+  PetscBool activeset = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_active_set", &activeset, nullptr);
-  // DEPRECATED spelling, still honoured so older scripts keep working. It carried the `dev_` prefix
-  // while this was experimental; the constraint is now the default enforcement, so the prefix is gone.
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_active_set", &activeset_legacy, nullptr);
-  if (activeset_legacy == PETSC_TRUE) {
-    activeset = PETSC_TRUE;
-    static bool warned_legacy_flag = false;
-    if (!warned_legacy_flag) {
-      warned_legacy_flag = true;
-      PetscPrintf(PETSC_COMM_WORLD,
-                  "NOTE: -wtm_dev_active_set is DEPRECATED; use -wtm_active_set, or select it the "
-                  "documented way with surface_water.collection.method: active_set (now the default).\n");
-    }
-  }
+  // -wtm_dev_active_set, the older `dev_`-prefixed spelling, is RETIRED. It had no callers, and it now
+  // aborts by name through the unconsumed-flag check rather than being honoured with a deprecation
+  // NOTE -- which is the better outcome: a deprecation warning is only useful while something reads it.
   // Either the flag or runoff_collector=active_set (the DEFAULT, and the documented way to select it).
   g_active_set = (activeset == PETSC_TRUE) || collector_wants_active_set;
   g_collector_resolved = (activeset == PETSC_TRUE && rc != "active_set") ? "active_set" : rc;
@@ -1513,7 +1480,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       announced = true;
       const char* src = (activeset == PETSC_TRUE && rc != "active_set") ? "-wtm_active_set flag, overriding the config"
                       : params.runoff_collector_set                     ? "surface_water.collection.method"
-                      : g_extended_soil && rc == "extended_soil"        ? "-wtm_extended_soil legacy alias"
                                                                        : "default -- no method configured";
       PetscPrintf(PETSC_COMM_WORLD, "surface-water exfiltration enforcement: %s  [%s]\n",
                   g_collector_resolved.c_str(), src);
@@ -2319,7 +2285,7 @@ bool active_set_on() { return g_active_set; }
 
 // Whether extended-soil surface truncation routes above-surface water to FSM (via the same sink
 // accumulator). Lets the cycle loop gather the accumulator for FSM when extended soil is on, just as
-// for the sink. Set in update() from -wtm_extended_soil.
+// for the sink. Set in update() from collection.method: extended_soil.
 bool extended_soil_on() { return g_extended_soil; }
 
 // Whether post-solve surface exfiltration-to-runoff collection routes above-surface water to FSM (via the sink accumulator).
