@@ -14,25 +14,27 @@ runoff_collector implicit    # in-residual exfiltration constraint. The FORMER d
                              #   NOT dt-independent: leaves a residual head ~ dt*inflow (see below)
 runoff_collector explicit    # post-solve clamp (robust on every solver, dt-lagged)
 runoff_collector off         # no collection -- NONPHYSICAL, warns
-runoff_collector legacy      # the old -wtm_surface_sink band-sink defaults (dt-scaled)
+runoff_collector extended_soil  # aquifer continues above the surface -- NONPHYSICAL, [WIP]
 ```
 
 **Default is `active_set`**; the default *solver* is matrix-free Anderson.
 
-**The default is solver-dependent.** The active-set pin lives in the matrix-free Anderson residual
-only -- the Picard operator and Newton Jacobian carry no tangent for it, and selecting active-set also
-switches every collector removal off, so those solvers would run with the constraint effectively
-UNENFORCED. That is a hard failure, not a degradation: Newton *aborts*. So when
-`surface_water.collection.method` is **unset**, the default resolves to `active_set` on Anderson and
-to `explicit` on Picard/Newton, with a NOTE. An explicit choice is always honoured (and warns).
+**The default is solver-dependent.** The active-set pin lives in the matrix-free Anderson residual and,
+since the semismooth Jacobian row landed, in the analytic Newton Jacobian (`FormJacobianLocal`; not under
+`-wtm_kirchhoff`, where the SNES variable is the discharge potential and the pinned row would need
+`1/Φ'(wtd)`). The **Picard** operator still carries no tangent for it, and selecting active-set also
+switches every collector removal off, so Picard would run with the constraint effectively UNENFORCED.
+So when `surface_water.collection.method` is **unset**, the default resolves to `active_set` on Anderson
+and Newton, and to `explicit` on Picard, with a NOTE. An explicit choice is always honoured (and warns).
 
-**The selector wins over the legacy `-wtm_` surface flags.** In every mode except `legacy`, the selector sets
-`-wtm_surface_sink`, `-wtm_direct_to_runoff` and `-wtm_surface_exfiltration_to_runoff` itself, so passing one of
-those on the command line has no effect — the *config key*, not the command line, decides which enforcement
-runs. Because `runoff_collector` defaults to `implicit`, this holds even for a config that never mentions it.
-If you passed such a flag and the selector changed its effect, the run prints a one-line `NOTE [runoff_collector=…]`
-saying so; the resolved value is also on the `c runoff_collector = …` line of the config echo at the top of every
-run log. Set `surface_water.collection.method: legacy` to hand control back to the flags.
+**There is one channel.** The `-wtm_` surface flags that this selector used to supersede --
+`-wtm_surface_sink`, `-wtm_direct_to_runoff`, `-wtm_surface_exfiltration_to_runoff` -- were retired with
+the `legacy` mode on 2026-09-01 (fork issue #7). Passing any of them now aborts by name. The config key
+is the only way to choose an enforcement, and the resolved choice is stated once per run:
+
+```
+surface-water exfiltration enforcement: explicit  [surface_water.collection.method]
+```
 
 **Adaptive-dt and the implicit kink.** The implicit exfiltration's discontinuous `max(0,wtd)/dt` would spike the
 adaptive-dt controller's error estimate at a cell crossing the surface (a projection jump that does not shrink
@@ -71,15 +73,26 @@ budget) and `arp.runoff → FillSpillMerge`. They differ only in *when the const
 In numerical terms this is the classic obstacle-problem split: `implicit` is the constraint solved *in* the
 nonlinear system (active-set / complementarity), `explicit` is *solve-then-project* onto the feasible set.
 
-## The band sink (taper 1) — a different strategy, turned off by every mode
+## The band sink (taper 1) — RETIRED
 
-The legacy default is the **taper-1 sub-surface sink** (`-wtm_surface_sink`): a smooth removal in a band of
-width `2·qmax·dt` *below* the surface that holds the table strictly sub-surface (`wtd < 0`) so no cell ever
-crosses the free boundary. It dodges the exfiltration constraint rather than enforcing it — keeping the solve smooth
-(differentiable for Picard/Newton) and 2nd-order (BDF2-on-V "no-crossing" regime). The cost is that the
-equilibrium table sits in a **dt-scaled band**, so it is **dt-dependent** (see Issue #6). The `runoff_collector`
-selector turns the band sink **off** in every mode; fully retiring it (and making a mode the default) is a
-later, regold-bearing step (Issue #7), with `explicit` the robust default and `implicit` the exact opt-in.
+The former default was the **taper-1 sub-surface sink** (`-wtm_surface_sink`): a smooth removal in a band of
+width `2·qmax·dt` *below* the surface that held the table strictly sub-surface (`wtd < 0`) so no cell ever
+crossed the free boundary. It dodged the exfiltration constraint rather than enforcing it — keeping the solve
+smooth (differentiable for Picard/Newton) and 2nd-order (the BDF2-on-V "no-crossing" regime). The cost is that
+the equilibrium table sat in a **dt-scaled band**, so it was **dt-dependent** (Issue #6).
+
+**Retired 2026-09-01 (Issue #7)**, with `collection.method: legacy` and the three surface flags. Two things
+turned out differently from the plan in that issue:
+
+1. The replacement is **`active_set`, not `implicit`.** #7 described `implicit` as the dt-independent exact
+   face; it is not — its retained head is ~linear in `dt` (1.97 / 0.68 / 0.34 m at `dt` = 1, 1/3, 1/6 week,
+   FSM off), and with FSM on the *lake count* moves with `dt`. Retiring the taper in favour of `implicit`
+   would have swapped one dt-dependence for another.
+2. It was **not a golden regold.** Golden configs select no collector, so they already resolved to the
+   default, and the selector had been forcing the sink off for them.
+
+The semismooth active-set Newton that #7 prescribed as the way to "let the taper go for good" is what shipped,
+and is what made the retirement safe.
 
 ## A CLI hazard worth knowing
 

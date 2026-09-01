@@ -2,7 +2,25 @@
 
 **Date:** 2026-07-27
 **Branch:** `bdf2-adaptive-dt`
-**Status:** design + math, validated in principle; prototype (residual + Jacobian) next.
+**Status:** **RETIRED 2026-09-01** (fork issue #7). Kept as the record of the mechanism and its
+mathematics; the code is gone.
+
+> **Why it went.** The sink held the water table in a band *below* the land surface so that no cell
+> ever crossed `wtd = 0`, which bought 2nd-order time accuracy by *dodging* the free boundary rather
+> than solving it. The band width is `w = 2·qmax·dt`, and that dt-scaling is intrinsic — a fixed width
+> overshoots for a rate-capped smooth sink — so the equilibrium water table moved with the time step
+> (a plateau interior at −1.56 m at `dt` = 1 yr against −0.79 m at `dt` = 0.25 yr, while the pure
+> groundwater solve is dt-independent to six decimals). That also disqualifies it as an accuracy
+> diagnostic: second-order convergence toward a dt-dependent target is not an accuracy measurement.
+>
+> Its niche — a differentiable tangent so Picard and Newton could cross the surface — is filled
+> exactly by `collection.method: active_set`, the primal-dual active-set / semismooth treatment of
+> `wtd ≤ 0 ⊥ seepage ≥ 0` that issue #7 itself prescribed. That is now the default and carries the pin
+> in the analytic Jacobian.
+>
+> The sections below are unchanged and describe the retired mechanism in the present tense.
+
+**Original status:** design + math, validated in principle; prototype (residual + Jacobian) next.
 **Companions:** `BDF2_RECHARGE_ORDER.md` (why recharge dropped BDF2-on-V to 1st order — the
 free boundary), `BDF2_ADAPTIVE_DESIGN.md`, `PICARD_MATH.md`.
 
