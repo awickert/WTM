@@ -54,13 +54,6 @@ struct Parameters {
   // Evaporation taper 3 (evaporation.extinction_depth): depth below which ET cannot reach the table [m].
   double extinction_depth = 8.0;
 
-  // Legacy band sink (surface_water.collection.sink). qmax is supplied in m/yr, the intuitive unit, and
-  // converted to m/s at the consumer. width DEFAULTS TO A COMPUTED VALUE (C*qmax*dt), so it needs the
-  // was-it-set flag: an absent key must keep the dt-scaled default rather than overwrite it with 0.
-  double surface_sink_qmax  = 1.0;    // peak removal [m/yr]
-  double surface_sink_width = 0.0;    // band width below the surface [m]; 0 + !set = use the computed default
-  bool   surface_sink_width_set = false;
-
   // run.equilibrium_stop: tol is a WATER depth [m] (0 = the stop is off). Its DEFAULT is run-type
   // dependent -- 0.001 for equilibrium, 0 for transient (a time-evolution run must play out in full) --
   // so the was-it-set flag is required: an absent key must reach that per-run-type default, not a
@@ -68,9 +61,6 @@ struct Parameters {
   double      eq_tol     = 0.0;
   bool        eq_tol_set = false;
   std::string eq_metric  = "frac";
-
-  // surface_water.collection.sink.fringe_source: none|fixed|ksat (file is not implemented).
-  std::string fringe_source = "none";
 
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
@@ -93,12 +83,6 @@ struct Parameters {
 
   // Background (bedrock) transmissivity floor [m^2/s], 0 = off (v2.0.1 behaviour).
   double t_bedrock = 0.0;
-
-  // Capillary-fringe parameters for the legacy band sink (surface_water.collection.sink). Effective only
-  // with collection.method: legacy; kept configurable because that mode still exists.
-  double fringe_length    = 0.1;    // fixed fringe height psi_a [m]
-  double fringe_ksat_coef = 5e-4;   // C [SI] in psi_a = C*sqrt(n/ksat)
-  double fringe_cap       = 2.0;    // max psi_a [m]
 
   // Evaporation: the always-on soil<->open-water ET sigmoid (evaporation.et_sigmoid). Config-owned --
   // these were reached only through -wtm_evap_taper_wtdc / -wtm_evap_taper_s, which the YAML bridge set

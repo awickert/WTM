@@ -49,9 +49,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
       {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection"}},
-      {"surface_water.collection", {"method", "sink"}},
-      {"surface_water.collection.sink",
-       {"qmax", "width", "fringe_source", "fringe_cap", "fringe_ksat_coef", "fringe_length"}},
+      {"surface_water.collection", {"method"}},
       {"evaporation", {"et_sigmoid", "extinction_depth"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
@@ -187,8 +185,6 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["run"]["equilibrium_stop"]["metric"])
     eq_metric = require_enum(n.as<std::string>(), "run.equilibrium_stop.metric",
                              {"max", "rms", "frac", "water", "water-max", "water-rms"});
-  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_source"])
-    fringe_source = n.as<std::string>();
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
   if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {
@@ -201,18 +197,9 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
   if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();
-  if (auto n = root["surface_water"]["collection"]["sink"]["qmax"])  surface_sink_qmax = n.as<double>();
-  if (auto n = root["surface_water"]["collection"]["sink"]["width"])
-    { surface_sink_width = n.as<double>(); surface_sink_width_set = true; }
 
-  // -------- transmissivity / surface-water sink (config-owned; formerly -wtm_ transport only) --------
+  // -------- transmissivity (config-owned; formerly -wtm_ transport only) --------
   if (auto n = root["transmissivity"]["additive_background_transmissivity"]) t_bedrock = n.as<double>();
-  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_length"])
-    { if (!n.IsNull()) fringe_length = n.as<double>(); }
-  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_ksat_coef"])
-    { if (!n.IsNull()) fringe_ksat_coef = n.as<double>(); }
-  if (auto n = root["surface_water"]["collection"]["sink"]["fringe_cap"])
-    { if (!n.IsNull()) fringe_cap = n.as<double>(); }
 
   // -------- evaporation --------
   if (auto n = root["evaporation"]["et_sigmoid"]["wtd_center"])     evap_taper_wtdc = n.as<double>();

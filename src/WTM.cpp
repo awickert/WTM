@@ -881,7 +881,6 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.topo_vec);
   VecDestroy(&user_context.rech_vec);
   VecDestroy(&user_context.porosity_vec);
-  VecDestroy(&user_context.fringe_width_vec);
   VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
   VecDestroy(&user_context.precip_vec);

@@ -258,8 +258,8 @@ if not gaps:
 else:
     n = sum(len(v) for v in gaps.values())
     print(f"  note  DOCS       {n} accepted keys are NOT in config.yaml (not a failure; some are")
-    print("                   deliberately unadvertised -- grid is deprecated, dev is developer-only,")
-    print("                   collection.sink is legacy -- but ordinary user keys here want documenting):")
+    print("                   deliberately unadvertised -- grid is deprecated (#124) and dev is")
+    print("                   developer-only -- but ordinary user keys here want documenting):")
     for p in sorted(gaps):
         print(f"                     {p or '<top level>'}: {' '.join(gaps[p])}")
 PY

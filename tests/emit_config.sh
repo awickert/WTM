@@ -27,8 +27,6 @@
 #   runoff_ratio_on 1     -> surface_water.runoff_ratio: raster  (require the raster)
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
-#   surface_sink_qmax     -> surface_water.collection.sink.qmax    (m/yr)
-#   surface_sink_width    -> surface_water.collection.sink.width   (m)
 #   extinction_depth      -> evaporation.extinction_depth          (m)
 #   adaptive_dt true|false -> solver.adaptive_dt
 #   dt_tol                -> solver.water_volume_timestep_error_tol
@@ -37,7 +35,6 @@
 #   eq_frac               -> run.equilibrium_stop.frac
 #   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
-#   fringe_source         -> surface_water.collection.sink.fringe_source (none|fixed|ksat)
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -125,15 +122,9 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
-    if have runoff_collector || have surface_sink_qmax || have surface_sink_width || have fringe_source; then
+    if have runoff_collector; then
         echo "  collection:"
-        have runoff_collector && echo "    method: $(val runoff_collector)"
-        if have surface_sink_qmax || have surface_sink_width || have fringe_source; then
-            echo "    sink:"
-            have surface_sink_qmax  && echo "      qmax: $(val surface_sink_qmax)"
-            have surface_sink_width && echo "      width: $(val surface_sink_width)"
-            have fringe_source      && echo "      fringe_source: $(val fringe_source)"
-        fi
+        echo "    method: $(val runoff_collector)"
     fi
 fi
 
