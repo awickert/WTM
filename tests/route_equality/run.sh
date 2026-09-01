@@ -123,7 +123,6 @@ echo "=== route equality: does the config key reach the same run as the flag it 
 echo "WTM binary: $WTM"
 echo
 
-arm "solver.method: picard        " "-wtm_picard"                  "solver: { method: picard }"
 arm "solver.method: anderson      " "-wtm_anderson"                "solver: { method: anderson }"
 # See the header: newton's config value abstracts BOTH flags, because the bare path does not converge.
 # -wtm_dt_continuation is retired, so the flag side takes the continuation from ITS config: what is

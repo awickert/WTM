@@ -49,7 +49,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo*, PetscScalar**, PetscScal
 
 // Semi-implicit Picard path (experimental; PICARD_MATH.md). Global SNES callbacks
 // for SNESSetPicard: FormPicardRHS computes b(x), FormPicardOperator computes the
-// SPD operator A(x). Gated behind -wtm_picard; default Anderson path unaffected.
+// SPD operator A(x). Gated behind solver.method: picard; default Anderson path unaffected.
 static PetscErrorCode FormPicardRHS(SNES, Vec, Vec, void*);
 static PetscErrorCode FormPicardOperator(SNES, Vec, Mat, Mat, void*);
 
@@ -1646,7 +1646,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         throw std::runtime_error(
             std::string("The Newton-Krylov solver (-snes_type ") + snes_type +
             ") needs -wtm_newton to register its analytic Jacobian. Use the default Anderson solver, "
-            "-wtm_picard for the semi-implicit (BDF2-on-V) path, or add -wtm_newton for true Newton.");
+            "solver.method: picard for the semi-implicit (BDF2-on-V) path, or -wtm_newton for true Newton.");
       }
       DMDASNESSetJacobianLocal(
           user_context.da,

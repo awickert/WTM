@@ -72,6 +72,11 @@ struct Parameters {
   // enforcement needs a b=0 residual path and auto-enables volume storage on top of it (with a NOTE).
   bool volume_storage = false;
 
+  // solver.method: the solver path. "" = unset, which resolves to the matrix-free Anderson default.
+  // The -wtm_picard / -wtm_newton / -wtm_anderson flags are retired one at a time; while any remain,
+  // CreateSNES ORs this member with the surviving flags rather than replacing them outright.
+  std::string solver_method;
+
   // solver.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
   // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
   // (DIVERGED_LINE_SEARCH). solver.dt_continuation: false opts out -- legitimate for a warm finish --

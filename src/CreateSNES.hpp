@@ -57,7 +57,7 @@ struct AppCtx {
                                      // scattered each solve in update() (w^n changes per step). Only
                                      // used on the -wtm_Tbar path.
 
-  // --- Semi-implicit Picard path (gated behind -wtm_picard; default off) ---
+  // --- Semi-implicit Picard path (gated behind solver.method: picard; default off) ---
   // The row-scaled operator A(x) uses centre-cell storativity (so porosity and
   // starting_wtd are read owned-only, no ghosts); only the harmonic-mean T needs
   // neighbor heads, which come from ghost-scattering the iterate x each assembly.

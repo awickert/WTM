@@ -191,6 +191,8 @@ Parameters::Parameters(const std::string& config_file) {
                                == "dirichlet_sea_level");
   if (auto n = root["solver"]["storage"])
     volume_storage = (require_enum(n.as<std::string>(), "solver.storage", {"volume", "secant"}) == "volume");
+  if (auto n = root["solver"]["method"])
+    solver_method = require_enum(n.as<std::string>(), "solver.method", {"anderson", "picard", "newton"});
   if (auto n = root["solver"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
   // solver.method: newton implies dt-continuation unless the user explicitly declined it. Read the method
   // here rather than depending on the flag bridge, so the implication holds however the method arrives.

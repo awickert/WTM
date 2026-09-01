@@ -38,6 +38,7 @@
 #   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
 #   storage               -> solver.storage (volume | secant)
 #   dt_continuation       -> solver.dt_continuation
+#   solver_method         -> solver.method (anderson | picard | newton)
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -143,8 +144,9 @@ if have land_boundary; then
 fi
 
 # --- solver ---------------------------------------------------------------------
-if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage || have dt_continuation; then
+if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage || have dt_continuation || have solver_method; then
     echo "solver:"
+    have solver_method && echo "  method: $(val solver_method)"
     have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
     have dt_tol      && echo "  water_volume_timestep_error_tol: \"$(val dt_tol)\""
     have dt_max      && echo "  dt_max: \"$(val dt_max)\""

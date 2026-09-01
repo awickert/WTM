@@ -105,14 +105,16 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 user_context.snes_volume_conv_govern ? "GOVERNING" : "DIAGNOSTIC — verdict deferred to snes_stol");
 
   // Semi-implicit Picard path (experimental; PICARD_MG_DESIGN.md / PICARD_MATH.md).
-  // Gated behind -wtm_picard so the default Anderson path is untouched. When on,
+  // Gated behind solver.method: picard so the default Anderson path is untouched. When on,
   // allocate the SPD operator A(x) (also its own GAMG preconditioner) and a residual
   // work vector, and default the outer/inner solvers (below) unless the user overrode
   // them.
   // Time-integration flags nest: -wtm_dt_adaptive implies BDF2 implies the Picard path
   // (all live in the Picard operator/RHS). See BDF2_ADAPTIVE_DESIGN.md.
   PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE, adaptive_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_picard", &picard_flag);
+  // config-owned (solver.method: picard); the -wtm_picard flag is retired. Kept as a PetscBool for the
+  // same reason as adaptive_flag below -- the path resolution around it is written in PetscBool terms.
+  picard_flag = (params.solver_method == "picard") ? PETSC_TRUE : PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2", &bdf2_flag);
   // config-owned (solver.adaptive_dt); the -wtm_dt_adaptive flag is retired. Kept as a PetscBool
   // because the surrounding path-resolution logic below is written in PetscBool terms.

@@ -899,7 +899,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.tr_fwork);
   VecDestroy(&user_context.tr_head_old);  // TR-BDF2 step-flux quadrature (lazily allocated)
 
-  // Picard path (nullptr / no-op when -wtm_picard was not set).
+  // Picard path (nullptr / no-op unless solver.method: picard).
   MatDestroy(&user_context.picard_A);
   VecDestroy(&user_context.picard_r);
   VecDestroy(&user_context.starting_wtd_prev);  // BDF2 history (nullptr / no-op otherwise)
@@ -987,8 +987,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   if (auto n = root["solver"]["method"]) {
     const std::string m = require_enum(n.as<std::string>(), "solver.method",
                                        {"anderson", "picard", "newton"});
-    if (m == "picard")      set_opt_if_unset("-wtm_picard", "true");
-    else if (m == "newton") set_opt_if_unset("-wtm_newton", "true");
+    if (m == "newton") set_opt_if_unset("-wtm_newton", "true");  // picard is config-owned now
     // "anderson" = default (no flag)
   }
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
