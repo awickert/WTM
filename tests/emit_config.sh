@@ -35,6 +35,7 @@
 #   eq_frac               -> run.equilibrium_stop.frac
 #   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
+#   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
@@ -126,6 +127,17 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
         echo "  collection:"
         echo "    method: $(val runoff_collector)"
     fi
+fi
+
+# --- boundaries --------------------------------------------------------------
+# land_boundary was the -wtm_land_boundary flag until it was retired; the config spelling for the
+# Dirichlet case is `dirichlet_sea_level`, so translate rather than pass the flag value through.
+if have land_boundary; then
+    echo "boundaries:"
+    case "$(val land_boundary)" in
+        dirichlet|dirichlet_sea_level) echo "  land: dirichlet_sea_level" ;;
+        *)                             echo "  land: neumann_toposlope" ;;
+    esac
 fi
 
 # --- solver ---------------------------------------------------------------------

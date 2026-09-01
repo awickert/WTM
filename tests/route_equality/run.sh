@@ -129,7 +129,6 @@ arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { ti
 arm "solver.time_integration: bdf2" "-wtm_bdf2_on_V"               "solver: { time_integration: bdf2 }"
 arm "solver.storage: volume       " "-wtm_volume_storage"          "solver: { storage: volume }"
 arm "collection.method: active_set" "-wtm_active_set"              "surface_water: { collection: { method: active_set } }"
-arm "boundaries.land: dirichlet   " "-wtm_land_boundary dirichlet" "boundaries: { land: dirichlet_sea_level }"
 
 # NEWTON COLD-START CONTRACT, from the config side. `solver.method: newton` must be USABLE FROM YAML
 # ALONE. Before dt-continuation was wired into the abstraction this aborted with DIVERGED_LINE_SEARCH

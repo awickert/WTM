@@ -54,8 +54,8 @@ EOF
 FL="-wtm_anderson -wtm_evap_taper 0 -wtm_extinction 0"  # taper-1 sink retired (fork issue #7)
 
 emit dir anbcD; "$WTM" "$WORK/dir.yaml" $FL > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet"; tail -3 "$WORK/dir.log"; exit 2; }
-emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL -wtm_land_boundary neumann_toposlope > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }
-emit slp anbcS; "$WTM" "$WORK/slp.yaml" $FL -wtm_land_boundary neumann_toposlope > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
+emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL  > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann"; tail -3 "$WORK/neu.log"; exit 2; }
+emit slp anbcS; "$WTM" "$WORK/slp.yaml" $FL  > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); SLP=$(ls "$WORK"/slp_*.tif | tail -1)
 FIT_TOL="$FIT_TOL" SLOPE="0.05" "$PY" - "$DIR" "$NEU" "$SLP" <<'PY'

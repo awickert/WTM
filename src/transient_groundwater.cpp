@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cctype>   // std::isspace for the coverage tag
 #include <cstdlib>  // std::getenv for the coverage fingerprint
-#include <cstring>  // std::strcmp for -wtm_land_boundary parsing
 #include <fstream>  // coverage fingerprint append
 #include <experimental/source_location>
 
@@ -170,7 +169,7 @@ static double dischargePotentialInverse(const double Phi, const double fdepth, c
 }
 static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge potential Φ (Newton path)
 
-// --- Land-edge boundary condition (-wtm_land_boundary) --------------------------------------------
+// --- Land-edge boundary condition (boundaries.land) -----------------------------------------------
 // Ocean edges are ALWAYS Dirichlet h=0 (sea level; a fixed-head boundary -- not a choice). LAND edges are
 // selectable. Two mechanisms, both applied at the off-map ghost node one cell outside the true edge:
 //   neumann_toposlope (DEFAULT): ghost head = h_edge + (topo_edge - topo_inland) -> zero groundwater flux
@@ -179,7 +178,7 @@ static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge pote
 //     padding, imposed at a LAND edge without converting the cell to ocean. "For now just sea level."
 // This selector is the general-framework hook; more values (plain zero-gradient, specified flux/head) can
 // be added later. See BOUNDARY_CONDITIONS.md.
-static bool g_land_boundary_dirichlet = false;  // -wtm_land_boundary dirichlet (default: neumann_toposlope)
+static bool g_land_boundary_dirichlet = false;  // boundaries.land: dirichlet_sea_level (default: neumann_toposlope)
 // The collector actually in force after every override and solver downgrade -- what the run DID, not
 // what the config asked for. Read only by the coverage fingerprint (emit_coverage_fingerprint below).
 static std::string g_collector_resolved = "active_set";
@@ -1298,27 +1297,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     throw std::runtime_error("-wtm_T_bedrock is incompatible with -wtm_kirchhoff: Phi + T_bedrock*wtd has no "
                              "closed-form inverse for the discharge-potential variable.");
 
-  // -wtm_land_boundary: select the LAND-edge boundary condition (ocean is always Dirichlet h=0). Accepts
-  // "neumann_toposlope" (default; terrain-following no-flow) or "dirichlet" (ghost head = sea level, the
+  // boundaries.land: select the LAND-edge boundary condition (ocean is always Dirichlet h=0). Accepts
+  // "neumann_toposlope" (default; terrain-following no-flow) or "dirichlet_sea_level" (ghost head = sea level, the
   // modern ghost-node equivalent of the legacy sea-level padding, imposed at land edges without turning them
   // to ocean). Currently wired into the matrix-free residual (Anderson path); Picard/Newton are guarded off
   // below until their off-map operator/Jacobian tangents are extended.
-  char land_bc[64] = "neumann_toposlope";
-  PetscBool land_bc_set = PETSC_FALSE;
-  PetscOptionsGetString(nullptr, nullptr, "-wtm_land_boundary", land_bc, sizeof(land_bc), &land_bc_set);
-  if (std::strcmp(land_bc, "dirichlet") == 0)
-    g_land_boundary_dirichlet = true;
-  else if (std::strcmp(land_bc, "neumann_toposlope") == 0)
-    g_land_boundary_dirichlet = false;
-  else
-    throw std::runtime_error(std::string("-wtm_land_boundary: unknown value '") + land_bc +
-                             "' (expected 'neumann_toposlope' or 'dirichlet').");
+  g_land_boundary_dirichlet = params.land_boundary_dirichlet;  // config-owned (boundaries.land)
   // Land Dirichlet is wired into all three solver paths: the matrix-free residual (Anderson/TR-BDF2), the
   // Newton analytic Jacobian (FD-verified), and the Picard operator+RHS (diagonal absorbing conductance).
   // Kirchhoff is forbidden with land Dirichlet (the potential change-of-variable at a fixed-head ghost is
   // not handled).
   if (g_land_boundary_dirichlet && g_kirchhoff)
-    throw std::runtime_error("-wtm_land_boundary dirichlet is incompatible with -wtm_kirchhoff.");
+    throw std::runtime_error("boundaries.land: dirichlet_sea_level is incompatible with -wtm_kirchhoff.");
 
   // -wtm_direct_to_runoff: in-residual exfiltration removal (supersedes the qmax sink where on). Removes the
   // above-surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap

@@ -185,6 +185,10 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["run"]["equilibrium_stop"]["metric"])
     eq_metric = require_enum(n.as<std::string>(), "run.equilibrium_stop.metric",
                              {"max", "rms", "frac", "water", "water-max", "water-rms"});
+  if (auto n = root["boundaries"]["land"])
+    land_boundary_dirichlet = (require_enum(n.as<std::string>(), "boundaries.land",
+                                            {"neumann_toposlope", "dirichlet_sea_level"})
+                               == "dirichlet_sea_level");
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
   if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {

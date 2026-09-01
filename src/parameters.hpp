@@ -62,6 +62,11 @@ struct Parameters {
   bool        eq_tol_set = false;
   std::string eq_metric  = "frac";
 
+  // boundaries.land: the LAND-edge condition (ocean is always Dirichlet h = 0, not configurable).
+  // `dirichlet_sea_level` -> true (ghost head at sea level); `neumann_toposlope` -> false (default,
+  // terrain-following no-flow). Stored resolved: the consumer only ever asks which of the two it is.
+  bool land_boundary_dirichlet = false;
+
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;

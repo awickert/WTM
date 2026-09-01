@@ -978,12 +978,6 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // run.equilibrium_stop -> -wtm_eq_tol / -wtm_eq_metric  (.frac is config-owned; see Parameters)
 
-  // boundaries.land -> -wtm_land_boundary (translate the prototype value)
-  if (auto n = root["boundaries"]["land"]) {
-    const std::string b = require_enum(n.as<std::string>(), "boundaries.land",
-                                       {"neumann_toposlope", "dirichlet_sea_level"});
-    set_opt_if_unset("-wtm_land_boundary", (b == "dirichlet_sea_level") ? "dirichlet" : "neumann_toposlope");
-  }
 
 
   // evaporation.et_sigmoid (the always-on soil<->open-water ET transition) + extinction_depth. The taper
