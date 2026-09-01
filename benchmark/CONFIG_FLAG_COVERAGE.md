@@ -27,6 +27,10 @@ alone."** The status column answers that.
 > `-wtm_dtc_dt_max` -- these have live CLI call sites across the suite (eq_tol alone has 61), so each
 > needs its callers moved to the config in the same commit.
 
+> **UPDATE 2026-09-01 (later).** The three MODE INTERFACE flags are RETIRED too, with
+> `collection.method: legacy` and the taper-1 band sink (fork issue #7). 20 of the 65 flags are now gone.
+> The `-wtm_fringe_*` rows below describe knobs that no longer exist: they sized the sink's band.
+
 > **UPDATE 2026-09-01.** All **seventeen** 1:1 rows are now RETIRED -- the seven listed above followed.
 > Separately, `-wtm_active_set`'s SECOND YAML route (`dev.active_set`) was removed; see the
 > surface-water table below. The 2026-08-27 note above is kept as written: it records the state on
@@ -176,15 +180,17 @@ and warns, since Newton as a warm finisher is a real mode where continuation is 
 
 ## Surface water
 
-The collection selector is the abstraction that already works — and six flags are now redundant
-against it. These are the retirement candidates, and they are more than clutter: two channels for one
-decision is what produced the `extended_soil` collision.
+**RESOLVED 2026-09-01 (fork issue #7).** The collection selector is the abstraction, and the three flags
+that were the interface of its `legacy` mode are RETIRED along with that mode. They were verified
+byte-identical to the modes they wrapped before removal (`legacy` + flag == `explicit` / `implicit`,
+max|Δ| = 0.000e+00), so nothing was lost. Two channels for one decision is what produced the
+`extended_soil` collision; there is now one.
 
 | flag | what it does | status | YAML today |
 |---|---|---|---|
-| `-wtm_direct_to_runoff` | in-residual exfiltration removal | MODE INTERFACE | `collection.method: implicit` sets it — but under `method: legacy` the selector does not touch it and this flag IS the control |
-| `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | MODE INTERFACE | `collection.method: explicit` sets it — same: `legacy` hands control back to this flag |
-| `-wtm_surface_sink` | sub-surface band sink | MODE INTERFACE | `collection.method: legacy` — this flag is what that mode means |
+| `-wtm_direct_to_runoff` | in-residual exfiltration removal | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
+| `-wtm_surface_exfiltration_to_runoff` | post-solve clamp | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
+| `-wtm_surface_sink` | sub-surface band sink | **RETIRED** (was MODE INTERFACE) | `collection.method` — the `legacy` mode this was the interface of is gone (issue #7) |
 | `-wtm_extended_soil` | continue the aquifer above the surface | ALIAS | `collection.method: extended_soil`; selects the mode when no method is configured, warns when one is |
 | `-wtm_active_set` | semismooth exfiltration pin | ABSTRACTED | `collection.method: active_set` (the default). The second route, `dev.active_set`, was **removed 2026-09-01** — it silently overrode an explicit method |
 | `-wtm_dev_active_set` | the older name for the same thing | ALIAS | `collection.method: active_set`; already prints DEPRECATED, no callers — the one clean deletion |
