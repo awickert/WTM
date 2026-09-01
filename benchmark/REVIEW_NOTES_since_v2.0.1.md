@@ -69,7 +69,9 @@ MPI-consistent to ~1e-13; it is the discontinuous routing that amplifies it.
   (`-wtm_bdf2`, `-wtm_bdf2_on_V`, adaptive `-wtm_dt_adaptive`). Validated; not the default.
 - **Smooth surface-water transition (experimental).** Two implicit, order-preserving pieces that
   together remove the finding-2 non-determinism: a **sub-surface sink** (`-wtm_surface_sink`) that
-  hands near-surface exfiltration to FSM smoothly, and a **demand-identity evaporation taper**
+  hands near-surface exfiltration to FSM smoothly *(RETIRED 2026-09-01, fork issue #7 — its band width
+  was dt-scaled, making the equilibrium dt-dependent; `collection.method: active_set` replaced it)*,
+  and a **demand-identity evaporation taper**
   (`-wtm_evap_taper`, requires `evap_mode 1`) that replaces the hard ET↔open-water switch with one
   smooth transition. See `benchmark/SURFACE_SINK_DESIGN.md`. New regression suite (`tests/taper/`)
   asserts cross-rank determinism through the threshold and a smooth pond/shoreline. One piece is

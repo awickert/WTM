@@ -47,6 +47,11 @@ command-line flags, many duplicating config keys, with no record anywhere of whi
 - **All eight ABSTRACTED flags are verified equal to their config key**, byte-for-byte
   (`tests/route_equality`). That claim -- "the config expresses this, the flag is the primitive" -- had
   never been tested; the suite covered each mechanism but never the equivalence of the two routes to it.
+- **The taper-1 band sink is retired, and with it `collection.method: legacy` and the three surface
+  flags** (fork issue #7, now closed). Its band width was `2·qmax·dt`, so its equilibrium water table
+  moved with the time step. The semismooth `active_set` pin the issue prescribed had already shipped and
+  is the default, so the niche was gone. `legacy` collapsed exactly onto `explicit`/`implicit` first
+  (max|Δ| = 0.000e+00), which is what made the removal safe.
 - **The active-set dual route is closed.** `dev.active_set` is removed. It was a second YAML key for
   the same enforcement, and it silently *overrode* an explicit `collection.method` — measured at 54 of
   256 cells and 0.127 m max, with nothing in the log to say so. An old config carrying the key now
@@ -77,7 +82,7 @@ with all six modes described.
 
 **Still open:** `config.yaml` is the reference a new user reads, and **16 keys the model accepts do not
 appear in it** (17 before `dev.active_set` was removed). Some absences are deliberate (`grid:` is
-deprecated, `dev:` is developer-only, `collection.sink` is legacy), but `solver.dt_max`,
+deprecated and `dev:` is developer-only), but `solver.dt_max`,
 `solver.water_volume_timestep_error_tol` and `surface_water.runoff_ratio` are ordinary user settings
 that are currently undiscoverable. `tests/config_schema` reports the list on every run.
 
