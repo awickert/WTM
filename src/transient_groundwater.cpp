@@ -1261,13 +1261,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime
   // -wtm_dev_allow_aboveground_water_columns.
   (void)anderson_path;
-  PetscBool surfexfil = PETSC_TRUE;  // default ON on all solver paths
-  // Track whether the user PASSED this flag (vs. it taking its default). The runoff_collector selector
-  // below supersedes it, and a silent override sent a the FSM-delta-source work experiment after the wrong exfiltration
-  // enforcement -- so the selector warns, but only when there is a real user choice to report.
-  PetscBool surfexfil_set = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_surface_exfiltration_to_runoff", &surfexfil, &surfexfil_set);
-  g_surface_exfiltration_to_runoff_array = (surfexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
+  // The post-solve clamp. -wtm_surface_exfiltration_to_runoff is RETIRED: it was the interface of the
+  // `legacy` mode, which is gone, and surface_water.collection.method: explicit is the documented route
+  // (verified byte-identical to the flag, max|d| = 0.000e+00). Set by the selector below.
+  g_surface_exfiltration_to_runoff_array = (allow_aboveground != PETSC_TRUE);
 
   // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
   // range out of the Jacobian conditioning; see the transform helpers above). The Φ transform is the
@@ -1337,10 +1334,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
   // direct_to_runoff tangent so it can default on for those paths is future work.
   // -wtm_dev_allow_aboveground_water_columns still forces it off.
-  PetscBool directexfil     = PETSC_FALSE;
-  PetscBool directexfil_set = PETSC_FALSE;  // was it passed? (for the selector-override warning below)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_direct_to_runoff", &directexfil, &directexfil_set);
-  g_direct_to_runoff = (directexfil == PETSC_TRUE) && (allow_aboveground != PETSC_TRUE);
+  // The in-residual siphon. -wtm_direct_to_runoff is RETIRED alongside the `legacy` mode it belonged to;
+  // surface_water.collection.method: implicit is the route (verified byte-identical). Set by the selector.
+  g_direct_to_runoff = false;
 
   // -wtm_fsm_delta_source [EXPERIMENTAL]: carry FSM's per-step wtd change as a source in the NEXT step's
   // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH the FSM-delta-source work).
@@ -1400,10 +1396,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                   "instead. Set surface_water.collection.method explicitly to override.\n");
     }
   }
-  // Snapshot the legacy-flag choices so the selector can report any of them it supersedes (below).
   bool collector_wants_active_set = false;  // set by rc == "active_set"; enabling happens below
-  const bool pre_direct = g_direct_to_runoff;
-  const bool pre_exfil = g_surface_exfiltration_to_runoff_array;
   const bool pre_extsoil = g_extended_soil;
   // RETIRED (fork issue #7): the taper-1 band sink is now OFF unconditionally, in `legacy` too. Its band
   // width is w = 2*qmax*dt and that dt-scaling is INTRINSIC -- a fixed width overshoots for a rate-capped
@@ -1415,7 +1408,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // that is -wtm_active_set, now the DEFAULT and carrying the pin in the Newton Jacobian
   // (FormJacobianLocal). The niche is gone. With the sink off, `legacy` collapses exactly onto
   // explicit/implicit (verified byte-identical, max|d| = 0.000e+00).
-  if (rc != "legacy") {
+  {  // one mode is always in force: `legacy` (hand control to the -wtm_ surface flags) is RETIRED
     // The selector OWNS extended soil now, exactly as it owns the three removals: exactly one mode is
     // in force, so a config that names a different method turns extended soil off rather than leaving
     // two contradictory mechanisms running and letting whichever clamps last win.
@@ -1469,26 +1462,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       g_surface_exfiltration_to_runoff_array = false;
       PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=off]: NONPHYSICAL -- above-surface water is NOT "
                   "collected; it piles up and the free surface will limit-cycle. Testing/diagnostics only.\n");
-    }
-    // Report any legacy surface flag the selector just superseded -- but ONLY one the user actually
-    // passed, and only where the selector changed its effect. A run that takes the defaults says
-    // nothing here. The silent version of this override sent a the FSM-delta-source work experiment after the wrong
-    // exfiltration enforcement (the command line asked for the post-solve clamp; the selector's
-    // default gave the in-residual face, and no log recorded it). Once per run, not per cycle.
-    static bool reported_override = false;
-    if (!reported_override) {
-      reported_override    = true;
-      const auto supersede = [&](const char* flag, PetscBool was_set, bool before, bool after) {
-        if (was_set == PETSC_TRUE && before != after)
-          PetscPrintf(PETSC_COMM_WORLD,
-                      "NOTE [runoff_collector=%s]: %s was passed but the surface-water selector supersedes it "
-                      "(effective: %s). Use surface_water.collection.method to choose the enforcement, or set it "
-                      "to 'legacy' to hand control back to the -wtm_ surface flags.\n",
-                      rc.c_str(), flag, after ? "on" : "off");
-      };
-      supersede("-wtm_direct_to_runoff", directexfil_set, pre_direct, g_direct_to_runoff);
-      supersede("-wtm_surface_exfiltration_to_runoff", surfexfil_set, pre_exfil,
-                g_surface_exfiltration_to_runoff_array);
     }
   }
 

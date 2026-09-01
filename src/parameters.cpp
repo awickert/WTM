@@ -419,10 +419,10 @@ void Parameters::check() const {
   // clamped, and the collector silently won, so -wtm_extended_soil printed its mode banner while
   // doing nothing. See the resolution block in transient_groundwater.cpp.
   if (!(runoff_collector == "" || runoff_collector == "implicit" || runoff_collector == "explicit"
-        || runoff_collector == "active_set" || runoff_collector == "off" || runoff_collector == "legacy"
+        || runoff_collector == "active_set" || runoff_collector == "off"
         || runoff_collector == "extended_soil")) {
     throw std::runtime_error(
-        "runoff_collector must be one of: active_set, implicit, explicit, off, legacy, extended_soil. Got: '"
+        "runoff_collector must be one of: active_set, implicit, explicit, off, extended_soil. Got: '"
         + runoff_collector + "'");
   }
 }
@@ -476,7 +476,7 @@ void Parameters::print() const {
   std::cout << "c fdepth_a               = " << fdepth_a << std::endl;
   std::cout << "c fdepth_b               = " << fdepth_b << std::endl;
   std::cout << "c fdepth_fmin            = " << fdepth_fmin << std::endl;
-  // Surface water. runoff_collector is the SELECTOR: when it is anything but "legacy" it supersedes the
+  // Surface water. runoff_collector is the SELECTOR: it supersedes the
   // legacy -wtm_ surface flags, so this line -- not the command line -- says which exfiltration
   // enforcement ran. See transient_groundwater.cpp (the selector block) and SURFACE_WATER_ROUTING.md.
   std::cout << "c fsm_on                 = " << fsm_on << std::endl;
