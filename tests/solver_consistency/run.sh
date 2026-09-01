@@ -25,8 +25,10 @@ TOL="${TOL:-0.001}"       # metres; cross-solver steady-state agreement (1 mm on
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+emit() { # $1 stem  [env: DTC=]
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
+${DTC:+dt_continuation $DTC}
 fsm_on 0
 evap_mode 0
 infiltration_on 0
@@ -59,7 +61,7 @@ EOF
 # three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
 # eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
 BB=""
-emit anderson; emit picard; emit newton
+emit anderson; emit picard; DTC=true emit newton
 run() { # arm  extra-flags...
   local arm="$1"; shift
   "$WTM" "$WORK/$arm.yaml" $BB "$@" > "$WORK/$arm.log" 2>&1 \
@@ -69,7 +71,7 @@ run() { # arm  extra-flags...
 }
 run anderson -wtm_anderson
 run picard   -wtm_picard
-run newton   -wtm_newton -wtm_dt_continuation
+run newton   -wtm_newton
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" <<'PY'

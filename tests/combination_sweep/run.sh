@@ -46,6 +46,7 @@ mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type $2
 ${STORAGE:+storage $STORAGE}
+${DTC:+dt_continuation $DTC}
 fsm_on 1
 infiltration_on 0
 runoff_ratio 0
@@ -75,7 +76,7 @@ EOF
 # for instance, so the requested and resolved integrator differ).
 declare -A SOLVERS=( [anderson]="-wtm_anderson"
                      [picard]="-wtm_picard"
-                     [newton]="-wtm_newton -wtm_dt_continuation" )
+                     [newton]="-wtm_newton" )  # continuation is config-owned (solver.dt_continuation)
 declare -A INTEGS=(  [be]=""
                      [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
                      [bdf2v]="-wtm_bdf2_on_V"
@@ -109,7 +110,14 @@ for rt in "${RUNTYPES[@]}"; do
       for cl in "${COLLECTORS[@]}"; do
         stem="${rt:0:2}_${sv}_${ig}_${cl}"
         # the `volume` integrator is a config value (solver.storage), not a flag
-        STORAGE=$([ "$ig" = volume ] && echo volume) mkcfg "$stem" "$rt" "$cl" 31536000
+        # Settings that used to be FLAGS are now config values, so they reach the model only through
+        # mkcfg -- and there are TWO mkcfg calls per combination (nominal dt, and the dt/8 retry below).
+        # These are per-iteration VARIABLES, not command prefixes, so both calls see them. As a prefix on
+        # the first call only, the retry silently ran the DEFAULT solver/storage instead of the one the
+        # arm is named for -- coverage the sweep reported but did not have.
+        STORAGE=$([ "$ig" = volume ] && echo volume)
+        DTC=$([ "$sv" = newton ] && echo true)
+        mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))
         elif [ -z "$MSG" ]; then
@@ -121,7 +129,7 @@ for rt in "${RUNTYPES[@]}"; do
             OUT="SETUP ERROR (this test is broken): ${MSG:0:50}"; nbad=$((nbad+1)); fail=1
         elif [[ "$MSG" == *"not converged"* || "$MSG" == *"max retries"* ]]; then
             # HARD, not forbidden: try again at dt/8 before recording a verdict.
-            mkcfg "${stem}_s" "$rt" "$cl" 3942000
+            mkcfg "${stem}_s" "$rt" "$cl" 3942000   # STORAGE/DTC still in scope -- see above
             if attempt "${stem}_s" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
                 OUT="runs (needed dt/8)"; nretry=$((nretry+1))
             else
