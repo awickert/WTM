@@ -214,12 +214,12 @@ echo
 # (unused) because the guard it tests is still in the code as a backstop for a future scheme that
 # genuinely has no per-step identity.
 echo "-- TR-BDF2 (two stages, telescoped) --"
-check "TR-BDF2"                    s_tr     -wtm_anderson -wtm_tr_bdf2
+INTEG=tr-bdf2 check "TR-BDF2" s_tr -wtm_anderson
 # The combination that was leaking, and the reason this arm exists: active-set puts a multiplier in
 # BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
 # the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
 # the residual, so it carries the solve's tolerance, not a conservation defect.
-COLL=active_set ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson -wtm_tr_bdf2
+COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as -wtm_anderson
 echo
 # ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
 # it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
@@ -264,8 +264,8 @@ echo
 # producing FEWER steps is backwards. BDF2-on-V is monotonic (62 -> 356). Adaptive dt is the
 # robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-COLL=active_set ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-    -wtm_anderson -wtm_tr_bdf2
+COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
+    -wtm_anderson
 COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
     -wtm_anderson
 echo

@@ -147,8 +147,8 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
 
 # PRECONDITION: the trace must exist at all, and est must genuinely MOVE across the ladder -- otherwise
 # every order below is fitted to noise and this whole test is decoration.
-read -r d0 e0 <<< "$(probe pre_coarse 31536000 1 "-wtm_tr_bdf2")"
-read -r d1 e1 <<< "$(probe pre_fine     492750 1 "-wtm_tr_bdf2")"
+read -r d0 e0 <<< "$(INTEG=tr-bdf2 probe pre_coarse 31536000 1 "")"
+read -r d1 e1 <<< "$(INTEG=tr-bdf2 probe pre_fine     492750 1 "")"
 if [ -n "${e0:-}" ] && [ -n "${e1:-}" ] && \
    [ "$(python3 -c "print(1 if $e0/$e1 > 10 else 0)")" = 1 ]; then
     echo "  PASS  PRECONDITION  est moves over the ladder (${e0} -> ${e1}, $(python3 -c "print(f'{$e0/$e1:.0f}x')")):"
@@ -163,8 +163,8 @@ echo
 
 # TR-BDF2 carries an EMBEDDED within-step estimate (internal stage Y_gamma): second order, and immune
 # to the operator split because it never differences across a handoff.
-arm "TR-BDF2   fsm on " "-wtm_tr_bdf2"   1 2.0 check
-arm "TR-BDF2   fsm off" "-wtm_tr_bdf2"   0 2.0 check
+arm "TR-BDF2   fsm on " ""   1 2.0 check tr-bdf2
+arm "TR-BDF2   fsm off" ""   0 2.0 check tr-bdf2
 # The generic linear-history predictor. With FSM OFF it converges -- at FIRST order, not the O(dt^2)
 # its own source comment claims, which is a second and separate discrepancy worth keeping in view
 # (candidate: active-set switching leaves the trajectory only C^1 in time). Pinned at what it MEASURES.

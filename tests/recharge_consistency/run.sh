@@ -41,8 +41,8 @@ EOF
 }
 
 # T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
-declare -A FLAG=( [cc]="" [tr]="-wtm_tr_bdf2" [bdf2v]="" )
-declare -A INTEG_CFG=([cc]="" [tr]="" [bdf2v]="bdf2" )
+declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" )
+declare -A INTEG_CFG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" )
 BASE="-wtm_anderson -snes_anderson_restart_type none -snes_stol 1e-8"
 WK=604800
 for s in cc tr bdf2v; do

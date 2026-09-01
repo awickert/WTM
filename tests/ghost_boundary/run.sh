@@ -70,10 +70,10 @@ emit cc_nN 120
   || { echo "RUN FAILED: cc n=$NPROCS"; tail -3 "$WORK/cc_nN.log"; exit 2; }
 
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
-declare -A FLAG=( [cc]="-wtm_anderson" [tr]="-wtm_anderson -wtm_tr_bdf2" [bdf2v]="-wtm_anderson" [newton]="" )
+declare -A FLAG=( [cc]="-wtm_anderson" [tr]="-wtm_anderson" [bdf2v]="-wtm_anderson" [newton]="" )
 # newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined
 declare -A CFG=(  [cc]="" [tr]="" [bdf2v]="" [newton]="newton" )
-declare -A INTEG=([cc]="" [tr]="" [bdf2v]="bdf2" [newton]="")
+declare -A INTEG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" [newton]="")
 for s in tr bdf2v newton; do
   METHOD="${CFG[$s]}" INTEG="${INTEG[$s]}" DTC=$([ -n "${CFG[$s]}" ] && echo false) emit "$s" 120
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \

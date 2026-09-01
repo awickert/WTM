@@ -132,10 +132,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // solver.method: newton. Any explicit path flag takes precedence.
   PetscBool force_anderson = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_anderson", &force_anderson);
-  // -wtm_tr_bdf2: L-stable strong-damping 2nd-order on the matrix-free Anderson path (two staged solves
+  // solver.time_integration: tr-bdf2: L-stable strong-damping 2nd-order on the matrix-free Anderson path (two staged solves
   // per step). Implies the Anderson path (self-starting; no Picard operator, no BDF2 history vector).
   PetscBool tr_bdf2_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_tr_bdf2", &tr_bdf2_flag);
+  // config-owned (solver.time_integration: tr-bdf2); the solver.time_integration: tr-bdf2 flag is retired.
+  tr_bdf2_flag = (params.time_integration == "tr-bdf2") ? PETSC_TRUE : PETSC_FALSE;
   user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
   if (tr_bdf2_flag) force_anderson = PETSC_TRUE;  // take the matrix-free Anderson path
   // -wtm_aa_picard: Anderson-accelerated GAMG-Picard via nonlinear preconditioning. OUTER = Anderson on
@@ -203,7 +204,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // BDF2 residual. The integrator (cc backward-Euler / TR-BDF2 / BDF2-on-V) is selected by its own flags,
   // and the controller sizes dt for whichever one is active (see the estimate/controller split in
   // transient_groundwater.cpp update()). So `-wtm_anderson -wtm_dt_adaptive` is 1st-order adaptive-cc,
-  // `-wtm_tr_bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `solver.time_integration: bdf2 -wtm_dt_adaptive` is BDF2-on-V.
+  // `solver.time_integration: tr-bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `solver.time_integration: bdf2 -wtm_dt_adaptive` is BDF2-on-V.
   user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE) || user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: -wtm_anderson
   // solver.time_integration: bdf2 gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
@@ -396,7 +397,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   if (user_context.use_tr_bdf2) {
     VecDuplicate(user_context.x, &user_context.tr_ygamma);  // intermediate Y_gamma
     PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_tr_bdf2: L-stable, strongly-damped 2nd-order matrix-free Anderson (TR-BDF2; two staged\n"
+                "solver.time_integration: tr-bdf2: L-stable, strongly-damped 2nd-order matrix-free Anderson (TR-BDF2; two staged\n"
                 "  solves/step, self-starting).\n");
   }
   if (user_context.use_picard) {

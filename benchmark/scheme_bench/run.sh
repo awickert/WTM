@@ -105,8 +105,8 @@ SCHEMES=(
   "and_vol|Anderson BE (volume dV)|-wtm_anderson|storage volume"
   "picard|Picard BDF2-on-V (plain)||solver_method picard;time_integration bdf2"
   "picard_tbar|Picard BDF2-on-V + Tbar||solver_method picard;time_integration bdf2;t_bar true"
-  "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson -wtm_tr_bdf2|"
-  "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson -wtm_tr_bdf2|adaptive_dt true"
+  "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson|time_integration tr-bdf2"
+  "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson|time_integration tr-bdf2;adaptive_dt true"
   "newton|Newton (plain)||solver_method newton;dt_continuation false"
   "newton_cont|Newton + dt-continuation|-wtm_stiff|"
 )

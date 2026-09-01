@@ -206,7 +206,7 @@ struct AppCtx {
   // AppCtx flag). Note: smoothing does NOT by itself restore BDF2 order 2 -- the order-1 cause was
   // the storativity treatment; see BDF2_ADAPTIVE_DESIGN.md.
 
-  // --- TR-BDF2 (-wtm_tr_bdf2; matrix-free Anderson only) ---
+  // --- TR-BDF2 (solver.time_integration: tr-bdf2; matrix-free Anderson only) ---
   // L-stable, strongly (monotone) damped 2nd-order-in-time alternative to BDF2-on-V, for the matrix-free
   // Anderson residual. One step = TWO staged implicit solves: (1) a trapezoidal sub-step to t+gamma*dt
   // giving the intermediate Y_gamma, then (2) a BDF2 sub-step from (w^n, Y_gamma) to w^{n+1}. gamma=2-sqrt2;

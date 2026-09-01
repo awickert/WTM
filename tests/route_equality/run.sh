@@ -125,7 +125,6 @@ echo
 
 arm "solver.method: anderson      " "-wtm_anderson"                "solver: { method: anderson }"
 # See the header: newton's config value abstracts BOTH flags, because the bare path does not converge.
-arm "solver.time_integration: tr  " "-wtm_tr_bdf2"                 "solver: { time_integration: tr-bdf2 }"
 
 # NEWTON COLD-START CONTRACT, from the config side. `solver.method: newton` must be USABLE FROM YAML
 # ALONE. Before dt-continuation was wired into the abstraction this aborted with DIVERGED_LINE_SEARCH

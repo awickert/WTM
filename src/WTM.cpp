@@ -991,12 +991,7 @@ void apply_config_petsc_options(const std::string& config_file) {
     const std::string v = n.as<std::string>();
     if (v != "auto") set_opt_if_unset("-snes_max_it", v.c_str());
   }
-  if (auto n = root["solver"]["time_integration"]) {
-    const std::string t = require_enum(n.as<std::string>(), "solver.time_integration",
-                                       {"backward-euler", "bdf2", "tr-bdf2"});
-    if (t == "tr-bdf2")   set_opt_if_unset("-wtm_tr_bdf2", "true");
-    // "backward-euler" = default (no flag)
-  }
+  // solver.time_integration is fully config-owned (Parameters::time_integration); no bridge remains.
 
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }

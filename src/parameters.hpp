@@ -78,7 +78,7 @@ struct Parameters {
   std::string solver_method;
 
   // solver.time_integration: backward-euler (default) | bdf2 | tr-bdf2. "" = unset = backward-euler.
-  // solver.time_integration: bdf2 and -wtm_tr_bdf2 are retired one at a time; while either remains, CreateSNES ORs this
+  // solver.time_integration: bdf2 and solver.time_integration: tr-bdf2 are retired one at a time; while either remains, CreateSNES ORs this
   // member with the surviving flag rather than replacing it.
   std::string time_integration;
 

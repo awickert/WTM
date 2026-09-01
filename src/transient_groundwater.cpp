@@ -809,7 +809,7 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
 
   // TR-BDF2's telescoped storage is V(w^{n+1}) - V(w^n), i.e. the backward-Euler weights, whatever
   // -wtm_bdf2 may also be asking for -- the stage combination has already consumed the multi-level
-  // structure. Without this guard the pair -wtm_tr_bdf2 -wtm_bdf2 would silently take 3-level weights.
+  // structure. Without this guard the pair solver.time_integration: tr-bdf2 -wtm_bdf2 would silently take 3-level weights.
   const bool bdf2 = user_context.use_bdf2 && user_context.bdf2_have_history && !user_context.use_tr_bdf2;
   // Mirror the residual's branch choice -- but note that only BDF2 actually needs a separate volume
   // form. solver.storage: volume is a backward Euler whose storage is the exact volume change

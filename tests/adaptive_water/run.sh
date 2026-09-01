@@ -17,7 +17,9 @@ TOL="${TOL:-0.05}"       # metres; cross-scheme steady-state agreement
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+emit() { # $1 stem  [env: INTEG=]
+  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+${INTEG:+time_integration $INTEG}
 ${ADAPT:+adaptive_dt true}
 run_type equilibrium
 fsm_on 0
@@ -46,10 +48,10 @@ EOF
 }
 
 BB="-wtm_anderson"
-emit cc; ADAPT=1 emit adapt; EQ_TOL=0.0005 emit water
+emit cc; ADAPT=1 INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
 "$WTM" "$WORK/cc.yaml"    $BB > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
-"$WTM" "$WORK/adapt.yaml" $BB -wtm_tr_bdf2 > "$WORK/adapt.log" 2>&1 \
+"$WTM" "$WORK/adapt.yaml" $BB > "$WORK/adapt.log" 2>&1 \
   || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
 "$WTM" "$WORK/water.yaml" $BB > "$WORK/water.log" 2>&1 \
   || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }

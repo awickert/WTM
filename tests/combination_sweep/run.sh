@@ -82,7 +82,7 @@ declare -A SOLVERS=( [anderson]="-wtm_anderson"
 declare -A INTEGS=(  [be]=""
                      [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
                      [bdf2v]=""   # solver.time_integration: bdf2 -- via INTEG=
-                     [trbdf2]="-wtm_tr_bdf2" )
+                     [trbdf2]="" )   # solver.time_integration: tr-bdf2 -- via INTEG=
 COLLECTORS=(active_set explicit implicit off)
 RUNTYPES=(equilibrium transient)
 
@@ -118,7 +118,7 @@ for rt in "${RUNTYPES[@]}"; do
         # "picard cannot converge" into a false "picard runs at dt/8" for 12 combinations.
         STORAGE=$([ "$ig" = volume ] && echo volume)
         METHOD=$([ "$sv" != anderson ] && echo "$sv")
-        INTEG=$([ "$ig" = bdf2v ] && echo bdf2)
+        case "$ig" in bdf2v) INTEG=bdf2 ;; trbdf2) INTEG=tr-bdf2 ;; *) INTEG= ;; esac
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))
