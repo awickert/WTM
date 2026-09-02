@@ -209,3 +209,59 @@ than a bare boolean, `solver.anderson.restart` likewise. That is roughly six blo
 top-level keys. Block style throughout, per the prototype's own header. The `dt_norm_rms` /
 `dt_norm_max` pair collapses to one enum key -- `norm: rms|max` -- which also removes the current
 undefined behaviour when both are set.
+
+
+---
+
+# Decisions taken
+
+Recorded as they are made, so the walk-through does not have to be re-run from memory. Each entry names
+who decided and on what grounds.
+
+## Group 1 -- adaptive step-size controller (in progress)
+
+**Expose all seven as config keys**, rather than hard-coding any. The test applied to a *default-only*
+constant: expose it if (a) a test needs to vary it, (b) a user hitting a failure mode needs it to get
+unstuck, or (c) varying it moves the answer materially. `dtc_grow` and `dtc_shrink` pass (a) --
+`tests/estimator_order` sets both to 1 to freeze dt, and loses that ability the moment the flags go.
+`dtc_easy_iters` passes (c). `dtc_max_retries` and `dtc_dt0` pass (b) -- the first IS the abort, and the
+abort message already tells the user to raise the second. NOTE this is not a precedent that default-only
+implies expose: the four `ar_*` constants in group 2 are expected to fail the same test.
+
+**`dt_norm_rms` / `dt_norm_max` collapse to one enum key, `norm: rms|max`.** Two booleans whose
+both-set case is undefined; this is a defect repair, not an exposure decision. 7 flags -> 6 keys.
+
+**`dtc_easy_iters` is renamed `grow_if_niter_leq` in the config** (Andy, 2026-09-02). The old name is
+opaque -- it reads as a count of easy iterations rather than the threshold defining "easy". Rejected
+along the way, with reasons worth keeping so they are not re-proposed:
+
+- `grow_below_iters` / `grow_if_niter_below` -- **off by one**. Both code paths are inclusive
+  (`WTM.cpp:672` grows at `its <= n`; `transient_groundwater.cpp:1969` clamps only at `its > n`), so a
+  solve taking exactly 8 iterations DOES grow. A name that says otherwise is worse in a config key than
+  in code, because the key is the documentation.
+- `max_niter_to_grow` -- parses as a noun phrase, i.e. a cap on the iteration count, which is the
+  opposite of what it gates.
+- `easy_niter` -- unambiguous and matches the source's own "easy step / hard step" vocabulary, but does
+  not stand alone: read in an error message it does not say it controls growth.
+
+`niter` is the conventional spelling for the audience, and `leq` states the inclusive boundary exactly.
+Andy accepted its jargon cost on the grounds that each key should stand by itself.
+
+**What `grow_if_niter_leq` actually is**, since the old name hid it: a *solvability* gate on dt growth,
+distinct from the *accuracy* gate. `niter` is the nonlinear iteration count of the step just taken --
+Newton's on the Newton path, Anderson's on the Anderson path, so the default 8 was tuned on a different
+iteration than an Anderson user will be setting it for. On Newton's `dt_continuation` ramp it is the
+ENTIRE control law (there is no error estimate on that path). On the adaptive path it is a veto layered
+over the PI error controller, which may clamp growth but never force it. It exists because a step can be
+perfectly accurate and still have taken 40 iterations near the free-boundary ceiling, where a larger dt
+overshoots into a singular Jacobian; iteration count is the proxy for that cliff, and the error estimate
+knows nothing about it.
+
+### Still open in group 1
+
+- the block's NAME (`solver.step_control` proposed, on the grounds that these dials serve
+  `dt_continuation` as well as `adaptive_dt`, so an `adaptive_`-prefixed name would misdescribe them)
+- whether `auto` becomes the house sentinel for "derive this default", following the existing
+  `solver.dt_max: auto`, and whether the `_set`-boolean pattern in `Parameters` stops spreading
+- whether `solver.dt_max` (1 caller) and `solver.water_volume_timestep_error_tol` (2 callers) move
+  into the block
