@@ -86,6 +86,19 @@ solver:
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
   storage: volume              # volume (exact dV, mass-conserving) | secant (S*dh, the 1st-order form)
 
+  step_control:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
+                               # Newton's dt_continuation ramp, so it is nested under neither.
+    grow: 1.5                  # dt multiplier after an easy solve
+    shrink: 0.25               # dt multiplier after a rejected solve
+    grow_if_niter_leq: 8       # grow only when the solve took at most this many nonlinear iterations.
+                               # A SOLVABILITY gate, not an accuracy one: a step can be accurate and
+                               # still sit near the free-boundary ceiling, where a larger dt overshoots
+                               # into a singular Jacobian. Inclusive -- a solve of exactly 8 still grows.
+    max_retries: 15            # consecutive rejected steps before the run aborts
+    norm: rms                  # how the step error is measured: rms | max. rms is robust on cold
+                               # spin-up; max is hostage to a few surface-kink cells whose spike does
+                               # not shrink with dt.
+
 parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 

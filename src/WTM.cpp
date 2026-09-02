@@ -993,6 +993,24 @@ void apply_config_petsc_options(const std::string& config_file) {
   }
   // solver.time_integration is fully config-owned (Parameters::time_integration); no bridge remains.
 
+  // solver.step_control -> the step-size controller's dials. ONE controller: it sizes the step for
+  // solver.adaptive_dt AND for Newton's solver.dt_continuation ramp, which is why these are not nested
+  // under either. grow_if_niter_leq is the old -wtm_dtc_easy_iters: a SOLVABILITY gate on growth (grow
+  // only when the solve took at most this many nonlinear iterations), distinct from the accuracy gate,
+  // and inclusive -- a solve of exactly this many iterations still grows.
+  if (auto sc = root["solver"]["step_control"]) {
+    if (auto n = sc["grow"])              set_opt_if_unset("-wtm_dtc_grow", n.as<std::string>().c_str());
+    if (auto n = sc["shrink"])            set_opt_if_unset("-wtm_dtc_shrink", n.as<std::string>().c_str());
+    if (auto n = sc["grow_if_niter_leq"]) set_opt_if_unset("-wtm_dtc_easy_iters", n.as<std::string>().c_str());
+    if (auto n = sc["max_retries"])       set_opt_if_unset("-wtm_dtc_max_retries", n.as<std::string>().c_str());
+    // norm: one enum replacing the -wtm_dt_norm_rms / -wtm_dt_norm_max boolean PAIR, whose both-set case
+    // was undefined at the config level. rms is the default; max is opt-in and wins if both arrive.
+    if (auto n = sc["norm"]) {
+      const std::string v = require_enum(n.as<std::string>(), "solver.step_control.norm", {"rms", "max"});
+      set_opt_if_unset(v == "max" ? "-wtm_dt_norm_max" : "-wtm_dt_norm_rms", "true");
+    }
+  }
+
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
