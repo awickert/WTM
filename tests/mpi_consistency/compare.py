@@ -69,7 +69,25 @@ WTD_TOL = 1e-6         # metres; above FP reduction noise, below any real error
 #           At the original 6 significant figures both printed as 792226000.000000, which is why no
 #           rank sweep had ever shown it.
 DIAG_RTOL_EXACT    = 1e-12
-DIAG_RTOL_STATE    = 1e-9    # ocean_outflow / evap; worst measured 5.123e-11 (evap, n=4/n=8)
+DIAG_RTOL_STATE    = 1e-9    # evap; worst measured 5.123e-11 (n=4/n=8). NOT loosened -- see ACCUM.
+# ACCUM  total_ocean_outflow, split out of STATE when solver.time_integration: auto began resolving to
+#        tr-bdf2 on the Anderson path. It is not a sum over the final field (which is what STATE means);
+#        it is accumulated ACROSS STEPS, and TR-BDF2 accumulates it through a 3-point flux quadrature
+#        over TWO staged solves per step -- roughly 3x more summed contributions than backward-Euler --
+#        so it inherits correspondingly more reduction-order noise. Under backward-Euler it passed at
+#        1e-9; under tr-bdf2 it does not.
+#
+#        DEMONSTRATED to be accumulation noise and not a decomposition fault, all on this fixture:
+#          - the FIELD agrees: wtd max|delta| = 1.019e-08 .. 1.249e-08 m against WTD_TOL 1e-6, i.e. the
+#            ANSWER is consistent across decompositions; only the accumulator moved
+#          - non-monotonic in rank count and repeating for structurally similar decompositions:
+#            n=2 3.479e-09, n=3 1.636e-09, n=4 2.925e-09, n=6 1.636e-09, n=8 2.925e-09. A real MPI
+#            fault grows with rank count and shows as a boundary-localised field error
+#          - the arm that routes far MORE water (fsm1_rr03) PASSES at every rank count, and has the
+#            LARGEST field difference of all (4.180e-08 m) -- so the sensitivity does not track the
+#            field, which is what an accumulation-order effect looks like
+#        Worst measured 3.479e-09; 1e-8 carries ~2.9x margin, the same discipline as the DISCRETE class.
+DIAG_RTOL_ACCUM    = 1e-8
 DIAG_RTOL_STORED   = 1e-8    # the ONE column the code fixes did not tighten (worst 2.281e-09 at n=6)
 DIAG_RTOL_DISCRETE = 1e-9    # was 1e-2 -- see above; worst measured now 2.076e-11
 
@@ -78,7 +96,7 @@ DIAG_COLS = [
     (8,  "total_recharge_added",  DIAG_RTOL_EXACT),
     (18, "recharge_direct",       DIAG_RTOL_EXACT),
     (19, "runoff_to_surface",     DIAG_RTOL_EXACT),
-    (12, "total_ocean_outflow",   DIAG_RTOL_STATE),
+    (12, "total_ocean_outflow",   DIAG_RTOL_ACCUM),
     (13, "stored_volume",         DIAG_RTOL_STORED),
     (17, "total_evap_removed",    DIAG_RTOL_STATE),
     (11, "total_surface_removed", DIAG_RTOL_DISCRETE),
@@ -135,6 +153,11 @@ def main():
     d = np.abs(a - b)
     d = d[~np.isnan(d)]
     maxd = float(d.max()) if d.size else 0.0
+    # Always REPORT the field difference, not only when it exceeds the tolerance. This number is the
+    # load-bearing evidence whenever a DIAGNOSTIC column is out of tolerance: it separates "the answer
+    # is consistent across decompositions and an accumulator picked up reduction noise" from "the field
+    # itself moved". Inferring that from the ABSENCE of a failure line is not the same as measuring it.
+    print(f"  wtd max|delta| = {maxd:.3e} m  (tol {WTD_TOL:.0e})", file=sys.stderr)
     if maxd > WTD_TOL:
         print(f"  wtd differs: max|delta|={maxd:.3e}", file=sys.stderr)
         ok = False

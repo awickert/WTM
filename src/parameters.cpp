@@ -225,15 +225,20 @@ Parameters::Parameters(const std::string& config_file) {
   // that says only `solver.method: picard` abort on a key the user never wrote, and an abort must never
   // fire on a defaulted value.
   //
-  // The anderson cell is deliberately backward-euler FOR NOW -- today's behaviour -- so that introducing
-  // the mechanism changes no answer. Moving it to tr-bdf2 is a separate, reviewed change: it invalidates
-  // all six committed golden references (tests/golden pins solver_method anderson and does NOT pin the
-  // integrator) plus unpinned arms across ~28 test directories.
+  // THE TABLE.
+  //   anderson -> tr-bdf2         the production path. 2nd-order, L-stable with strong damping. At
+  //                               EQUILIBRIUM it cannot change the answer at all (the transient term
+  //                               vanishes: three integrators agree to 1.8e-15 m on flicker_evap), so
+  //                               this is a cost/robustness choice there, and an ACCURACY choice for
+  //                               transient runs, where it is the 2nd-order option.
+  //   picard   -> backward-euler  today's behaviour. bdf2 (BDF2-on-V) is Picard's designed 2nd-order
+  //                               mode and is the alternative, but Picard is a verification oracle, not
+  //                               a production path, so minimum surprise wins.
+  //   newton   -> backward-euler  today's behaviour; tr-bdf2 is unavailable off the Anderson path.
   if (time_integration.empty() || time_integration == "auto") {
-    const std::string m = solver_method.empty() ? "anderson" : solver_method;
-    time_integration     = "backward-euler";  // anderson | picard | newton -- all three, for now
+    const std::string m   = solver_method.empty() ? "anderson" : solver_method;
+    time_integration      = (m == "anderson") ? "tr-bdf2" : "backward-euler";
     time_integration_auto = true;
-    (void)m;
   }
   if (!dt_continuation_set)
     if (auto n = root["solver"]["method"])
