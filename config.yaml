@@ -85,7 +85,6 @@ solver:
   time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2
   adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
-  storage: volume              # volume (exact dV, mass-conserving) | secant (S*dh, the 1st-order form)
 
   step_control:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
                                # Newton's dt_continuation ramp, so it is nested under neither.
@@ -135,4 +134,9 @@ parallel:
 # dev:
 #   allow_aboveground_water_columns: false
 #   padded_dirichlet: false
+#   storage_form: volume       # volume (RHS b=0) | secant (RHS b=h^n). NOT an accuracy choice: S is the
+#                              # EXACT secant, so S*dh == dV identically and the two give bit-identical
+#                              # answers (tests/storage_equivalence). It exists so that test has something
+#                              # to compare. collection.method: active_set REQUIRES volume and refuses
+#                              # secant by name.
 # (dev.active_set was removed: select it with surface_water.collection.method: active_set, above.)

@@ -67,10 +67,12 @@ struct Parameters {
   // terrain-following no-flow). Stored resolved: the consumer only ever asks which of the two it is.
   bool land_boundary_dirichlet = false;
 
-  // solver.storage: `volume` uses the EXACT stored-volume change dV in the backward-Euler storage term
-  // instead of the secant S*dh. NOTE this is a STARTING value, not the last word: the active-set
-  // enforcement needs a b=0 residual path and auto-enables volume storage on top of it (with a NOTE).
-  bool volume_storage = false;
+  // dev.storage_form: which ASSEMBLY the backward-Euler storage term uses -- `volume` (exact dV, RHS b=0)
+  // or `secant` (S*dh, RHS b=h^n). NOT an accuracy choice: S is the exact secant, so the two are the same
+  // equation and tests/storage_equivalence pins them bit-identical. DEFAULT volume, which is what the
+  // active-set constraint requires; `secant` exists so that equivalence test has something to compare.
+  // Since the default is volume, `false` here can only mean an EXPLICIT dev.storage_form: secant.
+  bool volume_storage = true;
 
   // solver.method: the solver path. "" = unset, which resolves to the matrix-free Anderson default.
   // -wtm_picard and -wtm_newton are RETIRED; solver.method: anderson remains a flag for now (it FORCES the

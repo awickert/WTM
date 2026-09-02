@@ -80,7 +80,7 @@ declare -A SOLVERS=( [anderson]=""
                      [picard]=""   # solver.method: picard -- config, via METHOD=
                      [newton]="" )   # solver.method: newton (implies continuation) -- via METHOD=
 declare -A INTEGS=(  [be]=""
-                     [volume]=""   # solver.storage: volume -- set via STORAGE= on mkcfg, not a flag
+                     [volume]=""   # dev.storage_form: volume -- set via STORAGE= on mkcfg, not a flag
                      [bdf2v]=""   # solver.time_integration: bdf2 -- via INTEG=
                      [trbdf2]="" )   # solver.time_integration: tr-bdf2 -- via INTEG=
 COLLECTORS=(active_set explicit implicit off)

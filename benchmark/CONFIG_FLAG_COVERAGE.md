@@ -151,7 +151,7 @@ Five flags, none reachable, all tuning one mechanism.
 |---|---|---|---|
 | `-wtm_tr_bdf2` | TR-BDF2, L-stable 2nd order | ABSTRACTED | `solver.time_integration: tr-bdf2` |
 | `-wtm_bdf2_on_V` | BDF2 applied to stored volume V(h) | ABSTRACTED | `solver.time_integration: bdf2` |
-| `-wtm_volume_storage` | backward-Euler storage as exact ΔV, not secant S·Δh | **RETIRED** (was ABSTRACTED) | `solver.storage: volume` |
+| `-wtm_volume_storage` | backward-Euler storage assembly: exact ΔV (b=0) vs secant S·Δh (b=h^n); the SAME equation | **RETIRED** (was ABSTRACTED) | `dev.storage_form: volume` (now a DEV key, default volume) |
 | `-wtm_Tbar` | time-averaged interblock transmissivity | **RETIRED** (was 1:1) | `solver.t_bar` |
 | `-wtm_bdf2` | the ORIGINAL BDF2 (head form), pre-`bdf2_on_V` | GAP — advanced | none. It sets `use_bdf2` WITHOUT `use_bdf2_on_V` — head-form BDF2, a distinct scheme; `time_integration: bdf2` maps to `bdf2_on_V` |
 

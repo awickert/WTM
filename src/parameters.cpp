@@ -54,7 +54,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
-                  "t_bar", "storage",
+                  "t_bar",
                   "step_control", "smoothing", "anderson", "newton"}},
       // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
@@ -76,7 +76,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
       // what makes an old config say so instead of drifting.
-      {"dev", {"allow_aboveground_water_columns", "padded_dirichlet"}},
+      {"dev", {"allow_aboveground_water_columns", "padded_dirichlet", "storage_form"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
       {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace"}},
@@ -206,8 +206,11 @@ Parameters::Parameters(const std::string& config_file) {
     land_boundary_dirichlet = (require_enum(n.as<std::string>(), "boundaries.land",
                                             {"neumann_toposlope", "dirichlet_sea_level"})
                                == "dirichlet_sea_level");
-  if (auto n = root["solver"]["storage"])
-    volume_storage = (require_enum(n.as<std::string>(), "solver.storage", {"volume", "secant"}) == "volume");
+  // dev.storage_form: DEFAULT volume. Because the default is volume, `volume_storage == false` can only
+  // mean the user explicitly asked for secant -- which is what lets the active-set check below abort on an
+  // EXPLICIT request without needing a companion _set boolean.
+  if (auto n = root["dev"]["storage_form"])
+    volume_storage = (require_enum(n.as<std::string>(), "dev.storage_form", {"volume", "secant"}) == "volume");
   if (auto n = root["solver"]["method"])
     solver_method = require_enum(n.as<std::string>(), "solver.method", {"anderson", "picard", "newton"});
   if (auto n = root["solver"]["time_integration"])

@@ -149,7 +149,7 @@ fi
 # BOTH HALVES MATTER. A validator that rejected everything would pass a reject-only test, so every legal
 # value is exercised too -- including the three RETIRED eq_metric spellings, which must keep working
 # (the consumer maps them with a NOTE) rather than becoming errors.
-ENUM_BAD=(solver.method solver.time_integration solver.storage boundaries.land run.equilibrium_stop.metric)
+ENUM_BAD=(solver.method solver.time_integration dev.storage_form boundaries.land run.equilibrium_stop.metric)
 for k in "${ENUM_BAD[@]}"; do
     setval "$WORK/enum.yaml" "$k" "definitely_not_a_value"
     # CAPTURE FIRST. `msg ... | grep -q` would take the MODEL's exit status under `set -o pipefail`
@@ -167,7 +167,7 @@ done
 
 ENUM_OK=("solver.method anderson" "solver.method picard" "solver.method newton"
          "solver.time_integration backward-euler" "solver.time_integration bdf2"
-         "solver.time_integration tr-bdf2" "solver.storage volume" "solver.storage secant"
+         "solver.time_integration tr-bdf2" "dev.storage_form volume" "dev.storage_form secant"
          "boundaries.land neumann_toposlope" "boundaries.land dirichlet_sea_level"
          "run.equilibrium_stop.metric max" "run.equilibrium_stop.metric rms"
          "run.equilibrium_stop.metric frac" "run.equilibrium_stop.metric water"

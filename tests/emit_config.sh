@@ -36,7 +36,7 @@
 #   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
 #   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
-#   storage               -> solver.storage (volume | secant)
+#   storage               -> dev.storage_form (volume | secant)
 #   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
 #   time_integration      -> solver.time_integration (backward-euler | bdf2 | tr-bdf2)
@@ -145,13 +145,12 @@ if have land_boundary; then
 fi
 
 # --- solver ---------------------------------------------------------------------
-if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage || have dt_continuation || have solver_method || have time_integration; then
+if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have dt_continuation || have solver_method || have time_integration; then
     echo "solver:"
     have solver_method && echo "  method: $(val solver_method)"
     have time_integration && echo "  time_integration: $(val time_integration)"
     have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
     have t_bar       && echo "  t_bar: $(val t_bar)"
-    have storage     && echo "  storage: $(val storage)"
     if have dt_continuation; then
         echo "  newton:"
         echo "    dt_continuation: $(val dt_continuation)"
@@ -161,6 +160,14 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage 
         have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
         have dt_max && echo "    dt_max: \"$(val dt_max)\""
     fi
+fi
+
+# --- dev ---------------------------------------------------------------------
+# storage_form is a DEV key: the two assemblies are the same equation (S is the exact secant), so it
+# exists for tests/storage_equivalence, not for tuning. Default volume.
+if have storage; then
+    echo "dev:"
+    echo "  storage_form: $(val storage)"
 fi
 
 # --- evaporation ---------------------------------------------------------------

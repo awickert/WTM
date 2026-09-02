@@ -1271,7 +1271,6 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
   f << "  adaptive_dt: " << params.adaptive_dt << "\n";
   f << "  t_bar: " << params.t_bar << "\n";
-  f << "  storage: " << (params.volume_storage ? "volume" : "secant") << "\n";
   f << "  step_control:\n";
   f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
@@ -1311,6 +1310,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
 
   f << "\ndev:\n";
   f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
+  f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
   f << "  padded_dirichlet: " << (dev_padded == PETSC_TRUE) << "\n";
 
   f << "\nparallel:\n";
