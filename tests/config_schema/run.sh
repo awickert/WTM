@@ -264,6 +264,40 @@ else:
         print(f"                     {p or '<top level>'}: {' '.join(gaps[p])}")
 PY
 
+# RESOLVED: every schema key must be emitted into full_config.yaml. That file is the record of what a
+# run did -- under a defaults-heavy schema the config a user WRITES no longer describes its own run --
+# so a key the dump cannot see is a setting whose value is unrecoverable after the fact. This is the
+# exact drift parameters.cpp:463 records for the older Parameters::print(): it "went dead once" and
+# "drifted behind the config walk's new keys while runs quietly logged nothing; that gap turned a
+# silently overridden setting into a wrong conclusion."
+#
+# STATIC by design: it reads the emitter's source rather than running the model, so it needs no input
+# rasters and fires in any checkout. The limitation is real and worth stating -- it proves each key is
+# WRITTEN, not that the value written is the one in force. Round-tripping catches that second class, and
+# did: a run with storativity_surface 0.37 emitted 0.01, because the smoothing widths are parsed inside
+# the solve and the dump ran before them.
+python3 - "$ROOT/src/parameters.cpp" "$ROOT/src/WTM.cpp" <<'RESOLVEDPY' || fail=1
+import sys, re
+schema_src, emit_src = open(sys.argv[1]).read(), open(sys.argv[2]).read()
+block = schema_src[schema_src.index("static const std::map<std::string, std::set<std::string>> schema")
+                   :schema_src.index("return schema;")]
+schema = {m.group(1): set(re.findall(r'"([a-z_]+)"', m.group(2)))
+          for m in re.finditer(r'\{"([a-z_.]*)",\s*\{([^}]*)\}\}', block, re.S)}
+fn = emit_src[emit_src.index("static void write_full_config("):]
+fn = fn[:fn.index("\n}\n")]
+emitted = set(re.findall(r'"(?:\\n)*\s*([a-z_]+):', fn))
+allkeys = {k for keys in schema.values() for k in keys}
+missing = sorted(allkeys - emitted)
+if missing:
+    print("  FAIL  RESOLVED   %d schema key(s) are never written to full_config.yaml:" % len(missing))
+    for k in missing:
+        print("                     %s" % k)
+    print("                   A key the resolved dump cannot see is a setting no one can recover")
+    print("                   from a finished run. Add it to write_full_config in src/WTM.cpp.")
+    sys.exit(1)
+print("  PASS  RESOLVED   all %d schema keys are written to full_config.yaml" % len(allkeys))
+RESOLVEDPY
+
 echo
 if [[ $fail -eq 0 ]]; then echo "CONFIG SCHEMA: ALL PASSED"; else echo "CONFIG SCHEMA: FAILED" >&2; fi
 exit $fail
