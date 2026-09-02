@@ -329,6 +329,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
+    // ...and max_retries with them. It was LEFT BEHIND when the other four were moved here: the adaptive
+    // reject/retry loop reads dtc_max_retries on every rejected step (WTM.cpp:617), but the flag was
+    // parsed only inside `if (use_newton_continuation)` above -- so on a plain adaptive run asking for it
+    // did not tune the controller, it ABORTED the run ("the run was given 1 -wtm_ flag that nothing
+    // read"). The adaptive loop was stuck on the compiled-in 15 with no way to reach it.
+    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
     // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
     // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now
     // volume-weighted (storedVolume difference; see transient_groundwater.cpp). They still measure different
