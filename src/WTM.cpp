@@ -1011,6 +1011,14 @@ void apply_config_petsc_options(const std::string& config_file) {
     }
   }
 
+  // solver.smoothing -> the coefficient-kink rounding widths. Operator-level, so they apply to whichever
+  // solver runs; that is why they sit at solver: top level rather than under a method.
+  if (auto sm = root["solver"]["smoothing"]) {
+    if (auto n = sm["ksat_surface"])        set_opt_if_unset("-wtm_ksat_surface_smoothing_width", n.as<std::string>().c_str());
+    if (auto n = sm["ksat_soilbottom"])     set_opt_if_unset("-wtm_ksat_soilbottom_smoothing_width", n.as<std::string>().c_str());
+    if (auto n = sm["storativity_surface"]) set_opt_if_unset("-wtm_storativity_surface_smoothing_width", n.as<std::string>().c_str());
+  }
+
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }

@@ -99,6 +99,14 @@ solver:
                                # spin-up; max is hostage to a few surface-kink cells whose spike does
                                # not shrink with dt.
 
+  smoothing:                   # widths that ROUND a kink in the coefficients [m]
+    ksat_surface: 0            # the conductivity clamp at wtd = 0; 0 = sharp
+    ksat_soilbottom: 0         # the conductivity change at the -1.5 m soil boundary; 0 = sharp
+                               # Both ksat_* exist so a Jacobian finite-difference check has a smooth
+                               # tangent, and are OFF in a normal run.
+    storativity_surface: 0.01  # the storativity transition at the surface. UNLIKE the two above this
+                               # is ON by default and is physics: sub-grid roughness, not a check tool.
+
 parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 
