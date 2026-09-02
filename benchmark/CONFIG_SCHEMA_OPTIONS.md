@@ -317,3 +317,216 @@ A is the option that requires no decisions, which is exactly why it preserves th
 thirty-four development artefacts into a supported interface. B fixes the user's experience without
 fixing what is underneath. C is more work and needs your judgement on the dormant mechanisms, but it is
 the only one where the finished model contains only things that work.
+
+
+---
+
+# Sketch D -- CHOSEN (Andy, 2026-09-02)
+
+> "For long-term maintainability and reproducibility, I think we should create a config-file structure
+> that exposes everything, but with reasonable defaults such that a user-created config file can be
+> quite short."
+
+The decision is on the axis of REPRODUCIBILITY, which is the one argument for exposure that does not
+reduce to taste. It also dissolves the A-vs-B tension, which was a false one on my part: I had conflated
+THE SCHEMA with THE FILE YOU WRITE. The reference is ~55 keys; the file a user writes is ten, because
+omission is legal.
+
+## Decisions settled
+
+1. **Everything is exposed as a config key.** No `-wtm_` flag survives as the only route to a setting.
+2. **Reasonable defaults, so a user config is short.** Omission is legal for every key except the few a
+   run cannot infer (`io.source`, `io.region`, `time.*`).
+3. **The run emits a full YAML including defaults, alongside the outputs.** (Andy: "have the run generate
+   a full yaml including the defaults that sits alongside the outputs.")
+4. **The method must be chosen uniquely.** No setting may change which solver runs.
+5. **Constant defaults to begin with**, made `run.type`-dependent only if a need appears. (Andy: "Let's
+   start with constant defaults and make them vary with run type if we need to.")
+6. **Shared settings appear once, at `solver:` top level**; only genuinely solver-specific settings nest.
+   16 of the 17 shared settings are shared by ALL THREE methods, so duplicating them buys nothing and
+   costs the inert-key problem.
+
+## A defect this decision surfaces immediately
+
+**The shipped reference config is not the code's defaults.** Three keys disagree:
+
+| key | code default | `config.yaml` ships |
+|---|---|---|
+| `solver.time_integration` | `""` = backward-euler (`parameters.hpp:80`) | `tr-bdf2` |
+| `solver.storage` | `false` = secant (`parameters.hpp:73`) | `volume` |
+| `solver.adaptive_dt` | `false` (`parameters.hpp:95`) | `true` |
+
+Today that is survivable because every user starts from `config.yaml` and keeps the lines. Under a
+defaults-driven short config it is a trap: DELETING a line changes the numerics, and two configs that
+look equivalent are not. A user who writes a ten-line config gets first-order fixed-step backward-Euler
+with secant storage -- not the tr-bdf2 + adaptive + volume combination the reference implies is normal.
+
+**Reconciling these is a prerequisite, not a follow-up.** The code defaults should move to what
+`config.yaml` ships, since that is the combination actually recommended and tested.
+
+## Requirements the decision implies
+
+**R1 -- resolved-config emission.** Each run writes `resolved_config.yaml` into its output directory: every
+schema key with the value actually used, re-runnable as-is. Half of this exists -- `Parameters::print()`
+emits `--- resolved configuration ---` -- and `WTM.cpp:1097` already carries the TODO
+("also dump the fully-resolved config as run"). What is missing is machine-readable YAML in the run
+directory rather than a log block.
+
+The source records why this matters, at `parameters.cpp:463`:
+
+> KEEP THIS IN SYNC with the fields of Parameters. It went dead once -- nothing called it -- and drifted
+> behind the config walk's new keys while runs quietly logged nothing; that gap turned a silently
+> overridden setting into a wrong conclusion.
+
+A defaults-heavy schema makes that drift more damaging, so R1 needs a test asserting **every schema key
+appears in the emitted YAML** -- otherwise the dump silently falls behind the schema again.
+
+**R2 -- unique method selection.** Exactly one key, `solver.method`, chooses the solver. Today five
+settings force the path (`CreateSNES.cpp:137,144,152,173,178`), so `method: picard` +
+`time_integration: tr-bdf2` silently yields Anderson (task #18). Under D that combination must ABORT with
+a message naming both keys. Same for `adaptive_restart`, which currently forces Anderson merely by being
+set -- a tuning dial that changes the solver.
+
+**R3 -- contradictions abort, they do not resolve.** The failure this repo keeps producing is a setting
+accepted and silently discarded (#27, #28, and suspected #35). With everything exposed, the surface for
+that grows, so the rule has to be structural: if two keys cannot both be honoured, name them and stop.
+
+## The schema, with defaults
+
+Defaults below are the CODE's, read from source, except the three marked `[RECONCILE]` where
+`config.yaml` disagrees and the reference value should win.
+
+```yaml
+run:
+  type: equilibrium              # test | equilibrium | transient
+  initial_water_table: saturated # saturated | supplied | <path>
+  equilibrium_stop:
+    tol: 0.001                   # m of water; 0 = never
+    metric: frac                 # max | rms | frac
+    frac: 0.001
+
+time:
+  deltat: <required>
+  total: <required>
+  report_interval: 100
+  save_every_n_reports: 1
+
+io:
+  source: <required>
+  region: <required>
+  time_start: <required>
+  time_end: <required>
+
+output:
+  directory: results/
+  outfile_prefix: wtd_
+  run_log: run.log
+  if_exists: increment           # increment | overwrite | error
+  verbosity: normal              # quiet | normal | verbose
+  trace: []                      # [dt] -> per-step DTTRACE lines   (was -wtm_dt_trace)
+
+boundaries:
+  land: neumann_toposlope        # neumann_toposlope | dirichlet_sea_level
+
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0
+
+evaporation:
+  et_sigmoid:                    # `off` disables taper 2      (was -wtm_evap_taper)
+    wtd_center: 0.05
+    logistic_width: 0.1
+  extinction_depth: 8            # `none` disables taper 3     (was -wtm_extinction)
+
+surface_water:
+  mode: routed                   # routed | ponded | removed
+  runoff_ratio: off              # number in [0,1] | raster | off
+  infiltration_during_flow: false
+  collection:
+    method: active_set           # active_set | explicit | implicit | off | extended_soil
+
+solver:                          # SHARED settings: read whatever the method
+  method: anderson               # anderson | picard | newton  -- THE ONLY method selector (R2)
+  time_integration: tr-bdf2      # [RECONCILE] code says backward-euler
+  storage: volume                # [RECONCILE] code says secant. NOTE active_set forces volume regardless
+  adaptive_dt: true              # [RECONCILE] code says false
+  t_bar: false
+  tolerance: 1.0e-6              # -> snes_stol
+  max_iterations: auto           # -> snes_max_it; auto = PETSc's per-method default
+
+  step_control:                  # ONE controller; serves adaptive_dt AND newton.dt_continuation
+    error_tol: 0.1               # m of water, per step
+    dt_max: auto                 # auto = 1000 * time.deltat
+    grow: 1.5
+    shrink: 0.25
+    grow_if_niter_leq: 8         # renamed from -wtm_dtc_easy_iters
+    max_retries: 15
+    norm: rms                    # rms | max   (was two booleans with an undefined both-set case)
+
+  smoothing:
+    ksat_surface: 0              # 0 = off; for a smooth Jacobian FD tangent
+    ksat_soilbottom: 0
+    storativity_surface: 0.01    # sub-grid roughness; ALWAYS ON -- physics
+
+  anderson:                      # solver-SPECIFIC
+    restart:
+      enabled: false
+      rho: 0.9
+      patience: 2
+      max_it: 40
+      max_restarts: 30
+
+  newton:                        # solver-SPECIFIC
+    dt_continuation: true        # implied by method: newton; opting out warns
+    dt0: auto                    # auto = time.deltat / 200
+
+dev:                             # VOIDS the answer; warns at runtime
+  allow_aboveground_water_columns: false
+
+parallel:
+  threads_per_rank: 1
+```
+
+## What a user actually writes
+
+```yaml
+run:
+  type: equilibrium
+time:
+  deltat: 1yr
+  total: 1000yr
+io:
+  source: surfdata/
+  region: Australia_
+  time_start: "021000"
+  time_end: "021000"
+```
+
+Nine lines. Everything else is defaulted, and `resolved_config.yaml` in the output directory records
+what those defaults resolved to for this run, at this version.
+
+## What is still to decide
+
+Only ONE question per remaining flag group, and it is not about placement: **does this mechanism stay in
+the code?** Under D, exposure is automatic for whatever survives -- a kept mechanism gets a key, a
+deleted one gets nothing. That collapses the walk-through from three questions per group to one.
+
+The groups awaiting that call, all DORMANT (zero execution coverage -- see FLAG_INVENTORY.md):
+
+| group | n | note |
+|---|---|---|
+| Anderson -> finisher handoff | 4 | never executed in any test |
+| volume-based SNES convergence | 3 | never executed in any test |
+| `kirchhoff` | 1 | removing it also removes the guard it places on the active-set pin in `FormJacobianLocal` |
+| `aa_picard`, `predict_guess`, `relax` | 3 | |
+| `dev_padded_dirichlet` | 1 | dormant by BOTH routes; its schema key already exists, unused |
+| `bdf2` (head form) | 1 | archive-only; if kept it becomes a `time_integration` value, not a flag |
+| `stiff` | 1 | a preset; dissolves if `run.type` seeding is ever built, otherwise decide on its own terms |
+| `fsm_delta_source` | 1 | one live test caller; superseded for its original purpose by active_set |
+
+The `ar_*` four are NOT on this list: the restart mechanism has a live test, so under D its constants
+simply become keys. Whether to hard-code them instead is no longer worth asking -- a defaulted key that
+nobody sets costs nothing.
