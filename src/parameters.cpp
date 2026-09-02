@@ -215,10 +215,26 @@ Parameters::Parameters(const std::string& config_file) {
     solver_method = require_enum(n.as<std::string>(), "solver.method", {"anderson", "picard", "newton"});
   if (auto n = root["solver"]["time_integration"])
     time_integration = require_enum(n.as<std::string>(), "solver.time_integration",
-                                    {"backward-euler", "bdf2", "tr-bdf2"});
+                                    {"auto", "backward-euler", "bdf2", "tr-bdf2"});
   if (auto n = root["solver"]["newton"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
   // solver.method: newton implies dt-continuation unless the user explicitly declined it. Read the method
   // here rather than depending on the flag bridge, so the implication holds however the method arrives.
+  // solver.time_integration: auto -- RESOLVED here, like dt_continuation, because the answer depends on
+  // another key. An unset key means `auto`. It resolves PER METHOD rather than to a constant, because
+  // tr-bdf2 runs only on the matrix-free Anderson path: a constant tr-bdf2 default would make a config
+  // that says only `solver.method: picard` abort on a key the user never wrote, and an abort must never
+  // fire on a defaulted value.
+  //
+  // The anderson cell is deliberately backward-euler FOR NOW -- today's behaviour -- so that introducing
+  // the mechanism changes no answer. Moving it to tr-bdf2 is a separate, reviewed change: it invalidates
+  // all six committed golden references (tests/golden pins solver_method anderson and does NOT pin the
+  // integrator) plus unpinned arms across ~28 test directories.
+  if (time_integration.empty() || time_integration == "auto") {
+    const std::string m = solver_method.empty() ? "anderson" : solver_method;
+    time_integration     = "backward-euler";  // anderson | picard | newton -- all three, for now
+    time_integration_auto = true;
+    (void)m;
+  }
   if (!dt_continuation_set)
     if (auto n = root["solver"]["method"])
       if (n.as<std::string>() == "newton") dt_continuation = true;

@@ -139,6 +139,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // per step). Implies the Anderson path (self-starting; no Picard operator, no BDF2 history vector).
   PetscBool tr_bdf2_flag = PETSC_FALSE;
   // config-owned (solver.time_integration: tr-bdf2); the solver.time_integration: tr-bdf2 flag is retired.
+  if (params.time_integration_auto)
+    PetscPrintf(PETSC_COMM_WORLD, "solver.time_integration: auto -> %s (resolved from solver.method: %s).\n",
+                params.time_integration.c_str(),
+                params.solver_method.empty() ? "anderson" : params.solver_method.c_str());
   tr_bdf2_flag = (params.time_integration == "tr-bdf2") ? PETSC_TRUE : PETSC_FALSE;
   user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
   // R2 (method uniqueness): tr-bdf2 no longer FORCES the Anderson path. It runs only there, so an

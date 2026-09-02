@@ -82,7 +82,10 @@ solver:
                                # dt-continuation, which it needs to converge from a cold start.
   tolerance: 1e-6              # per-solve convergence step tolerance (-> snes_stol)
   max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
-  time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2
+  time_integration: tr-bdf2    # auto | backward-euler | bdf2 | tr-bdf2
+                               # auto resolves PER METHOD and the run prints what it chose. tr-bdf2 runs
+                               # only on the Anderson path, so a constant tr-bdf2 default would make a
+                               # config naming only `method: picard` abort on a key it never set.
   adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
 

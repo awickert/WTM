@@ -83,6 +83,9 @@ struct Parameters {
   // solver.time_integration: bdf2 and solver.time_integration: tr-bdf2 are retired one at a time; while either remains, CreateSNES ORs this
   // member with the surviving flag rather than replacing it.
   std::string time_integration;
+  // True when time_integration came from `auto` (or an absent key) rather than an explicit value, so the
+  // run can report what it resolved to instead of leaving the user to infer it.
+  bool time_integration_auto = false;
 
   // solver.newton.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
   // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
