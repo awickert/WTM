@@ -79,7 +79,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"dev", {"allow_aboveground_water_columns", "padded_dirichlet"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
-      {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity"}},
+      {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace"}},
   };
   return schema;
 }

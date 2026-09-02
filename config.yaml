@@ -38,6 +38,10 @@ output:
   run_log: run.log             # per-run status log within the run subdir
   verbosity: normal            # quiet | normal | verbose
   if_exists: increment         # increment (new subdir each run) | overwrite | error
+  trace: []                    # extra machine-readable per-step lines; [] = none.
+                               # [dt] emits DTTRACE (dt, est, tol, factor, niter, accepted), REJECTED
+                               # steps included -- they are where a mis-scaled estimate does its damage.
+                               # A list, so further traces can join without a new key each.
 
 boundaries:
   land: neumann_toposlope      # neumann_toposlope (terrain-following no-flow) | dirichlet_sea_level

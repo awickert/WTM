@@ -1011,6 +1011,19 @@ void apply_config_petsc_options(const std::string& config_file) {
     }
   }
 
+  // output.trace -> extra machine-readable per-step lines. A LIST, so further traces can join without a
+  // new key each. `dt` emits DTTRACE (dt, est, tol, factor, niter, accepted), rejected steps included --
+  // they are where a mis-scaled estimate does its damage, so omitting them would hide the failure the
+  // trace exists to expose. Changes only what is PRINTED, never the answer.
+  if (auto tr = root["output"]["trace"]) {
+    if (!tr.IsSequence())
+      throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
+    for (const auto& e : tr) {
+      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt"});
+      if (v == "dt") set_opt_if_unset("-wtm_dt_trace", "true");
+    }
+  }
+
   // solver.newton.dt0 -> the pseudo-transient ramp's starting dt. Continuation-only: it is read inside
   // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
   // step_control's shared dials.
