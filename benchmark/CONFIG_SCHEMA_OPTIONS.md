@@ -530,3 +530,36 @@ The groups awaiting that call, all DORMANT (zero execution coverage -- see FLAG_
 The `ar_*` four are NOT on this list: the restart mechanism has a live test, so under D its constants
 simply become keys. Whether to hard-code them instead is no longer worth asking -- a defaulted key that
 nobody sets costs nothing.
+
+
+## R2 as built: method uniqueness, and the one case where it changes an answer
+
+`solver.method` is now the only key that selects the solver. Five settings used to force the path
+(`CreateSNES.cpp:137,144,152,173,178`); four of them now REFUSE an incompatible method instead of
+overriding it, and `use_picard` no longer reads the integrator.
+
+Refused by name, each naming both keys:
+
+| asked for | outcome before | outcome now |
+|---|---|---|
+| `method: picard` + `time_integration: tr-bdf2` | silently ran Anderson (task #18) | abort |
+| `method: newton` + `time_integration: tr-bdf2` | both `force_anderson` and `use_newton` set; unclear | abort |
+| `anderson.restart.enabled` + a non-anderson method | switched the solver to Anderson | abort |
+| `-wtm_aa_picard` / `-wtm_handoff` + a non-anderson method | switched the solver | abort |
+| `-wtm_stiff` + a method other than newton | Newton won, or did not, by ordering | abort |
+
+**The case that is not a bug fix.** `solver.time_integration: bdf2` with NO method used to select
+PICARD, because `use_bdf2` fed the `use_picard` expression. Under "the method is chosen only by
+`solver.method`" it would become 2nd-order ANDERSON -- a silent change to the answer of every existing
+config relying on the old implication. Andy chose (c), 2026-09-02: **refuse it and make the user state
+the method.** Neither silence was acceptable; this breaks such configs deliberately, and the message
+names the two fixes:
+
+```
+solver.method: picard    -- the BDF2-on-V Picard operator (what this config did before)
+solver.method: anderson  -- 2nd-order matrix-free Anderson
+```
+
+Rejected: (a) let it become Anderson -- cleanest rule, but changes answers silently, which is the whole
+failure class this arc exists to remove. (b) keep `bdf2 => picard` as a documented implication -- the
+method would still be chosen by something other than `method`, i.e. R2 not actually done.
