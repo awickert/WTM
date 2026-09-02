@@ -1011,6 +1011,14 @@ void apply_config_petsc_options(const std::string& config_file) {
     }
   }
 
+  // solver.newton.dt0 -> the pseudo-transient ramp's starting dt. Continuation-only: it is read inside
+  // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
+  // step_control's shared dials.
+  if (auto n = root["solver"]["newton"]["dt0"]) {
+    const std::string v = n.as<std::string>();
+    if (v != "auto") set_opt_if_unset("-wtm_dtc_dt0", v.c_str());
+  }
+
   // solver.anderson.restart -> rho-triggered proactive Anderson restart. NOTE enabled: true currently
   // FORCES the Anderson path (CreateSNES.cpp:178), so it can change the solver rather than only tune it;
   // that is the R2 method-uniqueness defect and is fixed separately, not papered over here.

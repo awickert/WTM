@@ -115,6 +115,12 @@ solver:
       max_it: 40               # cap per Anderson phase before a forced restart
       max_restarts: 30         # outer restart cap
 
+  newton:                      # read only on the Newton path
+    dt0: auto                  # starting dt for the dt_continuation ramp.
+                               # auto = time.deltat / 200 -- small, so the storage term S/deltat keeps
+                               # the Jacobian diagonally dominant; a large step from a far guess
+                               # overshoots into a singular Jacobian that fails even a direct solve.
+
 parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 
