@@ -69,7 +69,7 @@ them and searches `.md` and `.log` files too, which inflated an earlier draft of
 | `-wtm_dtc_shrink` | **varied** | same -- the `p = 1.56 1.08 1.00` measurement depends on both |
 | `-wtm_dtc_dt0` | default-only | continuation-only; continuation runs in 8 tests |
 | `-wtm_dtc_easy_iters` | default-only | the controller's growth gate, and its highest-leverage knob: 0 / 8 / 100000 spans 57 steps to 229506-and-still-running. An earlier sweep recorded it "inert" because the flag was not parsed on the adaptive path at all -- a negative result manufactured by the plumbing |
-| `-wtm_dtc_max_retries` | default-only | the abort on both loops -- adaptive (`WTM.cpp:617`) as well as continuation. Adaptive IS the production path |
+| `-wtm_dtc_max_retries` | default-only | the abort on both loops -- adaptive (`WTM.cpp:617`) as well as continuation. USED by both but, until 57eed4e, PARSED only on the continuation path, so asking for it on an adaptive run aborted the run |
 | `-wtm_dt_norm_rms` | default-only | it *is* the default; redundant with `dt_norm_max` as a pair |
 | `-wtm_dt_norm_max` | **dormant** | the MAX-norm path never runs |
 
