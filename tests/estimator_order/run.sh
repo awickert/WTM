@@ -166,10 +166,21 @@ echo
 # to the operator split because it never differences across a handoff.
 arm "TR-BDF2   fsm on " ""   1 2.0 check tr-bdf2
 arm "TR-BDF2   fsm off" ""   0 2.0 check tr-bdf2
-# The generic linear-history predictor. With FSM OFF it converges -- at FIRST order, not the O(dt^2)
-# its own source comment claims, which is a second and separate discrepancy worth keeping in view
-# (candidate: active-set switching leaves the trajectory only C^1 in time). Pinned at what it MEASURES.
-arm "BDF2-on-V fsm off" "" 0 1.0 check bdf2
+# The generic linear-history predictor. With FSM OFF it now achieves the O(dt^2) its source claims.
+#
+# It did NOT until 879a188, where it measured 1.56 1.08 1.00 -- degrading toward first order as dt
+# shrank, which is what task #22 recorded. The cause was not the estimator: with
+# collection.method: active_set and time_integration: bdf2, the BOOTSTRAP step ran on RHS b = h^n, so
+# the semismooth pin (which needs a b=0 residual) was not enforced on it. The old auto-enable skipped
+# bdf2_on_V paths on the grounds that BDF2-on-V is already b=0 -- true from step 2, but bdf2v requires
+# bdf2_have_history, which step 1 does not have. dev.storage_form defaulting to volume closed that hole.
+#
+# MEASURED, this fixture, same binary, isolating the cause:
+#   collector=explicit    storage=volume   p = 0.16 0.03 0.01
+#   collector=explicit    storage=secant   p = 0.16 0.03 0.01   <- storage form alone changes NOTHING
+#   collector=active_set  storage=volume   p = 1.98 1.99 2.00
+# so the order is set by whether the pin is enforced from the first step, not by the storage assembly.
+arm "BDF2-on-V fsm off" "" 0 2.0 check bdf2
 # ... and with FSM ON it does not respond to dt at all. See the KNOWN HOLE note at the top.
 arm "BDF2-on-V fsm on " "" 1 0.0 xfail bdf2
 
