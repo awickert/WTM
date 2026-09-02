@@ -141,7 +141,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // config-owned (solver.time_integration: tr-bdf2); the solver.time_integration: tr-bdf2 flag is retired.
   tr_bdf2_flag = (params.time_integration == "tr-bdf2") ? PETSC_TRUE : PETSC_FALSE;
   user_context.use_tr_bdf2 = (tr_bdf2_flag == PETSC_TRUE);
-  if (tr_bdf2_flag) force_anderson = PETSC_TRUE;  // take the matrix-free Anderson path
+  // R2 (method uniqueness): tr-bdf2 no longer FORCES the Anderson path. It runs only there, so an
+  // incompatible method is a contradiction and is refused by name. Previously the integrator silently
+  // won: `solver.method: picard` + `solver.time_integration: tr-bdf2` ran ANDERSON without a word (#18).
+  if (tr_bdf2_flag && !params.solver_method.empty() && params.solver_method != "anderson")
+    throw std::runtime_error(
+        "config: solver.time_integration: tr-bdf2 runs only on the matrix-free Anderson path, but "
+        "solver.method: " + params.solver_method +
+        " was requested. Set solver.method: anderson, or choose a different time_integration. (Before "
+        "this check the integrator silently won and the run used Anderson.)");
   // -wtm_aa_picard: Anderson-accelerated GAMG-Picard via nonlinear preconditioning. OUTER = Anderson on
   // the head-form residual; the GAMG-Picard solve is the outer's NONLINEAR PRECONDITIONER (wired below +
   // in update()). Implies the Anderson main path (matrix-free head-form residual); the Picard operator is
@@ -149,7 +157,9 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscBool aa_picard_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_aa_picard", &aa_picard_flag);
   user_context.use_aa_picard = (aa_picard_flag == PETSC_TRUE);
-  if (aa_picard_flag) force_anderson = PETSC_TRUE;  // outer solver = matrix-free Anderson (head form)
+  if (aa_picard_flag && !params.solver_method.empty() && params.solver_method != "anderson")
+    throw std::runtime_error("config: -wtm_aa_picard needs the Anderson outer path, but solver.method: " +
+                             params.solver_method + " was requested.");
   // -wtm_predict_guess: seed the initial guess (and thus iteration-1 T̄) with the 2nd-order history
   // extrapolation instead of w^n. Needs the w^{n-1} history carrier (below).
   PetscBool predict_guess_flag = PETSC_FALSE;
@@ -170,12 +180,19 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_handoff", &handoff_flag);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_handoff_picard", &handoff_picard_flag);
   if (handoff_picard_flag) handoff_flag = PETSC_TRUE;
-  if (handoff_flag) force_anderson = PETSC_TRUE;  // phase 1 = matrix-free Anderson (main path)
+  if (handoff_flag && !params.solver_method.empty() && params.solver_method != "anderson")
+    throw std::runtime_error("config: -wtm_handoff runs Anderson as phase 1, but solver.method: " +
+                             params.solver_method + " was requested.");
   // -wtm_adaptive_restart: rho-triggered proactive Anderson restart (see AppCtx). Selects the Anderson
   // main path; the outer restart loop lives in update().
   PetscBool adaptive_restart_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &adaptive_restart_flag);
-  if (adaptive_restart_flag) force_anderson = PETSC_TRUE;  // rho-adaptive is an Anderson strategy
+  // A TUNING dial must not change the solver. solver.anderson.restart is Anderson's; asking for it with
+  // another method is a contradiction, not a request to switch.
+  if (adaptive_restart_flag && !params.solver_method.empty() && params.solver_method != "anderson")
+    throw std::runtime_error(
+        "config: solver.anderson.restart is a setting of the Anderson path, but solver.method: " +
+        params.solver_method + " was requested. A tuning setting does not select the solver.");
   // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
   // solver.method: newton + solver.newton.dt_continuation + an equilibrium stop: the analytic-Jacobian path
   // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
@@ -184,7 +201,23 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // Picard -- a warning is printed below if that happens). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   PetscBool stiff_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_stiff", &stiff_flag);
-  if (stiff_flag) newton_flag = PETSC_TRUE;  // select the Newton path (a Picard/Anderson flag overrides below)
+  if (stiff_flag && !params.solver_method.empty() && params.solver_method != "newton")
+    throw std::runtime_error("config: -wtm_stiff is shorthand for solver.method: newton, but solver.method: " +
+                             params.solver_method + " was requested.");
+  if (stiff_flag) newton_flag = PETSC_TRUE;
+  // R2, and Andy's call (2026-09-02) on the one case where uniqueness changes an ANSWER rather than
+  // fixing a silent substitution. `solver.time_integration: bdf2` with no method used to select PICARD,
+  // because use_bdf2 fed the use_picard expression. Under "the method is chosen only by solver.method"
+  // it would become 2nd-order ANDERSON instead -- a silent change to every existing config that relies
+  // on the old implication. Neither silence is acceptable, so it is refused and the user states the
+  // method. This breaks such configs deliberately, and names the two ways to fix them.
+  if ((bdf2v_flag == PETSC_TRUE || bdf2_flag == PETSC_TRUE) && params.solver_method.empty())
+    throw std::runtime_error(
+        "config: solver.time_integration: bdf2 used to IMPLY solver.method: picard, and the method is now "
+        "chosen only by solver.method. State it explicitly:\n"
+        "  solver.method: picard    -- the BDF2-on-V Picard operator (what this config did before)\n"
+        "  solver.method: anderson  -- 2nd-order matrix-free Anderson (the time discretization is a "
+        "property of the residual, not the solver)");
   const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
   if (!force_anderson && !newton_flag && !any_path_flag) {
     // Default solver: matrix-free Anderson -- the production worker. It is robust across regimes and
@@ -212,7 +245,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: solver.method: anderson
   // solver.time_integration: bdf2 gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.
-  user_context.use_picard      = (picard_flag == PETSC_TRUE || user_context.use_bdf2) && force_anderson != PETSC_TRUE;
+  // R2: the integrator no longer feeds the method. use_bdf2 used to make this true, which is how
+  // `time_integration: bdf2` selected Picard; that implication is refused above rather than resolved
+  // silently, so the method comes from solver.method alone.
+  user_context.use_picard      = (picard_flag == PETSC_TRUE);
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
   user_context.use_handoff     = (handoff_flag == PETSC_TRUE);
@@ -384,8 +420,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.method: anderson + BDF2-on-V: 2nd-order-in-time matrix-free Anderson (BDF2-on-V residual, no\n"
                 "  operator/preconditioner). Time-order decoupled from the solver.\n");
-  } else if (user_context.use_bdf2 && picard_flag != PETSC_TRUE) {
-    PetscPrintf(PETSC_COMM_WORLD, "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it).\n");
+  } else if (user_context.use_bdf2 && user_context.use_newton) {
+    // Was "-wtm_bdf2 set: enabling the Picard solver path (BDF2 requires it)", which stopped being true
+    // when the method stopped being chosen by the integrator (R2). It was printing while the run took
+    // the NEWTON path -- the announcement and the run disagreed.
+    PetscPrintf(PETSC_COMM_WORLD,
+                "solver.method: newton + BDF2-on-V: 2nd-order-in-time Newton (analytic Jacobian on the\n"
+                "  BDF2-on-V residual). Time-order decoupled from the solver.\n");
   }
   // BDF2 history carrier (w^{n-1}) is needed on ANY BDF2 path -- the Picard operator OR the matrix-free
   // Anderson residual (solver.method: anderson solver.time_integration: bdf2) -- by the predictor-seeded guess, AND by the detached
