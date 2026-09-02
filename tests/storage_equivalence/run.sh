@@ -21,9 +21,18 @@ TOL="${TOL:-1e-6}"        # metres; machine-precision agreement expected (observ
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: STORAGE=volume for the volume arm]
+# Both pins below are load-bearing, and neither was here before 26ad949 -- which made this test VACUOUS.
+#   time_integration: with auto now resolving anderson -> tr-bdf2, the storage branch of the residual is
+#     never reached at all (tr_stage and bdf2v both take precedence), so neither arm would exercise the
+#     thing under test.
+#   runoff_collector: the default is active_set, which REQUIRES the b=0 volume path, so
+#     dev.storage_form: secant with it now aborts by name. explicit is the collector this identity can
+#     be measured under.
+emit() { # $1 stem  [env: STORAGE=volume|secant]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+time_integration backward-euler
+runoff_collector explicit
 run_type transient
 ${STORAGE:+storage $STORAGE}
 fsm_on 0
@@ -54,11 +63,30 @@ EOF
 # the ÷S (secant) vs ÷Sy (tangent) residual scaling leaves a ~1e-4 convergence-region difference there --
 # a scaling/conditioning artifact, NOT the identity failing. The ghost boundary removes that edge stress so
 # the S·Δh ≡ ΔV identity shows at machine precision (observed ~1e-15) and the test is a clean invariant check.
-emit secant; STORAGE=volume emit volume
+# STORAGE=secant is now EXPLICIT. It used to be left unset, relying on secant being the default -- and
+# when dev.storage_form's default became volume (879a188), that made this test compare volume against
+# volume, i.e. a config against ITSELF. It still reported max|dwtd| = 0.000e+00 and still PASSED, which
+# is exactly what a vacuous arm looks like.
+STORAGE=secant emit secant; STORAGE=volume emit volume
 "$WTM" "$WORK/secant.yaml"                     -snes_stol 1e-10 > "$WORK/secant.log" 2>&1 \
   || { echo "RUN FAILED: secant"; tail -3 "$WORK/secant.log"; exit 2; }
 "$WTM" "$WORK/volume.yaml" -snes_stol 1e-10 > "$WORK/volume.log" 2>&1 \
   || { echo "RUN FAILED: volume"; tail -3 "$WORK/volume.log"; exit 2; }
+
+# NON-VACUITY GATE. This test compares two runs and asserts they AGREE, so it passes trivially if the
+# two arms are the same run -- and that is exactly what happened when dev.storage_form's default became
+# volume (879a188) while the secant arm relied on the default: it compared volume against volume,
+# reported max|dwtd| = 0.000e+00, and PASSED. An agreement test must prove its arms differ before its
+# agreement means anything. Checked on the emitted CONFIGS, which is where the failure actually was.
+SEC_FORM=$(grep -oE "storage_form: [a-z]+" "$WORK/secant.yaml" | head -1)
+VOL_FORM=$(grep -oE "storage_form: [a-z]+" "$WORK/volume.yaml" | head -1)
+echo "  arms: secant -> ${SEC_FORM:-<unset, i.e. the DEFAULT>}   volume -> ${VOL_FORM:-<unset, i.e. the DEFAULT>}"
+if [ "$SEC_FORM" != "storage_form: secant" ] || [ "$VOL_FORM" != "storage_form: volume" ]; then
+    echo "FAIL: the two arms are not the two forms -- this test would be VACUOUS." >&2
+    echo "      Each arm must set dev.storage_form EXPLICITLY; relying on the default is what made it" >&2
+    echo "      compare a configuration against itself once that default changed." >&2
+    exit 1
+fi
 
 SEC=$(ls "$WORK"/secant_*.tif | tail -1)
 VOL=$(ls "$WORK"/volume_*.tif | tail -1)
