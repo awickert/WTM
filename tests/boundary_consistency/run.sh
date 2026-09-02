@@ -70,10 +70,16 @@ LAND_BC=dirichlet METHOD=anderson emit dir bcons    "$INP" 0       ; "$WTM" "$WO
 emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.yaml" $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
 METHOD=anderson emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" $BB > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
 # Newton (analytic Jacobian) must reach the SAME land-Dirichlet water table -> its off-map Dirichlet Jacobian
-# tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary). PLAIN Newton: this
-# small well-posed problem converges directly (cycle ~3), so dt-continuation is unnecessary -- and at eq_tol 1e-8
-# the continuation ramp never satisfies the full-stride eq-stop, grinding to the total_time cap (minutes).
-LAND_BC=dirichlet METHOD=newton DTC=false emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
+# tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary).
+#
+# This arm used PLAIN Newton (DTC=false) on the grounds that "this small well-posed problem converges
+# directly (cycle ~3), so dt-continuation is unnecessary", and that continuation would grind to the
+# total_time cap at eq_tol 1e-8. BOTH premises died with dev.storage_form defaulting to volume (879a188):
+# the volume form folds the storage into f with RHS b=0 and scales by Sy, which changes the line search,
+# and plain Newton now DIVERGED_LINE_SEARCH after 3 iterations on this fixture. The arm runs the WORKING
+# recipe instead -- solver.method: newton implies dt_continuation -- so it also tests what a user gets.
+# Measured after the change: equilibrium at cycle 3, 1.0 s. The feared grind does not happen.
+LAND_BC=dirichlet METHOD=newton emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
