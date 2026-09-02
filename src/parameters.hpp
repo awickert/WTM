@@ -94,8 +94,9 @@ struct Parameters {
   bool t_bar       = false;
   bool adaptive_dt = false;
 
-  // solver.water_volume_timestep_error_tol: per-step local-error target in WATER volume. "auto" or an
-  // absent key leaves it unset so the consumer's own default (which tracks eq_tol) applies.
+  // solver.step_control.error_tol: per-step local-error target in WATER volume. "auto" or an absent key
+  // leaves it unset so the consumer's own default (which tracks eq_tol) applies. Named
+  // solver.water_volume_timestep_error_tol until it joined the rest of the controller.
   double dt_tol     = 0.1;
   bool   dt_tol_set = false;
 

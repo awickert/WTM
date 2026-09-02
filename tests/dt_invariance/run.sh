@@ -41,7 +41,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = runoff_ratio
-    # dt_tol travels in the CONFIG now (solver.water_volume_timestep_error_tol); DT_TOL= per arm.
+    # dt_tol travels in the CONFIG now (solver.step_control.error_tol); DT_TOL= per arm.
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 run_type equilibrium

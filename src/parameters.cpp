@@ -54,12 +54,13 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
-                  "water_volume_timestep_error_tol", "t_bar", "storage", "dt_continuation",
+                  "t_bar", "storage", "dt_continuation",
                   "step_control", "smoothing", "anderson", "newton"}},
       // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
-      {"solver.step_control", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max"}},
+      {"solver.step_control", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max",
+                               "error_tol"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
       // normal run. storativity_surface is different in kind -- 0.01 m, always on, sub-grid roughness --
@@ -221,7 +222,7 @@ Parameters::Parameters(const std::string& config_file) {
       if (n.as<std::string>() == "newton") dt_continuation = true;
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
-  if (auto n = root["solver"]["water_volume_timestep_error_tol"]) {
+  if (auto n = root["solver"]["step_control"]["error_tol"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
   }
