@@ -69,7 +69,7 @@ them and searches `.md` and `.log` files too, which inflated an earlier draft of
 | `-wtm_dtc_shrink` | **varied** | same -- the `p = 1.56 1.08 1.00` measurement depends on both |
 | `-wtm_dtc_dt0` | default-only | continuation-only; continuation runs in 8 tests |
 | `-wtm_dtc_easy_iters` | default-only | the controller's growth gate, and its highest-leverage knob: 0 / 8 / 100000 spans 57 steps to 229506-and-still-running. An earlier sweep recorded it "inert" because the flag was not parsed on the adaptive path at all -- a negative result manufactured by the plumbing |
-| `-wtm_dtc_max_retries` | default-only | continuation-only |
+| `-wtm_dtc_max_retries` | default-only | the abort on both loops -- adaptive (`WTM.cpp:617`) as well as continuation. Adaptive IS the production path |
 | `-wtm_dt_norm_rms` | default-only | it *is* the default; redundant with `dt_norm_max` as a pair |
 | `-wtm_dt_norm_max` | **dormant** | the MAX-norm path never runs |
 
@@ -224,8 +224,9 @@ who decided and on what grounds.
 constant: expose it if (a) a test needs to vary it, (b) a user hitting a failure mode needs it to get
 unstuck, or (c) varying it moves the answer materially. `dtc_grow` and `dtc_shrink` pass (a) --
 `tests/estimator_order` sets both to 1 to freeze dt, and loses that ability the moment the flags go.
-`dtc_easy_iters` passes (c). `dtc_max_retries` and `dtc_dt0` pass (b) -- the first IS the abort, and the
-abort message already tells the user to raise the second. NOTE this is not a precedent that default-only
+`dtc_easy_iters` passes (c). `dtc_max_retries` and `dtc_dt0` pass (b) -- the first IS the abort, on the
+adaptive loop as well as the continuation one, and the abort message already tells the user to raise the
+second. `dtc_dt0` is continuation-only, so its fate follows Newton's. NOTE this is not a precedent that default-only
 implies expose: the four `ar_*` constants in group 2 are expected to fail the same test.
 
 **`dt_norm_rms` / `dt_norm_max` collapse to one enum key, `norm: rms|max`.** Two booleans whose
