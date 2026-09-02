@@ -37,7 +37,7 @@
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
 #   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
 #   storage               -> solver.storage (volume | secant)
-#   dt_continuation       -> solver.dt_continuation
+#   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
 #   time_integration      -> solver.time_integration (backward-euler | bdf2 | tr-bdf2)
 #   surfdatadir           -> io.source
@@ -152,7 +152,10 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage 
     have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
     have t_bar       && echo "  t_bar: $(val t_bar)"
     have storage     && echo "  storage: $(val storage)"
-    have dt_continuation && echo "  dt_continuation: $(val dt_continuation)"
+    if have dt_continuation; then
+        echo "  newton:"
+        echo "    dt_continuation: $(val dt_continuation)"
+    fi
     if have dt_max || have dt_tol; then
         echo "  step_control:"
         have dt_tol && echo "    error_tol: \"$(val dt_tol)\""

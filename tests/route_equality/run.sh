@@ -25,7 +25,7 @@
 # agree, and that is asserted here instead.
 #
 # THE NEWTON ROW IS DELIBERATELY ASYMMETRIC. `solver.method: newton` maps to
-# `-wtm_newton -wtm_dt_continuation`, NOT to `-wtm_newton` alone: Newton does not converge from a cold
+# `solver.method: newton` + `solver.newton.dt_continuation`, NOT to plain Newton: Newton does not converge from a cold
 # start without continuation (measured here: DIVERGED_LINE_SEARCH after 4 iterations, rc 134), so a
 # config value that meant plain Newton would be a documented setting that crashes. The bare flag keeps
 # its primitive meaning because three things depend on it -- tests/newton_solver's CONTRACT arm pins
@@ -141,9 +141,9 @@ else
 fi
 
 # ... and the documented escape hatch must still give PLAIN Newton, with a warning rather than silence.
-mk newt_off "solver: { method: newton, dt_continuation: false }"
+mk newt_off "$(printf 'solver:\n  method: newton\n  newton:\n    dt_continuation: false')"
 sh -c '"$0" "$1" > "$2" 2>&1' "$WTM" "$WORK/newt_off.yaml" "$WORK/newt_off.log" 2>/dev/null
-if command grep -q "WARNING \[solver.method: newton + solver.dt_continuation: false\]" "$WORK/newt_off.log"; then
+if command grep -q "WARNING \[solver.method: newton + solver.newton.dt_continuation: false\]" "$WORK/newt_off.log"; then
     echo "  PASS  NEWTON-OPTOUT dt_continuation: false gives plain Newton and WARNS that it will"
 else
     echo "  FAIL  NEWTON-OPTOUT dt_continuation: false did not warn. Opting out of continuation is"

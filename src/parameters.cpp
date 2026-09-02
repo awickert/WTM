@@ -54,7 +54,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
-                  "t_bar", "storage", "dt_continuation",
+                  "t_bar", "storage",
                   "step_control", "smoothing", "anderson", "newton"}},
       // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
@@ -70,9 +70,8 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // shared blocks above. restart is its own mapping because it is one switch plus four constants.
       {"solver.anderson", {"restart"}},
       {"solver.anderson.restart", {"enabled", "rho", "patience", "max_it", "max_restarts"}},
-      // solver.newton: read only on the Newton path. dt_continuation still lives at solver: top level
-      // for now and moves here in its own commit -- it has ten callers.
-      {"solver.newton", {"dt0"}},
+      // solver.newton: read only on the Newton path.
+      {"solver.newton", {"dt_continuation", "dt0"}},
       // dev.active_set was REMOVED 2026-09-01: it was a SECOND YAML route to the same enforcement as
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
@@ -214,7 +213,7 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["solver"]["time_integration"])
     time_integration = require_enum(n.as<std::string>(), "solver.time_integration",
                                     {"backward-euler", "bdf2", "tr-bdf2"});
-  if (auto n = root["solver"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
+  if (auto n = root["solver"]["newton"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
   // solver.method: newton implies dt-continuation unless the user explicitly declined it. Read the method
   // here rather than depending on the flag bridge, so the implication holds however the method arrives.
   if (!dt_continuation_set)

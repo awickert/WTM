@@ -82,9 +82,9 @@ struct Parameters {
   // member with the surviving flag rather than replacing it.
   std::string time_integration;
 
-  // solver.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
+  // solver.newton.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
   // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
-  // (DIVERGED_LINE_SEARCH). solver.dt_continuation: false opts out -- legitimate for a warm finish --
+  // (DIVERGED_LINE_SEARCH). solver.newton.dt_continuation: false opts out -- legitimate for a warm finish --
   // and CreateSNES warns. The `_set` flag distinguishes "the user declined" from "nobody asked", which
   // is what makes the newton default overridable rather than sticky.
   bool dt_continuation     = false;

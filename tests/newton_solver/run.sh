@@ -157,11 +157,11 @@ METHOD=newton DTC=false mkcfg contract active_set "2yr"   # PLAIN Newton: the re
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
 if sh -c '"$0" "$1" -snes_stol 1e-10' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
-    echo "  FAIL  CONTRACT   plain Newton CONVERGED -- it no longer needs solver.dt_continuation."
+    echo "  FAIL  CONTRACT   plain Newton CONVERGED -- it no longer needs solver.newton.dt_continuation."
     echo "        That is good news; update this arm and the docs that say otherwise."
     fail=1
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
-    echo "  PASS  CONTRACT   plain Newton fails as documented; solver.dt_continuation is required"
+    echo "  PASS  CONTRACT   plain Newton fails as documented; solver.newton.dt_continuation is required"
 else
     echo "  FAIL  CONTRACT   plain Newton failed for an UNEXPECTED reason:"
     grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'

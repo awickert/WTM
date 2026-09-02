@@ -994,7 +994,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // solver.time_integration is fully config-owned (Parameters::time_integration); no bridge remains.
 
   // solver.step_control -> the step-size controller's dials. ONE controller: it sizes the step for
-  // solver.adaptive_dt AND for Newton's solver.dt_continuation ramp, which is why these are not nested
+  // solver.adaptive_dt AND for Newton's solver.newton.dt_continuation ramp, which is why these are not nested
   // under either. grow_if_niter_leq is the old -wtm_dtc_easy_iters: a SOLVABILITY gate on growth (grow
   // only when the solve took at most this many nonlinear iterations), distinct from the accuracy gate,
   // and inclusive -- a solve of exactly this many iterations still grows.
