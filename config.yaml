@@ -92,6 +92,7 @@ solver:
 
   step_control:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
                                # Newton's dt_continuation ramp, so it is nested under neither.
+    dt_max: auto               # cap on the step; auto = 1000 * time.deltat
     grow: 1.5                  # dt multiplier after an easy solve
     shrink: 0.25               # dt multiplier after a rejected solve
     grow_if_niter_leq: 8       # grow only when the solve took at most this many nonlinear iterations.

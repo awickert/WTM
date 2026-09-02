@@ -30,7 +30,7 @@
 #   extinction_depth      -> evaporation.extinction_depth          (m)
 #   adaptive_dt true|false -> solver.adaptive_dt
 #   dt_tol                -> solver.water_volume_timestep_error_tol
-#   dt_max                -> solver.dt_max
+#   dt_max                -> solver.step_control.dt_max
 #   t_bar true|false      -> solver.t_bar
 #   eq_frac               -> run.equilibrium_stop.frac
 #   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
@@ -151,10 +151,13 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have storage 
     have time_integration && echo "  time_integration: $(val time_integration)"
     have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
     have dt_tol      && echo "  water_volume_timestep_error_tol: \"$(val dt_tol)\""
-    have dt_max      && echo "  dt_max: \"$(val dt_max)\""
     have t_bar       && echo "  t_bar: $(val t_bar)"
     have storage     && echo "  storage: $(val storage)"
     have dt_continuation && echo "  dt_continuation: $(val dt_continuation)"
+    if have dt_max; then
+        echo "  step_control:"
+        echo "    dt_max: \"$(val dt_max)\""
+    fi
 fi
 
 # --- evaporation ---------------------------------------------------------------

@@ -53,13 +53,13 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"evaporation", {"et_sigmoid", "extinction_depth"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
-      {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt", "dt_max",
+      {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
                   "water_volume_timestep_error_tol", "t_bar", "storage", "dt_continuation",
                   "step_control", "smoothing", "anderson", "newton"}},
       // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
-      {"solver.step_control", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm"}},
+      {"solver.step_control", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
       // normal run. storativity_surface is different in kind -- 0.01 m, always on, sub-grid roughness --
@@ -225,9 +225,9 @@ Parameters::Parameters(const std::string& config_file) {
     const std::string v = n.as<std::string>();
     if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
   }
-  if (auto n = root["solver"]["dt_max"]) {
+  if (auto n = root["solver"]["step_control"]["dt_max"]) {
     const std::string v = n.as<std::string>();
-    if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.dt_max"); dtc_dt_max_set = true; }
+    if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.step_control.dt_max"); dtc_dt_max_set = true; }
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
   if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();
