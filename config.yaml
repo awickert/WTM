@@ -21,7 +21,10 @@ time:
   save_every_n_reports: 1      # write a water-table raster every N reports
 
 # grid is DEPRECATED: geometry is derived from the input GDAL geotransform. Override only for ungeoreferenced
-# inputs:  grid: { cells_per_degree: 120, southern_edge: -52 }
+# inputs:
+# grid:
+#   cells_per_degree: 120
+#   southern_edge: -52
 
 io:
   source: surfdata/            # a folder of GeoTIFFs (Callaghan convention) OR a single .nc file
@@ -41,11 +44,16 @@ boundaries:
                                # (ocean cells are always Dirichlet h = 0 -- not configurable)
 
 transmissivity:
-  fdepth: { a: 200, b: 150, fmin: 2 }     # e-folding-depth parameters (Fan/Ying)
+  fdepth:                      # e-folding-depth parameters (Fan/Ying)
+    a: 200
+    b: 150
+    fmin: 2
   additive_background_transmissivity: 0   # background (bedrock) T added everywhere [m^2/s]; 0 = off
 
 evaporation:
-  et_sigmoid: { wtd_center: 0.05, logistic_width: 0.1 }  # the continuous soil<->open-water ET transition
+  et_sigmoid:                  # the continuous soil<->open-water ET transition
+    wtd_center: 0.05
+    logistic_width: 0.1
   extinction_depth: 8          # depth below which ET can no longer reach the water table [m]
 
 surface_water:
@@ -82,5 +90,7 @@ parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 
 # dev (experimental; off by default):
-# dev: { allow_aboveground_water_columns: false, padded_dirichlet: false }
+# dev:
+#   allow_aboveground_water_columns: false
+#   padded_dirichlet: false
 # (dev.active_set was removed: select it with surface_water.collection.method: active_set, above.)
