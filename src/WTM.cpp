@@ -15,7 +15,10 @@
 #include <richdem/common/timer.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <iostream>
 #include <string>
 
@@ -1155,6 +1158,165 @@ static void write_provenance(const std::string& run_dir, int argc, char** argv) 
   // TODO: also dump the fully-resolved config as run.
 }
 
+// Write full_config.yaml into the run directory (rank 0): EVERY schema key with the value this run
+// actually used, in a form the parser accepts, so the file re-runs as-is. It, not the config the user
+// wrote, is the record of what a run did -- under a defaults-heavy schema a short config no longer
+// describes its own run, and a default changing between versions would silently change what an old
+// config means. parameters.cpp:463 records what happens when a resolved-config dump drifts behind the
+// schema: "runs quietly logged nothing; that gap turned a silently overridden setting into a wrong
+// conclusion." tests/config_schema asserts every schema key appears here.
+//
+// Sits beside provenance.yaml rather than inside it: a nested block cannot be fed back to the parser.
+// Best-effort; a failure to write is not fatal.
+static std::string cfg_num(double v) {
+  // Integral values print as integers: full_config.yaml has to be re-runnable, and 3.1536e+07 inside a
+  // time string ("6.3072e+08s") is not something parse_time_seconds is owed. Non-integral values keep
+  // enough digits to round-trip a double.
+  if (std::isfinite(v) && v == std::floor(v) && std::fabs(v) < 1e15)
+    return std::to_string(static_cast<long long>(v));
+  std::ostringstream o;
+  o << std::setprecision(17) << v;
+  return o.str();
+}
+
+static void write_full_config(const std::string& run_dir, const Parameters& params, const AppCtx& uc) {
+  std::ofstream f((std::filesystem::path(run_dir) / "full_config.yaml").string());
+  if (!f) return;
+  f.setf(std::ios::boolalpha);
+
+  // solver.tolerance / max_iterations reach PETSc directly, so the resolved values are read back out of
+  // the options database rather than from Parameters.
+  char       buf[64];
+  PetscBool  found = PETSC_FALSE;
+  std::string stol = "1e-6", maxit = "auto";
+  PetscOptionsGetString(nullptr, nullptr, "-snes_stol", buf, sizeof(buf), &found);
+  if (found) stol = buf;
+  found = PETSC_FALSE;
+  PetscOptionsGetString(nullptr, nullptr, "-snes_max_it", buf, sizeof(buf), &found);
+  if (found) maxit = buf;
+  PetscBool dev_aboveground = PETSC_FALSE, dev_padded = PETSC_FALSE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &dev_aboveground, nullptr);
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_padded_dirichlet", &dev_padded, nullptr);
+
+  f << "# full_config.yaml -- every setting this run resolved to, written by the run itself.\n"
+    << "# Re-runnable as-is. output.outfile_prefix and output.run_log are absolute here because\n"
+    << "# output.directory rewrote them into this run's subdirectory.\n\n";
+
+  f << "run:\n";
+  f << "  type: " << params.run_type << "\n";
+  f << "  initial_water_table: "
+    << (params.initial_wt_path.empty() ? (params.supplied_wt ? "supplied" : "saturated") : params.initial_wt_path)
+    << "\n";
+  f << "  equilibrium_stop:\n";
+  f << "    tol: " << params.eq_tol << "\n";
+  f << "    metric: " << params.eq_metric << "\n";
+  f << "    frac: " << params.eq_frac << "\n";
+
+  f << "\ntime:\n";
+  f << "  deltat: " << cfg_num(params.deltat) << "\n";
+  f << "  total: \"" << cfg_num(params.total_time) << "s\"\n";
+  if (params.report_interval_is_time) f << "  report_interval: \"" << cfg_num(params.report_interval_time) << "s\"\n";
+  else                                f << "  report_interval: " << params.report_steps << "\n";
+  f << "  save_every_n_reports: " << params.save_nreport_interval << "\n";
+
+  f << "\ngrid:\n";
+  f << "  cells_per_degree: " << params.cells_per_degree << "\n";
+  f << "  southern_edge: " << params.southern_edge << "\n";
+
+  f << "\nio:\n";
+  f << "  source: '" << params.surfdatadir << "'\n";
+  f << "  region: '" << params.region << "'\n";
+  f << "  time_start: '" << params.time_start << "'\n";
+  f << "  time_end: '" << params.time_end << "'\n";
+
+  f << "\noutput:\n";
+  f << "  directory: '" << params.output_directory << "'\n";
+  f << "  outfile_prefix: '" << params.outfile_prefix << "'\n";
+  f << "  run_log: '" << params.textfilename << "'\n";
+  f << "  if_exists: " << params.if_exists << "\n";
+  f << "  verbosity: " << params.verbosity << "\n";
+  f << "  trace: " << (uc.dt_trace ? "[dt]" : "[]") << "\n";
+
+  f << "\nboundaries:\n";
+  f << "  land: " << (params.land_boundary_dirichlet ? "dirichlet_sea_level" : "neumann_toposlope") << "\n";
+
+  f << "\ntransmissivity:\n";
+  f << "  fdepth:\n";
+  f << "    a: " << params.fdepth_a << "\n";
+  f << "    b: " << params.fdepth_b << "\n";
+  f << "    fmin: " << params.fdepth_fmin << "\n";
+  f << "  additive_background_transmissivity: " << params.t_bedrock << "\n";
+
+  f << "\nevaporation:\n";
+  f << "  et_sigmoid:\n";
+  f << "    wtd_center: " << params.evap_taper_wtdc << "\n";
+  f << "    logistic_width: " << params.evap_taper_s << "\n";
+  f << "  extinction_depth: " << params.extinction_depth << "\n";
+
+  f << "\nsurface_water:\n";
+  // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`
+  // reports `ponded`. Recorded rather than papered over; the distinction is a TODO in parameters.cpp.
+  f << "  mode: " << (params.fsm_on ? "routed" : "ponded") << "\n";
+  if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
+  else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
+  else f << "  runoff_ratio: 0\n";
+  f << "  infiltration_during_flow: " << (params.infiltration_on != 0) << "\n";
+  f << "  collection:\n";
+  f << "    method: " << params.runoff_collector << "\n";
+
+  f << "\nsolver:\n";
+  f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";
+  f << "  tolerance: " << stol << "\n";
+  f << "  max_iterations: " << maxit << "\n";
+  f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
+  f << "  adaptive_dt: " << params.adaptive_dt << "\n";
+  f << "  t_bar: " << params.t_bar << "\n";
+  f << "  storage: " << (params.volume_storage ? "volume" : "secant") << "\n";
+  f << "  step_control:\n";
+  f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
+  if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
+  else                     f << "    dt_max: auto\n";
+  f << "    grow: " << uc.dtc_grow << "\n";
+  f << "    shrink: " << uc.dtc_shrink << "\n";
+  f << "    grow_if_niter_leq: " << uc.dtc_easy_iters << "\n";
+  f << "    max_retries: " << uc.dtc_max_retries << "\n";
+  f << "    norm: " << (uc.dt_norm_rms ? "rms" : "max") << "\n";
+  // The three smoothing widths are parsed inside the SOLVE (transient_groundwater.cpp), not in
+  // initialise(), so at this point the globals still hold their compile-time defaults. Read the options
+  // database instead -- the bridge has already put the config's values there -- seeding each fallback
+  // from the accessor so the COMPILED default is what an unset option falls back to.
+  // Found by round-tripping this file: a run with storativity_surface 0.37 emitted 0.01, and re-running
+  // the emitted config gave a different trajectory (8 3 2 2 3 vs 7 5 5 3 3).
+  double sm_ksat_s = FanDarcyGroundwater::ksat_surface_smoothing_width();
+  double sm_ksat_b = FanDarcyGroundwater::ksat_soilbottom_smoothing_width();
+  double sm_stor   = g_storativity_surface_smoothing_width;
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &sm_ksat_s, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &sm_ksat_b, nullptr);
+  PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &sm_stor, nullptr);
+  f << "  smoothing:\n";
+  f << "    ksat_surface: " << cfg_num(sm_ksat_s) << "\n";
+  f << "    ksat_soilbottom: " << cfg_num(sm_ksat_b) << "\n";
+  f << "    storativity_surface: " << cfg_num(sm_stor) << "\n";
+  f << "  anderson:\n";
+  f << "    restart:\n";
+  f << "      enabled: " << uc.use_adaptive_restart << "\n";
+  f << "      rho: " << uc.ar_rho_threshold << "\n";
+  f << "      patience: " << uc.ar_rho_patience << "\n";
+  f << "      max_it: " << uc.ar_max_it << "\n";
+  f << "      max_restarts: " << uc.ar_max_restarts << "\n";
+  f << "  newton:\n";
+  f << "    dt_continuation: " << params.dt_continuation << "\n";
+  if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
+  else                  f << "    dt0: auto\n";
+
+  f << "\ndev:\n";
+  f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
+  f << "  padded_dirichlet: " << (dev_padded == PETSC_TRUE) << "\n";
+
+  f << "\nparallel:\n";
+  f << "  threads_per_rank: " << params.threads_per_rank << "\n";
+}
+
 int main(int argc, char** argv) {
   // if (argc != 2) {
   //   // Make sure that the user is running the code with a configuration file.
@@ -1178,11 +1340,12 @@ int main(int argc, char** argv) {
 
   // output.directory: resolve the per-run output subdirectory (rank 0 only; rewrites params.outfile_prefix /
   // textfilename to live inside it). Must precede any output writing.
+  std::string run_dir;  // kept: full_config.yaml is written into it AFTER initialise() resolves the solver
   {
     PetscMPIInt out_rank;
     MPI_Comm_rank(PETSC_COMM_WORLD, &out_rank);
     if (out_rank == 0) {
-      const std::string run_dir = resolve_output_directory(params);
+      run_dir = resolve_output_directory(params);
       if (!run_dir.empty()) write_provenance(run_dir, argc, argv);
     }
   }
@@ -1196,6 +1359,9 @@ int main(int argc, char** argv) {
     PetscMPIInt cfg_rank;
     MPI_Comm_rank(PETSC_COMM_WORLD, &cfg_rank);
     if (cfg_rank == 0 && params.verbosity != "quiet") params.print();
+    // ...and write it as YAML beside the outputs. Written HERE, not with provenance.yaml, because the
+    // solver's own resolution (step_control, anderson.restart, newton.dt0) happens inside initialise().
+    if (cfg_rank == 0 && !run_dir.empty()) write_full_config(run_dir, params, user_context);
   }
 
   // Structural acceptance check (2f-C, the memory win): the full-grid ArrayPack

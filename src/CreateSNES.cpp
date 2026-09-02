@@ -283,6 +283,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     double dt0 = params.deltat / 200.0;
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
     user_context.deltat = dt0;  // start small (overrides the params.deltat init above)
+    user_context.dtc_dt0 = dt0;  // retained so full_config.yaml can report the resolved value
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
     PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
     user_context.dtc_dt_max = 1000.0 * params.deltat;

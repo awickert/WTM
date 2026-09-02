@@ -113,6 +113,10 @@ struct Parameters {
   // Background (bedrock) transmissivity floor [m^2/s], 0 = off (v2.0.1 behaviour).
   double t_bedrock = 0.0;
 
+  // parallel.threads_per_rank as RESOLVED. Applied via omp_set_num_threads rather than a PETSc option,
+  // so it is retained here for full_config.yaml.
+  int threads_per_rank = 1;
+
   // Evaporation: the always-on soil<->open-water ET sigmoid (evaporation.et_sigmoid). Config-owned --
   // these were reached only through -wtm_evap_taper_wtdc / -wtm_evap_taper_s, which the YAML bridge set
   // from these very keys, so the flags were pure transport with no CLI callers anywhere in the repo.

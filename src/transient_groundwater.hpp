@@ -42,6 +42,12 @@ bool surface_exfiltration_to_runoff_on();
 // just precip when this is set -- the smooth implicit E_eff carries the ET->open-water transition.
 bool evap_taper_on();
 
+// The two ksat smoothing widths as RESOLVED for this run [m]. They are file-scope in
+// transient_groundwater.cpp; full_config.yaml has to report the value actually in force, and a
+// resolved-config dump that cannot see a setting is exactly the drift parameters.cpp:463 warns about.
+double ksat_surface_smoothing_width();
+double ksat_soilbottom_smoothing_width();
+
 // Whether the accessibility / extinction-depth clamp is on (taper 3, awickert/WTM#4). Gates taper 2's
 // sub-surface deficit so an arid table draws down only within the extinction depth; inert on its own.
 bool extinction_on();

@@ -134,6 +134,7 @@ struct AppCtx {
   // steady state is correct at ANY ramped dt (recharge and flux both scale with dt -> dt cancels at the
   // fixed point). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   bool   use_newton_continuation = false;
+  double dtc_dt0                 = 0.0;   // solver.newton.dt0 as RESOLVED [s]; 0 = the ramp is not in use
   double dtc_grow                = 1.5;   // dt growth when a step converges EASILY (-wtm_dtc_grow)
   double dtc_shrink              = 0.25;  // dt shrink on a REJECTED (non-converged) step (-wtm_dtc_shrink)
   double dtc_dt_max              = 0.0;   // cap on deltat [s]; 0 => set from params in InitialiseSNES

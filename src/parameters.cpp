@@ -326,6 +326,11 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["io"]["time_start"]) time_start  = n.as<std::string>();
   if (auto n = root["io"]["time_end"])   time_end    = n.as<std::string>();
 
+  // -------- parallel --------
+  // Read here as well as in apply_config_petsc_options (which calls omp_set_num_threads and is #ifdef
+  // _OPENMP): the RESOLVED value has to be reportable in full_config.yaml on every build.
+  if (auto n = root["parallel"]["threads_per_rank"]) threads_per_rank = n.as<int>();
+
   // -------- output (was io.outfile_prefix / io.textfilename) --------
   if (auto n = root["output"]["outfile_prefix"]) outfile_prefix = n.as<std::string>();
   if (auto n = root["output"]["run_log"])        textfilename   = n.as<std::string>();

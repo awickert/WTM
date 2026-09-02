@@ -2261,6 +2261,9 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // Whether the implicit sub-surface sink is configured this run (taper 1). Lets the cycle loop
 // decide whether to gather the sink accumulator into arp.runoff for FSM without reaching into the
 // file-static flag. Set in update() from -wtm_surface_sink, so valid by the post-solve gather.
+double ksat_surface_smoothing_width() { return g_ksat_surface_smoothing_width; }
+double ksat_soilbottom_smoothing_width() { return g_ksat_soilbottom_smoothing_width; }
+
 bool direct_to_runoff_on() { return g_direct_to_runoff; }
 bool fsm_delta_source_on() { return g_fsm_delta_source; }
 // Whether the lake-aware active-set skim is on. It captures the skimmed above-free-surface water into the
