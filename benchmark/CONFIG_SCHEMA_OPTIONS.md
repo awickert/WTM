@@ -563,3 +563,94 @@ solver.method: anderson  -- 2nd-order matrix-free Anderson
 Rejected: (a) let it become Anderson -- cleanest rule, but changes answers silently, which is the whole
 failure class this arc exists to remove. (b) keep `bdf2 => picard` as a documented implication -- the
 method would still be chosen by something other than `method`, i.e. R2 not actually done.
+
+
+## Step 10: the three default flips, and how a default should fail
+
+The plan was "reconcile three code defaults to what config.yaml ships". Checking each first shows they
+are NOT alike, and one is worse than a solver switch.
+
+### What each one actually couples
+
+| flip | couples to the solver? | measured |
+|---|---|---|
+| `storage` secant -> volume | **no** | `active_set` already auto-enables volume, and PRINTS a NOTE while doing it (`transient_groundwater.cpp:1480`). Only fires when no b=0 scheme is selected |
+| `time_integration` backward-euler -> tr-bdf2 | **yes, indirectly** | tr-bdf2 runs only on the Anderson path. As a DEFAULT it would make `solver.method: picard` -- alone, a config naming one key -- abort on a key the user never wrote |
+| `adaptive_dt` false -> true | **worse than a switch** | it DISABLES Newton's continuation ramp while ANNOUNCING it |
+
+The third, measured on `tests/dt_sensitivity` inputs with `solver.method: newton`:
+
+```
+adaptive_dt: true            Newton PTC, dt0=157680. s, grow x1.5 ...   <- announced
+                             adaptive dt: 30 steps (0 rejected) ...     <- what actually ran
+adaptive_dt absent           Newton PTC, dt0=157680. s, grow x1.5 ...
+                             dt-continuation: deltat now 5.24e+08 s ... <- the ramp ran
+```
+
+`WTM.cpp:593` is `if (use_dt_adaptive) { ... } else if (use_newton_continuation) { ... }`: adaptive wins
+and the ramp never executes, while `InitialiseSNES` has already printed the ramp's banner. Newton needs
+that ramp to converge from cold -- `tests/newton_solver`'s CONTRACT arm asserts precisely that -- so
+flipping this default would silently break Newton's working recipe on every Newton run.
+
+### The rule that decides failure vs warning
+
+The deciding question is not how bad the combination is. It is **whether the value was EXPLICIT or
+DEFAULTED**. A user is answerable for what they wrote; they are not answerable for a default.
+
+| situation | response |
+|---|---|
+| two EXPLICIT settings contradict, and no resolution can be right | **ABORT**, naming both keys and the fix |
+| an EXPLICIT setting cannot be honoured at all | **ABORT** |
+| a DEFAULTED value would contradict an explicit one | **RESOLVE** in favour of the explicit one, and **PRINT** what it resolved to |
+| honoured, but known-bad or nonphysical | **WARN**, keep running |
+| an EXPLICIT value would be overridden | **never** -- this is the defect class (#28 `dev.active_set`) |
+
+An abort must never fire on a key the user did not write. That is the whole reason `auto` exists rather
+than a concrete default: a concrete default is indistinguishable from a user's choice, so it can
+manufacture a contradiction the user cannot see or fix.
+
+The machinery already exists -- `dt_continuation_set`, `dt_tol_set`, `dtc_dt_max_set` -- and the
+resolve-and-print pattern is already in the code, at `transient_groundwater.cpp:1480`.
+
+### Applied: `auto` as the default for all three
+
+PROPOSED resolutions. Each cell is a choice, not a derivation; the rule used was minimum surprise --
+preserve today's behaviour except where `config.yaml` already documents otherwise.
+
+```yaml
+solver:
+  time_integration: auto   # auto | backward-euler | bdf2 | tr-bdf2
+  storage: auto            # auto | volume | secant
+  adaptive_dt: auto        # auto | true | false
+```
+
+| key | `auto` resolves to | explicit conflict |
+|---|---|---|
+| `time_integration` | anderson -> `tr-bdf2`; picard -> `backward-euler`; newton -> `backward-euler` | `tr-bdf2` + a non-anderson method -> ABORT (built, bcc6638) |
+| `storage` | `volume` everywhere (the physically exact form; secant is the 1st-order legacy) | `secant` + `active_set` -> ABORT: active_set needs a b=0 residual path, so secant cannot be honoured. Today it is overridden with a NOTE |
+| `adaptive_dt` | newton with continuation -> `false` (the ramp owns the step size); otherwise `true` | `true` + `dt_continuation: true`, both explicit -> ABORT: two step-size controllers, and today one is silently dropped |
+
+Every resolution prints one line and lands in `full_config.yaml`, so a short config stays recoverable.
+
+### Where they sit
+
+Unchanged: all three stay at `solver:` top level. They are read by whichever method runs -- shared, not
+method-specific -- which is exactly the criterion that put them there.
+
+### The structural alternative
+
+`adaptive_dt` and `newton.dt_continuation` are two booleans for one thing: WHO SIZES THE STEP. Their
+conflict is not a validation problem, it is a modelling error made representable. One enum removes it:
+
+```yaml
+solver:
+  step_control:
+    mode: auto        # auto | fixed | adaptive | continuation
+```
+
+`auto` -> continuation on Newton, adaptive elsewhere. The contradiction cannot be written, so no abort is
+needed for it, and `WTM.cpp`'s `if (adaptive) ... else if (continuation)` becomes a switch on a stated
+mode rather than an implicit precedence.
+
+Cost: a breaking rename with 8 + 10 callers, on top of step 10's own blast radius. Benefit: one fewer
+class of contradiction to validate, and the precedence stops being invisible.
