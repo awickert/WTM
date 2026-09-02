@@ -107,6 +107,14 @@ solver:
     storativity_surface: 0.01  # the storativity transition at the surface. UNLIKE the two above this
                                # is ON by default and is physics: sub-grid roughness, not a check tool.
 
+  anderson:                    # read only on the matrix-free Anderson path
+    restart:                   # restart Anderson's history when the convergence RATE degrades
+      enabled: false
+      rho: 0.9                 # restart once the observed rate exceeds this...
+      patience: 2              # ...for this many consecutive iterations
+      max_it: 40               # cap per Anderson phase before a forced restart
+      max_restarts: 30         # outer restart cap
+
 parallel:
   threads_per_rank: 1          # OpenMP threads per MPI rank (1 = pure MPI). Rank count is set at launch (mpirun -n).
 

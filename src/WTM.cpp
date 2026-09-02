@@ -1011,6 +1011,17 @@ void apply_config_petsc_options(const std::string& config_file) {
     }
   }
 
+  // solver.anderson.restart -> rho-triggered proactive Anderson restart. NOTE enabled: true currently
+  // FORCES the Anderson path (CreateSNES.cpp:178), so it can change the solver rather than only tune it;
+  // that is the R2 method-uniqueness defect and is fixed separately, not papered over here.
+  if (auto ar = root["solver"]["anderson"]["restart"]) {
+    if (auto n = ar["enabled"])      { if (n.as<bool>()) set_opt_if_unset("-wtm_adaptive_restart", "true"); }
+    if (auto n = ar["rho"])          set_opt_if_unset("-wtm_ar_rho", n.as<std::string>().c_str());
+    if (auto n = ar["patience"])     set_opt_if_unset("-wtm_ar_patience", n.as<std::string>().c_str());
+    if (auto n = ar["max_it"])       set_opt_if_unset("-wtm_ar_max_it", n.as<std::string>().c_str());
+    if (auto n = ar["max_restarts"]) set_opt_if_unset("-wtm_ar_max_restarts", n.as<std::string>().c_str());
+  }
+
   // solver.smoothing -> the coefficient-kink rounding widths. Operator-level, so they apply to whichever
   // solver runs; that is why they sit at solver: top level rather than under a method.
   if (auto sm = root["solver"]["smoothing"]) {

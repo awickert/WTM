@@ -55,7 +55,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt", "dt_max",
                   "water_volume_timestep_error_tol", "t_bar", "storage", "dt_continuation",
-                  "step_control", "smoothing"}},
+                  "step_control", "smoothing", "anderson"}},
       // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
@@ -65,6 +65,10 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // normal run. storativity_surface is different in kind -- 0.01 m, always on, sub-grid roughness --
       // and sits here only because the three share a mechanism.
       {"solver.smoothing", {"ksat_surface", "ksat_soilbottom", "storativity_surface"}},
+      // solver.anderson: settings only the matrix-free Anderson path reads -- hence nested, unlike the
+      // shared blocks above. restart is its own mapping because it is one switch plus four constants.
+      {"solver.anderson", {"restart"}},
+      {"solver.anderson.restart", {"enabled", "rho", "patience", "max_it", "max_restarts"}},
       // dev.active_set was REMOVED 2026-09-01: it was a SECOND YAML route to the same enforcement as
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
