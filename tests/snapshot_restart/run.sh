@@ -17,8 +17,12 @@ TOL="${TOL:-0.05}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem surfdir supplied_wt
+# adaptive_dt PINNED OFF. This test asserts the output FILENAME encodes year == cycle, which holds only
+# while deltat is a fixed 1 yr with report_interval 1. An adaptive controller breaks that identity.
+# Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+adaptive_dt false
 run_type equilibrium
 fsm_on 0
 # Pinned to the FORMER default collector on purpose. This test's subject is snapshot/restart

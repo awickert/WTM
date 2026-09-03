@@ -38,8 +38,13 @@ export OMP_NUM_THREADS=1
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
 # sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, report_interval fixed).
 emit() { # stem  deltat  total_cycles  collector
+# adaptive_dt PINNED OFF. This test runs the same problem at two time steps 4x apart and asserts that
+# only dt changes. An adaptive controller would resize dt away from both starting values and erase the
+# very separation under test -- including the `implicit` CONTROL arm (measured 2.25e-01 m) that proves
+# the test can detect dt-dependence at all. Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+adaptive_dt false
 run_type equilibrium
 fsm_on 0
 evap_mode 0

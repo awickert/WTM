@@ -14,8 +14,12 @@ PY="${PY:-python3}"
 
 emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
   local flags="$1" dt="$2" cyc="$3" stem="$4"
+# adaptive_dt PINNED OFF. The arms are coarse dt = 1 wk (8 cycles) against fine dt = 0.25 wk (32
+# cycles); a controller free to resize dt would collapse that contrast and the cross-scheme comparison
+# would no longer be AT a known dt. Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
 solver_method anderson
+adaptive_dt false
 run_type transient
 ${INTEG:+time_integration $INTEG}
 fsm_on 0
