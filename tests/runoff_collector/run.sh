@@ -82,10 +82,12 @@ run xsoil_mode "runoff_collector extended_soil" ""
 emit picard "runoff_collector explicit"
 "$WTM" "$WORK/picard.yaml" > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }
-OFFWARN=$(grep -c "WARNING \[runoff_collector=off\]" "$WORK/off.log" || true)
+# grep -F: the banner names the CONFIG KEY (surface_water.collection.method), whose dots would
+# otherwise be regex wildcards. Fixed-string matching keeps the assertion on the exact text a user sees.
+OFFWARN=$(grep -cF "WARNING [surface_water.collection.method=off]" "$WORK/off.log" || true)
 # The extended-soil mode must announce itself, and the superseded run must say so rather than silently
 # dropping the request. Both are asserted: a silent override is the exact defect these arms exist for.
-XSBANNER=$(grep -c "runoff_collector=extended_soil\]: NONPHYSICAL" "$WORK/xsoil_mode.log" || true)
+XSBANNER=$(grep -cF "surface_water.collection.method=extended_soil]: NONPHYSICAL" "$WORK/xsoil_mode.log" || true)
 
 IM=$(ls "$WORK"/implicit_*.tif | tail -1); EX=$(ls "$WORK"/explicit_*.tif | tail -1)
 OF=$(ls "$WORK"/off_*.tif | tail -1);      UN=$(ls "$WORK"/unset_*.tif | tail -1)
