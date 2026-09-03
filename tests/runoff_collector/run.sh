@@ -29,8 +29,16 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # stem  collector-line
+# adaptive_dt PINNED OFF, for EVERY arm. The subject here is the runoff collector, so everything else
+# must be held identical -- an adaptive arm would vary a second mechanism and confound the comparison.
+# Concretely: the AGREE assertion is only true at a dt small enough that implicit's max(0,wtd)/dt siphon
+# has not diverged from explicit's clamp, and once adaptive_dt: auto became the default it resolved to
+# TRUE for explicit and FALSE for implicit (implicit cannot be driven by an error controller at all) --
+# so the two arms were being stepped differently and AGREE failed at 2.499e-01 m, which is just
+# implicit's known dt-dependence. A like-for-like adaptive comparison is impossible by construction.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+adaptive_dt false
 run_type equilibrium
 fsm_on 0
 evap_mode 0

@@ -48,8 +48,13 @@ RANKS="${RANKS:-4}"
 # at 400 yr. dt is the only thing that varies between arms; report_interval scales with it so the
 # reporting cadence (and therefore the FSM/coupling cadence per report) is held fixed.
 mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = runoff_collector
+# adaptive_dt PINNED OFF, for EVERY arm. This test's BITES control asserts that the implicit collector's
+# lake COUNT changes with dt -- it is the proof that active-set is what removes the dt-dependence. Under
+# adaptive stepping the controller re-times both dt arms and the separation vanishes: the control read
+# [6, 6] (identical), which the test itself calls out as the condition under which it proves nothing.
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+adaptive_dt false
 run_type equilibrium
 total_time 150yr
 supplied_wt 1
