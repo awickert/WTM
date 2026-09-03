@@ -464,8 +464,14 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     //
     // Also unverified: keeping the pre-FSM table as the step baseline leaves above-surface water in the
     // column for one more step, where the exfiltration rule sees it while this term also removes it.
+    // Into its OWN carrier, not rech_dist. rech_dist is BOTH the solve's source and the quantity
+    // set_starting_values books as EXTERNAL input (total_recharge_direct, columns 19/9), and the delta is
+    // internal redistribution, not external water. Keeping them separate lets the SOLVE see both -- the
+    // exact budget is defined on the full source -- while the external columns report only what entered
+    // the domain. A scatter (assign, not +=) is deliberate: the delta belongs to ONE step, so assigning
+    // makes the carrier self-clearing.
     if (fsm_delta_source)
-      accumulate_into_owned(user_context, fsm_delta_r0.data(), dmdapack.rech_dist);
+      scatter_into_owned(user_context, fsm_delta_r0.data(), dmdapack.fsm_delta_dist);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
     // The runoff-ratio share is NO LONGER handed over here. runoff_dist is left holding the NOMINAL
     // depth and is gathered at the TOP of the next call, scaled by the dt that step actually took --
@@ -916,6 +922,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
   VecDestroy(&user_context.lake_stage);
+  VecDestroy(&user_context.fsm_delta_source_vec);
   VecDestroy(&user_context.precip_vec);
   VecDestroy(&user_context.evap_vec);
   VecDestroy(&user_context.open_water_evap_vec);

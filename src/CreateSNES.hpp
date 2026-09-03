@@ -47,6 +47,27 @@ struct AppCtx {
   // pays only the third (one array).
   Vec lake_stage          = nullptr;
 
+  // FSM-delta source carrier, held SEPARATE from rech_source, because rech_dist serves two roles that
+  // must diverge under fsm_delta_source. It is (1) the solve's source term and (2) the quantity
+  // set_starting_values books as total_recharge_direct -- columns 19 and 9, defined in
+  // benchmark/WATER_BUDGET.md as the EXTERNAL water entering the domain. FSM's per-step delta belongs in
+  // the first role and not the second: it is water already inside the domain being redistributed, so
+  // booking it as external input makes column 9 report something that is not an input at all. Measured on
+  // tests/fsm_consistency, 120 yr, active_set + FSM: cumulative column 9 reaches -6.34e13 at cycle 1 and
+  // stays negative to cycle ~20 before climbing back to 1.81e11. A negative cumulative external input is
+  // meaningless, and it corrupts everything derived from it (ocean_loss_closing, column 16).
+  //
+  // This is a REPORTING fix and deliberately NOT a conservation fix -- there is nothing to fix there.
+  // accumulate_budget_terms reads rech_vec (transient_groundwater.cpp:843), the FULL source term, which is
+  // Andy's semantics: once FSM's water arrives DURING the step rather than between steps, the scheme's own
+  // conservation law counts it as an input. So column 17 is defined on the full source and must not move.
+  // Verified before and after on the same fixture: |col17|/col19 = 1.8953e-07 overwrite, 3.3002e-07 source.
+  //
+  // Column 16 remains mismatched under source coupling by construction, because it is built on the
+  // EXTERNAL definition; WATER_BUDGET.md ("Two definitions of recharge") already states this and calls it
+  // a definitional mismatch, not a leak. Zero unless fsm_delta_source is on, so no other path is touched.
+  Vec fsm_delta_source_vec = nullptr;
+
   // Distributed forcing fields for the recharge computation. Scattered from
   // rank-0 arp at init (populate_DMDA_array_pack) so recharge can be computed over
   // each rank's owned cells rather than serially on rank 0. See DISTRIBUTED_ARP_DESIGN.md.
@@ -336,6 +357,8 @@ struct AppCtx {
     VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &lake_stage);
+    VecDuplicate(x, &fsm_delta_source_vec);
+    VecSet(fsm_delta_source_vec, 0.0);
     VecSet(lake_stage, 0.0);  // no lakes until FSM says otherwise
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
