@@ -87,6 +87,43 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 
 ## 4. Why the residual is small but not exactly zero (the BDF2 subtlety)
 
+> **FIXED 2026-09-03, and it dominated everything this section describes on a cold start.** The two
+> consistency gaps below are real, but until `a37aa34` they were not what the reported residual was
+> mostly made of. `stored_volume_initial` was captured on the **first `PrintValues` call** — and
+> `PrintValues` has a single call site, at the *end* of a cycle. The baseline was therefore the state
+> after cycle 0 had already run, while every flux accumulator (recharge, evaporation, Darcy outflow,
+> FSM spill) starts *at* cycle 0. The closure differenced a storage change over cycles 1..N against
+> fluxes over cycles 0..N, and the first cycle's storage change was silently absent.
+>
+> On `tests/fsm_consistency`, 120 yr, `active_set` + FSM, overwrite coupling: the whole-run gap was
+> `-7.263575e+10`, **34.84% of recharge**. The same run stopped after ONE cycle — where `d_stored` is
+> 0 by construction — gave `-7.261150e+10`. The 120-year residual *was* the first cycle, essentially
+> in its entirety: the supplied initial table drains and FSM spills 6.69e+10 m³ to the ocean in year
+> one, and none of the storage drop that fed it was in the books.
+>
+> The baseline is now taken at the end of `initialise()`, before any stepping, by
+> `CaptureInitialStoredVolume`. Both it and every later report call the same `ComputeStoredVolume`, so
+> the baseline cannot drift from the series it is differenced against, and `PrintValues` throws rather
+> than falling back to a zero baseline (which would make `d_stored` the absolute volume and look
+> entirely plausible). Result on that fixture: overwrite **34.841% → 0.040%**, source
+> **2.739% → 0.014%** — 0.040% being exactly the "≈0.04% once spun up" this section already predicted.
+> The prediction was right all along; the code could not reach it on a cold start.
+>
+> **Why nothing caught it, which is the more useful lesson.** `tests/fsm_conservation` checked
+> conservation by differencing the cumulative residual between consecutive cycles — deliberately, to
+> normalise away what it called a constant startup offset. That is structurally blind to an error which
+> enters once, at the start, and then sits there. It passed throughout. It now also gates the residual
+> in ABSOLUTE terms; with the defect reintroduced that arm reads 1.821e+00 while the per-cycle arm
+> still reads 3.4e-07. **A steady residual is not a small one, and only the absolute check can tell
+> you which you have.**
+>
+> One limit stated rather than hidden: only the overwrite arm is gated absolutely. Under
+> `-wtm_fsm_delta_source` FSM's volume change is handed to the NEXT step's source term, so at a report
+> boundary there is water FSM has already moved — present in `stored_volume` — whose source term has
+> not yet been applied. That lag makes the source arm's closure large early and decay with run length
+> (7.37e-01 at 24 yr against 1.4e-04 at 120 yr, same fixture). That it is exactly one step, and hence
+> O(dt), is a HYPOTHESIS nobody has measured.
+
 With the *physical* storage change `\Delta S = \sum storedVolume(w^{\text{now}}) - \sum
 storedVolume(w^{0})`, the residual is small (≈0.04% once spun up; up to ≈2% on a cold start) but not
 machine-zero. Two consistency gaps explain it exactly:
