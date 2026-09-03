@@ -2053,6 +2053,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         if (dh > 1e-3) nflick_local++;
       }
       dmdapack.starting_wtd[j][i] = relaxed;
+      // LAKE STAGE, write site A of two. Correct on its own when FSM is off; when FSM is on,
+      // couple_surface_and_recharge overwrites this from the POST-FSM table a moment later, which
+      // is the stage the active-set obstacle needs. Under the default overwrite coupling the pair
+      // reproduces max(0, starting_wtd) exactly, so carrying the stage explicitly is bit-identical.
+      dmdapack.lake_stage[j][i] = std::max(0.0, relaxed);
       if (dmdapack.mask[j][i] == 0) {
         // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
         // exactly (post-solve wtd = 0), but the Picard CG/GAMG solve leaves a tiny, MPI-decomposition-
@@ -2525,6 +2530,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecGetArray(da, user_context->starting_wtd, &my_starting_wtd));
   PetscScalar** my_exfiltration = nullptr;  // -wtm_active_set: per-cell captured exfiltration depth (m) -> FSM post-solve
   if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->exfiltration_vec, &my_exfiltration));
+  PetscScalar** my_lake_stage = nullptr;  // -wtm_active_set: the obstacle, carried rather than inferred
+  if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->lake_stage, &my_lake_stage));
   // Matrix-free 2nd-order-in-time (solver.method: anderson solver.time_integration: bdf2): once a history exists, the storage
   // term is the 3-level BDF2 difference of the stored VOLUME (genuine 2nd order), head-scaled by the
   // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
@@ -2590,7 +2597,8 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
            my_evap, my_owe, my_precip, my_fdepth, my_ksat, dtr_on, taper_on, g_kirchhoff, \
            bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev, smooth_T, g_land_boundary_dirichlet,      \
-           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_exfiltration) collapse(2)
+           tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_exfiltration,   \
+           my_lake_stage) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
       // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
@@ -2741,7 +2749,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // FSM and total_surface_removed (budget). At convergence only cells held AT the free surface carry a
         // nonzero residual, so freely-solving (incl. below-stage lake) cells shed ~0. Anderson residual only.
         if (as_on) {
-          const double surface_water_depth = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
+          const double surface_water_depth = my_lake_stage[j][i];  // lagged FSM lake stage (0 off lakes)
           const double pin = w_c - surface_water_depth;
           // Capture the multiplier ONLY on the ACTIVE SET -- the cells where the pin branch actually
           // wins. Off the active set the multiplier is zero BY DEFINITION: there the free residual is
@@ -2775,6 +2783,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   PetscCall(DMDAVecRestoreArray(da, user_context->porosity_vec, &my_porosity));
   PetscCall(DMDAVecRestoreArray(da, user_context->starting_wtd, &my_starting_wtd));
   if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->exfiltration_vec, &my_exfiltration));
+  if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->lake_stage, &my_lake_stage));
   if (g_evap_taper) {
     PetscCall(DMDAVecRestoreArray(da, user_context->evap_vec, &my_evap));
     PetscCall(DMDAVecRestoreArray(da, user_context->open_water_evap_vec, &my_owe));
@@ -2826,8 +2835,10 @@ static PetscErrorCode FormJacobianLocal(
     DMDALocalInfo* info, PetscScalar** x, Mat Jmat, Mat P, AppCtx* user_context) {
   DM           da = user_context->da;
   PetscScalar **my_mask, **my_fdepth, **my_ksat, **my_topo, **my_porosity, **my_starting_wtd, **gew, **gn, **gs;
+  PetscScalar** my_lake_stage_J = nullptr;  // the active-set obstacle; see FormFunctionLocal
 
   PetscCall(DMDAVecGetArray(da, user_context->mask, &my_mask));
+  if (g_active_set) PetscCall(DMDAVecGetArray(da, user_context->lake_stage, &my_lake_stage_J));
   PetscCall(DMDAVecGetArray(da, user_context->geom_ew_vec, &gew));
   PetscCall(DMDAVecGetArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecGetArray(da, user_context->geom_s_vec, &gs));
@@ -2903,7 +2914,7 @@ static PetscErrorCode FormJacobianLocal(
       // would need 1/Phi'(wtd). Left alone rather than assembled wrong; see the guard in update().
       if (g_active_set && !g_kirchhoff) {
         const double w_c_pin = x[j][i] - my_topo[j][i];
-        const double swd_pin = std::max(0.0, my_starting_wtd[j][i]);
+        const double swd_pin = my_lake_stage_J[j][i];
         if (w_c_pin - swd_pin > 0.0) {  // the max() picks the pin branch: this cell is in the active set
           const PetscScalar one = 1.0;
           MatStencil col;
@@ -3036,6 +3047,7 @@ static PetscErrorCode FormJacobianLocal(
   }
 
   PetscCall(DMDAVecRestoreArray(da, user_context->mask, &my_mask));
+  if (g_active_set) PetscCall(DMDAVecRestoreArray(da, user_context->lake_stage, &my_lake_stage_J));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_ew_vec, &gew));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_n_vec, &gn));
   PetscCall(DMDAVecRestoreArray(da, user_context->geom_s_vec, &gs));

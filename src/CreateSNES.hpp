@@ -36,6 +36,17 @@ struct AppCtx {
   double last_cycle_rms_water = 1e30;  // RMS |S*Δwtd| over land (bulk per-cycle water depth, m water)
   Vec starting_wtd        = nullptr;
 
+  // LAKE STAGE (depth above topo, m). The active-set obstacle used to INFER this as
+  // max(0, starting_wtd) -- i.e. from the table FillSpillMerge overwrites each step -- which made the
+  // pin silently depend on that overwrite happening. Carried explicitly so the obstacle has its own
+  // source: the reader and the writer are no longer the same line of code.
+  //
+  // A DEPTH above topo, not an elevation, deliberately: topo cancels out of the residual, and a stored
+  // elevation would go stale because transient runs re-interpolate topography every cycle. Those were
+  // two of the three reasons the value was inferred rather than stored; storing a depth keeps both, and
+  // pays only the third (one array).
+  Vec lake_stage          = nullptr;
+
   // Distributed forcing fields for the recharge computation. Scattered from
   // rank-0 arp at init (populate_DMDA_array_pack) so recharge can be computed over
   // each rank's owned cells rather than serially on rank 0. See DISTRIBUTED_ARP_DESIGN.md.
@@ -324,6 +335,8 @@ struct AppCtx {
     VecDuplicate(x, &prev_cycle_wtd);
     VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
+    VecDuplicate(x, &lake_stage);
+    VecSet(lake_stage, 0.0);  // no lakes until FSM says otherwise
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
     VecDuplicate(x, &runoff_dist_vec);

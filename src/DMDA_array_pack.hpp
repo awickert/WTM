@@ -10,6 +10,7 @@ struct DMDA_Array_Pack {
   PetscScalar** sink_removed_dist   = nullptr;  // per-cycle sink removal (m depth), owned range (taper 1)
   PetscScalar** porosity_vec        = nullptr;
   PetscScalar** starting_wtd        = nullptr;
+  PetscScalar** lake_stage          = nullptr;  // depth above topo; the active-set obstacle
   const AppCtx* context             = nullptr;
 
   // topo_vec, fdepth_vec, ksat_vec are intentionally NOT held here.
@@ -28,6 +29,7 @@ struct DMDA_Array_Pack {
     DMDAVecGetArray(user.da, user.sink_removed_dist_vec, &sink_removed_dist);
     DMDAVecGetArray(user.da, user.porosity_vec, &porosity_vec);
     DMDAVecGetArray(user.da, user.starting_wtd, &starting_wtd);
+    DMDAVecGetArray(user.da, user.lake_stage, &lake_stage);
   }
 
   void release() {
@@ -41,6 +43,7 @@ struct DMDA_Array_Pack {
     DMDAVecRestoreArray(context->da, context->sink_removed_dist_vec, &sink_removed_dist);
     DMDAVecRestoreArray(context->da, context->porosity_vec, &porosity_vec);
     DMDAVecRestoreArray(context->da, context->starting_wtd, &starting_wtd);
+    DMDAVecRestoreArray(context->da, context->lake_stage, &lake_stage);
     context = nullptr;
   }
 };

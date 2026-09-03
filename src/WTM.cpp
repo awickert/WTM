@@ -390,6 +390,22 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       // FSM changed rank-0 arp.wtd; resync the distributed carrier so the next solve's recharge reads it.
       scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
     }
+
+    // LAKE STAGE, write site B of two, and the reason the array exists. FSM has just decided where the
+    // lake surfaces are; record that as a DEPTH above topo for the active-set obstacle to read next step.
+    // Done in BOTH couplings: under overwrite it merely reproduces max(0, starting_wtd) (so this is
+    // bit-identical), but under fsm_delta_source starting_wtd deliberately stays PRE-FSM, and this is then
+    // the only surviving record of the stage. That is exactly what used to collapse the obstacle to the
+    // land surface and drain every lake (island fixture: 5.6986 m -> 0.0000 m).
+    if (distribute_recharge) {
+      std::vector<double> stage_r0;
+      if (mpi_rank == 0) {
+        stage_r0.resize(arp.wtd.size());
+        const auto* w = arp.wtd.data();
+        for (size_t k = 0; k < stage_r0.size(); k++) stage_r0[k] = std::max(0.0, static_cast<double>(w[k]));
+      }
+      scatter_into_owned(user_context, stage_r0.data(), dmdapack.lake_stage);
+    }
   }
 
   // Carrier reset (approach B). FillSpillMerge has now CONSUMED this step's runoff (routed it to lakes/ocean),
@@ -556,6 +572,19 @@ void update(
   if (!distribute_recharge || params.cycles_done == 0) {
     scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
     scatter_into_owned(user_context, arp.rech.data(), dmdapack.rech_dist);
+    // LAKE STAGE, initial value. The obstacle used to be INFERRED as max(0, starting_wtd), so on the
+    // FIRST step it read the SUPPLIED initial water table -- which already holds standing water wherever
+    // run.initial_water_table supplies it. Seeding the carried array to zero instead silently drained
+    // those lakes for one step: tests/golden's supplied_wt cases (fsm_evap0/1, fsm_runoff*, transient)
+    // all moved, while below_ground -- the one case that starts at wtd = 0 -- did not. Seed it the same
+    // way the inference did.
+    std::vector<double> stage0;
+    if (mpi_rank == 0) {
+      stage0.resize(arp.wtd.size());
+      const auto* w0 = arp.wtd.data();
+      for (size_t k = 0; k < stage0.size(); k++) stage0[k] = std::max(0.0, static_cast<double>(w0[k]));
+    }
+    scatter_into_owned(user_context, stage0.data(), dmdapack.lake_stage);
   }
 
   // FIRST CYCLE ONLY: hand the INITIAL runoff split to the carrier the handoff reads.
@@ -886,6 +915,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.porosity_vec);
   VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
+  VecDestroy(&user_context.lake_stage);
   VecDestroy(&user_context.precip_vec);
   VecDestroy(&user_context.evap_vec);
   VecDestroy(&user_context.open_water_evap_vec);
