@@ -98,6 +98,16 @@ struct Parameters {
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;
+  // solver.adaptive_dt accepts `auto` (and an absent key means `auto`). RESOLVED like dt_continuation,
+  // because its default is not constant: adaptive stepping and Newton's continuation ramp are two
+  // controllers for ONE question -- who sizes the step -- and WTM.cpp:593 is
+  // `if (use_dt_adaptive) ... else if (use_newton_continuation)`, so adaptive silently WINS and the ramp
+  // never runs while InitialiseSNES has already announced it. auto therefore yields to the ramp.
+  bool adaptive_dt_auto = false;  // came from `auto`/absent rather than an explicit true|false
+  bool adaptive_dt_set  = false;  // the user wrote an explicit true|false
+  // Set when an EXPLICIT solver.adaptive_dt: true turned off an IMPLIED continuation ramp, so the run
+  // can say so rather than leaving the user to notice the ramp did not happen.
+  bool adaptive_dt_disabled_continuation = false;
 
   // solver.step_control.error_tol: per-step local-error target in WATER volume. "auto" or an absent key
   // leaves it unset so the consumer's own default (which tracks eq_tol) applies. Named

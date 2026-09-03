@@ -244,7 +244,13 @@ Parameters::Parameters(const std::string& config_file) {
     if (auto n = root["solver"]["method"])
       if (n.as<std::string>() == "newton") dt_continuation = true;
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
-  if (auto n = root["solver"]["adaptive_dt"]) adaptive_dt = n.as<bool>();
+  if (auto n = root["solver"]["adaptive_dt"]) {
+    const std::string v = n.as<std::string>();
+    if (v == "auto") adaptive_dt_auto = true;
+    else { adaptive_dt = n.as<bool>(); adaptive_dt_set = true; }
+  } else {
+    adaptive_dt_auto = true;  // an absent key means auto
+  }
   if (auto n = root["solver"]["step_control"]["error_tol"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
@@ -342,6 +348,46 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["surface_water"]["collection"]["method"]) {
     runoff_collector     = n.as<std::string>();
     runoff_collector_set = true;
+  }
+
+  // Resolve adaptive_dt against dt_continuation. They are two controllers for ONE question -- who sizes
+  // the step -- and WTM.cpp:593 is `if (use_dt_adaptive) ... else if (use_newton_continuation)`, so
+  // adaptive silently WINS and the ramp never runs, after InitialiseSNES has already printed its banner.
+  // Measured on tests/dt_sensitivity inputs with solver.method: newton: "adaptive dt: 30 steps" instead
+  // of "dt-continuation: deltat now 5.24e+08 s". Newton needs that ramp to converge from cold, which
+  // tests/newton_solver's CONTRACT arm asserts, so this must never resolve silently.
+  if (adaptive_dt_set && adaptive_dt && dt_continuation && dt_continuation_set)
+    throw std::runtime_error(
+        "config: solver.adaptive_dt: true and solver.newton.dt_continuation: true both control the step "
+        "size, and only one can. The adaptive loop takes precedence and the continuation ramp would never "
+        "run -- silently, before this check. Choose one: solver.adaptive_dt: false to keep Newton's ramp "
+        "(the recipe it needs to converge from cold), or solver.newton.dt_continuation: false to let the "
+        "adaptive controller size the step for plain Newton.");
+  // ...and against the COLLECTOR. `implicit` siphons above-surface water at rate max(0,wtd)/dt, so its
+  // per-step error GROWS as the controller shrinks dt: the founding assumption of error-controlled
+  // stepping -- refine dt, reduce error -- is false for it, and the reject/retry loop cannot converge.
+  // It does not misbehave subtly, it DIES: "adaptive dt: step failed after max retries; -wtm_dt_tol too
+  // tight or the local stability ceiling is below the smallest tried dt." (tests/active_set, imp_plain.)
+  // Andy, 2026-09-03: implicit + adaptive_dt is not allowed; active_set + adaptive_dt is the pairing that
+  // works and is the production default.
+  const bool implicit_collector = (runoff_collector == "implicit");
+  if (adaptive_dt_set && adaptive_dt && implicit_collector)
+    throw std::runtime_error(
+        "config: solver.adaptive_dt: true cannot be used with surface_water.collection.method: implicit. "
+        "The implicit siphon removes above-surface water at rate max(0,wtd)/dt, so its per-step error "
+        "GROWS as the controller shrinks dt -- no step can ever be accepted, and the run dies with "
+        "'step failed after max retries'. Use collection.method: active_set (the default, and the "
+        "enforcement adaptive stepping is built for), or set solver.adaptive_dt: false.");
+  if (adaptive_dt_auto) {
+    // auto YIELDS twice over: to Newton's ramp where that owns the step size, and to fixed stepping
+    // under the implicit collector, which adaptive cannot drive at all.
+    adaptive_dt = !dt_continuation && !implicit_collector;
+  } else if (adaptive_dt && dt_continuation) {
+    // Explicit adaptive against an IMPLIED ramp (solver.method: newton implies it). The explicit value
+    // wins over the defaulted one -- but it is not allowed to do so silently, because it strips Newton of
+    // the ramp. CreateSNES announces it and the existing plain-Newton divergence warning still fires.
+    dt_continuation = false;
+    adaptive_dt_disabled_continuation = true;
   }
 
   // -------- io (source was surfdatadir; outfile/log moved to output) --------

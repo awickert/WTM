@@ -139,6 +139,20 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // per step). Implies the Anderson path (self-starting; no Picard operator, no BDF2 history vector).
   PetscBool tr_bdf2_flag = PETSC_FALSE;
   // config-owned (solver.time_integration: tr-bdf2); the solver.time_integration: tr-bdf2 flag is retired.
+  if (params.adaptive_dt_auto) {
+    const char* why = params.adaptive_dt              ? "error-controlled stepping"
+                      : params.dt_continuation        ? "solver.newton.dt_continuation owns the step size here"
+                                                      : "surface_water.collection.method: implicit cannot be "
+                                                        "driven by an error controller -- its per-step error "
+                                                        "grows as dt shrinks";
+    PetscPrintf(PETSC_COMM_WORLD, "solver.adaptive_dt: auto -> %s (%s).\n",
+                params.adaptive_dt ? "true" : "false", why);
+  }
+  if (params.adaptive_dt_disabled_continuation)
+    PetscPrintf(PETSC_COMM_WORLD,
+                "NOTE [solver.adaptive_dt: true]: turned OFF the dt-continuation ramp that "
+                "solver.method: newton implies -- only one of them can size the step, and an explicit "
+                "setting wins over an implied one. This is PLAIN Newton plus adaptive stepping.\n");
   if (params.time_integration_auto)
     PetscPrintf(PETSC_COMM_WORLD, "solver.time_integration: auto -> %s (resolved from solver.method: %s).\n",
                 params.time_integration.c_str(),
