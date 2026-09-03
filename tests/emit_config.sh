@@ -28,6 +28,8 @@
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
 #   extinction_depth      -> evaporation.extinction_depth          (m)
+#   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)
+#   et_sigmoid_width      -> evaporation.et_sigmoid.logistic_width (m)
 #   adaptive_dt true|false -> solver.adaptive_dt
 #   dt_tol                -> solver.time_step.error_tol
 #   dt_max                -> solver.time_step.dt_max
@@ -171,9 +173,14 @@ if have storage; then
 fi
 
 # --- evaporation ---------------------------------------------------------------
-if have extinction_depth; then
+if have extinction_depth || have et_sigmoid_wtd_center || have et_sigmoid_width; then
     echo "evaporation:"
-    echo "  extinction_depth: $(val extinction_depth)"
+    have extinction_depth && echo "  extinction_depth: $(val extinction_depth)"
+    if have et_sigmoid_wtd_center || have et_sigmoid_width; then
+        echo "  et_sigmoid:"
+        have et_sigmoid_wtd_center && echo "    wtd_center: $(val et_sigmoid_wtd_center)"
+        have et_sigmoid_width      && echo "    logistic_width: $(val et_sigmoid_width)"
+    fi
 fi
 
 # --- io ----------------------------------------------------------------------
