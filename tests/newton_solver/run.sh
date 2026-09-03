@@ -23,9 +23,22 @@
 # so the FD check is demonstrably able to tell a missing tangent from a present one, on this fixture,
 # at this ceiling. That is stronger than asserting a small number and hoping it means something.
 #
-#   4. CONTRACT      plain -wtm_newton does NOT converge on these fixtures -- it needs
-#                    -wtm_dt_continuation. Pinned so the requirement is recorded rather than folklore,
-#                    and so the day Newton becomes robust enough to drop it, this test says so.
+#   4. CONTRACT      plain Newton AT FIXED dt does not converge on these fixtures. It needs EITHER
+#                    solver.newton.dt_continuation OR adaptive stepping -- both arms are run, so the
+#                    rule is demonstrated rather than asserted. Pinned so the requirement is recorded
+#                    rather than folklore, and so the day Newton needs neither, this test says so.
+#
+#                    The "OR adaptive" half is new (2026-09-03). It was found when adaptive_dt: auto
+#                    began resolving TRUE for this arm -- dt_continuation: false, collector active_set
+#                    -- and plain Newton CONVERGED, failing a contract written when fixed dt was the
+#                    only option. The controller's reject-and-shrink does the globalising the
+#                    continuation ramp was doing. Checked on two other fixtures before rewording:
+#                    boundary_consistency (fixed: not converged; adaptive: equilibrium reached) and
+#                    solver_consistency (fixed: not converged; adaptive: ran the full span without
+#                    diverging, though without settling). So adaptive PREVENTS THE DIVERGENCE; it does
+#                    not promise equilibrium in a given budget, and it does NOT replace continuation --
+#                    adaptive is bound to the report span while the ramp is bound only by dt_max, so
+#                    the ramp still reaches steady state in far larger steps.
 #
 # A NOTE ON WHAT NOT TO COMPARE. Newton is normally run with -wtm_dt_continuation, whose loop runs
 # report_steps STEPS at a dt it may grow -- so a continuation cycle does NOT cover one report span, and
@@ -48,9 +61,11 @@ JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it
 AGREE_TOL="${AGREE_TOL:-0.05}"   # metres; same band tests/recharge_consistency uses cross-scheme
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = collector, $3 = total_time   [env: DTC=true for the continuation arms]
+mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
+          #   env: DTC=true|false for the continuation arms, ADAPT=true|false to pin the stepping
     { cat <<EOF
 ${DTC:+dt_continuation $DTC}
+${ADAPT:+adaptive_dt $ADAPT}
 ${METHOD:+solver_method $METHOD}
 run_type equilibrium
 total_time $3
@@ -150,8 +165,11 @@ print(f"  {'PASS' if ok else 'FAIL'}  SAME ROOT  Anderson vs Newton at equilibri
 sys.exit(0 if ok else 1)
 PY
 
-# ---- 4. CONTRACT: Newton needs dt-continuation ----------------------------------------------------
-METHOD=newton DTC=false mkcfg contract active_set "2yr"   # PLAIN Newton: the recipe minus continuation
+# ---- 4. CONTRACT: plain Newton at FIXED dt fails; the ramp OR adaptive rescues it -------------------
+# 4a. fixed dt, no ramp -- must FAIL. ADAPT=false is load-bearing: without it adaptive_dt: auto resolves
+# TRUE here (dt_continuation is false and the collector is active_set) and this arm converges, which is
+# what 4b exists to show.
+METHOD=newton DTC=false ADAPT=false mkcfg contract active_set "2yr"
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
@@ -161,10 +179,25 @@ if sh -c '"$0" "$1" -snes_stol 1e-10' \
     echo "        That is good news; update this arm and the docs that say otherwise."
     fail=1
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
-    echo "  PASS  CONTRACT   plain Newton fails as documented; solver.newton.dt_continuation is required"
+    echo "  PASS  CONTRACT/a plain Newton at FIXED dt fails as documented"
 else
-    echo "  FAIL  CONTRACT   plain Newton failed for an UNEXPECTED reason:"
+    echo "  FAIL  CONTRACT/a plain Newton at fixed dt failed for an UNEXPECTED reason:"
     grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'
+    fail=1
+fi
+
+# 4b. the SAME configuration with adaptive stepping must SUCCEED. This is the half that makes 4a a
+# statement about fixed dt rather than about Newton, and it is the positive control for 4a: if 4b also
+# failed, 4a would be proving only that the fixture is hard.
+METHOD=newton DTC=false ADAPT=true mkcfg contract_adapt active_set "2yr"
+if sh -c '"$0" "$1" -snes_stol 1e-10' \
+        "$WTM" "$WORK/contract_adapt.yaml" > "$WORK/contract_adapt.log" 2>&1; then
+    echo "  PASS  CONTRACT/b the same run with adaptive stepping CONVERGES -- the ramp is not the only"
+    echo "                   way to globalise plain Newton"
+else
+    echo "  FAIL  CONTRACT/b plain Newton + adaptive did NOT converge, so CONTRACT/a shows only that"
+    echo "                   this fixture is hard, not that fixed dt is what defeats plain Newton:"
+    grep -m1 "what():" "$WORK/contract_adapt.log" | sed 's/^/        /'
     fail=1
 fi
 
