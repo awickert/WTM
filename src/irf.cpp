@@ -563,6 +563,38 @@ void UpdateTransientArrays(const Parameters& params, ArrayPack& arp) {
 /// informational purposes to help us understand how much the water table
 /// is changing per iteration, and where in
 /// the code that change is occurring. We print these values to a text file.
+double ComputeStoredVolume(const Parameters& params, const ArrayPack& arp) {
+  double v = 0.0;
+  for (int y = 0; y < params.ncells_y; y++)
+    for (int x = 0; x < params.ncells_x; x++)
+      v += storedVolume(arp.wtd(x, y), arp.porosity(x, y)) * arp.cell_area[y];
+  return v;
+}
+
+// THE BUDGET BASELINE, and the reason it is taken here rather than on the first report.
+//
+// PrintValues has ONE call site (WTM.cpp), at the END of a cycle. Capturing stored_volume_initial
+// there meant the baseline was the state AFTER the first cycle had already run, while every flux
+// accumulator -- recharge, evaporation, Darcy ocean outflow, FSM spill -- starts at cycle 0. The
+// closure then differenced a storage change over cycles 1..N against fluxes over cycles 0..N, and
+// the first cycle's storage change was silently absent from the books.
+//
+// On a cold start that term is not small; it is most of the residual. Measured on
+// tests/fsm_consistency, 120 yr, active_set + FSM, overwrite coupling: the whole-run budget gap was
+// -7.263575e+10 (34.84% of recharge), and the SAME run stopped after ONE cycle -- where d_stored is
+// 0 by construction -- gave -7.261150e+10. The 120-year residual was the first cycle, essentially in
+// its entirety: the supplied initial table drains, FSM spills 6.69e+10 m^3 to the ocean in year one,
+// and none of the storage drop that fed it was in the budget.
+//
+// Rank 0 only, matching PrintValues, which returns early on every other rank and is the sole consumer.
+void CaptureInitialStoredVolume(Parameters& params, const ArrayPack& arp) {
+  int mpi_rank = 0;
+  MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+  if (mpi_rank != 0) return;
+  params.stored_volume_initial      = ComputeStoredVolume(params, arp);
+  params.have_stored_volume_initial = true;
+}
+
 void PrintValues(Parameters& params, const ArrayPack& arp) {
   // total_added_recharge and total_loss_to_ocean_gw are per-rank owned-cell partials
   // (see set_starting_values), so reduce them to global totals. total_loss_to_ocean is
@@ -630,15 +662,19 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
       } else {
         wtd_sum += arp.wtd(x, y) * arp.porosity(x, y) * arp.cell_area[y];
       }
-      stored_volume += storedVolume(arp.wtd(x, y), arp.porosity(x, y)) * arp.cell_area[y];
     }
   }
 
-  // Capture the initial stored volume once, so d(stored_volume) can drive the budget-closing check.
-  if (!params.have_stored_volume_initial) {
-    params.stored_volume_initial      = stored_volume;
-    params.have_stored_volume_initial = true;
-  }
+  stored_volume = ComputeStoredVolume(params, arp);
+
+  // The baseline is captured at t=0 by CaptureInitialStoredVolume, NOT here. Taking it on the first
+  // report would exclude the first cycle's storage change from d_stored while every flux accumulator
+  // includes it -- which was most of the reported residual on a cold start. Assert rather than
+  // silently fall back: a zero baseline would make d_stored the absolute volume and look plausible.
+  if (!params.have_stored_volume_initial)
+    throw std::runtime_error(
+        "budget: the t=0 stored volume was never captured; CaptureInitialStoredVolume must run "
+        "after the initial water table is loaded and before any stepping.");
 
   // Two ocean-loss measures, kept SEPARATE on purpose (see benchmark/WATER_BUDGET.md):
   //   * PHYSICAL   -- global_ocean_outflow: the direct Darcy flux across land->ocean faces.

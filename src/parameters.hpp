@@ -216,8 +216,11 @@ struct Parameters {
   int64_t solves_done        = 0;  // accepted groundwater solves
   int64_t rejects_done       = 0;  // rejected + retried steps (adaptive / dt-continuation only)
   double infiltration_change = 0.;
-  // Exact stored water volume at t=0, captured on the first PrintValues call, so the budget-closing
-  // diagnostic can report the change in stored volume (see benchmark/WATER_BUDGET.md).
+  // Exact stored water volume at t=0, captured by CaptureInitialStoredVolume at the END of
+  // initialise() -- before any stepping -- so the budget-closing diagnostic differences a storage
+  // change over the SAME cycles the flux accumulators cover. It used to be taken on the first
+  // PrintValues call, which is the end of cycle 0, so the first cycle's storage change was missing
+  // from d_stored while its fluxes were present. See benchmark/WATER_BUDGET.md.
   double stored_volume_initial      = 0.;
   bool   have_stored_volume_initial = false;
 
