@@ -47,6 +47,24 @@ struct AppCtx {
   // pays only the third (one array).
   Vec lake_stage          = nullptr;
 
+  // FSM-delta source carrier, held SEPARATE from rech_source. rech_dist serves two roles at once: it is
+  // the solve's source term AND the quantity set_starting_values books as total_recharge_direct, i.e. the
+  // run's EXTERNAL input. Folding FSM's per-step delta into it therefore books water that is not external
+  // -- the exfiltrated share is already counted in total_surface_removed and the spill in
+  // total_loss_to_ocean -- so the whole-domain budget stops closing. Splitting the carrier lets the SOLVE
+  // see both while the BUDGET counts only the external one.
+  //
+  // This split is NOT by itself a budget fix, and measurement says so. Same fixture and same 120 yr span,
+  // residual as a fraction of recharge: overwrite 1.1733e-04 before and after (bit-identical, as intended);
+  // source 2.2113e-01 before, 3.2360e-01 AFTER -- i.e. worse. The reason is the third term. SumDV = rr + s
+  // - spill has three parts wanting three treatments; rr and spill are now right, but s (the exfiltrated
+  // excess) is booked as an OUTPUT in total_surface_removed and now returns un-credited, standing as an
+  // unmatched removal. s is an INTERNAL TRANSFER whenever FSM is on -- skimmed from the column, gathered
+  // into arp.runoff and consumed by FillSpillMerge in the SAME step -- so only the spill and evaporation
+  // truly leave the domain. Booking that transfer as a loss is the remaining defect; see WTM.cpp:455.
+  // Zero unless fsm_delta_source is on, so every other path is untouched.
+  Vec fsm_delta_source_vec = nullptr;
+
   // Distributed forcing fields for the recharge computation. Scattered from
   // rank-0 arp at init (populate_DMDA_array_pack) so recharge can be computed over
   // each rank's owned cells rather than serially on rank 0. See DISTRIBUTED_ARP_DESIGN.md.
@@ -336,6 +354,8 @@ struct AppCtx {
     VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &lake_stage);
+    VecDuplicate(x, &fsm_delta_source_vec);
+    VecSet(fsm_delta_source_vec, 0.0);
     VecSet(lake_stage, 0.0);  // no lakes until FSM says otherwise
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);
