@@ -996,12 +996,12 @@ void apply_config_petsc_options(const std::string& config_file) {
   }
   // solver.time_integration is fully config-owned (Parameters::time_integration); no bridge remains.
 
-  // solver.step_control -> the step-size controller's dials. ONE controller: it sizes the step for
+  // solver.time_step -> the step-size controller's dials. ONE controller: it sizes the step for
   // solver.adaptive_dt AND for Newton's solver.newton.dt_continuation ramp, which is why these are not nested
   // under either. grow_if_niter_leq is the old -wtm_dtc_easy_iters: a SOLVABILITY gate on growth (grow
   // only when the solve took at most this many nonlinear iterations), distinct from the accuracy gate,
   // and inclusive -- a solve of exactly this many iterations still grows.
-  if (auto sc = root["solver"]["step_control"]) {
+  if (auto sc = root["solver"]["time_step"]) {
     if (auto n = sc["grow"])              set_opt_if_unset("-wtm_dtc_grow", n.as<std::string>().c_str());
     if (auto n = sc["shrink"])            set_opt_if_unset("-wtm_dtc_shrink", n.as<std::string>().c_str());
     if (auto n = sc["grow_if_niter_leq"]) set_opt_if_unset("-wtm_dtc_easy_iters", n.as<std::string>().c_str());
@@ -1009,7 +1009,7 @@ void apply_config_petsc_options(const std::string& config_file) {
     // norm: one enum replacing the -wtm_dt_norm_rms / -wtm_dt_norm_max boolean PAIR, whose both-set case
     // was undefined at the config level. rms is the default; max is opt-in and wins if both arrive.
     if (auto n = sc["norm"]) {
-      const std::string v = require_enum(n.as<std::string>(), "solver.step_control.norm", {"rms", "max"});
+      const std::string v = require_enum(n.as<std::string>(), "solver.time_step.norm", {"rms", "max"});
       set_opt_if_unset(v == "max" ? "-wtm_dt_norm_max" : "-wtm_dt_norm_rms", "true");
     }
   }
@@ -1029,7 +1029,7 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // solver.newton.dt0 -> the pseudo-transient ramp's starting dt. Continuation-only: it is read inside
   // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
-  // step_control's shared dials.
+  // time_step's shared dials.
   if (auto n = root["solver"]["newton"]["dt0"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") set_opt_if_unset("-wtm_dtc_dt0", v.c_str());
@@ -1271,7 +1271,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
   f << "  adaptive_dt: " << params.adaptive_dt << "\n";
   f << "  t_bar: " << params.t_bar << "\n";
-  f << "  step_control:\n";
+  f << "  time_step:\n";
   f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
   else                     f << "    dt_max: auto\n";
@@ -1360,7 +1360,7 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(PETSC_COMM_WORLD, &cfg_rank);
     if (cfg_rank == 0 && params.verbosity != "quiet") params.print();
     // ...and write it as YAML beside the outputs. Written HERE, not with provenance.yaml, because the
-    // solver's own resolution (step_control, anderson.restart, newton.dt0) happens inside initialise().
+    // solver's own resolution (time_step, anderson.restart, newton.dt0) happens inside initialise().
     if (cfg_rank == 0 && !run_dir.empty()) write_full_config(run_dir, params, user_context);
   }
 

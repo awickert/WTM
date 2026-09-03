@@ -28,7 +28,7 @@ solver:
   t_bar: false
   storage: volume              # volume | secant
 
-  step_control:                # serves BOTH adaptive_dt and newton.dt_continuation
+  time_step:                # serves BOTH adaptive_dt and newton.dt_continuation
     adaptive: true
     error_tol: 1.0e-3
     dt_max: auto
@@ -226,7 +226,7 @@ numerics:
   tolerance: 1e-6
   max_iterations: auto
 
-  step_control:                # ONE controller; serves time.adaptive AND newton.dt_continuation
+  time_step:                # ONE controller; serves time.adaptive AND newton.dt_continuation
     grow: 1.5
     shrink: 0.25
     grow_if_niter_leq: 8
@@ -457,7 +457,7 @@ solver:                          # SHARED settings: read whatever the method
   tolerance: 1.0e-6              # -> snes_stol
   max_iterations: auto           # -> snes_max_it; auto = PETSc's per-method default
 
-  step_control:                  # ONE controller; serves adaptive_dt AND newton.dt_continuation
+  time_step:                  # ONE controller; serves adaptive_dt AND newton.dt_continuation
     error_tol: 0.1               # m of water, per step
     dt_max: auto                 # auto = 1000 * time.deltat
     grow: 1.5
@@ -644,7 +644,7 @@ conflict is not a validation problem, it is a modelling error made representable
 
 ```yaml
 solver:
-  step_control:
+  time_step:
     mode: auto        # auto | fixed | adaptive | continuation
 ```
 

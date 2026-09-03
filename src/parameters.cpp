@@ -55,11 +55,11 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
                   "t_bar",
-                  "step_control", "smoothing", "anderson", "newton"}},
-      // solver.step_control: ONE step-size controller, deliberately not nested under adaptive_dt --
+                  "time_step", "smoothing", "anderson", "newton"}},
+      // solver.time_step: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
-      {"solver.step_control", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max",
+      {"solver.time_step", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max",
                                "error_tol"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
@@ -251,13 +251,13 @@ Parameters::Parameters(const std::string& config_file) {
   } else {
     adaptive_dt_auto = true;  // an absent key means auto
   }
-  if (auto n = root["solver"]["step_control"]["error_tol"]) {
+  if (auto n = root["solver"]["time_step"]["error_tol"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
   }
-  if (auto n = root["solver"]["step_control"]["dt_max"]) {
+  if (auto n = root["solver"]["time_step"]["dt_max"]) {
     const std::string v = n.as<std::string>();
-    if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.step_control.dt_max"); dtc_dt_max_set = true; }
+    if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.time_step.dt_max"); dtc_dt_max_set = true; }
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
   if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();

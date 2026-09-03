@@ -89,7 +89,7 @@ solver:
   adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
 
-  step_control:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
+  time_step:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
                                # Newton's dt_continuation ramp, so it is nested under neither.
     error_tol: auto            # target per-step local error [m of water];
                                # auto tracks run.equilibrium_stop.tol

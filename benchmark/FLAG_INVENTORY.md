@@ -260,7 +260,7 @@ knows nothing about it.
 
 ### Still open in group 1
 
-- the block's NAME (`solver.step_control` proposed, on the grounds that these dials serve
+- the block's NAME (`solver.time_step` proposed, on the grounds that these dials serve
   `dt_continuation` as well as `adaptive_dt`, so an `adaptive_`-prefixed name would misdescribe them)
 - whether `auto` becomes the house sentinel for "derive this default", following the existing
   `solver.dt_max: auto`, and whether the `_set`-boolean pattern in `Parameters` stops spreading

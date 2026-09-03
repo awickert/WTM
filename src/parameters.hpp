@@ -109,7 +109,7 @@ struct Parameters {
   // can say so rather than leaving the user to notice the ramp did not happen.
   bool adaptive_dt_disabled_continuation = false;
 
-  // solver.step_control.error_tol: per-step local-error target in WATER volume. "auto" or an absent key
+  // solver.time_step.error_tol: per-step local-error target in WATER volume. "auto" or an absent key
   // leaves it unset so the consumer's own default (which tracks eq_tol) applies. Named
   // solver.water_volume_timestep_error_tol until it joined the rest of the controller.
   double dt_tol     = 0.1;

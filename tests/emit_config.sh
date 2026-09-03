@@ -29,8 +29,8 @@
 #   runoff_collector      -> surface_water.collection.method
 #   extinction_depth      -> evaporation.extinction_depth          (m)
 #   adaptive_dt true|false -> solver.adaptive_dt
-#   dt_tol                -> solver.step_control.error_tol
-#   dt_max                -> solver.step_control.dt_max
+#   dt_tol                -> solver.time_step.error_tol
+#   dt_max                -> solver.time_step.dt_max
 #   t_bar true|false      -> solver.t_bar
 #   eq_frac               -> run.equilibrium_stop.frac
 #   eq_tol                -> run.equilibrium_stop.tol      (m water; 0 = stop disabled)
@@ -156,7 +156,7 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have dt_conti
         echo "    dt_continuation: $(val dt_continuation)"
     fi
     if have dt_max || have dt_tol; then
-        echo "  step_control:"
+        echo "  time_step:"
         have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
         have dt_max && echo "    dt_max: \"$(val dt_max)\""
     fi
