@@ -47,9 +47,18 @@ mkdir -p out_1p
 CFG_1P=$(mktemp /tmp/ghost_cell_1p_XXXXXX.yaml)
 sed 's|^  outfile_prefix:.*|  outfile_prefix: out_1p/out_|;
      s|^  run_log:.*|  run_log: run_1p.txt|' ghost_cell.yaml > "$CFG_1P"
-mpirun -n 1 "$WTM" "$CFG_1P" \
-    -snes_stol 1e-8 -wtm_eq_tol 0 \
-    2>&1 | grep -E 'SNES|converged|norm|Error|error' || true
+# A CRASHED RUN MUST NOT REACH THE COMPARISON. This used to be a pipeline ending in `|| true`,
+# which threw mpirun's exit status away twice over -- once through the pipe, and again because
+# running `true` REPLACES PIPESTATUS. A run that aborted after writing only its 0 yr output still
+# left a TIF behind, check_results.py picked that one, and the suite reported PASS on two copies of
+# the INITIAL CONDITION. A vacuous pass is worse than a failure.
+#
+# Redirect to a file rather than piping: under `set -euo pipefail` a pipeline whose grep matches
+# NOTHING exits 1, which would abort a perfectly good run. Separating the two keeps mpirun's status
+# authoritative and leaves the grep purely cosmetic.
+mpirun -n 1 "$WTM" "$CFG_1P" -snes_stol 1e-8 > run_1p.out 2>&1 \
+  || { echo "FAIL: the 1-process run did not complete (exit $?)"; tail -20 run_1p.out; exit 2; }
+grep -E 'SNES|converged|norm|Error|error' run_1p.out || true
 echo "1-process run complete."
 rm -f "$CFG_1P"
 
@@ -61,10 +70,10 @@ mkdir -p out_2p
 CFG_2P=$(mktemp /tmp/ghost_cell_2p_XXXXXX.yaml)
 sed 's|^  outfile_prefix:.*|  outfile_prefix: out_2p/out_|;
      s|^  run_log:.*|  run_log: run_2p.txt|' ghost_cell.yaml > "$CFG_2P"
-mpirun -n 2 "$WTM" "$CFG_2P" \
-    -snes_stol 1e-8 -wtm_eq_tol 0 \
-    -da_processors_x 2 -da_processors_y 1 \
-    2>&1 | grep -E 'SNES|converged|norm|Error|error' || true
+mpirun -n 2 "$WTM" "$CFG_2P" -snes_stol 1e-8 \
+    -da_processors_x 2 -da_processors_y 1 > run_2p.out 2>&1 \
+  || { echo "FAIL: the 2-process run did not complete (exit $?)"; tail -20 run_2p.out; exit 2; }
+grep -E 'SNES|converged|norm|Error|error' run_2p.out || true
 echo "2-process run complete."
 rm -f "$CFG_2P"
 
