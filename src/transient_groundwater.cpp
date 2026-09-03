@@ -1213,16 +1213,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
 #pragma omp parallel for default(none) shared(arp, ys, ym, xs, xm, dmdapack, params, rech_dt_scale) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      // The solver's source is external recharge PLUS the FSM delta; set_starting_values above books only
-      // rech_dist, so the delta reaches the solve without being counted as external input. Summed BEFORE
-      // add_recharge (not clipped separately) and scaled by the same rech_dt_scale, which is exactly what
-      // the single-carrier version did -- so this is bit-identical wherever fsm_delta_dist is zero, i.e.
-      // everywhere except fsm_delta_source runs. OPEN: whether the delta SHOULD carry rech_dt_scale is a
-      // separate question -- it is a volume FSM already moved for one specific step. Preserved, not
-      // silently changed; rech_dt_scale is 1 on every fixed-dt path.
-      dmdapack.rech_vec[j][i] =
-          add_recharge((dmdapack.rech_dist[j][i] + dmdapack.fsm_delta_dist[j][i]) * rech_dt_scale,
-                       dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
+      dmdapack.rech_vec[j][i] = add_recharge(
+          dmdapack.rech_dist[j][i] * rech_dt_scale, dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
     }
   }
 

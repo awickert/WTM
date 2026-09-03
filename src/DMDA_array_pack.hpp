@@ -11,7 +11,6 @@ struct DMDA_Array_Pack {
   PetscScalar** porosity_vec        = nullptr;
   PetscScalar** starting_wtd        = nullptr;
   PetscScalar** lake_stage          = nullptr;  // depth above topo; the active-set obstacle
-  PetscScalar** fsm_delta_dist      = nullptr;  // FSM per-step delta; a SOURCE but NOT external input
   const AppCtx* context             = nullptr;
 
   // topo_vec, fdepth_vec, ksat_vec are intentionally NOT held here.
@@ -31,7 +30,6 @@ struct DMDA_Array_Pack {
     DMDAVecGetArray(user.da, user.porosity_vec, &porosity_vec);
     DMDAVecGetArray(user.da, user.starting_wtd, &starting_wtd);
     DMDAVecGetArray(user.da, user.lake_stage, &lake_stage);
-    DMDAVecGetArray(user.da, user.fsm_delta_source_vec, &fsm_delta_dist);
   }
 
   void release() {
@@ -46,7 +44,6 @@ struct DMDA_Array_Pack {
     DMDAVecRestoreArray(context->da, context->porosity_vec, &porosity_vec);
     DMDAVecRestoreArray(context->da, context->starting_wtd, &starting_wtd);
     DMDAVecRestoreArray(context->da, context->lake_stage, &lake_stage);
-    DMDAVecRestoreArray(context->da, context->fsm_delta_source_vec, &fsm_delta_dist);
     context = nullptr;
   }
 };
