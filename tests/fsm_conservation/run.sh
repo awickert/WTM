@@ -52,10 +52,18 @@ EOF
 "$WTM" "$WORK/c.yaml" > "$WORK/c.log" 2>&1 \
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
+# SECOND ARM: the same physical problem under the OTHER FSM coupling. The default overwrites the water
+# table with FSM's result between steps; -wtm_fsm_delta_source instead feeds FSM's per-cell volume change
+# into the NEXT step's source term. The two integrate differently and reach different states -- which is
+# the point, and what makes the comparison below non-vacuous.
+sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" "$WORK/c.yaml" > "$WORK/s.yaml"
+"$WTM" "$WORK/s.yaml" -wtm_fsm_delta_source > "$WORK/s.log" 2>&1 \
+  || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
+
 TIF=$(ls "$WORK"/c_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$WORK/c.txt" "$TIF" <<'PY'
+TOL="$TOL" "$PY" - "$WORK/c.txt" "$TIF" "$WORK/s.txt" <<'PY'
 import sys, os, numpy as np, rasterio
-txt, tif = sys.argv[1], sys.argv[2]
+txt, tif, txt_src = sys.argv[1], sys.argv[2], sys.argv[3]
 tol = float(os.environ["TOL"])
 rows = [l.split() for l in open(txt) if l and l[0].isdigit()]
 # cols (1-indexed): 9 recharge(cum), 16 budget_residual(cum)
@@ -75,6 +83,43 @@ check("CONSERVATION (per-cycle balance closes)", worst < tol,
       f"max |Δbudget_residual|/Δrecharge over last 5 cycles = {worst:.3e} (< {tol})")
 check("LAKE PERSISTS (head kept)", lake > 1.0,
       f"max wtd = {lake:.4f} m")
+
+# EXTERNAL INPUT IS COUPLING-INDEPENDENT.
+#
+# Column 19 (recharge_direct, summed into column 9) is DEFINED in benchmark/WATER_BUDGET.md as the
+# EXTERNAL water entering the domain. External means external: how FSM's water is handed back to the
+# groundwater -- overwritten between steps, or fed in as a source term -- is an INTERNAL redistribution
+# and cannot change how much water crossed the domain boundary. So the two arms must agree on column 19
+# even though they disagree about almost everything else.
+#
+# THE DEFECT THIS CATCHES. -wtm_fsm_delta_source used to fold FSM's per-cell delta into rech_dist, the
+# same array set_starting_values books as total_recharge_direct. The external columns then reported
+# external input PLUS internal redistribution: on tests/fsm_consistency at 120 yr, cumulative column 9
+# ran to -6.34e10 by cycle 1 -- a negative cumulative external input -- and everything derived from it
+# (ocean_loss_closing, column 16) was wrong with it. Fixed by giving the delta its own carrier.
+#
+# TOLERANCE, and it is a choice worth naming: 1e-6 relative. The defect drives a relative difference of
+# order 1 (sign flip), so this is ~6 orders of magnitude clear of it, while leaving room for a fixture
+# whose recharge is genuinely state-dependent -- the open-water-evaporation branch means a different
+# water table can draw a different P-ET. On THIS fixture the two arms agree EXACTLY (0.0e+00 at every
+# cycle), so the tolerance is headroom, not slack being consumed.
+rows_s = [l.split() for l in open(txt_src) if l and l[0].isdigit()]
+R19    = np.array([float(r[18]) for r in rows])
+R19s   = np.array([float(r[18]) for r in rows_s])
+S14    = np.array([float(r[13]) for r in rows])
+S14s   = np.array([float(r[13]) for r in rows_s])
+n = min(len(R19), len(R19s))
+rel19 = float(np.max(np.abs(R19s[:n] - R19[:n]) / np.where(np.abs(R19[:n]) > 0, np.abs(R19[:n]), 1.0)))
+check("EXTERNAL INPUT coupling-independent (col 19)", rel19 < 1e-6,
+      f"max relative difference overwrite vs fsm_delta_source = {rel19:.3e} (< 1e-6)")
+
+# NON-VACUITY. The check above is only meaningful if the two arms are actually different runs. If a
+# future change made the couplings converge to the same trajectory, column 19 would match trivially and
+# the assertion would pass while testing nothing. Require the STATES to differ materially.
+state_gap = float(np.max(np.abs(S14s[:n] - S14[:n])) / max(np.max(np.abs(S14[:n])), 1.0))
+check("NON-VACUOUS (the two couplings really differ)", state_gap > 1e-3,
+      f"max |d stored_volume| / |overwrite| = {state_gap:.3e} (> 1e-3)")
+
 print("PASS: FSM path conserves water per cycle and keeps the lake" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY
