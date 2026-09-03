@@ -1336,7 +1336,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_delta_source", &fsm_src, nullptr);
   g_fsm_delta_source = (fsm_src == PETSC_TRUE);
 
-  // Surface-water routing selector (config key `runoff_collector`, optional). When set it OVERRIDES the
+  // Runoff-collection selector (config key `surface_water.collection.method`, optional; the internal
+  // variable is still called runoff_collector). When set it OVERRIDES the
   // legacy -wtm_ flags above with one coherent choice; unset ("") keeps the legacy defaults
   // (behaviour-preserving). See benchmark/SURFACE_WATER_ROUTING.md. All modes share one destination
   // (above-surface excess -> total_surface_removed + arp.runoff -> FSM); they differ in HOW the wtd<=0
@@ -1400,10 +1401,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       g_direct_to_runoff                     = true;
       g_surface_exfiltration_to_runoff_array = false;  // exclusive: no clamp backstop (keep implicit's bugs visible)
       if (user_context.use_newton)
-        PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=implicit]: the exfiltration tangent is wired into "
+        PetscPrintf(PETSC_COMM_WORLD, "WARNING [surface_water.collection.method=implicit]: the exfiltration tangent is wired into "
                     "the Anderson residual and the Picard operator, but NOT the Newton Jacobian (its kink needs "
                     "active-set Newton). On the Newton path the solve is inconsistent (may diverge); use "
-                    "runoff_collector=explicit there until active-set Newton lands.\n");
+                    "surface_water.collection.method: explicit there until active-set Newton lands.\n");
     } else if (rc == "explicit") {
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = true;
@@ -1428,14 +1429,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // implemented. Do not use it for model runs; it is a diagnostic that establishes the order ceiling.
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;
-      PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=extended_soil]: NONPHYSICAL developer mode -- the "
+      PetscPrintf(PETSC_COMM_WORLD, "WARNING [surface_water.collection.method=extended_soil]: NONPHYSICAL developer mode -- the "
                   "aquifer continues above the land surface (no free boundary, no surface water). The above-surface "
                   "mound is real storage the model owes to FSM, and the production half (truncate it at the FSM "
                   "handoff) is NOT implemented. Testing/experiments only, not for model runs.\n");
     } else {  // "off"
       g_direct_to_runoff                     = false;
       g_surface_exfiltration_to_runoff_array = false;
-      PetscPrintf(PETSC_COMM_WORLD, "WARNING [runoff_collector=off]: NONPHYSICAL -- above-surface water is NOT "
+      PetscPrintf(PETSC_COMM_WORLD, "WARNING [surface_water.collection.method=off]: NONPHYSICAL -- above-surface water is NOT "
                   "collected; it piles up and the free surface will limit-cycle. Testing/diagnostics only.\n");
     }
   }
