@@ -211,3 +211,10 @@ if have textfilename || have outfile_prefix; then
     have textfilename   && echo "  run_log: '$(val textfilename)'"
     have trace          && echo "  trace: [$(val trace)]"
 fi
+
+# The script's exit status is its LAST command's, and every emitter here is a `have X && echo ...`
+# list that returns 1 when X is unset. Adding a conditional key at the END of the last block therefore
+# made emit_config.sh exit 1 on any config that did not set it -- which broke four MPI suites that call
+# it through subprocess.run(check=True), with no clue at the call site. Terminate explicitly so the
+# status reflects a real failure (set -e already handles those) rather than the last key's presence.
+:
