@@ -157,6 +157,12 @@ parallel:
 # dev:
 #   allow_aboveground_water_columns: false
 #   padded_dirichlet: false
+#   under_relaxation: 1.0      # 1.0 = off. Damps the committed step: w <- a*w_solve + (1-a)*w_prev,
+#                              # over the WHOLE grid. Built to damp free-boundary flicker, which was
+#                              # later diagnosed as largely a per-sub-step vs per-cycle metric artifact
+#                              # -- so reach for it only if you see real oscillation. Voids a TRANSIENT
+#                              # trajectory (you step a damped surrogate); the equilibrium fixed point
+#                              # is unchanged. Measured cost at 0.5: 2x the solves.
 #   storage_form: volume       # volume (RHS b=0) | secant (RHS b=h^n). NOT an accuracy choice: S is the
 #                              # EXACT secant, so S*dh == dV identically and the two give bit-identical
 #                              # answers (tests/storage_equivalence). It exists so that test has something

@@ -26,10 +26,11 @@ WORK=$(mktemp -d /tmp/lc_XXXX); trap 'rm -rf "$WORK"' EXIT
 TOL="${TOL:-1e-4}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: INTEG=]
+emit() { # $1 stem  [env: INTEG=, RELAX=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 ${INTEG:+time_integration $INTEG}
+${RELAX:+under_relaxation $RELAX}
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -59,6 +60,17 @@ emit cc; INTEG=bdf2 emit bd
 "$WTM" "$WORK/cc.yaml" $BB                > "$WORK/cc.log" 2>&1 || { echo "RUN FAILED: cc"; tail -3 "$WORK/cc.log"; exit 2; }
 "$WTM" "$WORK/bd.yaml" $BB > "$WORK/bd.log" 2>&1 || { echo "RUN FAILED: bd"; tail -3 "$WORK/bd.log"; exit 2; }
 
+# dev.under_relaxation, which lives here because flicker is what it was built to damp. It blends the
+# COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid. Two arms, and the second is what
+# keeps the first honest:
+#   a = 1.0  must be BYTE-IDENTICAL to not setting it. The code has always claimed this ("a=1 -> byte-
+#            identical") and nothing ever checked it. An off switch that is not exactly off is worse than
+#            no off switch, because every result taken with it is quietly a different model.
+#   a = 0.5  must DIFFER, or the key is inert and the check above proves nothing.
+RELAX=1.0 emit rx1; RELAX=0.5 emit rx05
+"$WTM" "$WORK/rx1.yaml"  $BB > "$WORK/rx1.log"  2>&1 || { echo "RUN FAILED: rx1";  tail -3 "$WORK/rx1.log";  exit 2; }
+"$WTM" "$WORK/rx05.yaml" $BB > "$WORK/rx05.log" 2>&1 || { echo "RUN FAILED: rx05"; tail -3 "$WORK/rx05.log"; exit 2; }
+
 # SETTLING: the final per-cycle |wtd change| (col 5) must be small -- a limit cycle would keep it large.
 for a in cc bd; do
   last=$(tail -1 "$WORK/$a.txt" | awk '{print $5}')
@@ -67,12 +79,14 @@ for a in cc bd; do
 done
 
 CC=$(ls "$WORK"/cc_*.tif | tail -1); BD=$(ls "$WORK"/bd_*.tif | tail -1)
+RX1=$(ls "$WORK"/rx1_*.tif | tail -1); RX05=$(ls "$WORK"/rx05_*.tif | tail -1)
 # MASS BALANCE from the runoff array: per-cycle deltas of cols 9 (recharge), 12 (surface_removed), 13 (ocean_outflow)
 read -r dR dS dO < <(grep -E '^[0-9]' "$WORK/cc.txt" | tail -2 | awk 'NR==1{r=$9;s=$12;o=$13} NR==2{print ($9-r), ($12-s), ($13-o)}')
-TOL="$TOL" MB_TOL="$MB_TOL" "$PY" - "$CC" "$BD" "$dR" "$dS" "$dO" <<'PY'
+TOL="$TOL" MB_TOL="$MB_TOL" "$PY" - "$CC" "$BD" "$dR" "$dS" "$dO" "$RX1" "$RX05" <<'PY'
 import sys, os, numpy as np, rasterio
 cc, bd = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 dR, dS, dO = map(float, sys.argv[3:6])
+rx1, rx05 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[6:8]]
 tol = float(os.environ["TOL"]); mbtol = float(os.environ["MB_TOL"])
 above = float(cc.max()); below_ok = bool((cc <= tol).all())
 exfiltration = bool(abs(above) < tol)                 # some cells pinned exactly at the surface = the exfiltration constraint
@@ -82,7 +96,15 @@ agree = float(np.max(np.abs(cc - bd)))
 print(f"  COMPLEMENTARITY: max wtd = {above:.3e} (=0 exfiltration constraint), all wtd<=0: {below_ok}")
 print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
 print(f"  AGREEMENT cc vs bdf2v: max|Δwtd| = {agree:.3e}")
-ok = below_ok and exfiltration and rel < mbtol and agree < tol
+# dev.under_relaxation. Asserted at EXACTLY zero: "off" that is only nearly off is worse than no off
+# switch, because every result taken with it is quietly a different model.
+d_rx1  = float(np.max(np.abs(rx1 - cc)))
+d_rx05 = float(np.max(np.abs(rx05 - cc)))
+print(f"  UNDER-RELAXATION a=1.0 is OFF: max|Δwtd| vs baseline = {d_rx1:.3e} m (must be exactly 0)")
+print(f"  UNDER-RELAXATION a=0.5 DIFFERS: max|Δwtd| vs baseline = {d_rx05:.3e} m (> 0, else a=1 proves nothing)")
+relax_ok = (d_rx1 == 0.0) and (d_rx05 > 0.0)
+
+ok = below_ok and exfiltration and rel < mbtol and agree < tol and relax_ok
 print("PASS: settles; wtd<=0 with a pinned exfiltration constraint; runoff+ocean close the budget; schemes agree" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

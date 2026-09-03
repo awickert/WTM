@@ -181,7 +181,7 @@ convergence in water is the right production default.
 | `-wtm_kirchhoff` | **dormant** | Kirchhoff variable change. NOT isolated: it gates the active-set pin in `FormJacobianLocal`, where the SNES variable is the discharge potential |
 | ~~`-wtm_aa_picard`~~ | **RETIRED 2026-09-03** | removed; the negative result it produced is kept in `benchmark/AA_PICARD.md` |
 | ~~`-wtm_predict_guess`~~ | **RETIRED 2026-09-03** | removed; measured saving was ONE solve out of 907 |
-| `-wtm_relax` | **dormant** | sub-step under-relaxation; default 1.0 = off |
+| `-wtm_relax` | **varied** | now `dev.under_relaxation`; `tests/limit_cycle` asserts a=1.0 is byte-identical (0.000e+00) and a=0.5 differs |
 
 ## Numerical smoothing  (3)
 

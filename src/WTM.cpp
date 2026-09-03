@@ -1105,6 +1105,10 @@ void apply_config_petsc_options(const std::string& config_file) {
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
+  // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
+  // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
+  // problem stated. The equilibrium fixed point is unchanged (damping vanishes there).
+  if (auto n = root["dev"]["under_relaxation"]) set_opt_if_unset("-wtm_relax", n.as<std::string>().c_str());
 
   // surface_water.collection.sink (legacy band-sink parameters; effective only with collection.method: legacy)
   if (auto s = root["surface_water"]["collection"]["sink"]) {
@@ -1368,6 +1372,14 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
   f << "  padded_dirichlet: " << (dev_padded == PETSC_TRUE) << "\n";
+  // Read the OPTIONS DATABASE, not g_relax: that global is parsed inside update(), which has not run
+  // when this is written, so it would report the compile-time default whatever the user asked for.
+  // The same trap made the smoothing widths dump their defaults; see benchmark/CONFIG_SCHEMA_OPTIONS.md.
+  {
+    PetscReal relax_val = 1.0;
+    PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &relax_val, nullptr);
+    f << "  under_relaxation: " << relax_val << "\n";
+  }
 
   f << "\nparallel:\n";
   f << "  threads_per_rank: " << params.threads_per_rank << "\n";

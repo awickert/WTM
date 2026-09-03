@@ -28,6 +28,7 @@
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
 #   extinction_depth      -> evaporation.extinction_depth          (m)
+#   under_relaxation      -> dev.under_relaxation
 #   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)
 #   et_sigmoid_width      -> evaporation.et_sigmoid.logistic_width (m)
 #   adaptive_dt true|false -> solver.adaptive_dt
@@ -167,18 +168,20 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have deltat |
     fi
 fi
 
-# --- dev ---------------------------------------------------------------------
-# storage_form is a DEV key: the two assemblies are the same equation (S is the exact secant), so it
-# exists for tests/storage_equivalence, not for tuning. Default volume.
-if have storage; then
-    echo "dev:"
-    echo "  storage_form: $(val storage)"
-fi
-
 if have convergence_metric || have convergence_water_volume_tol; then
     echo "  convergence:"
     have convergence_metric    && echo "    metric: $(val convergence_metric)"
     have convergence_water_volume_tol && echo "    water_volume_tol: $(val convergence_water_volume_tol)"
+fi
+
+# --- dev ---------------------------------------------------------------------
+# Both are DEV keys. storage_form exists for tests/storage_equivalence, not for tuning (the two
+# assemblies are the same equation -- S is the exact secant). under_relaxation VOIDS a transient
+# trajectory: it steps a damped surrogate rather than the problem stated.
+if have storage || have under_relaxation; then
+    echo "dev:"
+    have storage          && echo "  storage_form: $(val storage)"
+    have under_relaxation && echo "  under_relaxation: $(val under_relaxation)"
 fi
 
 # --- evaporation ---------------------------------------------------------------
