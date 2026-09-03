@@ -87,7 +87,20 @@ struct Parameters {
   // run can report what it resolved to instead of leaving the user to infer it.
   bool time_integration_auto = false;
 
-  // solver.newton.dt_continuation: Newton's dt-ramp (PTC). RESOLVED here, because its default is not constant:
+  // solver.newton.dt_continuation: PSEUDO-TRANSIENT CONTINUATION (PTC) -- the standard method for
+  // globalising Newton toward a STEADY STATE (Kelley & Keyes 1998 -- CITATION UNVERIFIED, written from
+  // memory; confirm the reference before this ships). A
+  // pseudo-time term S/dt is added to the Jacobian, which makes it diagonally dominant and keeps a far
+  // or cold guess inside the basin; dt is then RAMPED from small toward large as the state warms, so
+  // the term fades and the iteration approaches the true steady Newton step. "Continuation" is the
+  // literature's word for that deformation from an easy problem to the hard one -- it does NOT mean
+  // continuing or resuming a run, which is tests/snapshot_restart's subject.
+  //
+  // Its control law is SOLVE-EASE, not error: grow when the step converged in <= grow_if_niter_leq
+  // iterations, hold when it was hard, reject-shrink-retry when it did not converge. There is no error
+  // estimate on this path, and simulated time is not respected -- it marches a COUNT of accepted steps.
+  //
+  // RESOLVED here, because its default is not constant:
   // solver.method: newton IMPLIES it, since plain Newton does not converge from a cold start
   // (DIVERGED_LINE_SEARCH). solver.newton.dt_continuation: false opts out -- legitimate for a warm finish --
   // and CreateSNES warns. The `_set` flag distinguishes "the user declined" from "nobody asked", which
