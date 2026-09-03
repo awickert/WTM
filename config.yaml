@@ -156,7 +156,6 @@ parallel:
 # dev (experimental; off by default):
 # dev:
 #   allow_aboveground_water_columns: false
-#   padded_dirichlet: false
 #   under_relaxation: 1.0      # 1.0 = off. Damps the committed step: w <- a*w_solve + (1-a)*w_prev,
 #                              # over the WHOLE grid. Built to damp free-boundary flicker, which was
 #                              # later diagnosed as largely a per-sub-step vs per-cycle metric artifact

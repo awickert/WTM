@@ -3,15 +3,25 @@
 **Date:** 2026-08-14 (updated 2026-08-20) · **Branch:** `bdf2-adaptive-dt` · **Status:** the mask-aware
 ghost-node boundary is now the **unconditional default** (no flag). The land-edge condition is selectable via
 `-wtm_land_boundary neumann_toposlope|dirichlet` (default `neumann_toposlope`); the legacy padding method is
-retained for verification behind `-wtm_dev_padded_dirichlet` (see below). cc-validated on Esquibel; validated
+was retained for verification behind `-wtm_dev_padded_dirichlet` until 2026-09-04, when that flag was RETIRED
+(see below). cc-validated on Esquibel; validated
 against closed-form parabola solutions in `tests/boundary_analytic/` and against the legacy padding in
 `tests/boundary_consistency/`. Tasks #96, and the land-Dirichlet selector.
 
-> **Flag history:** this was originally gated behind `-wtm_ghost_boundary` (off by default). That toggle is
-> retired: the mask-aware boundary is the default, and `-wtm_ghost_boundary false` is replaced by
-> `-wtm_dev_padded_dirichlet` (which forces every edge to sea-level ocean and *fails loudly* unless the domain
-> boundary is already all ocean, so it cannot silently discard edge land). References to `-wtm_ghost_boundary`
-> below describe the now-default behavior.
+> **Flag history.** Originally gated behind `-wtm_ghost_boundary` (off by default); that toggle was retired
+> when the mask-aware boundary became the default, and `-wtm_ghost_boundary false` was replaced by
+> `-wtm_dev_padded_dirichlet`. **That flag is now retired too (2026-09-04), and the reason is worth keeping:
+> its own guard made it incapable of ever showing a difference.** It forced every edge to sea-level ocean and
+> *failed loudly* unless the boundary was already all ocean — which is exactly the case where the ghost scheme
+> reproduces it. So on a legal domain it was a measured no-op (0.000000e+00 m on the ocean-ringed
+> `fsm_consistency` fixture), and on any other domain it refused to run. It could only ever demonstrate
+> agreement, which `tests/boundary_consistency` asserts to ~7e-12 without it.
+>
+> That also disposes of the two uses one would reach for it: it cannot reproduce v2.0.1's boundary for a
+> version comparison, because v2.0.1 differs from us precisely on non-ocean-ringed domains — the case the
+> guard forbids; and it serves no verification purpose now that the ghost scheme is proven, because the guard
+> confines it to where the two coincide by construction. References to `-wtm_ghost_boundary` below describe
+> the now-default behavior.
 
 ## The problem with padding + `setEdges(0)`
 

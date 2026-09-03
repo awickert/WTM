@@ -1,6 +1,6 @@
 # The remaining `-wtm_*` flags: an inventory, and the question it raises
 
-**What this is.** The 28 `-wtm_*` flags the model still reads, grouped by what they control, and
+**What this is.** The 27 `-wtm_*` flags the model still reads, grouped by what they control, and
 classified by whether their code actually *executes* anywhere. It exists because the next step in the
 config migration is a schema DESIGN, and a design needs the whole set in front of it rather than one
 parameter at a time.
@@ -214,7 +214,7 @@ happens without the taper*
 | flag | coverage | note |
 |---|---|---|
 | `-wtm_dev_allow_aboveground_water_columns` | **varied** | 5 tests; disables the surface clamp entirely. A `dev.` config key exists too |
-| `-wtm_dev_padded_dirichlet` | **dormant** | verification tool for the ghost scheme. Its schema key `dev.padded_dirichlet` already exists and is unused by either route |
+| ~~`-wtm_dev_padded_dirichlet`~~ | **RETIRED 2026-09-04** | its own guard made it a no-op wherever it was legal, and a refusal everywhere else; see BOUNDARY_CONDITIONS.md |
 
 ## FSM coupling experiment  (1)
 

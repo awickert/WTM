@@ -96,8 +96,9 @@ places it differs are worth stating rather than smoothing over:
 
 - `-wtm_anderson` is classified ABSTRACTED but has no bridge entry, because Anderson is the DEFAULT —
   `solver.method: anderson` reaches it by setting no flag at all.
-- `-wtm_dev_allow_aboveground_water_columns` and `-wtm_dev_padded_dirichlet` are classified DEV but
-  *are* bridged, under `dev:`. Being developer knobs and being config-reachable are independent.
+- `-wtm_dev_allow_aboveground_water_columns` is classified DEV but *is* bridged, under `dev:`. Being a
+  developer knob and being config-reachable are independent. (`-wtm_dev_padded_dirichlet` was the other
+  example here; retired 2026-09-04.)
 
 So: 25 − 1 (anderson, unbridged) + 2 (dev, bridged) = 26, matching the bridge count measured directly
 from `apply_config_petsc_options`.
@@ -259,7 +260,7 @@ can retune the sigmoid but cannot turn it off.
 | flag | what it does | status | YAML today |
 |---|---|---|---|
 | `-wtm_dev_allow_aboveground_water_columns` | disable the surface clamp entirely | DEV | `dev.allow_aboveground_water_columns` (already exposed) |
-| `-wtm_dev_padded_dirichlet` | verification tool for the ghost scheme | DEV | `dev.padded_dirichlet` (already exposed) |
+| ~~`-wtm_dev_padded_dirichlet`~~ | verification tool for the ghost scheme | **RETIRED 2026-09-04** | n/a — removed, with its schema key |
 
 ---
 

@@ -81,8 +81,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
       // what makes an old config say so instead of drifting.
-      {"dev", {"allow_aboveground_water_columns", "padded_dirichlet", "storage_form",
-               "under_relaxation"}},
+      {"dev", {"allow_aboveground_water_columns", "storage_form", "under_relaxation"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
       {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace"}},

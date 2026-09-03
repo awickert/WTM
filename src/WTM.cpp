@@ -1104,7 +1104,6 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // dev
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
-  if (auto n = root["dev"]["padded_dirichlet"])               { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_padded_dirichlet", "true"); }
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
   // problem stated. The equilibrium fixed point is unchanged (damping vanishes there).
@@ -1246,9 +1245,8 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   found = PETSC_FALSE;
   PetscOptionsGetString(nullptr, nullptr, "-snes_max_it", buf, sizeof(buf), &found);
   if (found) maxit = buf;
-  PetscBool dev_aboveground = PETSC_FALSE, dev_padded = PETSC_FALSE;
+  PetscBool dev_aboveground = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &dev_aboveground, nullptr);
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_padded_dirichlet", &dev_padded, nullptr);
 
   f << "# full_config.yaml -- every setting this run resolved to, written by the run itself.\n"
     << "# Re-runnable as-is. output.outfile_prefix and output.run_log are absolute here because\n"
@@ -1371,7 +1369,6 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "\ndev:\n";
   f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
-  f << "  padded_dirichlet: " << (dev_padded == PETSC_TRUE) << "\n";
   // Read the OPTIONS DATABASE, not g_relax: that global is parsed inside update(), which has not run
   // when this is written, so it would report the compile-time default whatever the user asked for.
   // The same trap made the smoothing widths dump their defaults; see benchmark/CONFIG_SCHEMA_OPTIONS.md.
