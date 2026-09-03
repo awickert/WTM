@@ -96,13 +96,14 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv_govern", &vcg);
   user_context.snes_volume_conv_govern = (vcg == PETSC_TRUE);
-  user_context.snes_volume_conv        = (vc == PETSC_TRUE) || user_context.snes_volume_conv_govern;  // govern implies on
+  user_context.vol_step_trace          = (vc == PETSC_TRUE);  // INDEPENDENT of governing, see AppCtx
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_snes_vol_tol", &user_context.snes_volume_conv_tol, nullptr);
-  if (user_context.snes_volume_conv)
+  if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_snes_volume_conv: per-solve convergence in WATER |S*Δwtd| (rel tol %g) [%s].\n",
-                (double)user_context.snes_volume_conv_tol,
-                user_context.snes_volume_conv_govern ? "GOVERNING" : "DIAGNOSTIC — verdict deferred to snes_stol");
+                "solver.convergence.metric: water -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
+                (double)user_context.snes_volume_conv_tol);
+  if (user_context.vol_step_trace)
+    PetscPrintf(PETSC_COMM_WORLD, "output.trace: [water_step] -- per-iteration head-vs-water step lines.\n");
 
   // Semi-implicit Picard path (experimental; PICARD_MG_DESIGN.md / PICARD_MATH.md).
   // Gated behind solver.method: picard so the default Anderson path is untouched. When on,

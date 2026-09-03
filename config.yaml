@@ -37,9 +37,12 @@ output:
   run_log: run.log             # per-run status log within the run subdir
   verbosity: normal            # quiet | normal | verbose
   if_exists: increment         # increment (new subdir each run) | overwrite | error
-  trace: []                    # extra machine-readable per-step lines; [] = none.
+  trace: []                    # extra machine-readable trace lines; [] = none.
                                # [dt] emits DTTRACE (dt, est, tol, factor, niter, accepted), REJECTED
                                # steps included -- they are where a mis-scaled estimate does its damage.
+                               # [water_step] emits a per-ITERATION line: the head step, an independent
+                               # reconstruction of it, and the same step measured in WATER. Denser than
+                               # [dt], which is per-step. Answer-neutral -- it only prints.
                                # A list, so further traces can join without a new key each.
 
 boundaries:
@@ -80,6 +83,18 @@ solver:
                                # newton means the WORKING recipe: the analytic-Jacobian path WITH
                                # dt-continuation, which it needs to converge from a cold start.
   tolerance: 1e-6              # per-solve convergence step tolerance (-> snes_stol)
+  convergence:
+    metric: head               # head | water -- what the PER-SOLVE step test judges.
+                               # `water` swaps the relative head-step test for |S*Δwtd|, so all three
+                               # "close enough" gates speak one language (this, run.equilibrium_stop
+                               # and solver.time_step.error_tol are otherwise 2 water, 1 head). It
+                               # matters where storativity is small: a deep tight cell can swing its
+                               # head a long way while moving almost no water, and head-judged
+                               # convergence keeps grinding on it. CHANGES THE ANSWER.
+    water_tol: 1.0e-8          # relative water-step tolerance; READ ONLY when metric: water.
+                               # Loosening it does NOT save time -- each solve stops under-converged
+                               # and the outer loop needs more cycles (measured: 1e-5 costs 3x the
+                               # solves of 1e-8 on tests/solver_consistency).
   max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
   time_integration: tr-bdf2    # auto | backward-euler | bdf2 | tr-bdf2
                                # auto resolves PER METHOD and the run prints what it chose. tr-bdf2 runs

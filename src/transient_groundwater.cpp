@@ -1071,7 +1071,7 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   const double water_rel = (g[2] > 0.0) ? std::sqrt(g[1] / g[2]) : 0.0;  // solution-relative water step
   const double head_L2   = std::sqrt(g[3]);                              // reconstructed ||Δx||; should ≈ snorm
 
-  if (uc->snes_volume_conv && !uc->snes_volume_conv_govern)
+  if (uc->vol_step_trace)  // printing is now independent of the verdict: both, either, or neither
     PetscPrintf(PETSC_COMM_WORLD,
                 "  [vol-conv diag] it=%d  head snorm=%.3e (recon %.3e) rel=%.3e | water max=%.3e L2=%.3e rel=%.3e\n",
                 (int)it, (double)snorm, head_L2, (double)(xnorm > 0.0 ? snorm / xnorm : 0.0),
@@ -1661,7 +1661,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // Volume-weighted per-solve convergence (#127), opt-in. Registered here so it covers the plain + TR-BDF2
     // paths; the adaptive-restart branch below installs ITS own test (so volume-conv applies only to the
     // ordinary production solve). Diagnostic unless -wtm_snes_volume_conv_govern. See VolumeStepConverged.
-    if (user_context.snes_volume_conv && !user_context.use_adaptive_restart)
+    if ((user_context.vol_step_trace || user_context.snes_volume_conv_govern) && !user_context.use_adaptive_restart)
       SNESSetConvergenceTest(user_context.snes, VolumeStepConverged, &user_context, nullptr);
 
     // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)

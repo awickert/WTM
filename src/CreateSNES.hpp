@@ -109,8 +109,13 @@ struct AppCtx {
   // the per-solve gate matches eq_tol / dt_tol (all water). Opt-in. DIAGNOSTIC when !govern (prints head-vs-
   // water step, defers the verdict to SNESConvergedDefault -- changes nothing); GOVERN swaps the head stol test
   // for the water one (atol/rtol/maxit unchanged). See transient_groundwater.cpp::VolumeStepConverged.
-  bool      snes_volume_conv        = false;   // -wtm_snes_volume_conv: register the test (diagnostic by default)
-  bool      snes_volume_conv_govern = false;   // -wtm_snes_volume_conv_govern: make the water step authoritative
+  // TWO INDEPENDENT THINGS, and they used to be tangled. `vol_step_trace` only PRINTS; it cannot move
+  // the answer. `snes_volume_conv_govern` swaps the per-solve stol test from head to water and DOES move
+  // it. Previously the printing flag was force-set by governing, and the print was then gated on
+  // `conv && !govern` -- so governing silently SUPPRESSED the trace and the two could never be had
+  // together. Now output.trace: [water_step] drives the first and solver.convergence.metric the second.
+  bool      vol_step_trace          = false;   // output.trace: [water_step] -- per-iteration line, answer-neutral
+  bool      snes_volume_conv_govern = false;   // solver.convergence.metric: water -- authoritative
   PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
                                                // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)

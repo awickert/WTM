@@ -1030,6 +1030,13 @@ void apply_config_petsc_options(const std::string& config_file) {
   // solver.method is fully config-owned (Parameters::solver_method); no flag bridge remains. The
   // validation still lives in Parameters, so an unknown value aborts naming the legal ones.
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
+  // solver.convergence.metric: head (default) | water. Answer-changing, so it belongs in the config:
+  // a run that used `water` could not otherwise be reproduced from its archived resolved config.
+  if (auto n = root["solver"]["convergence"]["metric"])
+    if (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "water"}) == "water")
+      set_opt_if_unset("-wtm_snes_volume_conv_govern", "true");
+  if (auto n = root["solver"]["convergence"]["water_tol"])
+    set_opt_if_unset("-wtm_snes_vol_tol", n.as<std::string>().c_str());
   if (auto n = root["solver"]["max_iterations"]) {
     const std::string v = n.as<std::string>();
     if (v != "auto") set_opt_if_unset("-snes_max_it", v.c_str());
@@ -1062,8 +1069,9 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (!tr.IsSequence())
       throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
     for (const auto& e : tr) {
-      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt"});
-      if (v == "dt") set_opt_if_unset("-wtm_dt_trace", "true");
+      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step"});
+      if (v == "dt")         set_opt_if_unset("-wtm_dt_trace", "true");
+      if (v == "water_step") set_opt_if_unset("-wtm_snes_volume_conv", "true");
     }
   }
 
@@ -1274,7 +1282,12 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  run_log: '" << params.textfilename << "'\n";
   f << "  if_exists: " << params.if_exists << "\n";
   f << "  verbosity: " << params.verbosity << "\n";
-  f << "  trace: " << (uc.dt_trace ? "[dt]" : "[]") << "\n";
+  {  // a REAL list now that there are two values -- "[dt]" hard-coded would misreport [water_step]
+    std::string tr;
+    if (uc.dt_trace)       tr += "dt";
+    if (uc.vol_step_trace) tr += (tr.empty() ? "" : ", "), tr += "water_step";
+    f << "  trace: [" << tr << "]\n";
+  }
 
   f << "\nboundaries:\n";
   f << "  land: " << (params.land_boundary_dirichlet ? "dirichlet_sea_level" : "neumann_toposlope") << "\n";
@@ -1306,6 +1319,9 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "\nsolver:\n";
   f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";
   f << "  tolerance: " << stol << "\n";
+  f << "  convergence:\n";
+  f << "    metric: " << (uc.snes_volume_conv_govern ? "water" : "head") << "\n";
+  f << "    water_tol: " << uc.snes_volume_conv_tol << "\n";
   f << "  max_iterations: " << maxit << "\n";
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
   f << "  adaptive_dt: " << params.adaptive_dt << "\n";
