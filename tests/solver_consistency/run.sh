@@ -80,12 +80,18 @@ run newton
 METHOD= emit volconv
 run volconv -wtm_snes_volume_conv
 
+# FIFTH ARM: the same solve with the water step GOVERNING (-wtm_snes_volume_conv_govern), i.e. the
+# per-solve stol test judged in water instead of head. A convergence criterion decides WHEN a solve
+# stops, never WHERE it converges, so this must land on the same equilibrium as every other arm.
+METHOD= emit volgov
+run volgov -wtm_snes_volume_conv_govern
+
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
-VC=$(ls "$WORK"/volconv_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" <<'PY'
+VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)
+TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
 import sys, os, re, numpy as np, rasterio
 an, pi, ne = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
-vc_tif, vc_log = sys.argv[4], sys.argv[5]
+vc_tif, vc_log, vg_tif = sys.argv[4], sys.argv[5], sys.argv[6]
 m = np.ones_like(an, bool); m[:, 0] = False   # exclude the ocean column
 d_pi = float(np.max(np.abs((pi - an)[m]))); d_ne = float(np.max(np.abs((ne - an)[m])))
 tol = float(os.environ["TOL"])
@@ -136,6 +142,15 @@ vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) <
 d_vc = float(np.max(np.abs((rasterio.open(vc_tif).read(1).astype(float) - an)[m])))
 vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
        f"max|wtd(diagnostic) - wtd(plain anderson)| = {d_vc:.3e} m (must be exactly 0)")
+
+# GOVERNING. A convergence test decides when to STOP, not where to converge, so swapping the head
+# step for the water step must not move the equilibrium -- and must not be a no-op either, or the
+# switch would be untestable by construction.
+d_vg = float(np.max(np.abs((rasterio.open(vg_tif).read(1).astype(float) - an)[m])))
+vcheck("GOVERNING lands on the same equilibrium", d_vg <= tol,
+       f"max|wtd(water-governed) - wtd(head-governed)| = {d_vg:.3e} m (tol {tol})")
+vcheck("GOVERNING is not a no-op", d_vg > 0.0,
+       f"the same figure is nonzero, so the criterion really did change the stopping")
 
 if d_pi <= tol and d_ne <= tol and ok_vc:
     print("PASS: Anderson, Picard, and Newton converge to the same interior water table"); sys.exit(0)
