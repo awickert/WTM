@@ -69,7 +69,9 @@ WTD_TOL = 1e-6         # metres; above FP reduction noise, below any real error
 #           At the original 6 significant figures both printed as 792226000.000000, which is why no
 #           rank sweep had ever shown it.
 DIAG_RTOL_EXACT    = 1e-12
-DIAG_RTOL_STATE    = 1e-9    # evap; worst measured 5.123e-11 (n=4/n=8). NOT loosened -- see ACCUM.
+# STATE is GONE. Its last member, total_evap_removed, is not a sum over the final field at all -- it is
+# accumulated ACROSS STEPS exactly like total_ocean_outflow, and calling it a state sum was my error when
+# ACCUM was split out. Both belong in ACCUM.
 # ACCUM  total_ocean_outflow, split out of STATE when solver.time_integration: auto began resolving to
 #        tr-bdf2 on the Anderson path. It is not a sum over the final field (which is what STATE means);
 #        it is accumulated ACROSS STEPS, and TR-BDF2 accumulates it through a 3-point flux quadrature
@@ -86,8 +88,20 @@ DIAG_RTOL_STATE    = 1e-9    # evap; worst measured 5.123e-11 (n=4/n=8). NOT loo
 #          - the arm that routes far MORE water (fsm1_rr03) PASSES at every rank count, and has the
 #            LARGEST field difference of all (4.180e-08 m) -- so the sensitivity does not track the
 #            field, which is what an accumulation-order effect looks like
-#        Worst measured 3.479e-09; 1e-8 carries ~2.9x margin, the same discipline as the DISCRETE class.
-DIAG_RTOL_ACCUM    = 1e-8
+#        SECOND MEMBER, added after the adaptive_dt default landed: total_evap_removed. It fails for the
+#        same reason and differs only in MAGNITUDE, because the bound scales with how many terms are
+#        summed: evap accumulates over every land cell every step, ocean outflow over boundary cells
+#        only. Measured worsts differ ~4x accordingly:
+#          total_ocean_outflow  3.479e-09   (n=2)
+#          total_evap_removed   1.482e-08   (n=6 or n=8)
+#        The field stays consistent throughout -- wtd max|delta| 5.662e-10 .. 3.899e-08 m against
+#        WTD_TOL 1e-6 -- so it is the accumulators that move, not the answer.
+#
+#        Set from the WORST member with ~3x margin, the DISCRETE class's discipline. NOTE the cost of one
+#        shared class: at 5e-8 the ocean column is covered with ~14x margin rather than ~3x, so it is a
+#        weaker check for that column than it could be. Splitting them would buy a tighter ocean bound at
+#        the price of a per-column threshold, which is what the class scheme exists to avoid.
+DIAG_RTOL_ACCUM    = 5e-8
 DIAG_RTOL_STORED   = 1e-8    # the ONE column the code fixes did not tighten (worst 2.281e-09 at n=6)
 DIAG_RTOL_DISCRETE = 1e-9    # was 1e-2 -- see above; worst measured now 2.076e-11
 
@@ -98,7 +112,7 @@ DIAG_COLS = [
     (19, "runoff_to_surface",     DIAG_RTOL_EXACT),
     (12, "total_ocean_outflow",   DIAG_RTOL_ACCUM),
     (13, "stored_volume",         DIAG_RTOL_STORED),
-    (17, "total_evap_removed",    DIAG_RTOL_STATE),
+    (17, "total_evap_removed",    DIAG_RTOL_ACCUM),
     (11, "total_surface_removed", DIAG_RTOL_DISCRETE),
     (9,  "total_loss_to_ocean",   DIAG_RTOL_DISCRETE),
 ]

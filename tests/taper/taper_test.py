@@ -78,7 +78,18 @@ def write_fixture(d, owe, topo):
 
 
 def _cfg(d, txt, prefix):
+    # adaptive_dt PINNED OFF. Study A's DET_RTOL was derived from a measured FLOOR under fixed dt: the
+    # cross-rank difference tracked snes_stol and then floored at 8.63e-10 (4.18e-09 -> 8.63e-10 ->
+    # 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), which is what makes 1e-9 a principled bound rather than a
+    # fitted one. Under adaptive stepping that floor is GONE -- the difference stops being
+    # tolerance-limited and moves erratically, measured on this fixture at stol 1e-10 vs 1e-12:
+    #     owe=0.050  1.46e-09 -> 6.79e-08      owe=0.150  5.63e-10 -> 4.55e-09
+    #     owe=0.200  1.54e-09 -> 4.71e-11
+    # i.e. up to ~100x the fixed-dt floor and NOT reducible by tightening the solve. Widening DET_RTOL to
+    # accommodate that would bless a real loss of cross-rank reproducibility rather than measure the
+    # taper, which is this test's subject. See the task on adaptive + FSM cross-rank behaviour.
     return f"""run_type equilibrium
+adaptive_dt false
 fsm_on 1
 evap_mode 1
 infiltration_on 0
