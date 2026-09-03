@@ -1571,13 +1571,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // measured on the island fixture, max wtd 5.6986 m -> 0.0000 m with ZERO cells holding more than 1 mm.
   // The reader and its source are the same line of code. Fixing it means carrying the lake stage in its
   // own array rather than inferring it from starting_wtd; see benchmark/scheme_bench/README.md.
-  if (g_fsm_delta_source && g_active_set)
-    throw std::runtime_error(
-        "-wtm_fsm_delta_source cannot be combined with the active_set exfiltration enforcement (now the "
-        "default). The active-set obstacle is read from the water table that FillSpillMerge writes each "
-        "step, and -wtm_fsm_delta_source exists to suppress exactly that write -- so the obstacle would "
-        "collapse to the land surface and every lake would drain (measured: 5.6986 m -> 0.0000 m). Use "
-        "surface_water.collection.method: implicit or explicit with -wtm_fsm_delta_source, or drop the flag.");
+  // fsm_delta_source x active_set: the hard error here is GONE (2026-09-03, #40). It existed because the
+  // active-set obstacle was INFERRED as max(0, starting_wtd) -- the table FSM overwrites -- and
+  // fsm_delta_source exists to suppress that overwrite, so the obstacle collapsed to the land surface and
+  // every lake drained (5.6986 m -> 0.0000 m). The obstacle now reads the CARRIED lake_stage, which FSM
+  // writes under both couplings, so suppressing the overwrite no longer blinds the pin.
+  //
+  // MEASURED on tests/fsm_consistency inputs, anderson + active_set + FSM, 600 yr, fixed dt:
+  //   lakes SURVIVE          max wtd 3.3049 m (source) vs 3.4362 m (overwrite) at 120 yr
+  //   both SETTLE            per-cycle |S.dwtd| max decays monotonically; source is smaller at every
+  //                          sample (0.02397 vs 0.02511 at 600 yr), consistent with the Lie-split jump
+  //                          being gone -- the skim/return path does NOT cycle water indefinitely
+  //   both CONSERVE          exact_budget_residual / recharge = 5.656e-08 (source) vs 7.926e-08
+  //
+  // IT IS NOT ANSWER-NEUTRAL, and the difference has the shape Andy predicted. Lake stage over time:
+  //   during rapid drawdown source runs 1-8% LOWER (returned water arrives a step late, and some is
+  //   skimmed straight back out -- it cycles); near the residual stage it settles ~21% HIGHER
+  //   (0.183 m vs 0.151 m -- the gradual return slows the lowering). Which coupling is right is a
+  //   MODELLING judgement, not a numerical one; overwrite remains the default.
 
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / exfiltration). At
