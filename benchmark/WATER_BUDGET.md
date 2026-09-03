@@ -247,7 +247,41 @@ recharge is `1.6e-6` for the overwrite path and **`6.9e-11`** for `-wtm_fsm_delt
 path conserves *more* tightly, and for a structural reason: its coupling flux is an explicit term in
 the residual, which the solver drives to its tolerance, whereas the overwrite arrives as a state jump
 that no per-step discrete identity can see. Column 16 (the physical residual, built on the external
-definition) still reads ~18% for the source path; that is the definitional mismatch, not a leak.
+definition) does not close as tightly for the source path, and that is a definitional mismatch rather
+than a leak.
+
+**CORRECTED 2026-09-03. Most of what column 16 read under source coupling was a REPORTING DEFECT, not
+the definitional mismatch it was attributed to.** `-wtm_fsm_delta_source` folded FSM's per-cell delta
+into `rech_dist` — the same array `set_starting_values` books as `total_recharge_direct`. Columns 19
+and 9 therefore reported external input *plus* internal redistribution, which is not what §2 defines
+them to be, and `ocean_loss_closing` and column 16 are built on top of them. The symptom is
+unmistakable once looked at: on `tests/fsm_consistency`, 120 yr, `active_set` + FSM at fixed `dt`,
+cumulative column 9 ran to **−6.33972e+10 at cycle 1** and stayed negative to cycle ~20. A negative
+cumulative external input is not a mismatch of definitions; it is a wrong number.
+
+Giving the delta its own carrier (`AppCtx::fsm_delta_source_vec`) so the solve reads
+`rech_dist + fsm_delta_dist` while the booking reads `rech_dist` alone, same fixture, before → after:
+
+| | before | after |
+|---|---|---|
+| col 17 `exact_budget_residual` | −5.982528e+04 | −5.982528e+04 (unchanged, all digits) |
+| col 14 `stored_volume` | −8.22860714e+10 | −8.22860714e+10 (state unchanged) |
+| col 19 `recharge_direct` | 1.81278133193e11 | 2.08478542101e11 |
+| col 16 / recharge | 1.8155e-01 | **2.7389e-02** |
+| min cumulative col 9 | −6.33972e+10 | +1.73732e+09, monotone |
+
+Conservation is untouched by construction and was verified rather than assumed:
+`accumulate_budget_terms` reads `rech_vec` (`transient_groundwater.cpp:843`), the **full source term**,
+which is the semantics this section argues for. Only the *external* columns changed. The overwrite path
+is bit-identical in every run-log column.
+
+Two things to carry forward. First, after the fix **column 19 is identical between the two couplings to
+all 12 printed digits** (208478542101) — which is what "external" is supposed to mean, and is now pinned
+by an arm in `tests/fsm_conservation` together with a non-vacuity gate. Second, the `~18%` figure this
+paragraph used to quote was measured on the dome fixture *with the defect present*; that fixture is not
+in the repo, so the number cannot be reproduced directly, but the mechanism above applied to it equally
+and the residual quoted for it should be treated as superseded rather than as a property of the
+coupling. What remains of column 16 under source coupling on a fixture we do have is 2.7e-02, not 1.8e-01.
 
 ## 4a. What the exact residual then uncovered: N–S flux on a lat-lon grid
 
