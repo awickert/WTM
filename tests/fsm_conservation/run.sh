@@ -120,6 +120,36 @@ state_gap = float(np.max(np.abs(S14s[:n] - S14[:n])) / max(np.max(np.abs(S14[:n]
 check("NON-VACUOUS (the two couplings really differ)", state_gap > 1e-3,
       f"max |d stored_volume| / |overwrite| = {state_gap:.3e} (> 1e-3)")
 
+# ABSOLUTE CLOSURE, and the reason a per-cycle check could not stand in for it.
+#
+# The CONSERVATION check above differences the cumulative residual between consecutive cycles. That is
+# deliberately blind to a CONSTANT offset -- this file's own header calls the offset a startup constant
+# and normalises it away -- so an error that enters once, at the start, and then simply sits there is
+# invisible to it. One did. The budget baseline (stored_volume_initial) was captured on the first
+# PrintValues call, i.e. at the END of cycle 0, while every flux accumulator starts AT cycle 0, so the
+# first cycle's storage change was missing from d_stored. On tests/fsm_consistency at 120 yr that was
+# 34.84% of recharge under overwrite coupling, and the per-cycle check passed throughout.
+#
+# Hence this: the residual must be small in ABSOLUTE terms at the end of the run, not merely steady.
+#
+# TOLERANCE, named because it is a choice: 1e-2 of cumulative recharge, on the OVERWRITE arm at the end
+# of the run. Measured here at 2.08e-3, so ~5x headroom; with the baseline defect present it exceeds
+# this by orders of magnitude. WATER_BUDGET.md section 4 puts the spun-up expectation near 4e-4, which
+# this 24 yr run is too short to reach.
+#
+# ONLY THE OVERWRITE ARM IS GATED, and that is a deliberate limit rather than an oversight.
+# -wtm_fsm_delta_source hands FSM's volume change to the NEXT step's source term, so at any report
+# boundary there is water FSM has already moved -- it is in stored_volume -- whose source term has not
+# yet been applied. That in-flight lag makes the source arm's closure large early and decay with run
+# length: 7.37e-01 at the end of THIS 24 yr run against 1.4e-04 at 120 yr on the same fixture.
+# HYPOTHESIS, NOT VERIFIED: that the lag is exactly one step and therefore O(dt). Until someone
+# measures its dt-scaling, gating the source arm here would pin a number nobody has explained.
+R9    = np.array([float(r[8])  for r in rows])
+resid = np.array([float(r[15]) for r in rows])
+closure = abs(float(resid[-1])) / float(R9[-1]) if R9[-1] > 0 else float("inf")
+check("ABSOLUTE CLOSURE (overwrite arm, end of run)", closure < 1e-2,
+      f"|budget_residual|/recharge = {closure:.3e} (< 1e-2)")
+
 print("PASS: FSM path conserves water per cycle and keeps the lake" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY
