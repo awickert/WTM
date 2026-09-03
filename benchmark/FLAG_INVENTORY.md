@@ -1,6 +1,6 @@
 # The remaining `-wtm_*` flags: an inventory, and the question it raises
 
-**What this is.** The 29 `-wtm_*` flags the model still reads, grouped by what they control, and
+**What this is.** The 28 `-wtm_*` flags the model still reads, grouped by what they control, and
 classified by whether their code actually *executes* anywhere. It exists because the next step in the
 config migration is a schema DESIGN, and a design needs the whole set in front of it rather than one
 parameter at a time.
@@ -180,7 +180,7 @@ convergence in water is the right production default.
 | `-wtm_bdf2` | **archive-only** | the ORIGINAL head-form BDF2. 9 callers, ALL orphaned. `solver.time_integration: bdf2` maps to BDF2-on-V, so this has NO config route |
 | `-wtm_kirchhoff` | **dormant** | Kirchhoff variable change. NOT isolated: it gates the active-set pin in `FormJacobianLocal`, where the SNES variable is the discharge potential |
 | ~~`-wtm_aa_picard`~~ | **RETIRED 2026-09-03** | removed; the negative result it produced is kept in `benchmark/AA_PICARD.md` |
-| `-wtm_predict_guess` | **dormant** | predictor-seeded initial guess |
+| ~~`-wtm_predict_guess`~~ | **RETIRED 2026-09-03** | removed; measured saving was ONE solve out of 907 |
 | `-wtm_relax` | **dormant** | sub-step under-relaxation; default 1.0 = off |
 
 ## Numerical smoothing  (3)

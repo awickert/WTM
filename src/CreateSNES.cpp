@@ -169,20 +169,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
         "solver.method: " + params.solver_method +
         " was requested. Set solver.method: anderson, or choose a different time_integration. (Before "
         "this check the integrator silently won and the run used Anderson.)");
-  // -wtm_predict_guess: seed the initial guess (and thus iteration-1 T̄) with the 2nd-order history
-  // extrapolation instead of w^n. Needs the w^{n-1} history carrier (below).
-  PetscBool predict_guess_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_predict_guess", &predict_guess_flag);
-  user_context.use_predict_guess = (predict_guess_flag == PETSC_TRUE);
   // solver.method: newton -- true Newton-Krylov path (analytic Jacobian). Like solver.method: anderson it selects a
-  // matrix-free (non-Picard) residual path, so it also suppresses the Picard default below.
   PetscBool newton_flag = PETSC_FALSE;
   // config-owned (solver.method: newton); the -wtm_newton flag is retired. NOTE the config value means
   // the WORKING RECIPE -- it implies solver.newton.dt_continuation -- whereas the bare flag meant PLAIN Newton.
   // A caller that wanted plain Newton must now say `dt_continuation: false` explicitly.
   newton_flag = (params.solver_method == "newton") ? PETSC_TRUE : PETSC_FALSE;
-  // -wtm_adaptive_restart: rho-triggered proactive Anderson restart (see AppCtx). Selects the Anderson
-  // main path; the outer restart loop lives in update().
+
   PetscBool adaptive_restart_flag = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &adaptive_restart_flag);
   // A TUNING dial must not change the solver. solver.anderson.restart is Anderson's; asking for it with
@@ -426,18 +419,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // Anderson residual (solver.method: anderson solver.time_integration: bdf2) -- by the predictor-seeded guess, AND by the detached
   // adaptive controller's generic linear-history error estimate (any non-TR integrator). Allocate it
   // whenever BDF2, the predictor, or adaptive dt is on, independent of use_picard.
-  if (user_context.use_bdf2 || user_context.use_predict_guess || user_context.use_dt_adaptive) {
+  if (user_context.use_bdf2 || user_context.use_dt_adaptive) {
     VecDuplicate(user_context.x, &user_context.starting_wtd_prev);
     VecSet(user_context.starting_wtd_prev, 0.0);
     user_context.bdf2_prev_dt = user_context.deltat;  // ω=1 until Δt changes (adaptive)
   }
-  if (user_context.use_predict_guess)
-    PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_predict_guess: seeding the initial guess (and iteration-1 T̄) with the 2nd-order\n"
-                "  history extrapolation (guarded).\n");
-  // tr_expl (explicit old-state flux+removal at w^n) is used by TR-BDF2's trapezoidal stage AND by the
-  // predictor's first-step forward-Euler bootstrap, so allocate it for either.
-  if (user_context.use_tr_bdf2 || user_context.use_predict_guess)
+  // tr_expl: explicit old-state flux + removal at w^n, used by TR-BDF2's trapezoidal stage.
+  if (user_context.use_tr_bdf2)
     VecDuplicate(user_context.x, &user_context.tr_expl);
   if (user_context.use_tr_bdf2) {
     VecDuplicate(user_context.x, &user_context.tr_ygamma);  // intermediate Y_gamma
