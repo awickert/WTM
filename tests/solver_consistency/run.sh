@@ -74,10 +74,18 @@ run anderson
 run picard
 run newton
 
+# FOURTH ARM: the same Anderson solve with the volume-step DIAGNOSTIC registered
+# (-wtm_snes_volume_conv, not _govern). Three things are asserted below, and the fixture is the reason
+# they can be: it is gentle and purely SUBSURFACE, so every cell sits on the porosity branch of V(wtd).
+METHOD= emit volconv
+run volconv -wtm_snes_volume_conv
+
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" <<'PY'
-import sys, os, numpy as np, rasterio
+VC=$(ls "$WORK"/volconv_*.tif | tail -1)
+TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" <<'PY'
+import sys, os, re, numpy as np, rasterio
 an, pi, ne = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
+vc_tif, vc_log = sys.argv[4], sys.argv[5]
 m = np.ones_like(an, bool); m[:, 0] = False   # exclude the ocean column
 d_pi = float(np.max(np.abs((pi - an)[m]))); d_ne = float(np.max(np.abs((ne - an)[m])))
 tol = float(os.environ["TOL"])
@@ -89,7 +97,51 @@ print(f"  newton vs anderson: max|Δwtd| = {d_ne:.3e} m   (tol {tol})")
 if not (interior < 0).all():
     print("FAIL: equilibrium is not purely subsurface -> the fixture drifted into the pinned-surface regime "
           "where Picard/Newton are invalid; regenerate inputs / lower the recharge"); sys.exit(1)
-if d_pi <= tol and d_ne <= tol:
+# ---- the volume-step diagnostic ----------------------------------------------------------------
+# WHAT snorm IS. PETSc hands a convergence test ||dx||, the 2-norm of the step just taken, and
+# -snes_stol converges when snorm < stol*xnorm. On the MATRIX-FREE ANDERSON path that step cannot be
+# read back: SNESGetSolutionUpdate returns Anderson's raw PRE-MIXING update, measured ~10x the accepted
+# step. So VolumeStepConverged keeps its own previous accepted iterate and differences against it.
+# recon == snorm is the proof that the reconstruction measures the same step PETSc does -- and nothing
+# else in the suite looks at it, so a change to the Anderson update path would silently invalidate the
+# water-step machinery that eq_tol and dt_tol are built on.
+rows = [tuple(map(float, m.groups())) for m in
+        re.finditer(r"\[vol-conv diag\] it=(\d+)\s+head snorm=(\S+) \(recon (\S+)\).*?water max=\S+ L2=(\S+)",
+                    open(vc_log).read())]
+ok_vc = True
+def vcheck(name, cond, detail):
+    global ok_vc
+    print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok_vc = ok_vc and cond
+
+vcheck("DIAGNOSTIC EMITS", len(rows) > 10, f"{len(rows)} per-iteration lines parsed")
+
+# Printed at %.3e, so equality is asserted at the printed precision, not to machine zero.
+worst = max((abs(r - s) / s) for _, s, r, _ in rows if s > 0)
+vcheck("RECON == snorm (the reconstruction tracks PETSc's step)", worst < 1e-3,
+       f"max |recon - snorm| / snorm = {worst:.3e} over {len(rows)} iterations (< 1e-3)")
+
+# On a purely subsurface fixture V(wtd) = porosity*wtd, so the water step is exactly phi times the head
+# step. phi = 0.25 here (make_inputs.py). This is what makes the water metric MEAN something: it is not a
+# rescaling of head, it is head weighted by what each cell can actually store.
+#
+# Divided by PETSc's snorm, NOT by our reconstruction, deliberately: that keeps this check independent of
+# the one above, so a broken reconstruction fails exactly one of them rather than both or neither.
+ratios = [w / h for _, h, _, w in rows if h > 0]
+r_med = float(np.median(ratios))
+vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) < 1e-3,
+       f"median water_L2 / snorm = {r_med:.6f} (phi = 0.25)")
+
+# ANSWER-NEUTRALITY, which is what makes the diagnostic safe to leave on. Without _govern it must only
+# print; if it ever perturbs the solve, this is the arm that says so.
+d_vc = float(np.max(np.abs((rasterio.open(vc_tif).read(1).astype(float) - an)[m])))
+vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
+       f"max|wtd(diagnostic) - wtd(plain anderson)| = {d_vc:.3e} m (must be exactly 0)")
+
+if d_pi <= tol and d_ne <= tol and ok_vc:
     print("PASS: Anderson, Picard, and Newton converge to the same interior water table"); sys.exit(0)
-print(f"FAIL: picard={d_pi:.3e} m, newton={d_ne:.3e} m exceed tol {tol} m"); sys.exit(1)
+if d_pi > tol or d_ne > tol:
+    print(f"FAIL: picard={d_pi:.3e} m, newton={d_ne:.3e} m exceed tol {tol} m")
+else:
+    print("FAIL: the solvers agree, but a volume-step diagnostic assertion above failed")
+sys.exit(1)
 PY
