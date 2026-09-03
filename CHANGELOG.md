@@ -104,6 +104,37 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Fixed
 
+- **The water budget's baseline was one cycle late, which on a cold start was most of the reported
+  residual.** `stored_volume_initial` was captured on the first `PrintValues` call, and `PrintValues`
+  runs at the *end* of a cycle, so the baseline was the state after cycle 0 had already stepped. Every
+  flux accumulator - recharge, evaporation, Darcy ocean outflow, FSM spill - starts *at* cycle 0. The
+  closure therefore differenced a storage change over cycles 1..N against fluxes over cycles 0..N, and
+  the first cycle's storage change was absent from the books. Measured on `tests/fsm_consistency`,
+  120 yr, `active_set` with FillSpillMerge: the whole-run gap was 34.84 % of recharge, and the same run
+  stopped after one cycle - where `d_stored` is zero by construction - reproduced it almost exactly
+  (−7.261e10 against −7.264e10). The supplied initial table drains and FSM spills 6.69e10 m³ to the
+  ocean in year one; none of the storage drop feeding it was counted. The baseline is now taken at the
+  end of `initialise()`, before any stepping, and both it and every later report call one
+  `ComputeStoredVolume`, so the two cannot drift apart. `PrintValues` aborts if the baseline was never
+  captured rather than falling back to zero, which would silently turn `d_stored` into the absolute
+  volume. Result: **34.841 % → 0.040 %** for the overwrite coupling and **2.739 % → 0.014 %** for
+  `fsm_delta_source`, the former being precisely the "≈0.04 % once spun up" `WATER_BUDGET.md` had
+  always predicted. Water tables are untouched: `stored_volume` and the exact residual (column 17) are
+  identical to every printed digit, so this moves the diagnostic and not the physics.
+
+- **Columns 9 and 19 counted internal water as external input under `fsm_delta_source`.** `rech_dist`
+  served two roles at once: the solve's source term, and the quantity booked as
+  `total_recharge_direct`, which `WATER_BUDGET.md` defines as the water entering the domain. Folding
+  FillSpillMerge's per-cell delta into it therefore booked redistribution as input. Cumulative column 9
+  ran to −6.34e10 by cycle 1 - a negative cumulative external input - and `ocean_loss_closing` and
+  column 16 are built on top of it. The delta now has its own carrier, so the solve reads
+  `rech_dist + fsm_delta_dist` while the booking reads `rech_dist` alone. Conservation is untouched by
+  construction: the exact budget reads `rech_vec`, the full source term, which is the definition the
+  scheme's own conservation law requires once FillSpillMerge's water arrives *during* a step. Column 19
+  now agrees between the two couplings to all twelve printed digits. This also supersedes the
+  "≈18 % is a definitional mismatch" note in `WATER_BUDGET.md`: most of that was this defect, and what
+  remains on a fixture that ships is 2.7e-02.
+
 - **BREAKING — an invalid config ENUM VALUE now aborts.** The schema check validated config KEYS; it did
   not validate their VALUES, which left the same defect one level down. `solver.method: pickard` fell
   through the bridge's `if/else` chain to the DEFAULT and the run reported success — so a sweep over a
