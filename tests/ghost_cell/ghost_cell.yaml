@@ -1,8 +1,9 @@
 run:
   type: equilibrium
   initial_water_table: saturated
+  equilibrium_stop:
+    tol: 0            # run the full total_time; was the -wtm_eq_tol flag, retired to this key
 time:
-  deltat: 31536000
   total: 5yr
   report_interval: 1
   save_every_n_reports: 9999
@@ -23,3 +24,9 @@ io:
 output:
   outfile_prefix: out_
   run_log: run.txt
+solver:
+  # adaptive_dt is deliberately NOT pinned here: this fixture runs the SHIPPED DEFAULT, and
+  # under it the n=1 and n=2 water tables agree at 0.000000 m. Pinning would have cost
+  # coverage of the configuration users actually get, to buy nothing.
+  time_step:
+    dt: 31536000   # was time.deltat until 39fb4cd moved the step into solver:
