@@ -91,7 +91,7 @@ solver:
                                # matters where storativity is small: a deep tight cell can swing its
                                # head a long way while moving almost no water, and head-judged
                                # convergence keeps grinding on it. CHANGES THE ANSWER.
-    water_tol: 1.0e-8          # relative water-step tolerance; READ ONLY when metric: water.
+    water_volume_tol: 1.0e-8          # relative water-step tolerance; READ ONLY when metric: water.
                                # Loosening it does NOT save time -- each solve stops under-converged
                                # and the outer loop needs more cycles (measured: 1e-5 costs 3x the
                                # solves of 1e-8 on tests/solver_consistency).

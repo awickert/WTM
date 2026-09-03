@@ -117,7 +117,7 @@ this mechanism is in git history and can come back.
 |---|---|---|
 | `-wtm_snes_volume_conv` | `output.trace: [water_step]` | **varied** -- `solver_consistency` arm 4 |
 | `-wtm_snes_volume_conv_govern` | `solver.convergence.metric: water` | **varied** -- `solver_consistency` arm 5 |
-| `-wtm_snes_vol_tol` | `solver.convergence.water_tol` | default-only; a live dial, measured below |
+| `-wtm_snes_vol_tol` | `solver.convergence.water_volume_tol` | default-only; a live dial, measured below |
 
 All three are config-owned as of `aa49674`; the flags REMAIN as the internal transport and still
 override the config when passed on the CLI, which is the same arrangement as the seventeen settings

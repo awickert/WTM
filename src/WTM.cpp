@@ -1035,7 +1035,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   if (auto n = root["solver"]["convergence"]["metric"])
     if (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "water"}) == "water")
       set_opt_if_unset("-wtm_snes_volume_conv_govern", "true");
-  if (auto n = root["solver"]["convergence"]["water_tol"])
+  if (auto n = root["solver"]["convergence"]["water_volume_tol"])
     set_opt_if_unset("-wtm_snes_vol_tol", n.as<std::string>().c_str());
   if (auto n = root["solver"]["max_iterations"]) {
     const std::string v = n.as<std::string>();
@@ -1321,7 +1321,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  tolerance: " << stol << "\n";
   f << "  convergence:\n";
   f << "    metric: " << (uc.snes_volume_conv_govern ? "water" : "head") << "\n";
-  f << "    water_tol: " << uc.snes_volume_conv_tol << "\n";
+  f << "    water_volume_tol: " << uc.snes_volume_conv_tol << "\n";
   f << "  max_iterations: " << maxit << "\n";
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
   f << "  adaptive_dt: " << params.adaptive_dt << "\n";

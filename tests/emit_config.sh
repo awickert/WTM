@@ -42,7 +42,7 @@
 #   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
 #   convergence_metric    -> solver.convergence.metric (head | water)
-#   convergence_water_tol -> solver.convergence.water_tol
+#   convergence_water_volume_tol -> solver.convergence.water_volume_tol
 #   trace                 -> output.trace (a bare list body, e.g. `trace dt, water_step`)
 #   time_integration      -> solver.time_integration (backward-euler | bdf2 | tr-bdf2)
 #   surfdatadir           -> io.source
@@ -175,10 +175,10 @@ if have storage; then
     echo "  storage_form: $(val storage)"
 fi
 
-if have convergence_metric || have convergence_water_tol; then
+if have convergence_metric || have convergence_water_volume_tol; then
     echo "  convergence:"
     have convergence_metric    && echo "    metric: $(val convergence_metric)"
-    have convergence_water_tol && echo "    water_tol: $(val convergence_water_tol)"
+    have convergence_water_volume_tol && echo "    water_volume_tol: $(val convergence_water_volume_tol)"
 fi
 
 # --- evaporation ---------------------------------------------------------------
