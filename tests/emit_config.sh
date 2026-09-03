@@ -41,6 +41,9 @@
 #   storage               -> dev.storage_form (volume | secant)
 #   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
+#   convergence_metric    -> solver.convergence.metric (head | water)
+#   convergence_water_tol -> solver.convergence.water_tol
+#   trace                 -> output.trace (a bare list body, e.g. `trace dt, water_step`)
 #   time_integration      -> solver.time_integration (backward-euler | bdf2 | tr-bdf2)
 #   surfdatadir           -> io.source
 #   region|time_start|time_end -> io.region|time_start|time_end
@@ -172,6 +175,12 @@ if have storage; then
     echo "  storage_form: $(val storage)"
 fi
 
+if have convergence_metric || have convergence_water_tol; then
+    echo "  convergence:"
+    have convergence_metric    && echo "    metric: $(val convergence_metric)"
+    have convergence_water_tol && echo "    water_tol: $(val convergence_water_tol)"
+fi
+
 # --- evaporation ---------------------------------------------------------------
 if have extinction_depth || have et_sigmoid_wtd_center || have et_sigmoid_width; then
     echo "evaporation:"
@@ -197,4 +206,5 @@ if have textfilename || have outfile_prefix; then
     echo "output:"
     have outfile_prefix && echo "  outfile_prefix: '$(val outfile_prefix)'"
     have textfilename   && echo "  run_log: '$(val textfilename)'"
+    have trace          && echo "  trace: [$(val trace)]"
 fi

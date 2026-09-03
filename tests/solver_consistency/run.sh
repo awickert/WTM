@@ -30,6 +30,8 @@ emit() { # $1 stem  [env: METHOD=, DTC=]
 run_type equilibrium
 ${METHOD:+solver_method $METHOD}
 ${DTC:+dt_continuation $DTC}
+${TRACE:+trace $TRACE}
+${CMETRIC:+convergence_metric $CMETRIC}
 fsm_on 0
 evap_mode 0
 infiltration_on 0
@@ -77,14 +79,14 @@ run newton
 # FOURTH ARM: the same Anderson solve with the volume-step DIAGNOSTIC registered
 # (-wtm_snes_volume_conv, not _govern). Three things are asserted below, and the fixture is the reason
 # they can be: it is gentle and purely SUBSURFACE, so every cell sits on the porosity branch of V(wtd).
-METHOD= emit volconv
-run volconv -wtm_snes_volume_conv
+METHOD= TRACE=water_step emit volconv
+run volconv
 
 # FIFTH ARM: the same solve with the water step GOVERNING (-wtm_snes_volume_conv_govern), i.e. the
 # per-solve stol test judged in water instead of head. A convergence criterion decides WHEN a solve
 # stops, never WHERE it converges, so this must land on the same equilibrium as every other arm.
-METHOD= emit volgov
-run volgov -wtm_snes_volume_conv_govern
+METHOD= CMETRIC=water TRACE=water_step emit volgov
+run volgov
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)

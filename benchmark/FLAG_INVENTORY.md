@@ -109,15 +109,29 @@ The caveat, equally recorded: that supersession is an inference from the transie
 head-to-head in the stall regime. If such a case is ever built and the adaptive controller fails it,
 this mechanism is in git history and can come back.
 
-## Volume-based SNES convergence  (3) -- KEPT, and 2 of 3 now COVERED
+## Volume-based SNES convergence  (3) -- KEPT, CONFIG-OWNED, 2 of 3 COVERED
 
 *judge the step in water rather than head*
 
-| flag | coverage | note |
+| flag | now reached by | coverage |
 |---|---|---|
-| `-wtm_snes_volume_conv` | **varied** | `tests/solver_consistency` arm 4 -- asserts recon == snorm, water/snorm == phi, and answer-neutrality |
-| `-wtm_snes_volume_conv_govern` | **varied** | `tests/solver_consistency` arm 5 -- same equilibrium, and not a no-op |
-| `-wtm_snes_vol_tol` | default-only | a live dial, measured below; deliberately not gated |
+| `-wtm_snes_volume_conv` | `output.trace: [water_step]` | **varied** -- `solver_consistency` arm 4 |
+| `-wtm_snes_volume_conv_govern` | `solver.convergence.metric: water` | **varied** -- `solver_consistency` arm 5 |
+| `-wtm_snes_vol_tol` | `solver.convergence.water_tol` | default-only; a live dial, measured below |
+
+All three are config-owned as of `aa49674`; the flags REMAIN as the internal transport and still
+override the config when passed on the CLI, which is the same arrangement as the seventeen settings
+migrated before them. The flag census is unchanged at 30 -- migrating a setting does not remove its
+flag, and an earlier claim here that this would take 30 -> 27 was wrong.
+
+**What the migration actually retired was two COUPLINGS, not flags.** `CreateSNES.cpp` forced
+`conv = vc || govern`, and the print was then gated on `conv && !govern` -- so governing silently
+SUPPRESSED the trace, and printing and governing could never be had together. They are now driven by
+different config surfaces and all four states are reachable. The printing field is renamed
+`vol_step_trace`, since it no longer has anything to do with the convergence criterion.
+
+Route equality before the tests moved across: wtd 0.000000e+00 m, 908 solves both, 7887 trace lines
+both -- that last figure with governing ON, where the old coupling would have given zero.
 
 **Decision 2026-09-03: keep all three, and convert the value from historical to standing.**
 
