@@ -567,7 +567,6 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
   if (rank != 0) return;  // one line per run, from rank 0
 
   const char* solver = uc.use_aa_picard ? "aa_picard"
-                     : uc.use_handoff   ? "handoff"
                      : uc.use_picard    ? "picard"
                      : uc.use_newton    ? "newton"
                                         : "anderson";
@@ -1013,13 +1012,6 @@ static void apply_predictor_guess(AppCtx& user_context) {
   DMDAVecRestoreArray(da, user_context.mask, &mask);
 }
 
-// Custom SNES convergence test for the -wtm_handoff phase-1 Anderson solve. It (a) tracks and stores
-// the BEST (lowest-residual) iterate in handoff_best_x, and (b) STOPS Anderson when it stops making
-// progress -- the residual fails to set a new minimum for handoff_patience consecutive iterations (the
-// near-convergence "flail"), or the phase-1 cap is reached -- so update() can hand the best iterate to
-// the Newton/Picard finisher. TRUE convergence (small relative step) is honoured too, and signalled
-// distinctly: a stall/cap stop returns SNES_CONVERGED_ITS; a genuine stop returns
-// SNES_CONVERGED_SNORM_RELATIVE (update() then SKIPS the finisher). See CreateSNES.hpp / #87.
 // Volume-weighted per-solve convergence (#127). Judges the SNES step in WATER (|S*Δwtd|) rather than head, so
 // the per-solve gate speaks the same units as eq_tol (equilibrium) and dt_tol (adaptive) -- a deep low-storativity
 // cell (big head step, ~zero water moved) can no longer hold the SOLVE unconverged. The water step is computed
@@ -1088,38 +1080,6 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   if (uc->snes_volume_conv_govern) {
     if (*reason == SNES_CONVERGED_SNORM_RELATIVE) *reason = SNES_CONVERGED_ITERATING;  // drop the head stol verdict
     if (water_rel < uc->snes_volume_conv_tol)     *reason = SNES_CONVERGED_SNORM_RELATIVE;  // ...use the water one
-  }
-  return 0;
-}
-
-static PetscErrorCode HandoffFlailTest(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
-                                       PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
-  AppCtx* uc = static_cast<AppCtx*>(ctx);
-  *reason = SNES_CONVERGED_ITERATING;
-  if (it == 0) {
-    uc->handoff_min_norm   = fnorm;
-    uc->handoff_stall      = 0;
-    uc->handoff_best_valid = PETSC_FALSE;
-  }
-  if (!uc->handoff_best_valid || fnorm <= uc->handoff_min_norm) {
-    uc->handoff_min_norm   = fnorm;
-    uc->handoff_stall      = 0;
-    Vec x;
-    SNESGetSolution(snes, &x);
-    VecCopy(x, uc->handoff_best_x);  // remember the best (lowest-residual) iterate
-    uc->handoff_best_valid = PETSC_TRUE;
-  } else {
-    uc->handoff_stall++;
-  }
-  // TRUE convergence: the relative step has shrunk below tolerance (mirrors -snes_stol) -> finisher skipped.
-  if (it > 0 && snorm < uc->handoff_stol * xnorm) {
-    *reason = SNES_CONVERGED_SNORM_RELATIVE;
-    return 0;
-  }
-  // FLAIL / cap: no new minimum for `patience` consecutive iters, or the phase-1 cap -> stop to hand off.
-  if (uc->handoff_stall >= uc->handoff_patience || it >= uc->handoff_max_it) {
-    *reason = SNES_CONVERGED_ITS;
-    return 0;
   }
   return 0;
 }
@@ -1694,30 +1654,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           &user_context);
     }
 
-    // -wtm_handoff: register the phase-2 finisher's operator. The main SNES stays Anderson (matrix-free,
-    // so the block above skipped the Jacobian), but the finisher is Newton or Picard and needs its
-    // operator. Newton finisher -> the analytic Jacobian on the shared DM (seen by snes_finish); Picard
-    // finisher -> its SPD operator A(x) on snes_finish. Registered per solve, like the main paths above.
-    if (user_context.use_handoff) {
-      if (user_context.handoff_picard) {
-        SNESSetPicard(user_context.snes_finish, user_context.picard_r, FormPicardRHS, user_context.picard_A,
-                      user_context.picard_A, FormPicardOperator, &user_context);
-      } else {
-        DMDASNESSetJacobianLocal(
-            user_context.da,
-            (PetscErrorCode(*)(DMDALocalInfo*, void*, Mat, Mat, void*))FormJacobianLocal,
-            &user_context);
-      }
-    }
-
     // Evaluate initial guess
     FormInitialGuess(&user_context, user_context.da, user_context.x);
     if (user_context.use_predict_guess) apply_predictor_guess(user_context);
 
     // Volume-weighted per-solve convergence (#127), opt-in. Registered here so it covers the plain + TR-BDF2
-    // paths; the handoff / adaptive-restart branches below install THEIR own test (so volume-conv applies only
-    // to the ordinary production solve). Diagnostic unless -wtm_snes_volume_conv_govern. See VolumeStepConverged.
-    if (user_context.snes_volume_conv && !user_context.use_handoff && !user_context.use_adaptive_restart)
+    // paths; the adaptive-restart branch below installs ITS own test (so volume-conv applies only to the
+    // ordinary production solve). Diagnostic unless -wtm_snes_volume_conv_govern. See VolumeStepConverged.
+    if (user_context.snes_volume_conv && !user_context.use_adaptive_restart)
       SNESSetConvergenceTest(user_context.snes, VolumeStepConverged, &user_context, nullptr);
 
     // set the RHS (b = h^n for backward Euler; b = 0 for the self-contained BDF2-on-V / TR-BDF2 residuals)
@@ -1762,29 +1706,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         VecAXPY(user_context.exfiltration_vec, trbdf2::WE_STAGE1, user_context.tr_exfil_stage1);
       }
       user_context.tr_stage = 0;
-    } else if (user_context.use_handoff) {
-      // Phase 1: Anderson globalizes, with the flail-detect convergence test (saves the best iterate,
-      // stops when progress stalls). Phase 2: hand the BEST iterate to the Newton/Picard finisher --
-      // skipped if Anderson genuinely converged (small grids stay unchanged). See CreateSNES.hpp / #87.
-      user_context.handoff_ran_finisher = false;
-      SNESSetConvergenceTest(user_context.snes, HandoffFlailTest, &user_context, nullptr);
-      SNESSolve(user_context.snes, user_context.b, user_context.x);
-      SNESConvergedReason r1;
-      SNESGetConvergedReason(user_context.snes, &r1);
-      const bool anderson_converged =
-          (r1 == SNES_CONVERGED_SNORM_RELATIVE || r1 == SNES_CONVERGED_FNORM_ABS || r1 == SNES_CONVERGED_FNORM_RELATIVE);
-      if (!anderson_converged && user_context.handoff_best_valid) {
-        VecCopy(user_context.handoff_best_x, user_context.x);  // finish from the BEST iterate, not the flailing one
-        PetscInt a_its;
-        SNESGetIterationNumber(user_context.snes, &a_its);
-        PetscPrintf(PETSC_COMM_WORLD,
-                    "-wtm_handoff: Anderson stalled after %d iters at residual %g -> %s finisher.\n",
-                    (int)a_its, (double)user_context.handoff_min_norm,
-                    user_context.handoff_picard ? "Picard" : "Newton");
-        // Picard finisher solves A(x)x = b(x) with an INTERNAL rhs (pass NULL); Newton uses b = h^n.
-        SNESSolve(user_context.snes_finish, user_context.handoff_picard ? nullptr : user_context.b, user_context.x);
-        user_context.handoff_ran_finisher = true;
-      }
     } else if (user_context.use_adaptive_restart) {
       // rho-triggered proactive restart: run Anderson in phases, restarting the history (each fresh
       // SNESSolve resets it) from the BEST iterate whenever the RATE degrades (rho -> 1, the flail
@@ -1836,11 +1757,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
-  // -wtm_handoff: when the finisher ran, its convergence reason (not Anderson's stall) is the solve outcome.
-  SNES report_snes =
-      (user_context.use_handoff && user_context.handoff_ran_finisher) ? user_context.snes_finish : user_context.snes;
-  SNESGetIterationNumber(report_snes, &its);
-  SNESGetConvergedReason(report_snes, &reason);
+  SNESGetIterationNumber(user_context.snes, &its);
+  SNESGetConvergedReason(user_context.snes, &reason);
 
   PetscPrintf(
       PETSC_COMM_WORLD, "%s Number of nonlinear iterations = %" PetscInt_FMT "\n", SNESConvergedReasons[reason], its);

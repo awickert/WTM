@@ -120,10 +120,10 @@ Anderson is the default and needs no flag, which is why `-wtm_anderson` is ABSTR
 | `-wtm_newton` | Newton-Krylov on the analytic Jacobian | ABSTRACTED | `solver.method: newton`, which implies `solver.dt_continuation` (the working recipe). The BARE flag stays plain Newton -- three things pin that |
 | `-wtm_anderson` | Anderson mixing, matrix-free | ABSTRACTED | `solver.method: anderson` (the default) |
 | `-wtm_aa_picard` | Anderson-accelerated GAMG-Picard (nonlinear preconditioning) | GAP — advanced | none — a fourth strategy `solver.method` does not offer |
-| `-wtm_handoff` | run Anderson, then hand the best iterate to a finisher | GAP — advanced | none |
-| `-wtm_handoff_picard` | make that finisher Picard instead of Newton | GAP — advanced | none |
-| `-wtm_handoff_patience` | stalled iterations before handing off | GAP — advanced | none |
-| `-wtm_handoff_max_it` | cap on the Anderson phase | GAP — advanced | none |
+| ~~`-wtm_handoff`~~ | ~~run Anderson, then hand the best iterate to a finisher~~ | **RETIRED 2026-09-03** | n/a — removed from the code |
+| ~~`-wtm_handoff_picard`~~ | ~~make that finisher Picard instead of Newton~~ | **RETIRED 2026-09-03** | n/a — removed from the code |
+| ~~`-wtm_handoff_patience`~~ | ~~stalled iterations before handing off~~ | **RETIRED 2026-09-03** | n/a — removed from the code |
+| ~~`-wtm_handoff_max_it`~~ | ~~cap on the Anderson phase~~ | **RETIRED 2026-09-03** | n/a — removed from the code |
 | `-wtm_stiff` | convenience bundle: newton + continuation + eq_tol | GAP — user | none — this is a *preset*, and presets are exactly what a config should carry |
 | `-wtm_relax` | sub-step under-relaxation (1 = off) | GAP — advanced | none |
 | `-wtm_predict_guess` | predictor-seeded initial guess | GAP — advanced | none |

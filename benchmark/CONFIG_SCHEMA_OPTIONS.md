@@ -518,7 +518,7 @@ The groups awaiting that call, all DORMANT (zero execution coverage -- see FLAG_
 
 | group | n | note |
 |---|---|---|
-| Anderson -> finisher handoff | 4 | never executed in any test |
+| ~~Anderson -> finisher handoff~~ | ~~4~~ | **RETIRED 2026-09-03** -- removed from the code; see FLAG_INVENTORY.md |
 | volume-based SNES convergence | 3 | never executed in any test |
 | `kirchhoff` | 1 | removing it also removes the guard it places on the active-set pin in `FormJacobianLocal` |
 | `aa_picard`, `predict_guess`, `relax` | 3 | |

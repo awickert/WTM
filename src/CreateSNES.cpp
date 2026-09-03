@@ -190,17 +190,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // the WORKING RECIPE -- it implies solver.newton.dt_continuation -- whereas the bare flag meant PLAIN Newton.
   // A caller that wanted plain Newton must now say `dt_continuation: false` explicitly.
   newton_flag = (params.solver_method == "newton") ? PETSC_TRUE : PETSC_FALSE;
-  // -wtm_handoff: Anderson globalizes, then hands off its best iterate to a Newton/Picard finisher
-  // near convergence (see AppCtx). Selects the matrix-free Anderson MAIN path (phase 1); the finisher
-  // SNES is built after SNESSetFromOptions below. -wtm_handoff_picard uses a Picard (CG+GAMG) finisher
-  // instead of the default Newton (GMRES+GAMG). The main Picard/Newton defaults stay untouched.
-  PetscBool handoff_flag = PETSC_FALSE, handoff_picard_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_handoff", &handoff_flag);
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_handoff_picard", &handoff_picard_flag);
-  if (handoff_picard_flag) handoff_flag = PETSC_TRUE;
-  if (handoff_flag && !params.solver_method.empty() && params.solver_method != "anderson")
-    throw std::runtime_error("config: -wtm_handoff runs Anderson as phase 1, but solver.method: " +
-                             params.solver_method + " was requested.");
   // -wtm_adaptive_restart: rho-triggered proactive Anderson restart (see AppCtx). Selects the Anderson
   // main path; the outer restart loop lives in update().
   PetscBool adaptive_restart_flag = PETSC_FALSE;
@@ -269,10 +258,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_picard      = (picard_flag == PETSC_TRUE);
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
-  user_context.use_handoff     = (handoff_flag == PETSC_TRUE);
-  user_context.handoff_picard  = (handoff_picard_flag == PETSC_TRUE);
-  PetscOptionsGetInt(nullptr, nullptr, "-wtm_handoff_patience", &user_context.handoff_patience, nullptr);
-  PetscOptionsGetInt(nullptr, nullptr, "-wtm_handoff_max_it", &user_context.handoff_max_it, nullptr);
   user_context.use_adaptive_restart = (adaptive_restart_flag == PETSC_TRUE);
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_ar_rho", &user_context.ar_rho_threshold, nullptr);
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_patience", &user_context.ar_rho_patience, nullptr);
@@ -576,44 +561,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver: type=%s  tolerance(snes_stol)=%g  max_iterations(snes_max_it)=%d  (atol=%g rtol=%g)\n",
                 resolved_type, (double)r_stol, (int)r_maxit, (double)r_atol, (double)r_rtol);
-  }
-
-  // -wtm_handoff: build the phase-2 finisher SNES. It SHARES the DM (so the DM-registered
-  // FormFunctionLocal / FormJacobianLocal / Picard operator in update() are seen automatically)
-  // but carries its own prefixed options so it is a Newton (GMRES+GAMG) or Picard (CG+GAMG) solve
-  // independent of the main Anderson SNES. Anderson hands off its best iterate to this near
-  // convergence, where the tame near-fixed T makes Newton/Picard fast and stable.
-  if (user_context.use_handoff) {
-    VecDuplicate(user_context.x, &user_context.handoff_best_x);
-    SNESCreate(PETSC_COMM_WORLD, &user_context.snes_finish);
-    SNESSetDM(user_context.snes_finish, user_context.da);
-    SNESSetOptionsPrefix(user_context.snes_finish, "finish_");
-    const auto setf = [](const char* key, const char* val) { PetscOptionsSetValue(nullptr, key, val); };
-    if (user_context.handoff_picard) {
-      // Picard finisher: SPD defect-correction (newtonls + basic line search + CG/GAMG on A(x)).
-      // Its operator is registered per solve via SNESSetPicard in update(); allocate A + r here.
-      if (!user_context.picard_A) DMCreateMatrix(user_context.da, &user_context.picard_A);
-      if (!user_context.picard_r) VecDuplicate(user_context.x, &user_context.picard_r);
-      setf("-finish_snes_type", "newtonls");
-      setf("-finish_snes_linesearch_type", "basic");
-      setf("-finish_ksp_type", "cg");
-      setf("-finish_pc_type", "gamg");
-      setf("-finish_pc_gamg_agg_nsmooths", "0");
-    } else {
-      // Newton finisher: analytic Jacobian (registered on the DM in update()); non-symmetric -> GMRES.
-      setf("-finish_snes_type", "newtonls");
-      setf("-finish_snes_linesearch_type", "bt");
-      setf("-finish_ksp_type", "gmres");
-      setf("-finish_pc_type", "gamg");
-      setf("-finish_pc_gamg_agg_nsmooths", "0");
-    }
-    setf("-finish_snes_atol", "1e-6");  // stop at the (tame) equilibrium residual, like the Newton/Picard paths
-    SNESSetFromOptions(user_context.snes_finish);
-    PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_handoff: Anderson globalizes -> %s finisher near convergence (patience=%d stalled iters, "
-                "phase-1 cap=%d). Nonlinear preconditioning; see #87.\n",
-                user_context.handoff_picard ? "Picard(CG+GAMG)" : "Newton(GMRES+GAMG)",
-                (int)user_context.handoff_patience, (int)user_context.handoff_max_it);
   }
 
   // -wtm_adaptive_restart: allocate the best-iterate carrier. The rho monitor + outer restart loop

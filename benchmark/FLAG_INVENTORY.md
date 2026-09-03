@@ -1,6 +1,6 @@
 # The remaining `-wtm_*` flags: an inventory, and the question it raises
 
-**What this is.** The 34 `-wtm_*` flags the model still reads, grouped by what they control, and
+**What this is.** The 30 `-wtm_*` flags the model still reads, grouped by what they control, and
 classified by whether their code actually *executes* anywhere. It exists because the next step in the
 config migration is a schema DESIGN, and a design needs the whole set in front of it rather than one
 parameter at a time.
@@ -83,16 +83,31 @@ them and searches `.md` and `.log` files too, which inflated an earlier draft of
 | `-wtm_ar_max_it` | default-only | iteration cap |
 | `-wtm_ar_max_restarts` | default-only | restart cap |
 
-## Anderson -> finisher handoff  (4)
+## Anderson -> finisher handoff  (4) -- RETIRED 2026-09-03
 
-*run Anderson, hand the best iterate to Newton or Picard*
+*was: run Anderson, hand the best iterate to a Newton or Picard finisher (nonlinear preconditioning, #87)*
 
-| flag | coverage | note |
-|---|---|---|
-| `-wtm_handoff` | **dormant** | the whole mechanism |
-| `-wtm_handoff_picard` | dormant dial | finisher = Picard instead of Newton |
-| `-wtm_handoff_patience` | dormant dial | stalled iterations before handing off |
-| `-wtm_handoff_max_it` | dormant dial | cap on the Anderson phase |
+**Removed from the code** (Andy's call, on the evidence below). The four flags -- `-wtm_handoff`,
+`-wtm_handoff_picard`, `-wtm_handoff_patience`, `-wtm_handoff_max_it` -- now abort as unconsumed, so a
+script still passing one is told rather than silently getting a plain Anderson run. The mechanism lives
+in git history; see the commit for what was deleted and where.
+
+What the walk-through established:
+
+- **Zero test coverage, ever**, and no design note in `benchmark/`.
+- **One archived exploratory run** (`esquibel/.../axis2b/handoff`, transient, FSM off, legacy `.cfg`).
+- **Still functional** when tested -- it ran clean and announced itself.
+- **But inert on anything we can test.** Baseline against `-wtm_handoff` on the same fixture gave
+  IDENTICAL results: 3 cycles, 22 solves both. The finisher only engages after Anderson stalls for
+  `patience` iterations, and nothing in the suite stalls Anderson. So the mechanism could not be
+  evaluated on any fixture we have -- it is a rescue path for a regime with no fixture.
+- Found on the way out: it **leaked** `snes_finish` and `handoff_best_x`; neither was ever destroyed.
+
+The judgement, recorded so it is not re-litigated: the regime it exists for (stiff cold starts where
+Anderson stalls) is now served by the adaptive TR-BDF2 controller, which is the DEFAULT and IS tested.
+The caveat, equally recorded: that supersession is an inference from the transient benchmark, NOT a
+head-to-head in the stall regime. If such a case is ever built and the adaptive controller fails it,
+this mechanism is in git history and can come back.
 
 ## Volume-based SNES convergence  (3)
 
