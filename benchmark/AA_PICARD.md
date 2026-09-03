@@ -1,5 +1,15 @@
 # Anderson-accelerated GAMG-Picard (`-wtm_aa_picard`) — experimental, NEGATIVE result
 
+> **RETIRED 2026-09-03. The code is gone; this note is why, and is the point of keeping the file.**
+> The flag now aborts as unconsumed rather than being ignored. Re-measured on the current default
+> stack before removal: it aborts outright with *"adaptive dt: step failed after max retries"*, which
+> is the same cold-state fragility recorded below meeting the now-default adaptive controller.
+>
+> This was the last avenue for making Picard viable beyond an oracle. Picard already cannot run the
+> default configuration — it refuses `active_set` and `tr-bdf2`, both by design — so retiring this
+> CONFIRMS Picard's oracle-only status rather than causing it. Picard remains load-bearing in
+> `tests/solver_consistency`, certifying matrix-free Anderson, which has no Jacobian of its own.
+
 ## Idea
 
 Combine GAMG-preconditioned Picard's large-step power with Anderson's oscillation-damping, on a

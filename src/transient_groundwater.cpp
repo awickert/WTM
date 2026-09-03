@@ -566,8 +566,7 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
   MPI_Comm_size(PETSC_COMM_WORLD, &size);
   if (rank != 0) return;  // one line per run, from rank 0
 
-  const char* solver = uc.use_aa_picard ? "aa_picard"
-                     : uc.use_picard    ? "picard"
+  const char* solver = uc.use_picard    ? "picard"
                      : uc.use_newton    ? "newton"
                                         : "anderson";
   const char* integ  = uc.use_tr_bdf2    ? "tr_bdf2"
@@ -1621,16 +1620,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         INSERT_VALUES,
         (PetscErrorCode(*)(DMDALocalInfo*, void*, void*, void*))FormFunctionLocal,
         &user_context);
-
-    // -wtm_aa_picard: register the GAMG-Picard solve as the OUTER Anderson's nonlinear preconditioner.
-    // The outer keeps the head-form FormFunctionLocal (above); the NPC solves A(x)x = b(x) (volume form,
-    // CG+GAMG) and the outer Anderson mixes the preconditioned iterates.
-    if (user_context.use_aa_picard) {
-      SNES npc;
-      SNESGetNPC(user_context.snes, &npc);
-      SNESSetPicard(npc, user_context.picard_r, FormPicardRHS, user_context.picard_A, user_context.picard_A,
-                    FormPicardOperator, &user_context);
-    }
 
     // Newton-Krylov path (solver.method: newton): register the analytic Jacobian of FormFunctionLocal. The
     // Jacobian (FormJacobianLocal) is the exact ∂F/∂x of the conservative-FV residual including the
