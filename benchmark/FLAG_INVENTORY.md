@@ -109,15 +109,53 @@ The caveat, equally recorded: that supersession is an inference from the transie
 head-to-head in the stall regime. If such a case is ever built and the adaptive controller fails it,
 this mechanism is in git history and can come back.
 
-## Volume-based SNES convergence  (3)
+## Volume-based SNES convergence  (3) -- KEPT, and 2 of 3 now COVERED
 
 *judge the step in water rather than head*
 
 | flag | coverage | note |
 |---|---|---|
-| `-wtm_snes_volume_conv` | **dormant** | registers the test (diagnostic by default) |
-| `-wtm_snes_volume_conv_govern` | dormant dial | make that judgement authoritative |
-| `-wtm_snes_vol_tol` | dormant dial | its relative tolerance |
+| `-wtm_snes_volume_conv` | **varied** | `tests/solver_consistency` arm 4 -- asserts recon == snorm, water/snorm == phi, and answer-neutrality |
+| `-wtm_snes_volume_conv_govern` | **varied** | `tests/solver_consistency` arm 5 -- same equilibrium, and not a no-op |
+| `-wtm_snes_vol_tol` | default-only | a live dial, measured below; deliberately not gated |
+
+**Decision 2026-09-03: keep all three, and convert the value from historical to standing.**
+
+Asked what these currently brought, the answer was *nothing*. `403aeac` verified something once,
+on the day it was written -- "recon == snorm exactly, water/head L2 ratio = 0.250 = phi" -- and that
+result had sat in a commit message ever since, with zero callers. A flag nobody sets provides no
+ongoing verification. So rather than retire the mechanism, the verification became a test.
+
+**Why the first check earns its place, since it is the least obvious.** PETSc hands a convergence
+test `snorm` = ||dx||, the step just taken, and `-snes_stol` converges on `snorm < stol*xnorm`. On the
+matrix-free Anderson path that step CANNOT be read back: `SNESGetSolutionUpdate` returns Anderson's raw
+PRE-MIXING update, measured ~10x the accepted step. `VolumeStepConverged` therefore keeps its own
+previous accepted iterate and differences against it, and `recon == snorm` is the proof that the
+reconstruction measures the same step PETSc does. Nothing else in the suite looks at this, so a change
+to the Anderson update path would silently invalidate the water-step machinery `eq_tol` and `dt_tol`
+are both built on.
+
+Shown to bite: scaling the reconstruction by 1.01 fails that arm at 1.090e-02 against its 1e-3 bound,
+while the other two still pass.
+
+**`-wtm_snes_vol_tol` is a live dial**, measured on the solver_consistency fixture, water-governed:
+
+| tol | cycles | solves | from head-governed |
+|---|---|---|---|
+| 1e-10 | 14 | 899 | 3.865e-07 m |
+| 1e-8 (default) | 14 | 908 | 4.995e-07 m |
+| 1e-5 | 22 | **2719** | 3.786e-04 m |
+
+The direction is backwards from intuition and worth keeping: a LOOSER per-solve tolerance costs **3x
+the solves**, because each solve stops under-converged and the outer equilibrium loop needs more cycles
+to reach `eq_tol`. Under-converging the inner solve does not save work, it moves it. Gating that would
+add a 2719-solve arm to every suite run for a dial nobody sets, so the measurement is recorded here
+instead.
+
+**Still open, and not discharged by any of the above:** `403aeac` parked the governing switch "pending
+varying-S validation + precision-matched benchmarking before any default flip". The new arm makes it
+COVERED, not VALIDATED -- it would catch the criterion breaking; it does not establish that judging
+convergence in water is the right production default.
 
 ## Alternative schemes  (5)
 
