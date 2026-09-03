@@ -119,8 +119,14 @@ else
 fi
 
 # ---- 2. Jacobian vs finite differences, per collector --------------------------------------------
+# ADAPT=false on the arms below is load-bearing. They set dt_continuation: false, so adaptive_dt: auto
+# resolves TRUE for them, and the FD comparison is then made at a state the controller chose rather than
+# at the fixed-dt state these ratios were characterised on: active_set read 0.0736 and explicit 1.0785
+# against a 1e-2 ceiling. Nothing was wrong with the Jacobian -- pinned back to fixed dt they return to
+# 0.00415 and 7.36e-08. (explicit is four orders BETTER than its recorded 0.000993: the volume storage
+# default, 879a188, makes the analytic Jacobian match its own residual exactly.)
 for coll in active_set explicit; do
-    METHOD=newton DTC=false mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
+    METHOD=newton DTC=false ADAPT=false mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
     R=$(fd_ratio "j_$coll")
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
@@ -131,7 +137,7 @@ for coll in active_set explicit; do
     fi
 done
 
-METHOD=newton DTC=false mkcfg j_implicit implicit "2yr"
+METHOD=newton DTC=false ADAPT=false mkcfg j_implicit implicit "2yr"
 R=$(fd_ratio j_implicit)
 WARNED=$(grep -c "NOT the Newton Jacobian" "$WORK/j_implicit.fd.log" || true)
 if awk -v r="${R:-0}" 'BEGIN{exit !(r+0 > 0.1)}' && [ "$WARNED" -gt 0 ]; then
@@ -144,7 +150,15 @@ else
 fi
 
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
-EQ_TOL=1e-4 mkcfg eq_and  active_set "2000yr"
+# ADAPT=false here too, and for a DIFFERENT reason than the arms above -- comparability. eq_newt must use
+# the continuation ramp (Newton needs it), and adaptive and the ramp are mutually exclusive, so leaving
+# eq_and on the adaptive default would compare two runs stepped differently. That matters MORE than it
+# looks: with FSM ON, as here, a different step sequence flips FillSpillMerge's discrete fill/spill
+# decisions. Measured on this fixture, fixed vs adaptive Anderson at equilibrium:
+#     FSM off   max|dwtd| = 9.84e-06 m      FSM on    max|dwtd| = 8.25e-02 m
+# so at equilibrium the STEPPING is answer-neutral for the groundwater solve alone but NOT once lake
+# routing is in the loop. SAME ROOT read 7.681e-02 (tol 0.05) with eq_and adaptive; 2.511e-02 pinned.
+EQ_TOL=1e-4 ADAPT=false mkcfg eq_and  active_set "2000yr"
 EQ_TOL=1e-4 METHOD=newton DTC=true mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"                  -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
