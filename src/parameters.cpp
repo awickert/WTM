@@ -44,7 +44,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
             "dev", "parallel", "io", "output"}},
       {"run", {"type", "initial_water_table", "equilibrium_stop"}},
       {"run.equilibrium_stop", {"tol", "metric", "frac"}},
-      {"time", {"deltat", "total", "report_interval", "save_every_n_reports"}},
+      {"time", {"total", "report_interval", "save_every_n_reports"}},
       {"grid", {"cells_per_degree", "southern_edge"}},
       {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
@@ -59,8 +59,8 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // solver.time_step: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
-      {"solver.time_step", {"grow", "shrink", "grow_if_niter_leq", "max_retries", "norm", "dt_max",
-                               "error_tol"}},
+      {"solver.time_step", {"dt", "grow", "shrink", "grow_if_niter_leq", "max_retries", "norm",
+                               "dt_max", "error_tol"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
       // normal run. storativity_surface is different in kind -- 0.01 m, always on, sub-grid roughness --
@@ -287,7 +287,10 @@ Parameters::Parameters(const std::string& config_file) {
   }
 
   // -------- time --------
-  if (auto n = root["time"]["deltat"]) deltat = n.as<double>();
+  // solver.time_step.deltat -- the step itself, moved out of time: because it is a SOLVER property
+  // (Andy, 2026-09-03) and belongs with the dials that adjust it. time: keeps the run's clock -- how long,
+  // how often to report -- which is quantised BY the step but does not choose it.
+  if (auto n = root["solver"]["time_step"]["dt"]) deltat = n.as<double>();
   if (auto n = root["time"]["total"])  total_time = parse_time_seconds(n.as<std::string>(), "time.total");
   if (auto n = root["time"]["report_interval"]) {
     // A bare integer = timesteps, or a simulated time ("50yr"/"1000s"). Resolved to report_steps /

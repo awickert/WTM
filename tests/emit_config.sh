@@ -15,7 +15,7 @@
 # Legacy key -> YAML path map (the full vocabulary the suite uses):
 #   run_type              -> run.type
 #   supplied_wt 0|1       -> run.initial_water_table: saturated|supplied  (a <path> value passes through)
-#   deltat                -> time.deltat
+#   deltat                -> solver.time_step.dt
 #   total_time            -> time.total
 #   report_interval       -> time.report_interval
 #   save_nreport_interval -> time.save_every_n_reports
@@ -82,9 +82,8 @@ if have supplied_wt; then
 fi
 
 # --- time --------------------------------------------------------------------
-if have deltat || have total_time || have report_interval || have save_nreport_interval; then
+if have total_time || have report_interval || have save_nreport_interval; then
     echo "time:"
-    have deltat                && echo "  deltat: $(val deltat)"
     have total_time            && echo "  total: \"$(val total_time)\""
     have report_interval       && echo "  report_interval: \"$(val report_interval)\""
     have save_nreport_interval && echo "  save_every_n_reports: $(val save_nreport_interval)"
@@ -145,7 +144,7 @@ if have land_boundary; then
 fi
 
 # --- solver ---------------------------------------------------------------------
-if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have dt_continuation || have solver_method || have time_integration; then
+if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have deltat || have dt_continuation || have solver_method || have time_integration; then
     echo "solver:"
     have solver_method && echo "  method: $(val solver_method)"
     have time_integration && echo "  time_integration: $(val time_integration)"
@@ -155,8 +154,9 @@ if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have dt_conti
         echo "  newton:"
         echo "    dt_continuation: $(val dt_continuation)"
     fi
-    if have dt_max || have dt_tol; then
+    if have dt_max || have dt_tol || have deltat; then
         echo "  time_step:"
+        have deltat && echo "    dt: $(val deltat)"
         have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
         have dt_max && echo "    dt_max: \"$(val dt_max)\""
     fi

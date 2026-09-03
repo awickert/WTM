@@ -49,6 +49,9 @@ fail=0
 
 # Base config. Deliberately omits solver.method / time_integration / storage / collection.method /
 # boundaries.land, so each arm supplies exactly one of them by exactly one route.
+# The step lives at solver.time_step.dt, and BOTH arms below append their own `solver:` block, so the
+# base config must not open one too -- a duplicate mapping key would silently drop one copy. Each arm
+# therefore carries dt inside its own solver block.
 mk() { # $1 stem, $2 extra yaml (may be empty)
 cat > "$WORK/$1.yaml" <<EOF
 run:
@@ -56,7 +59,6 @@ run:
   initial_water_table: supplied
   equilibrium_stop: { tol: 0 }
 time:
-  deltat: 31536000
   total: "3yr"
   report_interval: 1
   save_every_n_reports: 9999
@@ -130,7 +132,7 @@ echo
 # after 4 iterations -- a documented config value that crashed. This arm is the positive control for
 # that fix and fails loudly if the coupling is ever unpicked.
 echo
-mk newt_alone "solver: { method: newton }"
+mk newt_alone "$(printf 'solver:\n  method: newton\n  time_step:\n    dt: 31536000')"
 if "$WTM" "$WORK/newt_alone.yaml" > "$WORK/newt_alone.log" 2>&1; then
     echo "  PASS  NEWTON-YAML   solver.method: newton converges from YAML alone (no flags)"
 else
@@ -141,7 +143,7 @@ else
 fi
 
 # ... and the documented escape hatch must still give PLAIN Newton, with a warning rather than silence.
-mk newt_off "$(printf 'solver:\n  method: newton\n  newton:\n    dt_continuation: false')"
+mk newt_off "$(printf 'solver:\n  method: newton\n  time_step:\n    dt: 31536000\n  newton:\n    dt_continuation: false')"
 sh -c '"$0" "$1" > "$2" 2>&1' "$WTM" "$WORK/newt_off.yaml" "$WORK/newt_off.log" 2>/dev/null
 if command grep -q "WARNING \[solver.method: newton + solver.newton.dt_continuation: false\]" "$WORK/newt_off.log"; then
     echo "  PASS  NEWTON-OPTOUT dt_continuation: false gives plain Newton and WARNS that it will"

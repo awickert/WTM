@@ -1213,7 +1213,6 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "    frac: " << params.eq_frac << "\n";
 
   f << "\ntime:\n";
-  f << "  deltat: " << cfg_num(params.deltat) << "\n";
   f << "  total: \"" << cfg_num(params.total_time) << "s\"\n";
   if (params.report_interval_is_time) f << "  report_interval: \"" << cfg_num(params.report_interval_time) << "s\"\n";
   else                                f << "  report_interval: " << params.report_steps << "\n";
@@ -1272,6 +1271,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  adaptive_dt: " << params.adaptive_dt << "\n";
   f << "  t_bar: " << params.t_bar << "\n";
   f << "  time_step:\n";
+  f << "    dt: " << cfg_num(params.deltat) << "\n";
   f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
   else                     f << "    dt_max: auto\n";

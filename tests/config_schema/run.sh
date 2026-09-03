@@ -109,10 +109,12 @@ else
 fi
 
 # ---- SUGGEST: a near-miss gets a did-you-mean ------------------------------------------------------
-python3 -c "import sys,yaml; c=yaml.safe_load(open('$REF')); c['time']['detlat']=c['time'].pop('deltat'); yaml.safe_dump(c,open('$WORK/typo.yaml','w'),default_flow_style=False)"
+# Was time.detlat -> time.deltat until the step moved to solver.time_step.dt. Retargeted at another
+# one-transposition typo of a key that still exists, so the arm keeps testing the same thing.
+python3 -c "import sys,yaml; c=yaml.safe_load(open('$REF')); c['time']['totla']=c['time'].pop('total'); yaml.safe_dump(c,open('$WORK/typo.yaml','w'),default_flow_style=False)"
 OUT=$(msg "$WORK/typo.yaml")
-if echo "$OUT" | grep -q "did you mean 'time.deltat'"; then
-    echo "  PASS  SUGGEST    'time.detlat' suggests 'time.deltat'"
+if echo "$OUT" | grep -q "did you mean 'time.total'"; then
+    echo "  PASS  SUGGEST    'time.totla' suggests 'time.total'"
 else
     echo "  FAIL  SUGGEST    no did-you-mean for a one-transposition typo:"
     echo "$OUT" | grep -A2 "unrecognised key" | sed 's/^/        /'

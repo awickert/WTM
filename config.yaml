@@ -15,7 +15,6 @@ run:
     frac: 0.001                #   for metric: frac -- fraction of cells still above tol (0.001 = 0.1%)
 
 time:
-  deltat: 31536000             # seconds per timestep (31536000 = 1 year)
   total: 1000yr                # total simulated time (an integer number of report intervals)
   report_interval: 100         # steps between equilibrium checks / log lines (or a time, e.g. "50yr")
   save_every_n_reports: 1      # write a water-table raster every N reports
@@ -89,8 +88,14 @@ solver:
   adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
 
-  time_step:                # ONE step-size controller: it sizes the step for adaptive_dt AND for
+  time_step:                   # the time step, and the dials that adjust it. It serves adaptive_dt AND
                                # Newton's dt_continuation ramp, so it is nested under neither.
+    dt: 31536000               # seconds per timestep (31536000 = 1 year). The step lives HERE, not
+                               # under time:, because it is a solver property; time: keeps the run's
+                               # clock -- how long, how often to report -- which is quantised BY the
+                               # step but does not choose it. When adaptive_dt resolves true this is
+                               # the STARTING step; report_interval x deltat is always the report
+                               # span the run must land on exactly.
     error_tol: auto            # target per-step local error [m of water];
                                # auto tracks run.equilibrium_stop.tol
     dt_max: auto               # cap on the step; auto = 1000 * time.deltat
