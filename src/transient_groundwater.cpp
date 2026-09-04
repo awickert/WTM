@@ -1430,6 +1430,38 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     }
   }
 
+  // fsm_coupling: continuous x infiltration_during_flow: true. The continuous coupling delivers FSM's
+  // per-cell volume change through the DISTRIBUTED recharge carrier (fsm_delta_dist), and that carrier
+  // only exists on the distributed path: WTM.cpp sets
+  //     distribute_recharge = !fsm_on || !infiltration_on
+  // so turning infiltration on WITH FSM routes recharge through the serial rank-0 loop instead, where the
+  // delta has nowhere to go. The coupling was previously switched off silently at the point of use
+  // (WTM.cpp, `fsm_continuous_on() && fsm_on && distribute_recharge`), so `fsm_coupling: continuous` was
+  // accepted, ignored, and never mentioned -- MEASURED as byte-identical output to `impulse`, max
+  // difference 0.000000e+00 across every budget column. That is the defect class #27 and #28 already
+  // ruled against: a key that reads as honoured and is not.
+  //
+  // Resolve it here instead, where it can be SAID. An EXPLICIT request is refused by name; the default
+  // yields to impulse and announces, exactly as it does for the explicit collector above.
+  if (g_fsm_continuous && params.fsm_on && params.infiltration_on) {
+    if (fsm_cont_set == PETSC_TRUE)
+      throw std::runtime_error(
+          "config: surface_water.fsm_coupling: continuous cannot be used with "
+          "surface_water.infiltration_during_flow: true. The continuous coupling hands FillSpillMerge's "
+          "per-cell volume change to the next step through the DISTRIBUTED recharge carrier, but "
+          "infiltration_during_flow routes recharge through the serial rank-0 loop, which has no such "
+          "carrier -- so the coupling would be silently inert. Use fsm_coupling: impulse, or "
+          "infiltration_during_flow: false.");
+    g_fsm_continuous = false;
+    static bool noted_infil_impulse = false;
+    if (!noted_infil_impulse) {
+      noted_infil_impulse = true;
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "surface_water.fsm_coupling: auto -> impulse (infiltration_during_flow: true routes "
+                  "recharge serially, which carries no FSM-delta source).\n");
+    }
+  }
+
   // fsm_coupling: continuous x collection.method: explicit is REFUSED, because it does not converge. Solution
   // convergence at a fixed 8 yr on tests/fsm_consistency: the other three combinations refine cleanly
   // (observed order 1.4-1.6), while this one stalls at ~1.1 m and its observed order goes NEGATIVE
