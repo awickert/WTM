@@ -1355,7 +1355,22 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`
   // reports `ponded`. Recorded rather than papered over; the distinction is a TODO in parameters.cpp.
   f << "  mode: " << (params.fsm_on ? "routed" : "ponded") << "\n";
-  f << "  fsm_coupling: " << (FanDarcyGroundwater::fsm_continuous_on() ? "continuous" : "impulse") << "\n";
+  // fsm_coupling is resolved inside the SOLVE too, so fsm_continuous_on() still holds its compile-time
+  // default here -- the SAME trap the smoothing widths below document, missed when this key was added.
+  // MEASURED: a config asking for `continuous`, which ran as continuous, emitted `impulse` here. Read the
+  // request from the options database (the bridge has already put the config's value there) and apply the
+  // SAME resolution the solve applies, so this line reports what actually ran rather than what was asked.
+  // Kept in step with transient_groundwater.cpp: if a gate is added there, add it here.
+  PetscBool fsm_cont_req = PETSC_TRUE;  // the OPTION's default (see the read in transient_groundwater.cpp)
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont_req, nullptr);
+  bool eff_continuous = (fsm_cont_req == PETSC_TRUE) && params.fsm_on;  // no FSM -> nothing to couple
+  {
+    std::string eff_rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
+    if (eff_rc == "active_set" && !params.runoff_collector_set && uc.use_picard) eff_rc = "explicit";
+    if (eff_rc == "explicit") eff_continuous = false;   // continuous x explicit is refused / auto-yields
+    if (params.infiltration_on) eff_continuous = false; // serial recharge carries no FSM-delta source
+  }
+  f << "  fsm_coupling: " << (eff_continuous ? "continuous" : "impulse") << "\n";
   if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
   else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
   else f << "  runoff_ratio: 0\n";
