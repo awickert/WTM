@@ -134,15 +134,15 @@ PY
 # residual stays ABOVE `floor` (still broken); FAILs the moment it closes -- which means the defect is
 # fixed and the arm must be promoted to a real `check`. An expected failure that silently starts
 # passing is how a fixed bug loses its test.
-xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags
+xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags ; XTASK names the defect
     local label="$1" stem="$2" floor="$3"; shift 3
     mkcfg "$stem" "${COLL-implicit}"
     if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
-    FLOOR="$floor" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PYX' || fail=1
+    FLOOR="$floor" LABEL="$label" XTASK="${XTASK:-#12}" "$PY" - "$WORK/$stem.txt" <<'PYX' || fail=1
 import os, sys
-floor = float(os.environ["FLOOR"]); label = os.environ["LABEL"]
+floor = float(os.environ["FLOOR"]); label = os.environ["LABEL"]; xtask = os.environ["XTASK"]
 rows = [[float(x) for x in l.split()] for l in open(sys.argv[1])
         if l.split() and l.split()[0].isdigit() and len(l.split()) >= 18]
 if len(rows) < 3:
@@ -150,7 +150,7 @@ if len(rows) < 3:
 cum = abs(rows[-1][16]) / (abs(rows[-1][8]) or 1.0)
 still_broken = cum > floor
 print(f"  {'xfail' if still_broken else 'FAIL '}   {label:<34} cumulative={cum:.2e}  "
-      f"-- KNOWN DEFECT, task #12" + ("" if still_broken else "  <-- NOW CLOSES: promote to check()"))
+      f"-- KNOWN DEFECT, task {xtask}" + ("" if still_broken else "  <-- NOW CLOSES: promote to check()"))
 sys.exit(0 if still_broken else 1)
 PYX
 }
@@ -337,7 +337,20 @@ COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # Resolve the solve past the assertion instead of loosening the assertion.
 COLL="" METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
 COLL="" METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
-COLL=implicit METHOD=newton check "Newton + continuation x implicit" d_nt
+# THE COUPLING IS WHAT BREAKS THIS ARM, and it is worth two arms rather than one. `implicit` closes
+# perfectly well under impulse; under continuous it does not. Measured at snes_stol 1e-10 (past the
+# solver floor, so this is the model and not the solve):
+#     impulse    x implicit   cumulative 2.491e-07   worst-per-cycle 3.521e-07   <- closes
+#     continuous x implicit   cumulative 1.222e-06   worst-per-cycle 2.244e-05   <- does not
+# That completes a pattern the code already half-records: `continuous` composes with active_set (the
+# pairing #40 built) and with nothing else. It is REFUSED with explicit (does not converge, #44) and
+# with implicit under adaptive (the siphon's error grows as dt shrinks); this is the third face of the
+# same incompatibility, and the only one that fails QUIETLY -- the budget simply stops closing.
+# So: keep the closure assertion on the coupling that closes, and hold the broken pairing as an
+# EXPECTED failure so it keeps a regression test instead of vanishing from the suite.
+COLL=implicit METHOD=newton COUPLING=impulse check "Newton + continuation x implicit (impulse)" d_nt
+COLL=implicit METHOD=newton COUPLING=continuous XTASK="#48 (continuous composes only with active_set)" \
+    xfail_broken "Newton + continuation x implicit (continuous)" d_ntc 2e-6
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
 # other two must NOT print it, or they have silently stopped testing the active-set default.
 for arm in d_and:absent d_ntu:absent d_pic:present; do
