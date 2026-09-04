@@ -10,7 +10,13 @@ run:
   type: equilibrium            # test | equilibrium | transient
   initial_water_table: saturated   # saturated (wtd = 0) | supplied (read the starting_wt input layer) | <path to a raster>
   equilibrium_stop:            # end an equilibrium run early once the water table has settled
-    tol: 0.001                 #   stop when the per-cycle WATER moved (|S*Δwtd|) stays below this [m of water]; 0 = never
+    tol: 0.001                 #   HOW STILL IS STILL ENOUGH. The run ends when a whole cycle moves less
+                               #   water than this. 0 = never stop early; run the clock out.
+                               #   Metres of WATER, not of water table: |S*Δwtd|, the water that actually
+                               #   shifted. At porosity 0.25 this 1 mm of water is 4 mm of table movement.
+                               #   This is the one threshold here that is a MODELLING judgement rather than
+                               #   a numerical one -- what counts as negligible for your question -- which
+                               #   is why nothing derives it. The two below derive from it.
     metric: frac               #   how the change is judged (all water-based): max | rms | frac
     frac: 0.001                #   for metric: frac -- fraction of cells still above tol (0.001 = 0.1%)
 
@@ -82,7 +88,12 @@ solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton
                                # newton means the WORKING recipe: the analytic-Jacobian path WITH
                                # dt-continuation, which it needs to converge from a cold start.
-  tolerance: 1e-6              # per-solve convergence step tolerance (-> snes_stol)
+  tolerance: 1e-6              # per-solve step tolerance (-> snes_stol). RELATIVE and in HEAD: stop the
+                               # solve when ||Δh|| falls below this fraction of ||h||. Note it is the odd
+                               # one out -- the two water thresholds are absolute DEPTHS, this is a
+                               # dimensionless ratio, so there is no clean way to derive it from them.
+                               # Innermost of the three gates: solve ⊂ step ⊂ run. Set it LOOSER than the
+                               # step target and the step's error estimate is measuring solver noise.
   convergence:
     metric: head               # head | water -- what the PER-SOLVE step test judges.
                                # `water` swaps the relative head-step test for |S*Δwtd|, so all three
@@ -91,10 +102,14 @@ solver:
                                # matters where storativity is small: a deep tight cell can swing its
                                # head a long way while moving almost no water, and head-judged
                                # convergence keeps grinding on it. CHANGES THE ANSWER.
-    water_volume_tol: 1.0e-8          # relative water-step tolerance; READ ONLY when metric: water.
-                               # Loosening it does NOT save time -- each solve stops under-converged
-                               # and the outer loop needs more cycles (measured: 1e-5 costs 3x the
-                               # solves of 1e-8 on tests/solver_consistency).
+    water_volume_tol: 1.0e-8   # the SAME gate as solver.tolerance above, in water instead of head.
+                               # Exactly one of the two is live, chosen by metric. READ ONLY when
+                               # metric: water -- it sits here rather than beside tolerance because it
+                               # is only meaningful with the metric that selects it.
+                               # RELATIVE, like tolerance: a fraction of the water already in the domain,
+                               # not a depth. Loosening it does NOT save time -- each solve stops
+                               # under-converged and the outer loop needs more cycles (measured: 1e-5
+                               # costs 3x the solves of 1e-8 on tests/solver_consistency).
   max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
   time_integration: tr-bdf2    # auto | backward-euler | bdf2 | tr-bdf2
                                # auto resolves PER METHOD and the run prints what it chose. tr-bdf2 runs
@@ -111,8 +126,12 @@ solver:
                                # step but does not choose it. When adaptive_dt resolves true this is
                                # the STARTING step; report_interval x deltat is always the report
                                # span the run must land on exactly.
-    error_tol: auto            # target per-step local error [m of water];
-                               # auto tracks run.equilibrium_stop.tol
+    error_tol: auto            # target per-step local error, in metres of WATER like
+                               # run.equilibrium_stop.tol -- an absolute depth, not a ratio.
+                               # auto tracks run.equilibrium_stop.tol, which is the derivation that
+                               # matters: a step should resolve what the run cares about. Middle of the
+                               # three gates. Setting it looser than the run's tol means stopping on
+                               # steps the run cannot resolve.
     dt_max: auto               # cap on the step; auto = 1000 * time.deltat
     grow: 1.5                  # dt multiplier after an easy solve
     shrink: 0.25               # dt multiplier after a rejected solve
