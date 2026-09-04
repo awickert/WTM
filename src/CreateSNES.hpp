@@ -206,6 +206,8 @@ struct AppCtx {
                                    // Under the water (volume) step-error the MAX worst-cell norm is hostage to a few
                                    // surface-kink cells and can stall a cold start (GH #13); RMS averages them out.
   double dt_prev_est     = 0.0;    // previous accepted step's error estimate (PI-controller history; 0 = none)
+  bool   budget_trace    = false;  // output.trace: [budget] -- per-STEP identity terms, both storage
+                                   // computations side by side. Answer-neutral. See #52.
   bool   dt_trace        = false;  // -wtm_dt_trace: report (dt, est, tol, factor, iters, accepted) for every
                                    // adaptive step, accepted or rejected. The local error estimate STEERS the
                                    // integration, but was computed every step and reported NOWHERE -- so no

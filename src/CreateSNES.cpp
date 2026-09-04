@@ -303,6 +303,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
                 dt0, user_context.dtc_grow, user_context.dtc_easy_iters, user_context.dtc_shrink,
                 user_context.dtc_dt_max);
   }
+  // output.trace: [budget] -- read UNCONDITIONALLY. It applies to every stepping path (fixed,
+  // adaptive, continuation), so it must not be parsed inside the adaptive branch: on a fixed-dt run the
+  // flag would then be set by the config bridge and read by nobody, and the unconsumed-flag guard would
+  // abort the run. It did exactly that when this was first wired in.
+  {
+    PetscBool budget_trace_flag = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, "-wtm_budget_trace", &budget_trace_flag);
+    user_context.budget_trace = (budget_trace_flag == PETSC_TRUE);
+  }
   if (user_context.use_dt_adaptive) {
     // config-owned (solver.water_volume_timestep_error_tol); unset keeps the eq_tol-tracking default
     const bool dt_tol_set = params.dt_tol_set;

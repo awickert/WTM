@@ -525,6 +525,51 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   }
 }
 
+
+// PER-STEP BUDGET TRACE (output.trace: [budget]). Answer-neutral: prints, changes nothing.
+//
+// WHY IT IS PERMANENT rather than a probe. The exact identity is reported ONCE PER CYCLE (col 17), and
+// a cycle is many steps -- so a defect confined to ONE step is diluted by everything around it, and a
+// defect that only appears at a coarse step vanishes under refinement before it can be seen. The
+// wtd=0 crossing defect (#52) is exactly that shape: 1.88e+07 on the single step where surface water
+// first appears, invisible in the cycle sum at finer dt. It was found with a throwaway probe, which
+// meant every follow-up question cost a rebuild.
+//
+// It emits TWO INDEPENDENT computations of the storage change:
+//   d_stor_acc    what the solver ACCUMULATED (arp.total_storage_change)
+//   d_stor_state  recomputed from the STATE, sum of storedVolume(starting_wtd)*area
+// Their agreement is the sharpest available check that the model's story matches what it actually did.
+// Measured at 1.8e-14 relative, INCLUDING across the crossing step -- which is how #52 was established
+// as a FLUX-REPORTING defect and not a state error.
+static void budget_trace_step(const Parameters& params, ArrayPack& arp, AppCtx& user_context,
+                              DMDA_Array_Pack& dmdapack, double v_before) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  double v_after = 0.0;
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      if (dmdapack.mask[j][i] != 0)
+        v_after += storedVolume(dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]) * arp.cell_area[j];
+  static double p_r = 0, p_s = 0, p_o = 0, p_x = 0, p_e = 0;
+  const double r = arp.total_solver_recharge, st = arp.total_storage_change,
+               o = arp.total_ocean_outflow_gw, x = arp.total_surface_removed, e = arp.total_evap_removed;
+  PetscPrintf(PETSC_COMM_WORLD,
+              "BUDGETTRACE step=%d d_rech=%.9e d_stor_acc=%.9e d_stor_state=%.9e d_ocean=%.9e "
+              "d_surf=%.9e d_evap=%.9e d_resid=%.9e\n",
+              params.solves_done, r - p_r, st - p_s, v_after - v_before, o - p_o, x - p_x, e - p_e,
+              (r - p_r) - (st - p_s) - (o - p_o) - (x - p_x) - (e - p_e));
+  p_r = r; p_s = st; p_o = o; p_x = x; p_e = e;
+}
+
+static double budget_trace_before(ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  double v = 0.0;
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++)
+      if (dmdapack.mask[j][i] != 0)
+        v += storedVolume(dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]) * arp.cell_area[j];
+  return v;
+}
+
 template <class elev_t>
 void update(
     Parameters& params,
@@ -691,6 +736,7 @@ void update(
       const double remaining = cycle_duration - t;
       if (user_context.deltat > remaining) user_context.deltat = remaining;
       const double dt_taken   = user_context.deltat;
+      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       const double rech_snap  = arp.total_recharge_direct;    // roll back on a rejected step (non-converged
       const double ocean_snap = arp.total_loss_to_ocean_gw;  // OR too-inaccurate), as the continuation loop does
       zero_sink();
@@ -712,6 +758,7 @@ void update(
       t += dt_taken;
       nsteps++;
       params.solves_done++;
+      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
       if (params.fsm_on)
         couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
                                     fsm_seconds);
@@ -735,6 +782,7 @@ void update(
       const double rech_snap  = arp.total_recharge_direct;   // roll back on a rejected step
       const double ocean_snap = arp.total_loss_to_ocean_gw;
       const double dt_try     = user_context.deltat;
+      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       zero_sink();
       richdem::Timer tgw_n;
       tgw_n.start();
@@ -752,6 +800,7 @@ void update(
       }
       accepted++;
       params.solves_done++;
+      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
       retries = 0;
       // Grow Δt after an EASY step (converged in <= dtc_easy_iters), HOLD when hard (near the free-
       // boundary ceiling). NOTE: a residual/state-change SER controller (grow ∝ Δw_prev/Δw) was tried
@@ -770,12 +819,14 @@ void update(
   } else {
     int iter_count = 0;
     while (iter_count++ < params.report_steps) {
+      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       zero_sink();
       richdem::Timer tgw;
       tgw.start();
       FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
       gw_seconds += tgw.lap();
       params.solves_done++;
+      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
       if (params.fsm_on)
         couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
                                     fsm_seconds);
@@ -1117,9 +1168,11 @@ void apply_config_petsc_options(const std::string& config_file) {
     if (!tr.IsSequence())
       throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
     for (const auto& e : tr) {
-      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step"});
+      const std::string v =
+          require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget"});
       if (v == "dt")         set_opt_if_unset("-wtm_dt_trace", "true");
       if (v == "water_step") set_opt_if_unset("-wtm_snes_volume_conv", "true");
+      if (v == "budget")     set_opt_if_unset("-wtm_budget_trace", "true");
     }
   }
 
