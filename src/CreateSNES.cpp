@@ -224,18 +224,16 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
         "  or Newton with solver.method: newton.\n");
   }
 
-  user_context.use_bdf2_on_V   = (bdf2v_flag == PETSC_TRUE);
+  // BDF2 is now singular: the head form (-wtm_bdf2) was retired 2026-09-04, so the surviving scheme is
+  // the volume form and the `_on_V` qualifier named a distinction that no longer exists. The config
+  // value is plain `bdf2`, and the field now matches it.
+  user_context.use_bdf2 = (bdf2v_flag == PETSC_TRUE);
   user_context.use_dt_adaptive = (adaptive_flag == PETSC_TRUE);
   // The dt controller is DETACHED from the integrator: -wtm_dt_adaptive no longer forces the 2nd-order
   // BDF2 residual. The integrator (cc backward-Euler / TR-BDF2 / BDF2-on-V) is selected by its own flags,
   // and the controller sizes dt for whichever one is active (see the estimate/controller split in
   // transient_groundwater.cpp update()). So `solver.method: anderson -wtm_dt_adaptive` is 1st-order adaptive-cc,
   // `solver.time_integration: tr-bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `solver.time_integration: bdf2 -wtm_dt_adaptive` is BDF2-on-V.
-  // use_bdf2 means "multi-level BDF2 weights are in play"; use_bdf2_on_V adds "and in the VOLUME form".
-  // The HEAD form was the difference between them, reachable only via -wtm_bdf2, retired 2026-09-04. The
-  // two are therefore now equivalent, and the head-form arms downstream are unreachable -- left in place
-  // rather than excised in the same commit, so this change stays verifiable as bit-identical.
-  user_context.use_bdf2 = user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: solver.method: anderson
   // solver.time_integration: bdf2 gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.
@@ -398,7 +396,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
       PetscPrintf(PETSC_COMM_WORLD,
                   "WARNING: both -wtm_dt_norm_rms and -wtm_dt_norm_max given; using MAX.\n");
     const char* integ = user_context.use_tr_bdf2      ? "TR-BDF2 (2nd-order)"
-                        : user_context.use_bdf2_on_V  ? "BDF2-on-V (2nd-order)"
+                        : user_context.use_bdf2  ? "BDF2-on-V (2nd-order)"
                         : user_context.use_picard     ? "backward-Euler Picard (1st-order)"
                                                       : "backward-Euler cc/Anderson (1st-order)";
     PetscPrintf(

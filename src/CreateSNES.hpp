@@ -273,7 +273,6 @@ struct AppCtx {
   // TANGENT dV/dh on the operator diagonal -- instead of the 2-level backward-Euler secant
   // storativity, which caps the achieved order at 1. Restores genuine 2nd order, physics-preserving
   // (no fixed-point shift). See BDF2_ADAPTIVE_DESIGN.md.
-  bool use_bdf2_on_V = false;
 
   // Scratch global vector + reusable gather for assembling the full wtd field
   // from the distributed solve (see FanDarcyGroundwater::update). Owned by the

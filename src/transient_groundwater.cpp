@@ -570,7 +570,7 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
                      : uc.use_newton    ? "newton"
                                         : "anderson";
   const char* integ  = uc.use_tr_bdf2    ? "tr_bdf2"
-                     : uc.use_bdf2_on_V  ? "bdf2_on_V"
+                     : uc.use_bdf2       ? "bdf2"
                      : g_volume_storage  ? "be_volume"
                                          : "be_secant";
   const char* dtctl  = uc.use_dt_adaptive          ? "adaptive"
@@ -817,7 +817,6 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
   // S_c*(h^{n+1} - h^n) == V(w^{n+1}) - V(w^n) identically. The two forms separate only once the BDF2
   // weights are not (1,1,0), because S_c*(a_c h^{n+1} - b_c h^n + c_c h^{n-1}) is then NOT the
   // weighted volume difference. So the single volume branch is the BDF2-on-V one.
-  const bool bdf2_on_V = bdf2 && user_context.use_bdf2_on_V;
   double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // backward-Euler weights (recharge form S_c*(h^{n+1}-h^n))
   if (bdf2) {
     const double omega = user_context.deltat / user_context.bdf2_prev_dt;
@@ -839,7 +838,7 @@ static void accumulate_budget_terms(AppCtx& user_context, ArrayPack& arp, DMDA_A
       const double wm1  = my_prev ? my_prev[j][i] : 0.0;     // w^{n-1} (unused when c_c==0)
       const double rech = dmdapack.rech_vec[j][i];
       double storage, recharge;
-      if (bdf2_on_V) {
+      if (bdf2) {
         storage  = a_c * storedVolume(w1, poro) - b_c * storedVolume(w0, poro) + c_c * storedVolume(wm1, poro);
       } else {
         const double S_c = updateEffectiveStorativity(w0, w1, poro);  // secant storativity (matches the RHS)
@@ -1518,7 +1517,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   //  * matrix-free path (Anderson/Newton, !use_picard): FormFunctionLocal applies them EVERY solve.
   //  * Picard path: only in the BDF2-on-V branch, once a history exists (the BE bootstrap has none).
   const bool matrix_free   = !user_context.use_picard;
-  const bool picard_bdf2_V = user_context.use_bdf2 && user_context.bdf2_have_history && user_context.use_bdf2_on_V;
+  const bool picard_bdf2_V = user_context.use_bdf2 && user_context.bdf2_have_history && user_context.use_bdf2;
   const bool sink_active_this_step = g_direct_to_runoff && (matrix_free || picard_bdf2_V);
   const bool evap_active_this_step = g_evap_taper && (matrix_free || picard_bdf2_V);
 
@@ -2343,7 +2342,7 @@ static PetscErrorCode FormRHS(AppCtx* user_context, DM da, Vec B) {
   // Anderson BE: the SNES RHS b = h^n carries the previous-step storage (residual = F(x) − b). The
   // matrix-free BDF2-on-V path instead folds the FULL 3-level storage (V^{n+1},V^n,V^{n-1}) into the
   // residual itself, so its RHS is zero. The bootstrap step (no history yet) still uses the BE RHS.
-  const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
+  const bool bdf2v = user_context->use_bdf2 && user_context->bdf2_have_history && !user_context->use_picard;
   // dev.storage_form: volume folds the FULL storage ΔV into the residual (like bdf2v), so its RHS is 0 too.
   const bool zero_rhs = bdf2v || user_context->use_tr_bdf2 || g_volume_storage;
 #pragma omp parallel for default(none) shared(ys, ym, xs, xm, b, my_starting_wtd, my_topo, zero_rhs) collapse(2)
@@ -2400,7 +2399,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   // specific yield so the residual stays O(metres) for Anderson. Same fixed point as the Picard
   // BDF2-on-V operator (verified). The bootstrap step (no history) uses backward Euler. See
   // benchmark/TBAR_TIME_AVERAGING.md / BDF2_ADAPTIVE_DESIGN.md.
-  const bool bdf2v = user_context->use_bdf2_on_V && user_context->bdf2_have_history && !user_context->use_picard;
+  const bool bdf2v = user_context->use_bdf2 && user_context->bdf2_have_history && !user_context->use_picard;
   double a_c = 1.0, b_c = 1.0, c_c = 0.0;  // BDF2-on-V weights (a_c V^{n+1} - b_c V^n + c_c V^{n-1})
   if (bdf2v) {
     const double omega = user_context->deltat / user_context->bdf2_prev_dt;
@@ -2954,7 +2953,6 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
   // step is constant -> uniform BDF2). Backward Euler otherwise: b = S_c*(h^n + rech).
   // h^{n-1} = starting_wtd_prev + topo (centre only).
   const bool bdf2      = user_context->use_bdf2 && user_context->bdf2_have_history;
-  const bool bdf2_on_V = bdf2 && user_context->use_bdf2_on_V;
   double a_c = 1.0, b_c = 0.0, c_c = 0.0;
   if (bdf2) {
     const double omega = user_context->deltat / user_context->bdf2_prev_dt;
@@ -2992,7 +2990,7 @@ static PetscErrorCode FormPicardRHS(SNES snes, Vec x, Vec b, void* ctx) {
     for (auto i = xs; i < xs + xm; i++) {
       if (my_mask[j][i] == 0) {
         bb[j][i] = 0.0;  // Dirichlet ocean cell: h = 0
-      } else if (bdf2_on_V) {
+      } else if (bdf2) {
         // BDF2-on-V: storage = a*V(w) - b*V(w^n) + c*V(w^{n-1}), Picard-linearized about x_k so
         // the diagonal a*Sy(w_k) (in the operator) cancels a*Sy(w_k)*x_k here, leaving a*V(w_k) at
         // the fixed point. Volume form: the whole storage+recharge+sink RHS scales by the cell area
@@ -3177,7 +3175,6 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
   // BDF2-on-V: use the TANGENT dV/dh on the diagonal (BDF2 applied to the volume), instead of the
   // backward-Euler secant storativity that caps the order at 1. Only once history exists (a BDF2
   // step); the BE bootstrap step keeps the secant. See BDF2_ADAPTIVE_DESIGN.md.
-  const bool bdf2_on_V = bdf2 && user_context->use_bdf2_on_V;
 
   for (auto j = info.ys; j < info.ys + info.ym; j++) {
     for (auto i = info.xs; i < info.xs + info.xm; i++) {
@@ -3200,7 +3197,7 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         // dV/dh (specificYield); otherwise the backward-Euler secant (matches FormFunctionLocal).
         const double w_k = xx[j][i] - my_topo[j][i];
         const double S_c =
-            bdf2_on_V ? specificYield(w_k, my_porosity[j][i])
+            bdf2 ? specificYield(w_k, my_porosity[j][i])
                       : updateEffectiveStorativity(my_starting_wtd[j][i], w_k, my_porosity[j][i]);
 
         // Harmonic-mean interface transmissivities e = 2/(1/T_c + 1/T_nbr), times the face geometry
@@ -3215,14 +3212,14 @@ static PetscErrorCode FormPicardOperator(SNES snes, Vec x, Mat A, Mat P, void* c
         const double sink_diag = 0.0;  // taper-1 band sink retired (fork issue #7)
         // Taper 2 (+ taper 3) evaporation diagonal: dt*R'(w_k)*A_j, SPD-clamped >= 0 (matches the RHS
         // term). R' == E_eff' when taper 3 is off.
-        const double evap_diag = (g_evap_taper && bdf2_on_V)
+        const double evap_diag = (g_evap_taper && bdf2)
                                      ? dt * evapRemovalTangent(w_k, my_evap[j][i], my_owe[j][i],
                                                                my_precip[j][i] / SECONDS_IN_A_YEAR) * A_j
                                      : 0.0;
         // Exfiltration (runoff_collector=implicit): dt*R'(w_k)*A_j = A_j for a exfiltrating cell (w_k > 0), 0 below.
         // A frozen active-set diagonal (the exfiltrating set is fixed each Picard sweep); >= 0 -> SPD-preserving.
         // The matching RHS constant is added in FormPicardRHS. Mutually exclusive with the sink.
-        const double dtr_diag = (g_direct_to_runoff && bdf2_on_V)
+        const double dtr_diag = (g_direct_to_runoff && bdf2)
                                     ? dt * directToRunoffTangent(w_k, dt) * A_j : 0.0;
 
         // Variable-length stencil: one off-diagonal dt*G conductance per IN-BOUNDS face (E,W,N,S order),
