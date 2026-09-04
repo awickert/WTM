@@ -27,7 +27,7 @@ tooling relative to the repo (`paths.py`); scratch output goes under `$WTM_WORK`
 | `timestep_robustness.py` | max stable Δt & steps-to-equilibrium | Anderson **diverges at Δt≥10 yr** (ceiling ~1 yr); Picard/BDF2 unconditionally stable → equilibrium in Δt=1000→**~50**, 10⁴→**~10**, 10⁵→**~5 steps** |
 | `equilibrium_accuracy.py` | is Picard's big-step equilibrium correct? | Picard Δt=1000 vs Δt=10⁵ agree to **2×10⁻³ m** (Δt-independent); Anderson Δt=1 converges to the same field but needs **~40,000 steps** |
 | `transient_accuracy.py` | transient path error vs Δt (Anderson Δt=1 = truth) | **first-order in Δt** (10× Δt → 10× error), **washes out toward equilibrium** — stability without free accuracy, but first-order-controllable |
-| `bdf2_order.py` | temporal order of the `-wtm_bdf2` path | **coarse Δt (250–2000 yr): order ~2** (BDF2 25–85× more accurate than BE); **fine Δt (10–100 yr): order degrades to ~1** — the C⁰ piecewise Fan T caps it as water tables cross the S4/S6 kinks (not a solver artifact). 0.1 mm error ≈ Δt 10 yr (mean) / 5–6 yr (max). Smooth-T reformulation would restore order 2 (physics-vs-order tradeoff). See BDF2_ADAPTIVE_DESIGN.md |
+| `bdf2_order.py` (**HISTORICAL** — `-wtm_bdf2` retired 2026-09-04; needs a pre-retirement commit to re-run) | temporal order of the `-wtm_bdf2` path | **coarse Δt (250–2000 yr): order ~2** (BDF2 25–85× more accurate than BE); **fine Δt (10–100 yr): order degrades to ~1** — the C⁰ piecewise Fan T caps it as water tables cross the S4/S6 kinks (not a solver artifact). 0.1 mm error ≈ Δt 10 yr (mean) / 5–6 yr (max). Smooth-T reformulation would restore order 2 (physics-vs-order tradeoff). See BDF2_ADAPTIVE_DESIGN.md |
 | `adaptive_sweep.py` | `-wtm_dt_adaptive` across grids × cores × tol | step count invariant to core count (MPI-consistent controller) and ~grid-independent; step count drops and accuracy tracks the tolerance (128²: tol=0.1/1/10 m → 261/39/17 steps, err 0.14/2.0/7.1 m) |
 
 ## Run
@@ -80,3 +80,26 @@ ceiling from ~1 yr to unbounded — collapsing an intractable ~10⁴-step equili
 into a handful of steps at the same equilibrium accuracy, and strong-scaling better
 on many cores. The equilibrium is Δt-independent; the transient path is first-order
 in Δt (hence `../BDF2_ADAPTIVE_DESIGN.md`).
+
+## Historical: the head-form BDF2 rows
+
+`results.csv` holds **102 rows with `solver=bdf2`** (against 21 `bdf2_on_V`). Those are the ORIGINAL
+head-form BDF2, `S_c(a_c h^{n+1} - b_c h^n + c_c h^{n-1})`, retired on 2026-09-04. The numbers and the
+conclusions they produced stay; what is gone is the ability to REGENERATE them without checking out a
+pre-retirement commit.
+
+Why that costs little. The headline result from `bdf2_order.py` — order ~2 at coarse dt, degrading to
+~1 at fine dt because the C0 piecewise Fan T caps it as water tables cross the S4/S6 kinks — is a
+conclusion about the TRANSMISSIVITY FORM, not about the integrator, and it does not need re-running to
+stay true. Upstream compatibility is untouched: **v2.0.1 has no BDF2 at all**, so the head form was
+never Kerry's standard, only the first BDF2 built on this branch before BDF2-on-V superseded it.
+
+What decided the retirement was not disuse but two silent failures: under the shipped default
+integrator (tr-bdf2) the flag was IGNORED, because the head-form branch is gated on `!use_tr_bdf2` --
+so it produced backward-Euler-identical results with no warning. And when it did run, the banner
+announced "BDF2-on-V", because that announcement was gated on `use_bdf2`, which was true for both
+forms. Anyone comparing "BDF2" runs could have been comparing two different schemes without knowing.
+
+Head-based BACKWARD EULER is unaffected and remains, as `dev.storage_form: secant`. It is bit-identical
+to the volume form there (`tests/storage_equivalence`, 0.000e+00), because S_c IS the exact secant; the
+two forms separate only once the BDF2 weights are not (1,1,0).

@@ -112,11 +112,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // them.
   // Time-integration flags nest: -wtm_dt_adaptive implies BDF2 implies the Picard path
   // (all live in the Picard operator/RHS). See BDF2_ADAPTIVE_DESIGN.md.
-  PetscBool picard_flag = PETSC_FALSE, bdf2_flag = PETSC_FALSE, adaptive_flag = PETSC_FALSE;
+  PetscBool picard_flag = PETSC_FALSE, adaptive_flag = PETSC_FALSE;
   // config-owned (solver.method: picard); the -wtm_picard flag is retired. Kept as a PetscBool for the
   // same reason as adaptive_flag below -- the path resolution around it is written in PetscBool terms.
   picard_flag = (params.solver_method == "picard") ? PETSC_TRUE : PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_bdf2", &bdf2_flag);
   // config-owned (solver.adaptive_dt); the -wtm_dt_adaptive flag is retired. Kept as a PetscBool
   // because the surrounding path-resolution logic below is written in PetscBool terms.
   adaptive_flag = params.adaptive_dt ? PETSC_TRUE : PETSC_FALSE;
@@ -202,14 +201,14 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // it would become 2nd-order ANDERSON instead -- a silent change to every existing config that relies
   // on the old implication. Neither silence is acceptable, so it is refused and the user states the
   // method. This breaks such configs deliberately, and names the two ways to fix them.
-  if ((bdf2v_flag == PETSC_TRUE || bdf2_flag == PETSC_TRUE) && params.solver_method.empty())
+  if (bdf2v_flag == PETSC_TRUE && params.solver_method.empty())
     throw std::runtime_error(
         "config: solver.time_integration: bdf2 used to IMPLY solver.method: picard, and the method is now "
         "chosen only by solver.method. State it explicitly:\n"
         "  solver.method: picard    -- the BDF2-on-V Picard operator (what this config did before)\n"
         "  solver.method: anderson  -- 2nd-order matrix-free Anderson (the time discretization is a "
         "property of the residual, not the solver)");
-  const bool any_path_flag = (picard_flag || bdf2_flag || adaptive_flag || bdf2v_flag);
+  const bool any_path_flag = (picard_flag || adaptive_flag || bdf2v_flag);
   if (!force_anderson && !newton_flag && !any_path_flag) {
     // Default solver: matrix-free Anderson -- the production worker. It is robust across regimes and
     // converges where the Picard/Newton free-boundary solve struggles, and it carries the exact
@@ -232,7 +231,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // and the controller sizes dt for whichever one is active (see the estimate/controller split in
   // transient_groundwater.cpp update()). So `solver.method: anderson -wtm_dt_adaptive` is 1st-order adaptive-cc,
   // `solver.time_integration: tr-bdf2 -wtm_dt_adaptive` is 2nd-order TR-BDF2, `solver.time_integration: bdf2 -wtm_dt_adaptive` is BDF2-on-V.
-  user_context.use_bdf2 = (bdf2_flag == PETSC_TRUE) || user_context.use_bdf2_on_V;
+  // use_bdf2 means "multi-level BDF2 weights are in play"; use_bdf2_on_V adds "and in the VOLUME form".
+  // The HEAD form was the difference between them, reachable only via -wtm_bdf2, retired 2026-09-04. The
+  // two are therefore now equivalent, and the head-form arms downstream are unreachable -- left in place
+  // rather than excised in the same commit, so this change stays verifiable as bit-identical.
+  user_context.use_bdf2 = user_context.use_bdf2_on_V;
   // A forced Anderson path keeps the matrix-free residual even with a BDF2 time flag: solver.method: anderson
   // solver.time_integration: bdf2 gives 2nd-order-in-time Anderson (time discretization is a property of the residual,
   // not the solver). Only take the Picard operator path when Anderson is NOT forced.
