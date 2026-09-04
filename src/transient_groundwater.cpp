@@ -1822,6 +1822,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           // S·Δwtd), reusing the exact V(wtd) the storage residual + eq metric use; slope 1 above the surface
           // (ponded), porosity below. Symmetric with convergence: integrate to the accuracy we detect.
           const double poro = dmdapack.porosity_vec[j][i];
+          // COUNT THE ERROR AGAINST THE ACTUAL INPUTS, NOT THE EXPECTED ONES (Andy, 2026-09-04).
+          // h_pred extrapolates from HISTORY, so it cannot know about the FSM delta -- FillSpillMerge's
+          // per-cell volume change, handed to THIS step as a recharge adjustment. The gap it opens is not
+          // truncation error; it is an input the prediction omitted. Subtract it, and what remains is the
+          // part of the move the integrator is actually responsible for. Both terms are volumes (the delta
+          // is storedVolume(post) - storedVolume(pre)), so this is dimensionally the same quantity.
+          // Without it, refining dt CANNOT reduce the estimate: the delta is sized for the step that
+          // PRODUCED it, so a shorter next step makes it relatively larger, and the controller rejects to
+          // its floor and dies with "step failed after max retries" (measured on tests/xrank_growth:
+          // est fell only as ~dt^0.35 while dt fell four orders of magnitude).
+          // Zero under fsm_coupling: impulse (the carrier is never written there), so that path is
+          // bit-identical. SUBTRACTING the delta was tried first and is WRONG: the injected water
+          // redistributes LATERALLY within the step, so V(x) - V(h_pred) != delta at the cell, and the
+          // correction overshoots -- it made MORE arms abort, not fewer. Excluding the cell is the honest
+          // form: where the forcing is discontinuous there is no truncation ORDER to control, so the cell
+          // cannot inform a step-size decision either way. Measured coverage cost: 17-22% of land cells
+          // excluded on tests/dt_invariance, so ~80% still bound the step.
+          if (dmdapack.fsm_delta_dist[j][i] != 0.0) continue;  // see the note above
           const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
                                      - storedVolume(h_pred - topo_e[j][i], poro));
           if (dev > local_max) local_max = dev;
@@ -1859,6 +1877,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           if (g_direct_to_runoff) h_pred = std::min(h_pred, topo_e[j][i]);  // wtd<=0 feasible set (kink-free error)
           // WATER (volume) local error -- same water units as the equilibrium stop (see the TR-BDF2 branch above).
           const double poro = dmdapack.porosity_vec[j][i];
+          // Same exclusion as the TR-BDF2 branch above, for the same reason. See the note there.
+          if (dmdapack.fsm_delta_dist[j][i] != 0.0) continue;  // see the note above
           const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
                                      - storedVolume(h_pred - topo_e[j][i], poro));
           if (dev > local_max) local_max = dev;
