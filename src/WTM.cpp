@@ -526,8 +526,13 @@ void update(
   richdem::Timer timer_overall;
   timer_overall.start();
 
-  // wtd_old and wtd_mid are diagnostic snapshots read only by rank-0 PrintValues,
-  // so maintain them on rank 0 only (they need not exist on non-root ranks).
+  // wtd_old IS a diagnostic snapshot, read only by rank-0 PrintValues. wtd_mid is NOT, despite having
+  // started as one: it is the PRE-FSM water table, and under fsm_coupling: continuous it is LOAD-BEARING
+  // physics. couple_surface_and_recharge reads it twice -- as the pre-FSM operand of FSM's per-cell volume
+  // delta, and as the in-flight ponding the active-set obstacle must yield to so the pin does not destroy
+  // water the delta is already moving (19ee097). Maintaining both on rank 0 only is still correct, because
+  // every one of those readers is rank-0 serial -- but do not repurpose, reorder or drop wtd_mid on the
+  // strength of the word "diagnostic".
   PetscMPIInt mpi_rank;
   MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
 
