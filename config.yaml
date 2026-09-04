@@ -69,18 +69,24 @@ evaporation:
   extinction_depth: 8          # depth below which ET can no longer reach the water table [m]
 
 surface_water:
-  fsm_coupling: overwrite      # overwrite | source -- how FillSpillMerge's result reaches the groundwater.
+  fsm_coupling: continuous         # continuous | impulse -- how FillSpillMerge's result reaches the groundwater.
                                # overwrite: FSM's post-routing water table REPLACES the step baseline.
                                #            Simple, and what the model has always done.
                                # source:    the table is left alone and FSM's per-cell VOLUME CHANGE is fed
                                #            into the next step's recharge source instead, so the solver
                                #            never sees a between-step jump in its state.
-                               # Built to remove that jump, which is a Lie-split shock that breaks
-                               # 2nd-order accuracy. collection.method: active_set removes the same shock
-                               # by itself (0.985 -> 3.6e-13), so `source` is no longer the way to address
-                               # it -- but the two COMPOSE (the active-set obstacle reads a carried lake
-                               # stage, not the overwritten table), and `source` remains the route to
-                               # decoupling FSM's cadence from the groundwater step. CHANGES THE ANSWER.
+                               # `continuous` is the DEFAULT, and the reason is physical. FSM is instantaneous
+                               # by construction, so under `impulse` the state always carries its FULLY
+                               # EQUILIBRATED lake -- a depression is full from the instant there is water
+                               # to fill it, and evaporates at the open-water rate for the whole step.
+                               # Refining the step does not soften that; it just re-equilibrates more often.
+                               # Real water flows in over the interval and evaporates as it arrives.
+                               # Measured: overwrite over-exposes surface water to open-water evaporation by
+                               # ~11%, and the gap GROWS under refinement rather than vanishing.
+                               # Both reach the same EQUILIBRIUM (20.08% apart at 8 yr, 0.30% at 400 yr), so
+                               # this matters for transients far more than for equilibrium runs.
+                               # `continuous` is REFUSED with collection.method: explicit -- that pair does not
+                               # converge. CHANGES THE ANSWER.
   mode: routed                 # routed (Fill-Spill-Merge) | ponded | removed (groundwater-only)
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false

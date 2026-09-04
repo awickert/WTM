@@ -27,7 +27,7 @@
 #   runoff_ratio_on 1     -> surface_water.runoff_ratio: raster  (require the raster)
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
-#   fsm_coupling          -> surface_water.fsm_coupling (overwrite | source)
+#   fsm_coupling          -> surface_water.fsm_coupling (impulse | continuous)
 #   extinction_depth      -> evaporation.extinction_depth          (m)
 #   under_relaxation      -> dev.under_relaxation
 #   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)

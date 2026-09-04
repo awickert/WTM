@@ -53,11 +53,11 @@ EOF
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
 # SECOND ARM: the same physical problem under the OTHER FSM coupling. The default overwrites the water
-# table with FSM's result between steps; -wtm_fsm_delta_source instead feeds FSM's per-cell volume change
+# table with FSM's result between steps; -wtm_fsm_continuous instead feeds FSM's per-cell volume change
 # into the NEXT step's source term. The two integrate differently and reach different states -- which is
 # the point, and what makes the comparison below non-vacuous.
 sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" \
-    -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: source|" "$WORK/c.yaml" > "$WORK/s.yaml"
+    -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: continuous|" "$WORK/c.yaml" > "$WORK/s.yaml"
 "$WTM" "$WORK/s.yaml" > "$WORK/s.log" 2>&1 \
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
@@ -93,7 +93,7 @@ check("LAKE PERSISTS (head kept)", lake > 1.0,
 # and cannot change how much water crossed the domain boundary. So the two arms must agree on column 19
 # even though they disagree about almost everything else.
 #
-# THE DEFECT THIS CATCHES. -wtm_fsm_delta_source used to fold FSM's per-cell delta into rech_dist, the
+# THE DEFECT THIS CATCHES. -wtm_fsm_continuous used to fold FSM's per-cell delta into rech_dist, the
 # same array set_starting_values books as total_recharge_direct. The external columns then reported
 # external input PLUS internal redistribution: on tests/fsm_consistency at 120 yr, cumulative column 9
 # ran to -6.34e10 by cycle 1 -- a negative cumulative external input -- and everything derived from it
@@ -112,7 +112,7 @@ S14s   = np.array([float(r[13]) for r in rows_s])
 n = min(len(R19), len(R19s))
 rel19 = float(np.max(np.abs(R19s[:n] - R19[:n]) / np.where(np.abs(R19[:n]) > 0, np.abs(R19[:n]), 1.0)))
 check("EXTERNAL INPUT coupling-independent (col 19)", rel19 < 1e-6,
-      f"max relative difference overwrite vs fsm_delta_source = {rel19:.3e} (< 1e-6)")
+      f"max relative difference overwrite vs fsm_continuous = {rel19:.3e} (< 1e-6)")
 
 # NON-VACUITY. The check above is only meaningful if the two arms are actually different runs. If a
 # future change made the couplings converge to the same trajectory, column 19 would match trivially and
@@ -139,7 +139,7 @@ check("NON-VACUOUS (the two couplings really differ)", state_gap > 1e-3,
 # this 24 yr run is too short to reach.
 #
 # ONLY THE OVERWRITE ARM IS GATED, and that is a deliberate limit rather than an oversight.
-# -wtm_fsm_delta_source hands FSM's volume change to the NEXT step's source term, so at any report
+# -wtm_fsm_continuous hands FSM's volume change to the NEXT step's source term, so at any report
 # boundary there is water FSM has already moved -- it is in stored_volume -- whose source term has not
 # yet been applied. That in-flight lag makes the source arm's closure large early and decay with run
 # length: 7.37e-01 at the end of THIS 24 yr run against 1.4e-04 at 120 yr on the same fixture.

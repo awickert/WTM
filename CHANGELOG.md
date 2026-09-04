@@ -45,6 +45,37 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Changed
 
+- **BREAKING — FillSpillMerge's water now reaches the groundwater as a CONTINUOUS SOURCE, not an
+  IMPULSE.** New key `surface_water.fsm_coupling: continuous | impulse`, defaulting to `continuous`.
+  Under the old behaviour (`impulse`, still selectable) FSM's post-routing water table replaced the step
+  baseline, so the solver's state jumped at every step boundary. Under `continuous` the table is left
+  alone and FSM's per-cell volume change feeds the next step's recharge instead.
+
+  The reason is physical rather than numerical. FSM is instantaneous by construction, so under `impulse`
+  the state always carries its fully equilibrated lake - a depression is full from the instant there is
+  water to fill it, and evaporates at the open-water rate for the whole step. Refining the step does not
+  soften that; it re-equilibrates more often. Real water flows in over the interval and evaporates as it
+  arrives. Measured on `tests/fsm_consistency` at a fixed 8 yr, cumulative evaporation converges to
+  ~8.55e09 m³ under `impulse` against ~7.65e09 under `continuous`: the old default **over-exposed surface
+  water to open-water evaporation by ~11 %**, and the gap GREW under refinement rather than vanishing.
+
+  What did *not* decide it, since both were checked: `continuous` does **not** restore second order
+  (1.16/1.25/1.60 against 1.13/1.23/1.59 - the first-order splitting cap survives both couplings), and its
+  flicker benefit is already spent by `collection.method: active_set`, which is the default collector.
+  Both couplings reach the same equilibrium (20.08 % apart at 8 yr, 0.30 % at 400 yr), so this matters for
+  **transients** far more than for equilibrium runs.
+
+  Two consequences to know about. `continuous` with `collection.method: explicit` is **refused** - that
+  pair does not converge (observed order goes negative under refinement; the post-solve clamp and the
+  source term fight). And cross-rank drift now **compounds** rather than being reset each step: the
+  `impulse` path overwrote every rank's state from rank 0 every step, which silently wiped accumulated
+  divergence. That means the old default's tight cross-rank agreement was partly an artefact of a
+  broadcast rather than evidence the parallel solve agrees. `tests/xrank_growth` measures the regime
+  directly, and `tests/golden`'s `fsm_runoff` arm carries a documented 1e-5 tolerance as a result.
+
+  Every FSM-on golden reference moved. A `fsm_impulse` golden arm keeps the non-default coupling covered.
+
+
 - **BREAKING — an unrecognised YAML key now ABORTS the run.** Previously a key nobody read was simply
   never seen: a typo, a key retired by the schema migration, and a setting a user believed was in force
   all behaved identically to not writing it, and the run reported success. The abort names every

@@ -220,7 +220,7 @@ happens without the taper*
 
 | flag | coverage | note |
 |---|---|---|
-| `-wtm_fsm_delta_source` | **varied**, CONFIG-OWNED | now `surface_water.fsm_coupling: overwrite | source`. Three live invocations across `tests/budget_closure` (2) and `tests/fsm_conservation` (1), all on the config route. NOT superseded by `active_set`: #40 made the two COMPOSE |
+| `-wtm_fsm_continuous` | **varied**, CONFIG-OWNED | now `surface_water.fsm_coupling: impulse | source`. Three live invocations across `tests/budget_closure` (2) and `tests/fsm_conservation` (1), all on the config route. NOT superseded by `active_set`: #40 made the two COMPOSE |
 
 ## Diagnostic output  (1)
 

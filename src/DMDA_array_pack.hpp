@@ -31,7 +31,7 @@ struct DMDA_Array_Pack {
     DMDAVecGetArray(user.da, user.porosity_vec, &porosity_vec);
     DMDAVecGetArray(user.da, user.starting_wtd, &starting_wtd);
     DMDAVecGetArray(user.da, user.lake_stage, &lake_stage);
-    DMDAVecGetArray(user.da, user.fsm_delta_source_vec, &fsm_delta_dist);
+    DMDAVecGetArray(user.da, user.fsm_delta_vec, &fsm_delta_dist);
   }
 
   void release() {
@@ -46,7 +46,7 @@ struct DMDA_Array_Pack {
     DMDAVecRestoreArray(context->da, context->porosity_vec, &porosity_vec);
     DMDAVecRestoreArray(context->da, context->starting_wtd, &starting_wtd);
     DMDAVecRestoreArray(context->da, context->lake_stage, &lake_stage);
-    DMDAVecRestoreArray(context->da, context->fsm_delta_source_vec, &fsm_delta_dist);
+    DMDAVecRestoreArray(context->da, context->fsm_delta_vec, &fsm_delta_dist);
     context = nullptr;
   }
 };

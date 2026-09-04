@@ -118,7 +118,7 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > you which you have.**
 >
 > One limit stated rather than hidden: only the overwrite arm is gated absolutely. Under
-> `-wtm_fsm_delta_source` FSM's volume change is handed to the NEXT step's source term, so at a report
+> `-wtm_fsm_continuous` FSM's volume change is handed to the NEXT step's source term, so at a report
 > boundary there is water FSM has already moved — present in `stored_volume` — whose source term has
 > not yet been applied. That lag makes the source arm's closure large early and decay with run length
 > (7.37e-01 at 24 yr against 1.4e-04 at 120 yr, same fixture). That it is exactly one step, and hence
@@ -274,13 +274,13 @@ There are two accumulators, and they mean different things:
 | `total_solver_recharge` (col 17's input) | `rech_vec`, the source term the residual actually integrates | **everything the scheme treats as an input during the step** |
 
 They agree whenever all input arrives as precipitation. They diverge under
-`-wtm_fsm_delta_source` (#116), where FillSpillMerge's delivery is folded into the step's source term
+`-wtm_fsm_continuous` (#116), where FillSpillMerge's delivery is folded into the step's source term
 rather than applied as a between-step overwrite of the water table. Once the water arrives *during*
 the step, the scheme's own conservation law counts it as an input, and only the second definition
 describes the scheme being run — so the exact budget uses it.
 
 Measured on the dome fixture (Anderson, FSM on, at steady state), the exact residual relative to
-recharge is `1.6e-6` for the overwrite path and **`6.9e-11`** for `-wtm_fsm_delta_source`. The source
+recharge is `1.6e-6` for the overwrite path and **`6.9e-11`** for `-wtm_fsm_continuous`. The source
 path conserves *more* tightly, and for a structural reason: its coupling flux is an explicit term in
 the residual, which the solver drives to its tolerance, whereas the overwrite arrives as a state jump
 that no per-step discrete identity can see. Column 16 (the physical residual, built on the external
@@ -288,7 +288,7 @@ definition) does not close as tightly for the source path, and that is a definit
 than a leak.
 
 **CORRECTED 2026-09-03. Most of what column 16 read under source coupling was a REPORTING DEFECT, not
-the definitional mismatch it was attributed to.** `-wtm_fsm_delta_source` folded FSM's per-cell delta
+the definitional mismatch it was attributed to.** `-wtm_fsm_continuous` folded FSM's per-cell delta
 into `rech_dist` — the same array `set_starting_values` books as `total_recharge_direct`. Columns 19
 and 9 therefore reported external input *plus* internal redistribution, which is not what §2 defines
 them to be, and `ocean_loss_closing` and column 16 are built on top of them. The symptom is
@@ -296,7 +296,7 @@ unmistakable once looked at: on `tests/fsm_consistency`, 120 yr, `active_set` + 
 cumulative column 9 ran to **−6.33972e+10 at cycle 1** and stayed negative to cycle ~20. A negative
 cumulative external input is not a mismatch of definitions; it is a wrong number.
 
-Giving the delta its own carrier (`AppCtx::fsm_delta_source_vec`) so the solve reads
+Giving the delta its own carrier (`AppCtx::fsm_delta_vec`) so the solve reads
 `rech_dist + fsm_delta_dist` while the booking reads `rech_dist` alone, same fixture, before → after:
 
 | | before | after |

@@ -2,7 +2,7 @@
 """Side-by-side comparison of the two FSM couplings, per solver scheme.
 
   between -- FillSpillMerge runs between steps and OVERWRITES the water table (original behaviour)
-  during  -- FSM's per-cell volume change enters the NEXT step's source term (-wtm_fsm_delta_source)
+  during  -- FSM's per-cell volume change enters the NEXT step's source term (-wtm_fsm_continuous)
 
 WHAT THIS DOES AND DOES NOT MEASURE. The two couplings converge to genuinely DIFFERENT equilibria --
 under `during`, ponded cells infiltrate instead of being re-pinned full every step. So the per-cycle
@@ -77,7 +77,7 @@ if not B or not D:
 
 print("FSM COUPLING COMPARISON -- island 117x75 (8775 cells), cold start, dt = 1 week, n=4")
 print(f"  between = FSM overwrites the table between steps (original)   [{BETWEEN}]")
-print(f"  during  = FSM's dV enters the next step's source (-wtm_fsm_delta_source, #116)  [{DURING}]")
+print(f"  during  = FSM's dV enters the next step's source (-wtm_fsm_continuous, #116)  [{DURING}]")
 print()
 print("The two converge to DIFFERENT equilibria, so the rms below is a SETTLING-RATE metric")
 print("(how fast each stops changing), NOT accuracy. Speedup > 1 means `during` is cheaper.")

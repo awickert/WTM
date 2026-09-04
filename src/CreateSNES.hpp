@@ -48,7 +48,7 @@ struct AppCtx {
   Vec lake_stage          = nullptr;
 
   // FSM-delta source carrier, held SEPARATE from rech_source, because rech_dist serves two roles that
-  // must diverge under fsm_delta_source. It is (1) the solve's source term and (2) the quantity
+  // must diverge under fsm_continuous. It is (1) the solve's source term and (2) the quantity
   // set_starting_values books as total_recharge_direct -- columns 19 and 9, defined in
   // benchmark/WATER_BUDGET.md as the EXTERNAL water entering the domain. FSM's per-step delta belongs in
   // the first role and not the second: it is water already inside the domain being redistributed, so
@@ -65,8 +65,8 @@ struct AppCtx {
   //
   // Column 16 remains mismatched under source coupling by construction, because it is built on the
   // EXTERNAL definition; WATER_BUDGET.md ("Two definitions of recharge") already states this and calls it
-  // a definitional mismatch, not a leak. Zero unless fsm_delta_source is on, so no other path is touched.
-  Vec fsm_delta_source_vec = nullptr;
+  // a definitional mismatch, not a leak. Zero unless fsm_continuous is on, so no other path is touched.
+  Vec fsm_delta_vec = nullptr;
 
   // Distributed forcing fields for the recharge computation. Scattered from
   // rank-0 arp at init (populate_DMDA_array_pack) so recharge can be computed over
@@ -322,8 +322,8 @@ struct AppCtx {
     VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &lake_stage);
-    VecDuplicate(x, &fsm_delta_source_vec);
-    VecSet(fsm_delta_source_vec, 0.0);
+    VecDuplicate(x, &fsm_delta_vec);
+    VecSet(fsm_delta_vec, 0.0);
     VecSet(lake_stage, 0.0);  // no lakes until FSM says otherwise
     VecDuplicate(x, &wtd_global);
     VecDuplicate(x, &rech_source);

@@ -75,6 +75,10 @@ case_cfg() {
       fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" ;;
+      # fsm_impulse: the SAME case as fsm_evap1 under the non-default coupling. It exists because
+      # surface_water.fsm_coupling now defaults to `continuous`, which would leave `impulse`
+      # unexercised by every arm here -- and an alternative nobody runs is one that rots quietly.
+      fsm_impulse)   emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" "fsm_coupling impulse" ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
 }
@@ -87,7 +91,7 @@ case_cfg() {
 # ~35 m) and cross-rank stable (smooth gradient -> deterministic FSM routing). fsm_runoff_hi
 # is the same setup on higher-overtone terrain (more, smaller depressions) -- exercising the
 # runoff path over a richer routing pattern, still band-limited and cross-rank stable.
-CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff fsm_runoff_hi transient)
+CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff fsm_runoff_hi transient fsm_impulse)
 
 run_case() { # name nranks -> sets $PREFIX
     local name="$1" n="$2"
@@ -123,7 +127,18 @@ run_case() { # name nranks -> sets $PREFIX
 # genuine (tiny) loss of cross-rank reproducibility that comes with the constraint being solved rather
 # than approximated. Recorded rather than hidden; if this ever needs to be TIGHT again, the fix is an
 # active-set tie-break that is decomposition-independent, not a looser number here.
-case_tol() { case "$1" in transient) echo "1e-5" ;; *) echo "" ;; esac; }
+# fsm_runoff: 1e-5 m, and this one is a DIAGNOSED relaxation rather than a shrug. Under the default
+# fsm_coupling: continuous, cross-rank drift COMPOUNDS instead of being reset: `impulse` overwrote every
+# rank's starting_wtd from rank 0 every step (WTM.cpp, the impulse branch), which wiped accumulated drift;
+# continuous never runs that line. Measured n=1 vs n=6 on this fixture: 8.2e-10 -> 1.3e-09 -> 7.1e-09 under
+# continuous against a flat 9.0e-12 -> 1.6e-11 under impulse. This arm lands at 1.214e-06, just over the
+# 1e-6 default.
+#
+# The relaxation is only defensible because the behaviour is now measured DIRECTLY, by
+# tests/xrank_growth, which asserts the REGIME (flat vs compounding) rather than a magnitude. Without that
+# test this number would be hiding the finding instead of recording it. If xrank_growth is ever deleted,
+# this tolerance must go back to 1e-6 and the arm must fail. See task #39.
+case_tol() { case "$1" in transient) echo "1e-5" ;; fsm_runoff) echo "1e-5" ;; *) echo "" ;; esac; }
 
 fail=0
 for name in "${CASES[@]}"; do

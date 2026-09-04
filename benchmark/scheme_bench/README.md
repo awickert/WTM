@@ -81,7 +81,7 @@ was never claimed to handle.
 `COMPARISON_island_2026-08-25.txt`, produced by `compare.py`.
 
 - **between** — FillSpillMerge runs between steps and **overwrites** the water table (original).
-- **during** — FSM's per-cell ΔV enters the **next step's source term** (`-wtm_fsm_delta_source`, #116).
+- **during** — FSM's per-cell ΔV enters the **next step's source term** (`-wtm_fsm_continuous`, #116).
 
 ## Cost at matched settling precision (rms ≤ 1 mm-water), fixed-dt schemes
 
@@ -180,7 +180,7 @@ Final max wtd / ponded-cell count:
 Under active-set × between all eight rows agree exactly. dt-independence shows up as
 scheme-independence, which is what it should look like.
 
-## `active_set` and `-wtm_fsm_delta_source` are STRUCTURALLY INCOMPATIBLE as built
+## `active_set` and `-wtm_fsm_continuous` are STRUCTURALLY INCOMPATIBLE as built
 
 The lake-aware pin takes its lake stage from the water table itself
 (`transient_groundwater.cpp:2381`):
@@ -189,7 +189,7 @@ The lake-aware pin takes its lake stage from the water table itself
 const double surface_water_depth = std::max(0.0, my_starting_wtd[j][i]);  // lagged FSM lake stage (0 off lakes)
 ```
 
-`-wtm_fsm_delta_source` exists precisely to **stop FSM writing its result into `starting_wtd`**. So
+`-wtm_fsm_continuous` exists precisely to **stop FSM writing its result into `starting_wtd`**. So
 under `during`, `surface_water_depth` is ~0 everywhere, the pin skims at the land surface, and lakes cannot fill —
 max wtd 0.0000 m. Active-set's lake-awareness *depends on* the very write that #116 removes.
 
@@ -213,7 +213,7 @@ answer is therefore **not validated** by this benchmark, whatever its conservati
 
 # Correction: active-set SUPERSEDES #116; they are not complementary
 
-An earlier note in `tests/budget_closure/run.sh` read active-set + `-wtm_fsm_delta_source` closing the
+An earlier note in `tests/budget_closure/run.sh` read active-set + `-wtm_fsm_continuous` closing the
 budget ~50× tighter (8e-8 vs 5.8e-7) as evidence the two changes "belong together." **That inference
 was wrong** and is retracted here and there.
 
@@ -222,7 +222,7 @@ was wrong** and is retracted here and there.
 different answer**, not a better version of the same one. Tighter closure of a different state is not
 evidence of complementarity.
 
-**Why active-set supersedes it.** `-wtm_fsm_delta_source` exists to remove the between-step FSM shock.
+**Why active-set supersedes it.** `-wtm_fsm_continuous` exists to remove the between-step FSM shock.
 Active-set removes that shock *by itself*:
 
 | corner | GW move | FSM jump | shock ratio |
@@ -239,7 +239,7 @@ active-set**, and neither does the second-order-accuracy argument built on it.
 island/implicit **+69%**, island/active-set **−100%**, fsm_test/active-set **−51%**. A systematic
 physical improvement would not wander like that.
 
-**Conclusion: enable active-set; park #116.** Keep `-wtm_fsm_delta_source` gated off — its
+**Conclusion: enable active-set; park #116.** Keep `-wtm_fsm_continuous` gated off — its
 source-delivery machinery is the right mechanism if FSM cadence is ever decoupled from the GW step to
 get off the serial-FSM ceiling (option B of the original design). That is a *cost* lever, not a
 correctness one, and is not what the flag was built for.

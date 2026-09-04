@@ -25,7 +25,7 @@
 # COUPLING (env, default `between`) selects HOW FillSpillMerge's water reaches the groundwater solve:
 #   between -- FSM runs between steps and OVERWRITES the water table (the original behaviour)
 #   during -- FSM's per-cell volume change is folded into the NEXT step's source term
-#              (-wtm_fsm_delta_source, #116), so the water arrives DURING the step
+#              (-wtm_fsm_continuous, #116), so the water arrives DURING the step
 # Run both and compare with compare.py. NOTE the two converge to genuinely DIFFERENT equilibria
 # (ponded cells infiltrate under `during` instead of being re-pinned full each step), so the
 # per-cycle rms compared here is a SETTLING-RATE metric -- how fast each stops changing -- and says
@@ -41,7 +41,7 @@ CYCLES="${3:-120}"
 COUPLING="${COUPLING:-between}"
 case "$COUPLING" in
   between) COUPLING_FLAGS="" ;;
-  during)  COUPLING_FLAGS="-wtm_fsm_delta_source" ;;
+  during)  COUPLING_FLAGS="-wtm_fsm_continuous" ;;
   *) echo "ERROR: COUPLING must be 'between' or 'during' (got '$COUPLING')"; exit 1 ;;
 esac
 # COLLECTOR (env, default `implicit`) selects how the wtd<=0 exfiltration constraint is ENFORCED:

@@ -284,7 +284,7 @@ static void scatter_into_owned(AppCtx& user_context, const T* full_r0, PetscScal
 }
 
 // As scatter_into_owned, but ADDS the scattered rank-0 field onto the held owned array (+=). Used to fold
-// the FSM per-step delta into rech_dist as a source (-wtm_fsm_delta_source, the FSM-delta-source work) via the wtd_global scratch.
+// the FSM per-step delta into rech_dist as a source (-wtm_fsm_continuous, the the continuous coupling work) via the wtd_global scratch.
 template <typename T>
 static void accumulate_into_owned(AppCtx& user_context, const T* full_r0, PetscScalar** dest) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
@@ -355,9 +355,9 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     }
   }
 
-  // -wtm_fsm_delta_source (FSM-delta-source): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
+  // -wtm_fsm_continuous (the continuous coupling): rank-0 buffer for FSM's per-cell volume change V(post-FSM)-V(pre-FSM),
   // row-major (matching arp.wtd.data()). Populated below in the FSM block; injected into rech_dist further down.
-  const bool fsm_delta_source = FanDarcyGroundwater::fsm_delta_source_on() && params.fsm_on && distribute_recharge;
+  const bool fsm_continuous = FanDarcyGroundwater::fsm_continuous_on() && params.fsm_on && distribute_recharge;
   std::vector<double> fsm_delta_r0;
 
   // Hand this step's above-surface removal (sink / extended-soil / exfiltration / direct-to-runoff) into
@@ -376,8 +376,8 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds the full arp.
     if (mpi_rank == 0) dh::FillSpillMerge(params, deps, arp);
     fsm_seconds += fsm_timer.lap();
-    if (fsm_delta_source) {
-      // -wtm_fsm_delta_source (FSM-delta-source): instead of overwriting the carrier with the post-FSM table (an IC jump
+    if (fsm_continuous) {
+      // -wtm_fsm_continuous (the continuous coupling): instead of overwriting the carrier with the post-FSM table (an IC jump
       // that breaks 2nd-order accuracy on TR-BDF2/adaptive), KEEP the smooth pre-FSM GW result as starting_wtd
       // and record FSM's per-cell volume change V(post)-V(pre) to fold into the next step's recharge below.
       if (mpi_rank == 0) {
@@ -391,13 +391,29 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       }
     } else if (distribute_recharge) {
       // FSM changed rank-0 arp.wtd; resync the distributed carrier so the next solve's recharge reads it.
+      //
+      // THIS LINE ALSO RESETS CROSS-RANK DRIFT, and that is worth knowing because it is invisible from the
+      // line itself. It overwrites EVERY rank's starting_wtd from RANK 0's array, for EVERY cell -- not just
+      // the ones FSM touched. So under `impulse` any divergence the distributed solve accumulates is wiped
+      // once per step. `continuous` does not run this line at all (it is the branch above), so its drift
+      // compounds. Measured n=1 vs n=6 on tests/golden's runoff fixture, max|dwtd| per report:
+      //     continuous  8.212e-10 -> 1.284e-09 -> 7.137e-09     grows
+      //     impulse     8.981e-12 -> 8.995e-12 -> 1.576e-11     flat
+      // It does NOT track snes_stol (floors at 2.243e-08 for both 1e-10 and 1e-12), which is the signature
+      // of accumulation-with-periodic-reset rather than round-off. The excess lands in a handful of DEEP
+      // cells (wtd -14.5 m, -24.7 m) where low storativity turns a small volume difference into a large head
+      // difference; the MEDIAN land cell is ~2e-12 under both couplings.
+      //
+      // The corollary matters more than the finding: impulse's tight cross-rank agreement is partly an
+      // ARTEFACT of this broadcast, not evidence that the parallel solve agrees. Any cross-rank tolerance
+      // calibrated under impulse was measuring a resynchronised system. See task #39.
       scatter_into_owned(user_context, arp.wtd.data(), dmdapack.starting_wtd);
     }
 
     // LAKE STAGE, write site B of two, and the reason the array exists. FSM has just decided where the
     // lake surfaces are; record that as a DEPTH above topo for the active-set obstacle to read next step.
     // Done in BOTH couplings: under overwrite it merely reproduces max(0, starting_wtd) (so this is
-    // bit-identical), but under fsm_delta_source starting_wtd deliberately stays PRE-FSM, and this is then
+    // bit-identical), but under fsm_continuous starting_wtd deliberately stays PRE-FSM, and this is then
     // the only surviving record of the stage. That is exactly what used to collapse the obstacle to the
     // land surface and drain every lake (island fixture: 5.6986 m -> 0.0000 m).
     if (distribute_recharge) {
@@ -451,7 +467,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
   }
   if (distribute_recharge) {
     distributed_recharge(params, arp, user_context, dmdapack);
-    // -wtm_fsm_delta_source (FSM-delta-source): fold FSM's per-cell volume change onto the recharge source for the next
+    // -wtm_fsm_continuous (the continuous coupling): fold FSM's per-cell volume change onto the recharge source for the next
     // step. Added AFTER distributed_recharge so the runoff ratio does not take a second cut of water FSM has
     // already routed -- that ordering is load-bearing.
     //
@@ -473,7 +489,7 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     // exact budget is defined on the full source -- while the external columns report only what entered
     // the domain. A scatter (assign, not +=) is deliberate: the delta belongs to ONE step, so assigning
     // makes the carrier self-clearing.
-    if (fsm_delta_source)
+    if (fsm_continuous)
       scatter_into_owned(user_context, fsm_delta_r0.data(), dmdapack.fsm_delta_dist);
     FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
     // The runoff-ratio share is NO LONGER handed over here. runoff_dist is left holding the NOMINAL
@@ -925,7 +941,7 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
   VecDestroy(&user_context.lake_stage);
-  VecDestroy(&user_context.fsm_delta_source_vec);
+  VecDestroy(&user_context.fsm_delta_vec);
   VecDestroy(&user_context.precip_vec);
   VecDestroy(&user_context.evap_vec);
   VecDestroy(&user_context.open_water_evap_vec);
@@ -1104,11 +1120,15 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // dev
   // surface_water.fsm_coupling: how FillSpillMerge's result reaches the groundwater. Answer-changing,
-  // so it belongs in the config -- a run using `source` could not otherwise be reproduced from its
+  // so it belongs in the config -- a run using `continuous` could not otherwise be reproduced from its
   // archived resolved config.
+  // BOTH values are bridged, not just `continuous`. The C++ default is now source, so setting the flag only
+  // for `continuous` would leave `fsm_coupling: impulse` silently doing nothing -- a config key that reads
+  // as a choice and is not one, which is the exact defect this migration exists to remove.
   if (auto n = root["surface_water"]["fsm_coupling"])
-    if (require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"overwrite", "source"}) == "source")
-      set_opt_if_unset("-wtm_fsm_delta_source", "true");
+    set_opt_if_unset("-wtm_fsm_continuous",
+                     require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"impulse", "continuous"})
+                             == "continuous" ? "true" : "false");
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
@@ -1317,7 +1337,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`
   // reports `ponded`. Recorded rather than papered over; the distinction is a TODO in parameters.cpp.
   f << "  mode: " << (params.fsm_on ? "routed" : "ponded") << "\n";
-  f << "  fsm_coupling: " << (FanDarcyGroundwater::fsm_delta_source_on() ? "source" : "overwrite") << "\n";
+  f << "  fsm_coupling: " << (FanDarcyGroundwater::fsm_continuous_on() ? "continuous" : "impulse") << "\n";
   if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
   else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
   else f << "  runoff_ratio: 0\n";

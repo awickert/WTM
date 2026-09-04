@@ -212,7 +212,7 @@ max|Δ| = 0.000e+00), so nothing was lost. Two channels for one decision is what
 | `-wtm_fringe_cap` | max ψ_a | **RETIRED** (was 1:1) | `collection.sink.fringe_cap` |
 | `-wtm_fringe_ksat_coef` | ψ_a = C·√(n/ksat) | **RETIRED** (was 1:1) | `collection.sink.fringe_ksat_coef` |
 | `-wtm_fringe_length` | uniform fringe length | **RETIRED** (was 1:1) | `collection.sink.fringe_length` |
-| `-wtm_fsm_delta_source` | carry FSM's Δwtd as a source in the next step | DEV | none — experimental |
+| `-wtm_fsm_continuous` | carry FSM's Δwtd as a source in the next step | DEV | none — experimental |
 
 **RESOLVED 2026-09-01.** `-wtm_active_set` had been reachable from **two different YAML keys**
 (`dev.active_set` and `collection.method: active_set`) — the same two-channel shape as the bug that

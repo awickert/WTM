@@ -269,7 +269,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_volume_storage              = true;  // dev.storage_form: volume (DEFAULT) -- BE storage folded into f, RHS b=0
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy). active_set removes that shock by itself (0.985 -> 3.6e-13), so this is no longer the way to address it -- but it is NOT superseded: it is the live alternative FSM COUPLING, covered by tests/budget_closure and tests/fsm_conservation, and its source-delivery machinery is the mechanism for decoupling FSM cadence from the GW step if the serial-FSM ceiling is ever attacked. It COMPOSES with active_set as of #40 (the obstacle reads the carried lake_stage, not the overwritten table); the old hard error is gone. See benchmark/scheme_bench/README.md.
+static bool             g_fsm_continuous            = false; // -wtm_fsm_continuous: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy). active_set removes that shock by itself (0.985 -> 3.6e-13), so this is no longer the way to address it -- but it is NOT superseded: it is the live alternative FSM COUPLING, covered by tests/budget_closure and tests/fsm_conservation, and its source-delivery machinery is the mechanism for decoupling FSM cadence from the GW step if the serial-FSM ceiling is ever attacked. It COMPOSES with active_set as of #40 (the obstacle reads the carried lake_stage, not the overwritten table); the old hard error is gone. See benchmark/scheme_bench/README.md.
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 
@@ -598,7 +598,7 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
     << " runoff_ratio=" << (params.runoff_ratio_on ? 1 : 0)
     << " infiltration=" << (params.infiltration_on ? 1 : 0)
     << " recharge_path=" << ((!params.fsm_on || !params.infiltration_on) ? "distributed" : "serial")
-    << " coupling=" << (g_fsm_delta_source ? "source" : "overwrite")
+    << " coupling=" << (g_fsm_continuous ? "continuous" : "impulse")
     << " boundary=" << (g_land_boundary_dirichlet ? "dirichlet" : "neumann")
     << " ranks=" << size
     << "\n";
@@ -781,7 +781,7 @@ static void accumulate_tr_bdf2_step_fluxes(AppCtx& user_context, ArrayPack& arp,
 // that leaves the root unchanged but would corrupt a budget).
 //
 // This term is what makes the budget agree with the SCHEME rather than with an external-water
-// bookkeeping convention -- which matters directly for -wtm_fsm_delta_source (FSM-delta-source): once FSM's
+// bookkeeping convention -- which matters directly for -wtm_fsm_continuous (the continuous coupling): once FSM's
 // delivery is a source inside the step, the scheme's own conservation law counts it as an input, and
 // `rech_vec` (which this reads) is exactly that full source term. See benchmark/WATER_BUDGET.md.
 //
@@ -1111,7 +1111,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // rech_dist, so the delta reaches the solve without being counted as external input. Summed BEFORE
       // add_recharge (not clipped separately) and scaled by the same rech_dt_scale, which is exactly what
       // the single-carrier version did -- so this is bit-identical wherever fsm_delta_dist is zero, i.e.
-      // everywhere except fsm_delta_source runs. OPEN: whether the delta SHOULD carry rech_dt_scale is a
+      // everywhere except fsm_continuous runs. OPEN: whether the delta SHOULD carry rech_dt_scale is a
       // separate question -- it is a volume FSM already moved for one specific step. Preserved, not
       // silently changed; rech_dt_scale is 1 on every fixed-dt path.
       dmdapack.rech_vec[j][i] =
@@ -1224,11 +1224,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface_water.collection.method: implicit is the route (verified byte-identical). Set by the selector.
   g_direct_to_runoff = false;
 
-  // -wtm_fsm_delta_source [EXPERIMENTAL]: carry FSM's per-step wtd change as a source in the NEXT step's
-  // recharge instead of overwriting the step baseline with the post-FSM table (see the flag decl / GH the FSM-delta-source work).
-  PetscBool fsm_src = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_delta_source", &fsm_src, nullptr);
-  g_fsm_delta_source = (fsm_src == PETSC_TRUE);
+  // surface_water.fsm_coupling, DEFAULT source (Andy, 2026-09-04). FSM's per-step volume change is carried
+  // into the NEXT step's recharge rather than overwriting the step baseline with the post-FSM table.
+  //
+  // WHY source IS THE DEFAULT, and the argument is PHYSICAL rather than numerical. FSM is instantaneous by
+  // construction, so under `impulse` the state always carries its FULLY EQUILIBRATED lake: a depression is
+  // full from the instant there is water to fill it, and evaporates at the open-water rate for the whole
+  // step. Refining dt does not soften that -- it just re-equilibrates more often. In reality water flows in
+  // over the interval and evaporates as it arrives. Measured on tests/fsm_consistency at a fixed 8 yr,
+  // cumulative evaporation converges to ~8.55e09 (overwrite) against ~7.65e09 (source): overwrite
+  // over-exposes surface water to open-water evaporation by ~11%, and the gap GROWS with refinement
+  // instead of vanishing, because it is a difference in the physics encoded, not a timing artifact.
+  //
+  // What did NOT decide it: source does not restore 2nd order (1.16/1.25/1.60 against overwrite's
+  // 1.13/1.23/1.59), and its flicker benefit is already spent by active_set, which is the default collector.
+  // Both couplings reach the same equilibrium (gap 20.08% at 8 yr -> 0.30% at 400 yr), so this matters for
+  // TRANSIENTS far more than for equilibrium runs.
+  PetscBool fsm_cont = PETSC_TRUE;
+  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont, nullptr);
+  g_fsm_continuous = (fsm_cont == PETSC_TRUE);
 
   // Runoff-collection selector (config key `surface_water.collection.method`, optional; the internal
   // variable is still called runoff_collector). When set it OVERRIDES the
@@ -1396,6 +1410,22 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // The check does not exclude the b=0 integrators (bdf2 / tr-bdf2): on those the storage branch is never
   // reached, so an explicit `secant` would be silently void rather than honoured, which is the same
   // failure by a quieter route.
+  // fsm_coupling: continuous x collection.method: explicit is REFUSED, because it does not converge. Solution
+  // convergence at a fixed 8 yr on tests/fsm_consistency: the other three combinations refine cleanly
+  // (observed order 1.4-1.6), while this one stalls at ~1.1 m and its observed order goes NEGATIVE
+  // (1.12, -0.10, 0.24) -- refining dt stops helping after dt/2. `explicit` is a POST-SOLVE CLAMP, so under
+  // source the above-surface water is neither pinned in the residual nor written into the state between
+  // steps: the clamp keeps removing what the source keeps re-adding. Refused by name rather than left
+  // reachable now that source is the default. See task #44.
+  if (g_fsm_continuous && rc == "explicit")
+    throw std::runtime_error(
+        "config: surface_water.fsm_coupling: continuous cannot be used with "
+        "surface_water.collection.method: explicit -- the pair does not converge (measured: observed order "
+        "goes negative under dt refinement, error stalls at ~1.1 m). `explicit` clamps above-surface water "
+        "AFTER the solve, while `continuous` feeds it back in as a source term, so the two fight and the run "
+        "never settles to a dt-independent state. Use collection.method: active_set (the default), or "
+        "fsm_coupling: impulse.");
+
   if (g_active_set && !g_volume_storage)
     throw std::runtime_error(
         "config: dev.storage_form: secant cannot be used with surface_water.collection.method: active_set. "
@@ -1466,9 +1496,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
 
-  // fsm_delta_source x active_set: the hard error here is GONE (2026-09-03, #40). It existed because the
+  // fsm_continuous x active_set: the hard error here is GONE (2026-09-03, #40). It existed because the
   // active-set obstacle was INFERRED as max(0, starting_wtd) -- the table FSM overwrites -- and
-  // fsm_delta_source exists to suppress that overwrite, so the obstacle collapsed to the land surface and
+  // fsm_continuous exists to suppress that overwrite, so the obstacle collapsed to the land surface and
   // every lake drained (5.6986 m -> 0.0000 m). The obstacle now reads the CARRIED lake_stage, which FSM
   // writes under both couplings, so suppressing the overwrite no longer blinds the pin.
   //
@@ -2146,7 +2176,7 @@ double ksat_surface_smoothing_width() { return g_ksat_surface_smoothing_width; }
 double ksat_soilbottom_smoothing_width() { return g_ksat_soilbottom_smoothing_width; }
 
 bool direct_to_runoff_on() { return g_direct_to_runoff; }
-bool fsm_delta_source_on() { return g_fsm_delta_source; }
+bool fsm_continuous_on() { return g_fsm_continuous; }
 // Whether the lake-aware active-set skim is on. It captures the skimmed above-free-surface water into the
 // same sink accumulator, so the post-solve gather must hand it to arp.runoff for FSM -- otherwise the
 // skimmed water is removed from the aquifer and counted as surface_removed but never delivered to the lake,
@@ -2584,7 +2614,7 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
         // to sigma = 0 across the lake, i.e. one free-surface ELEVATION, which is what a lake should have.
         //
         // NOTE (fragility): surface_water_depth is INFERRED from starting_wtd, so it silently depends on FSM
-        // having written its result there. -wtm_fsm_delta_source skips exactly that write, which collapses
+        // having written its result there. -wtm_fsm_continuous skips exactly that write, which collapses
         // this to 0 everywhere and drains every lake. The two are incompatible until the stage is carried
         // explicitly. See benchmark/scheme_bench/README.md.
         //

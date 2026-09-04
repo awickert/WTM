@@ -4,7 +4,7 @@
   implicit   -- in-residual siphon max(0,wtd)/dt. MEASURED dt-DEPENDENT (retained head ~ linear in dt).
   active_set -- semismooth pin at wtd=0 inside the solve. MEASURED dt-INDEPENDENT.
   between    -- FSM overwrites the water table between steps (original WTM).
-  during     -- FSM's per-cell dV enters the next step's source term (-wtm_fsm_delta_source, #116).
+  during     -- FSM's per-cell dV enters the next step's source term (-wtm_fsm_continuous, #116).
 
 So `implicit x between` is the ORIGINAL model and `active_set x during` is the full proposed stack.
 

@@ -21,7 +21,7 @@
 # `run_type test` cannot do this -- InitialiseTest hardcodes runoff_ratio to 0 -- hence the equilibrium
 # fixture here.)
 #
-# WHY BOTH COUPLING MODES. -wtm_fsm_delta_source (#116) folds FSM's delivery into the step's source
+# WHY BOTH COUPLING MODES. -wtm_fsm_continuous (#116) folds FSM's delivery into the step's source
 # term instead of overwriting the water table between steps. That changes what "an input" means to the
 # scheme, so it must be checked against the same identity rather than assumed equivalent.
 #
@@ -159,9 +159,9 @@ check "Anderson BE (secant)"       s_and
 STORAGE=volume check "Anderson BE (volume dV)" s_vol
 METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
-echo "-- FSM-delta-source coupling (#116) --"
-COUPLING=source check "Anderson BE (secant)"       f_and
-COUPLING=source STORAGE=volume check "Anderson BE (volume dV)" f_vol
+echo "-- the continuous coupling coupling (#116) --"
+COUPLING=continuous check "Anderson BE (secant)"       f_and
+COUPLING=continuous STORAGE=volume check "Anderson BE (volume dV)" f_vol
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
@@ -190,16 +190,16 @@ echo "-- active-set exfiltration constraint --"
 # with the others) so the difference stays visible in the output.
 #
 # HISTORY, so the earlier claim is not resurrected. This comment used to add that a second arm --
-# active-set WITH -wtm_fsm_delta_source -- closed ~50x tighter at 8e-8, and read that as evidence the
+# active-set WITH -wtm_fsm_continuous -- closed ~50x tighter at 8e-8, and read that as evidence the
 # two changes "belong together". That inference was WRONG: on this fixture the source arm HALVES the
 # ponded water (160.00 -> 79.04 m, max wtd 10.0 -> 5.0 m), so the tighter residual was measured on a
 # MATERIALLY DIFFERENT answer, and tighter closure of a different state says nothing about
 # complementarity. That arm has since been REMOVED entirely, because the pair is now a hard error: the
-# active-set obstacle is read from the water table FSM writes each step, and -wtm_fsm_delta_source
+# active-set obstacle is read from the water table FSM writes each step, and -wtm_fsm_continuous
 # suppresses exactly that write, so every lake drains (5.6986 -> 0.0000 m). The #116 arms above still
 # run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
-# -wtm_fsm_delta_source exists to address.
+# -wtm_fsm_continuous exists to address.
 COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as
 echo
 # TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
