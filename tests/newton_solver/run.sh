@@ -150,16 +150,24 @@ else
 fi
 
 # ---- 3. SAME ROOT: Newton and Anderson share the residual -----------------------------------------
-# ADAPT=false here too, and for a DIFFERENT reason than the arms above -- comparability. eq_newt must use
-# the continuation ramp (Newton needs it), and adaptive and the ramp are mutually exclusive, so leaving
-# eq_and on the adaptive default would compare two runs stepped differently. That matters MORE than it
-# looks: with FSM ON, as here, a different step sequence flips FillSpillMerge's discrete fill/spill
-# decisions. Measured on this fixture, fixed vs adaptive Anderson at equilibrium:
+# BOTH arms are pinned to FIXED dt, and that is the whole point: this arm compares SOLVERS, so anything
+# else that could move the answer has to be held equal. With FSM ON, a different step sequence flips
+# FillSpillMerge's discrete fill/spill decisions -- measured on this fixture, fixed vs adaptive Anderson
+# at equilibrium:
 #     FSM off   max|dwtd| = 9.84e-06 m      FSM on    max|dwtd| = 8.25e-02 m
-# so at equilibrium the STEPPING is answer-neutral for the groundwater solve alone but NOT once lake
-# routing is in the loop. SAME ROOT read 7.681e-02 (tol 0.05) with eq_and adaptive; 2.511e-02 pinned.
+# so at equilibrium the stepping is answer-neutral for the groundwater solve ALONE but not once lake
+# routing is in the loop.
+#
+# eq_newt used to need the continuation ramp, which made this comparison confound the SOLVER with the
+# STEPPING: the ramp never reached equilibrium at all on this fixture (2000 cycles, per-cycle max|dw|
+# median decaying 0.494 -> 0.039 but a max stuck near 5.0 m in every window -- recurring excursions, not
+# slow convergence), so SAME ROOT was measuring an equilibrium against a run that had not converged. It
+# read 2.537e-01 m that way. Plain Newton no longer needs the ramp (see the CONTRACT section below),
+# which is what makes matching the stepping possible:
+#     Newton + continuation ramp   max|dwtd| 2.537e-01 m   (never reached equilibrium)
+#     Newton plain, fixed dt       max|dwtd| 4.739e-02 m   equilibrium at cycle 466, vs eq_and's 463
 EQ_TOL=1e-4 ADAPT=false mkcfg eq_and  active_set "2000yr"
-EQ_TOL=1e-4 METHOD=newton DTC=true mkcfg eq_newt active_set "2000yr"
+EQ_TOL=1e-4 METHOD=newton DTC=false ADAPT=false mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"                  -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
@@ -179,21 +187,26 @@ print(f"  {'PASS' if ok else 'FAIL'}  SAME ROOT  Anderson vs Newton at equilibri
 sys.exit(0 if ok else 1)
 PY
 
-# ---- 4. CONTRACT: plain Newton at FIXED dt fails; the ramp OR adaptive rescues it -------------------
-# 4a. fixed dt, no ramp -- must FAIL. ADAPT=false is load-bearing: without it adaptive_dt: auto resolves
-# TRUE here (dt_continuation is false and the collector is active_set) and this arm converges, which is
-# what 4b exists to show.
+# ---- 4. CONTRACT: plain Newton at FIXED dt now CONVERGES ------------------------------------------
+# THIS ARM WAS INVERTED on 2026-09-04. It used to assert that plain Newton at fixed dt FAILS -- that was
+# the documented contract, and the reason solver.newton.dt_continuation existed as a requirement rather
+# than an option. It no longer fails. The fixture got easier when the active-set obstacle stopped
+# destroying water the FSM delta was already moving (19ee097) and the FSM delta stopped being scaled by
+# the step (69a0d0c); plain Newton now converges on it unaided.
+# Assert the NEW behaviour rather than delete the arm, so a regression back to needing the ramp is still
+# caught. ADAPT=false remains load-bearing: without it adaptive_dt: auto resolves TRUE here and the arm
+# would not be testing fixed dt at all.
 METHOD=newton DTC=false ADAPT=false mkcfg contract active_set "2yr"
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
 if sh -c '"$0" "$1" -snes_stol 1e-10' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
-    echo "  FAIL  CONTRACT   plain Newton CONVERGED -- it no longer needs solver.newton.dt_continuation."
-    echo "        That is good news; update this arm and the docs that say otherwise."
-    fail=1
+    echo "  PASS  CONTRACT/a plain Newton at FIXED dt CONVERGES (it no longer needs the ramp)"
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
-    echo "  PASS  CONTRACT/a plain Newton at FIXED dt fails as documented"
+    echo "  FAIL  CONTRACT/a plain Newton at FIXED dt no longer converges -- this REGRESSED to needing"
+    echo "        solver.newton.dt_continuation. It converged unaided as of 2026-09-04."
+    fail=1
 else
     echo "  FAIL  CONTRACT/a plain Newton at fixed dt failed for an UNEXPECTED reason:"
     grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'
