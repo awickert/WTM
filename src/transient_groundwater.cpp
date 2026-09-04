@@ -1240,7 +1240,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // 1.13/1.23/1.59), and its flicker benefit is already spent by active_set, which is the default collector.
   // Both couplings reach the same equilibrium (gap 20.08% at 8 yr -> 0.30% at 400 yr), so this matters for
   // TRANSIENTS far more than for equilibrium runs.
-  PetscBool fsm_cont = PETSC_TRUE;
+  // Resolved AFTER the collector below, because `auto` has to know it. Read the request here.
+  PetscBool fsm_cont_set = PETSC_FALSE, fsm_cont = PETSC_TRUE;
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont_set);
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont, nullptr);
   g_fsm_continuous = (fsm_cont == PETSC_TRUE);
 
@@ -1410,6 +1412,20 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // The check does not exclude the b=0 integrators (bdf2 / tr-bdf2): on those the storage branch is never
   // reached, so an explicit `secant` would be silently void rather than honoured, which is the same
   // failure by a quieter route.
+  // surface_water.fsm_coupling: auto. `continuous` is what we want everywhere it is valid, but it is
+  // REFUSED with collection.method: explicit (below), and `explicit` is what solver.method: picard
+  // resolves to when the collector is unset. A constant `continuous` default therefore made plain
+  // `solver.method: picard` ABORT out of the box -- and Picard is the independent oracle that certifies
+  // matrix-free Anderson, so that is not a corner. auto yields to `impulse` exactly where continuous
+  // cannot run, which is the same shape as solver.time_integration: auto and solver.adaptive_dt: auto.
+  // An EXPLICIT fsm_coupling is never overridden: it falls through to the refusal and the user is told.
+  if (fsm_cont_set == PETSC_FALSE && rc == "explicit") {
+    g_fsm_continuous = false;
+    PetscPrintf(PETSC_COMM_WORLD,
+                "surface_water.fsm_coupling: auto -> impulse (collection.method: explicit cannot take "
+                "the continuous coupling).\n");
+  }
+
   // fsm_coupling: continuous x collection.method: explicit is REFUSED, because it does not converge. Solution
   // convergence at a fixed 8 yr on tests/fsm_consistency: the other three combinations refine cleanly
   // (observed order 1.4-1.6), while this one stalls at ~1.1 m and its observed order goes NEGATIVE
