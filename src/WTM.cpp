@@ -232,7 +232,10 @@ static void distributed_recharge(Parameters& params, ArrayPack& arp, AppCtx& use
               (std::max(0., static_cast<double>(precip_f) - evap_f)) / seconds_in_a_year * params.deltat;
         }
       } else {
-        // Evap mode 0: remove all surface water (like Fan Reinfelder et al., 2013).
+        // Evap mode 0: DISCARD all standing water (like Fan Reinfelder et al., 2013). Mutates the water
+        // table from inside a recharge loop -- see the fuller note on the serial twin of this branch in
+        // couple_surface_and_recharge, including why it cannot be hoisted into its own pass and why the
+        // discarded water is an intentional unaccounted flux that col 17 reports.
         if (dmdapack.starting_wtd[j][i] > 0) {  // surface water present
           dmdapack.starting_wtd[j][i] = 0;
           dmdapack.rech_dist[j][i]    = (precip_f - owe_f) / seconds_in_a_year * params.deltat;
@@ -454,8 +457,14 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       if (evap_taper) {
         arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
       } else if (arp.wtd(i) > 0) {  // surface water present
-        if (!params.evap_mode)
-          arp.wtd(i) = 0;  // evap_mode 0: remove all surface water (GW-alone testing)
+        // THIS LINE MUTATES THE WATER TABLE, inside a loop that otherwise only computes recharge --
+        // easy to miss, so: evap_mode 0 DISCARDS all standing water (Fan Reinfelder et al., 2013;
+        // GW-alone testing). The water is dropped, not routed and not booked, so it is a deliberate
+        // UNACCOUNTED vertical flux -- exactly what the exact budget residual (col 17) exists to expose;
+        // see the note at irf.cpp's budget_residual and benchmark/WATER_BUDGET.md. The mutation must stay
+        // INSIDE this branch: the recharge assigned just below is chosen on the PRE-mutation test
+        // (wtd > 0 -> open-water evaporation), so hoisting it into its own pass would change which
+        // recharge each cell gets. The distributed twin of this branch is in distributed_recharge().
         arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
       } else {  // water table below the surface; recharge is always positive
         arp.rech(i) =
