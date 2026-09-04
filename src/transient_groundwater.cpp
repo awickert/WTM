@@ -1421,9 +1421,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // An EXPLICIT fsm_coupling is never overridden: it falls through to the refusal and the user is told.
   if (fsm_cont_set == PETSC_FALSE && rc == "explicit") {
     g_fsm_continuous = false;
-    PetscPrintf(PETSC_COMM_WORLD,
-                "surface_water.fsm_coupling: auto -> impulse (collection.method: explicit cannot take "
-                "the continuous coupling).\n");
+    static bool noted_auto_impulse = false;  // update() runs EVERY step; announce the resolution once
+    if (!noted_auto_impulse) {
+      noted_auto_impulse = true;
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "surface_water.fsm_coupling: auto -> impulse (collection.method: explicit cannot take "
+                  "the continuous coupling).\n");
+    }
   }
 
   // fsm_coupling: continuous x collection.method: explicit is REFUSED, because it does not converge. Solution
