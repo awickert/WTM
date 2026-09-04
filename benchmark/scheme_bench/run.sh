@@ -108,7 +108,7 @@ SCHEMES=(
   "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson|time_integration tr-bdf2"
   "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson|time_integration tr-bdf2;adaptive_dt true"
   "newton|Newton (plain)||solver_method newton;dt_continuation false"
-  "newton_cont|Newton + dt-continuation|-wtm_stiff|"
+  "newton_cont|Newton + dt-continuation||solver_method newton;eq_tol 0.001"
 )
 # NOTE on fairness: Picard and Newton are known to fail from a COLD start at production dt -- plain
 # arms are kept so that is visible, but each also gets its documented working recipe (log-mean

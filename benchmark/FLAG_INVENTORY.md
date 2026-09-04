@@ -1,6 +1,6 @@
 # The remaining `-wtm_*` flags: an inventory, and the question it raises
 
-**What this is.** The 26 `-wtm_*` flags the model still reads, grouped by what they control, and
+**What this is.** The 25 `-wtm_*` flags the model still reads, grouped by what they control, and
 classified by whether their code actually *executes* anywhere. It exists because the next step in the
 config migration is a schema DESIGN, and a design needs the whole set in front of it rather than one
 parameter at a time.
@@ -207,7 +207,7 @@ happens without the taper*
 
 | flag | coverage | note |
 |---|---|---|
-| `-wtm_stiff` | **varied** | `benchmark/scheme_bench/run.sh` is runnable. Convenience bundle: newton + continuation + eq_tol |
+| ~~`-wtm_stiff`~~ | **RETIRED 2026-09-04** | the bundle had shrunk to ONE defaulted number; `solver.method: newton` already implies the continuation |
 
 ## Developer  (2)
 

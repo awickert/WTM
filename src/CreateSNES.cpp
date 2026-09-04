@@ -183,18 +183,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     throw std::runtime_error(
         "config: solver.anderson.restart is a setting of the Anderson path, but solver.method: " +
         params.solver_method + " was requested. A tuning setting does not select the solver.");
-  // -wtm_stiff: convenience bundle for hard equilibrium cold-starts on stiff terrain. It is shorthand for
-  // solver.method: newton + solver.newton.dt_continuation + an equilibrium stop: the analytic-Jacobian path
-  // (ramp dt from small so a far/cold guess stays in-basin), and a default convergence early-stop so the
-  // run terminates at equilibrium without hand-tuning total_time. Each piece stays individually
-  // overridable; an explicit Picard/Anderson path flag still takes precedence (Newton is exclusive with
-  // Picard -- a warning is printed below if that happens). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
-  PetscBool stiff_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_stiff", &stiff_flag);
-  if (stiff_flag && !params.solver_method.empty() && params.solver_method != "newton")
-    throw std::runtime_error("config: -wtm_stiff is shorthand for solver.method: newton, but solver.method: " +
-                             params.solver_method + " was requested.");
-  if (stiff_flag) newton_flag = PETSC_TRUE;
   // R2, and Andy's call (2026-09-02) on the one case where uniqueness changes an ANSWER rather than
   // fixing a silent substitution. `solver.time_integration: bdf2` with no method used to select PICARD,
   // because use_bdf2 fed the use_picard expression. Under "the method is chosen only by solver.method"
@@ -248,11 +236,6 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_patience", &user_context.ar_rho_patience, nullptr);
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_it", &user_context.ar_max_it, nullptr);
   PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_restarts", &user_context.ar_max_restarts, nullptr);
-  if (stiff_flag && !user_context.use_newton) {
-    PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_stiff has no effect: an explicit Picard/Anderson path flag takes precedence over the\n"
-                "  Newton path it selects. Drop the Picard/Anderson flag to use the stiff cold-start recipe.\n");
-  }
 
   // Newton dt-continuation (solver.newton.dt_continuation; needs solver.method: newton): equilibrium PTC that starts
   // deltat small (diagonally dominant -> non-singular Jacobian from a far guess) and grows it after
@@ -261,8 +244,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // cycles, so it ramps toward equilibrium. The WTM.cpp cycle loop drives the ramp. See
   // benchmark/EQUILIBRIUM_ROBUSTNESS.md.
   // Config-owned (solver.newton.dt_continuation), resolved in Parameters -- solver.method: newton implies it.
-  // -wtm_stiff still forces it on: that flag is a PRESET and has not been migrated yet (task #31).
-  bool dtc_on = params.dt_continuation || (stiff_flag == PETSC_TRUE);
+  bool dtc_on = params.dt_continuation;
   user_context.use_newton_continuation = dtc_on && user_context.use_newton;
   // The opt-out warning lives here, not in the YAML bridge, because only this scope knows whether the
   // Newton path was actually selected.
@@ -315,18 +297,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
     PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
-    // The bundle defaults the early-stop to 1 mm-water/step (gated on dt in WTM.cpp so it cannot fire during
-    // the ramp); a user -wtm_eq_tol below still wins.
-    if (stiff_flag && user_context.eq_tol == 0.0) user_context.eq_tol = 0.001;
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.newton.dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",
                 dt0, user_context.dtc_grow, user_context.dtc_easy_iters, user_context.dtc_shrink,
                 user_context.dtc_dt_max);
-    if (stiff_flag)
-      PetscPrintf(PETSC_COMM_WORLD,
-                  "-wtm_stiff: hard cold-start recipe active (Newton + dt-continuation + eq_tol=%g m early stop).\n",
-                  user_context.eq_tol);
   }
   if (user_context.use_dt_adaptive) {
     // config-owned (solver.water_volume_timestep_error_tol); unset keeps the eq_tol-tracking default
