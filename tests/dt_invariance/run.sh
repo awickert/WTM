@@ -58,6 +58,7 @@ fdepth_b 150
 fdepth_fmin 2
 infiltration_on 0
 fsm_on 1
+fsm_coupling impulse
 runoff_ratio $2
 surfdatadir $INP
 region fsm_test
@@ -105,6 +106,8 @@ TRAJ   = [(9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
 # fixture's recharge does not depend on the water table, which is what makes them a clean probe --
 # asserted below so the test cannot silently stop discriminating.
 TOL_INPUT, TOL_TRAJ = 1e-9, 1e-2
+# Conservation floor: measured max |col17|/recharge over all arms and both couplings was 3.5e-07.
+TOL_CONSERVE = 1e-6
 EXPECT_YEARS = 20.0  # must match `total_time` in mkcfg above
 
 def last(stem):
@@ -177,11 +180,52 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20 in every arm")
 
+    # CONSERVATION, per arm. What the model actually OWES: the water that came in must equal the
+    # water accounted for. Col 17 is the solver's own discrete identity (storage change = recharge -
+    # ocean_outflow - surface_removed), so its departure from zero is unaccounted vertical flux. This
+    # is asserted SEPARATELY from the fate columns below, because the two are different claims and
+    # conflating them cost a real investigation: when the fate columns disagreed it was not obvious
+    # whether water was being LOST or merely partitioned differently. It was partitioned.
+    for st, r in zip(stems, rows):
+        c = abs(r[16]) / RECH
+        ok = c < TOL_CONSERVE
+        fail |= not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  CONSERVATION  {st:<8} |exact residual|/recharge "
+              f"{c:.3e}  (tol {TOL_CONSERVE:.0e})")
+
+    # ...and the arms must agree on the TOTAL even where they disagree on the split. Differences in
+    # the individual fates have to cancel: same water in, same water accounted for. Measured on the
+    # routed-off block at dt=1yr, the two most-separated arms differ by -1.000e-02 in stored_volume
+    # and +1.253e-02 in evap_removed -- and the fates sum to -6.227e-08. surface_removed is NOT in
+    # this sum: it is an internal transfer to FillSpillMerge, which routes the water onward, so
+    # counting it here would double-book.
+    # Stated WITHOUT a threshold, deliberately. Summing the PHYSICAL fates carries the documented
+    # BDF2-startup gap (col 16, ~2e-3 of recharge), and that gap itself varies a little with step
+    # count -- so the sum does not go to machine zero and any absolute tolerance here would be a
+    # number invented to fit. What IS true, and is the whole point, is that the differences CANCEL:
+    # the total moves LESS than its largest single part does. Assert exactly that.
+    FATES = [13, 17, 12, 9]  # stored_volume, evap_removed, ocean_outflow, loss_to_ocean
+    base = rows[0]
+    worst = max(abs(sum(r[i] - base[i] for i in FATES)) / RECH for r in rows)
+    biggest_part = max(spread([r[i] for r in rows], RECH) for i in FATES)
+    ok = worst < biggest_part
+    fail |= not ok
+    print(f"  {'PASS' if ok else 'FAIL'}  FATES CANCEL  arms differ on the SPLIT, not the TOTAL: "
+          f"total moves {worst:.3e} vs largest part {biggest_part:.3e} "
+          f"({biggest_part / max(worst, 1e-30):.1f}x cancellation)")
+
+    # FATE INVARIANCE. Scoped to fsm_coupling: impulse, which is what mkcfg pins. FillSpillMerge
+    # re-equilibrates the state every step under impulse, which pins the partition, so each fate is
+    # individually invariant to the solve count. That is NOT true of `continuous`, where the water
+    # arrives over the interval and how much of it evaporates depends on the interval -- a first-order
+    # effect that vanishes under refinement (measured 1.253e-02 -> 5.539e-03 -> 1.114e-03 on col 18)
+    # and is the physics that coupling was chosen for. Asserting fate invariance of `continuous` would
+    # be asserting something the model does not promise; that belongs in tests/coupling_convergence.
     for idx, name in TRAJ:
         s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_TRAJ
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  TRAJ    {name:<26} spread/rech {s:.3e}  (tol {TOL_TRAJ:.0e})")
+        print(f"  {'PASS' if ok else 'FAIL'}  FATE    {name:<26} spread/rech {s:.3e}  (tol {TOL_TRAJ:.0e})")
     print()
 
 print("DT INVARIANCE: " + ("ALL PASSED" if not fail else "FAILED"))
