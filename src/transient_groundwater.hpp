@@ -25,7 +25,11 @@ void gather_runoff_to_zero(Parameters& params, ArrayPack& arp, AppCtx& user_cont
 // Whether the direct-to-runoff (exfiltration) removal is configured this run (-wtm_direct_to_runoff).
 bool direct_to_runoff_on();
 // Whether FSM's per-step wtd change is carried as a next-step recharge source rather than an IC overwrite
-// (-wtm_fsm_continuous; experimental, off by default). See the flag decl in transient_groundwater.cpp.
+// (config `surface_water.fsm_coupling: continuous`, the DEFAULT since 5feb2c3 -- NOT experimental and NOT
+// off). The value is RESOLVED inside update(), and yields to `impulse` where continuous cannot run:
+// collection.method: explicit, and infiltration_during_flow: true. Callers before the first solve see the
+// static initialiser, not the resolved value -- full_config.yaml is written in that window and reads the
+// options database instead (WTM.cpp). See the flag decl in transient_groundwater.cpp.
 bool fsm_continuous_on();
 // Whether the lake-aware active-set skim is on (so the post-solve gather hands its captured exfiltration to FSM).
 bool active_set_on();
