@@ -421,7 +421,13 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
       if (mpi_rank == 0) {
         stage_r0.resize(arp.wtd.size());
         const auto* w = arp.wtd.data();
-        for (size_t k = 0; k < stage_r0.size(); k++) stage_r0[k] = std::max(0.0, static_cast<double>(w[k]));
+        const auto* wm = arp.wtd_mid.data();  // pre-FSM (== starting_wtd under continuous)
+        for (size_t k = 0; k < stage_r0.size(); k++) {
+          double stage = std::max(0.0, static_cast<double>(w[k]));
+          // EXPERIMENT: under continuous, do not demand removal of water the delta already moves.
+          if (fsm_continuous) stage = std::max(stage, std::max(0.0, static_cast<double>(wm[k])));
+          stage_r0[k] = stage;
+        }
       }
       scatter_into_owned(user_context, stage_r0.data(), dmdapack.lake_stage);
     }
