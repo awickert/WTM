@@ -101,10 +101,9 @@ YEAR = 31536000.0
 INPUTS = [(18, "19 recharge_direct"), (19, "20 runoff_to_surface"), (8, "9 total_recharge_added")]
 TRAJ   = [(9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
           (12, "13 total_ocean_outflow"), (13, "14 stored_volume"), (17, "18 total_evap_removed")]
-# Tolerances MEASURED on this fixture with the routed channel off, where every spread is pure
-# truncation: max observed 3.5e-03 (col 12), so 1e-2 carries ~3x margin. The input channels are
-# exactly invariant here because this fixture's recharge does not depend on the water table, which is
-# what makes them a clean probe -- asserted below so the test cannot silently stop discriminating.
+# Tolerances MEASURED on this fixture. The input channels are exactly invariant here because this
+# fixture's recharge does not depend on the water table, which is what makes them a clean probe --
+# asserted below so the test cannot silently stop discriminating.
 TOL_INPUT, TOL_TRAJ = 1e-9, 1e-2
 EXPECT_YEARS = 20.0  # must match `total_time` in mkcfg above
 
@@ -113,9 +112,27 @@ def last(stem):
             if l.split() and l.split()[0].isdigit() and len(l.split()) >= 23]
     return rows[-1] if rows else None
 
-def spread(vals):
-    ref = abs(vals[0]) or 1.0
-    return max(abs(v - vals[0]) for v in vals) / ref
+# NORMALISE BY CUMULATIVE RECHARGE, not by one arm's own value.
+#
+# This used to be  max|v - v[0]| / |v[0]|  -- the spread divided by the FIRST ARM'S OWN VALUE. That
+# conflates "the arms disagree more" with "the quantity got smaller", and it lied badly once a flux
+# started heading toward zero. Measured on the routed-channel-on block, col 12, refining dt:
+#     dt        arm0 (the divisor)   max abs difference   what it REPORTED
+#     1 yr           9.980e+07            3.389e+07             0.340
+#     0.5 yr         3.702e+07            2.957e+07             0.799
+#     0.25 yr        1.036e+07            1.361e+07             1.314
+# The arms' actual disagreement IMPROVED 2.5x while the reported number got 3.9x WORSE, purely because
+# the divisor collapsed 9.6x. The test was announcing a catastrophic divergence while the physics
+# converged. On this scale the same series reads 8.9e-04 -> 7.8e-04 -> 3.6e-04.
+#
+# Cumulative recharge is the right divisor: it is the water that ENTERED the domain, it does not
+# collapse, and this test PROVES it is a valid common scale a few lines below -- the INPUT assertions
+# require col 9 to be identical across arms to 1e-9. Every TRAJ number is then "what fraction of the
+# water that came in did the arms disagree about", which is the question worth asking.
+#
+# max-min rather than max|v - v[0]|: no arm is privileged as the reference.
+def spread(vals, scale):
+    return (max(vals) - min(vals)) / (abs(scale) or 1.0)
 
 fail = 0
 for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
@@ -146,11 +163,14 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
           f"(if these ever match, this test proves nothing)")
 
     # INPUT channels: driven by the forcing and elapsed time, so exactly invariant on this fixture.
+    # Every spread is normalised by CUMULATIVE RECHARGE (col 9), which the INPUT block just below
+    # proves is identical across arms -- so the divisor is one number for the whole comparison.
+    RECH = abs(rows[0][8]) or 1.0
     for idx, name in INPUTS:
-        s = spread([r[idx] for r in rows])
+        s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_INPUT
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread {s:.3e}  (tol {TOL_INPUT:.0e})")
+        print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread/rech {s:.3e}  (tol {TOL_INPUT:.0e})")
 
     # col 9 must be exactly the sum of the two channels, in every arm.
     ok = all(abs(r[8] - (r[18] + r[19])) <= 1e-11 * max(1.0, abs(r[8])) for r in rows)
@@ -158,10 +178,10 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20 in every arm")
 
     for idx, name in TRAJ:
-        s = spread([r[idx] for r in rows])
+        s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_TRAJ
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  TRAJ    {name:<26} spread {s:.3e}  (tol {TOL_TRAJ:.0e})")
+        print(f"  {'PASS' if ok else 'FAIL'}  TRAJ    {name:<26} spread/rech {s:.3e}  (tol {TOL_TRAJ:.0e})")
     print()
 
 print("DT INVARIANCE: " + ("ALL PASSED" if not fail else "FAILED"))
