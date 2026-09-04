@@ -1115,7 +1115,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       // separate question -- it is a volume FSM already moved for one specific step. Preserved, not
       // silently changed; rech_dt_scale is 1 on every fixed-dt path.
       dmdapack.rech_vec[j][i] =
-          add_recharge((dmdapack.rech_dist[j][i] + dmdapack.fsm_delta_dist[j][i]) * rech_dt_scale,
+          add_recharge(dmdapack.rech_dist[j][i] * rech_dt_scale + dmdapack.fsm_delta_dist[j][i],
                        dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]);
     }
   }
