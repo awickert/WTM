@@ -49,15 +49,21 @@ eq_tol 0
 textfilename $WORK/c.txt
 outfile_prefix $WORK/c_
 EOF
+# FIRST ARM pinned to `impulse`. It used to get impulse for free, as the default; `continuous` is the
+# default now, so WITHOUT this pin both arms would run continuous and every comparison below would be
+# vacuous -- NON-VACUOUS measured exactly 0.000e+00 the moment the default flipped. Pin it rather than
+# lean on the default: what this test compares is the two couplings, and that has to stay true whichever
+# one the model happens to ship.
+sed -i -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: impulse|" "$WORK/c.yaml"
 "$WTM" "$WORK/c.yaml" > "$WORK/c.log" 2>&1 \
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
-# SECOND ARM: the same physical problem under the OTHER FSM coupling. The default overwrites the water
-# table with FSM's result between steps; -wtm_fsm_continuous instead feeds FSM's per-cell volume change
-# into the NEXT step's source term. The two integrate differently and reach different states -- which is
-# the point, and what makes the comparison below non-vacuous.
+# SECOND ARM: the same physical problem under the OTHER FSM coupling. `impulse` overwrites the water
+# table with FSM's result between steps; `continuous` instead feeds FSM's per-cell volume change into
+# the NEXT step's source term. The two integrate differently and reach different states -- which is the
+# point, and what makes the comparison below non-vacuous.
 sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" \
-    -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: continuous|" "$WORK/c.yaml" > "$WORK/s.yaml"
+    -e "s|^  fsm_coupling: impulse|  fsm_coupling: continuous|" "$WORK/c.yaml" > "$WORK/s.yaml"
 "$WTM" "$WORK/s.yaml" > "$WORK/s.log" 2>&1 \
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
