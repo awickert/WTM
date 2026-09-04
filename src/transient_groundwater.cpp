@@ -598,7 +598,7 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
     << " runoff_ratio=" << (params.runoff_ratio_on ? 1 : 0)
     << " infiltration=" << (params.infiltration_on ? 1 : 0)
     << " recharge_path=" << ((!params.fsm_on || !params.infiltration_on) ? "distributed" : "serial")
-    << " coupling=" << (g_fsm_delta_source ? "fsm_delta_source" : "overwrite")
+    << " coupling=" << (g_fsm_delta_source ? "source" : "overwrite")
     << " boundary=" << (g_land_boundary_dirichlet ? "dirichlet" : "neumann")
     << " ranks=" << size
     << "\n";

@@ -27,6 +27,7 @@
 #   runoff_ratio_on 1     -> surface_water.runoff_ratio: raster  (require the raster)
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
+#   fsm_coupling          -> surface_water.fsm_coupling (overwrite | source)
 #   extinction_depth      -> evaporation.extinction_depth          (m)
 #   under_relaxation      -> dev.under_relaxation
 #   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)
@@ -112,7 +113,8 @@ if have fdepth_a || have fdepth_b || have fdepth_fmin; then
 fi
 
 # --- surface_water -----------------------------------------------------------
-if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration_on || have runoff_collector; then
+if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration_on || have runoff_collector \
+   || have fsm_coupling; then
     echo "surface_water:"
     if have fsm_on; then
         case "$(val fsm_on)" in
@@ -132,6 +134,7 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
+    have fsm_coupling && echo "  fsm_coupling: $(val fsm_coupling)"
     if have runoff_collector; then
         echo "  collection:"
         echo "    method: $(val runoff_collector)"

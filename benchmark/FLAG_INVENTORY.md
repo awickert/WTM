@@ -220,7 +220,7 @@ happens without the taper*
 
 | flag | coverage | note |
 |---|---|---|
-| `-wtm_fsm_delta_source` | **varied** | THREE live invocations across `tests/budget_closure` (2) and `tests/fsm_conservation` (1). NOT superseded by `active_set`: #40 gave the lake stage its own array so the two COMPOSE, and that pairing is the one under measurement |
+| `-wtm_fsm_delta_source` | **varied**, CONFIG-OWNED | now `surface_water.fsm_coupling: overwrite | source`. Three live invocations across `tests/budget_closure` (2) and `tests/fsm_conservation` (1), all on the config route. NOT superseded by `active_set`: #40 made the two COMPOSE |
 
 ## Diagnostic output  (1)
 

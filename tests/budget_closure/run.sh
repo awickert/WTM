@@ -63,6 +63,7 @@ time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
 ${ADAPT:+adaptive_dt true}
 ${STORAGE:+storage $STORAGE}
+${COUPLING:+fsm_coupling $COUPLING}
 ${DTC:+dt_continuation $DTC}
 solver_method ${METHOD:-anderson}
 ${INTEG:+time_integration $INTEG}
@@ -159,8 +160,8 @@ STORAGE=volume check "Anderson BE (volume dV)" s_vol
 METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
 echo "-- FSM-delta-source coupling (#116) --"
-check "Anderson BE (secant)"       f_and    -wtm_fsm_delta_source
-STORAGE=volume check "Anderson BE (volume dV)" f_vol -wtm_fsm_delta_source
+COUPLING=source check "Anderson BE (secant)"       f_and
+COUPLING=source STORAGE=volume check "Anderson BE (volume dV)" f_vol
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation

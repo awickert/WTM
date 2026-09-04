@@ -48,7 +48,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"grid", {"cells_per_degree", "southern_edge"}},
       {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
-      {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection"}},
+      {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection", "fsm_coupling"}},
       {"surface_water.collection", {"method"}},
       {"evaporation", {"et_sigmoid", "extinction_depth"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},

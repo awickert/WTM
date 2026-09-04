@@ -69,6 +69,18 @@ evaporation:
   extinction_depth: 8          # depth below which ET can no longer reach the water table [m]
 
 surface_water:
+  fsm_coupling: overwrite      # overwrite | source -- how FillSpillMerge's result reaches the groundwater.
+                               # overwrite: FSM's post-routing water table REPLACES the step baseline.
+                               #            Simple, and what the model has always done.
+                               # source:    the table is left alone and FSM's per-cell VOLUME CHANGE is fed
+                               #            into the next step's recharge source instead, so the solver
+                               #            never sees a between-step jump in its state.
+                               # Built to remove that jump, which is a Lie-split shock that breaks
+                               # 2nd-order accuracy. collection.method: active_set removes the same shock
+                               # by itself (0.985 -> 3.6e-13), so `source` is no longer the way to address
+                               # it -- but the two COMPOSE (the active-set obstacle reads a carried lake
+                               # stage, not the overwritten table), and `source` remains the route to
+                               # decoupling FSM's cadence from the groundwater step. CHANGES THE ANSWER.
   mode: routed                 # routed (Fill-Spill-Merge) | ponded | removed (groundwater-only)
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false

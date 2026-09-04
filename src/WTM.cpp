@@ -1103,6 +1103,12 @@ void apply_config_petsc_options(const std::string& config_file) {
   }
 
   // dev
+  // surface_water.fsm_coupling: how FillSpillMerge's result reaches the groundwater. Answer-changing,
+  // so it belongs in the config -- a run using `source` could not otherwise be reproduced from its
+  // archived resolved config.
+  if (auto n = root["surface_water"]["fsm_coupling"])
+    if (require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"overwrite", "source"}) == "source")
+      set_opt_if_unset("-wtm_fsm_delta_source", "true");
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
@@ -1311,6 +1317,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`
   // reports `ponded`. Recorded rather than papered over; the distinction is a TODO in parameters.cpp.
   f << "  mode: " << (params.fsm_on ? "routed" : "ponded") << "\n";
+  f << "  fsm_coupling: " << (FanDarcyGroundwater::fsm_delta_source_on() ? "source" : "overwrite") << "\n";
   if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
   else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
   else f << "  runoff_ratio: 0\n";

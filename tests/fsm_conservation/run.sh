@@ -56,8 +56,9 @@ EOF
 # table with FSM's result between steps; -wtm_fsm_delta_source instead feeds FSM's per-cell volume change
 # into the NEXT step's source term. The two integrate differently and reach different states -- which is
 # the point, and what makes the comparison below non-vacuous.
-sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" "$WORK/c.yaml" > "$WORK/s.yaml"
-"$WTM" "$WORK/s.yaml" -wtm_fsm_delta_source > "$WORK/s.log" 2>&1 \
+sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" \
+    -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: source|" "$WORK/c.yaml" > "$WORK/s.yaml"
+"$WTM" "$WORK/s.yaml" > "$WORK/s.log" 2>&1 \
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
 TIF=$(ls "$WORK"/c_*.tif | tail -1)
