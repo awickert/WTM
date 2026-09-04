@@ -50,13 +50,16 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
 FSMDIR=$(readlink -f ../fsm_consistency)
-[[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
-INP="$FSMDIR/inputs"
+MLDIR=$(readlink -f ../multilake)
+CASDIR=$(readlink -f ../fsm_cascade)
+for d in "$FSMDIR" "$MLDIR" "$CASDIR"; do
+    [[ -d "$d/inputs" ]] || ( cd "$d" && python3 make_inputs.py >/dev/null )
+done
 WORK=$(mktemp -d /tmp/cconv_XXXX); trap 'rm -rf "$WORK"' EXIT
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = coupling, $3 = deltat seconds, $4 = report_interval
+mkcfg() { # $1 = stem, $2 = coupling, $3 = deltat seconds, $4 = report_interval, $5 = inputs, $6 = region
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 run_type equilibrium
@@ -76,8 +79,8 @@ fsm_on 1
 fsm_coupling $2
 runoff_ratio 0
 adaptive_dt false
-surfdatadir $INP
-region fsm_test
+surfdatadir $5
+region $6
 time_start t0
 time_end t0
 eq_tol 0
@@ -93,26 +96,59 @@ echo
 # FIXED dt on every arm -- adaptive_dt is pinned false above. This is a refinement study, so the step
 # has to be the thing being varied, not something the controller chooses. (An omitted adaptive_dt
 # resolves to `auto` -> TRUE, which is how tests/dt_invariance lost its fixed-dt control arm.)
+# THREE FIXTURES, because one was not enough. The original evidence for this default came entirely
+# from `lake`, which is built around a filling depression -- the most favourable case for the coupling
+# to matter, as task #43 itself flagged. Measured at a matched 8 yr, the coupling gap is 40-55x SMALLER
+# on the other two, even though fsm_cascade moves NINE TIMES more surface water than lake does:
+#     fixture       evap gap    stored gap   surface water moved (/recharge)
+#     lake          5.428e-02   4.477e-02    9.760e-02
+#     multilake     9.935e-04   1.008e-03    8.088e-02
+#     cascade       1.345e-03   0.000e+00    8.505e-01
+# So the size of the effect is NOT set by how much water FSM routes. It is specific to starting with a
+# water table above the surface over a plateau, which is what `lake` does and the others do not.
 fail=0
+for fixture in "lake:$FSMDIR/inputs:fsm_test" "multilake:$MLDIR/inputs:multilake" "cascade:$CASDIR/inputs:fsm_cascade"; do
+IFS=: read -r fxname fxinp fxregion <<<"$fixture"
 for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
     IFS=: read -r tag dt ri <<<"$spec"
     for cp in impulse continuous; do
-        stem="${tag}_${cp}"
-        mkcfg "$stem" "$cp" "$dt" "$ri"; rm -f "$WORK/$stem.txt"
+        stem="${fxname}_${tag}_${cp}"
+        mkcfg "$stem" "$cp" "$dt" "$ri" "$fxinp" "$fxregion"; rm -f "$WORK/$stem.txt"
         if ! "$WTM" "$WORK/$stem.yaml" -snes_stol 1e-10 > "$WORK/$stem.log" 2>&1; then
             echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1
         fi
     done
-done
+done; done
 [[ $fail -eq 0 ]] || { echo "COUPLING CONVERGENCE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" "$PY" - <<'PY' || fail=1
+WORK="$WORK" "$PY" - <<'PYX' || fail=1
 import os, sys
 W = os.environ["WORK"]
-TAGS = ["1yr", "05yr", "025yr"]           # each half the previous
-COLS = [(13, "14 stored_volume", True), (17, "18 total_evap_removed", True),
-        (11, "12 total_surface_removed", False), (12, "13 total_ocean_outflow", False)]
+TAGS = ["1yr", "05yr", "025yr"]                       # each half the previous
+NAME = {9: "10 loss_to_ocean", 11: "12 surface_removed",
+        12: "13 ocean_outflow", 13: "14 stored_volume", 17: "18 evap_removed"}
 TOL_CONSERVE, MIN_GAP, MIN_RATE = 1e-6, 1e-2, 1.5
+# The exact budget identity does NOT close on multilake at the coarsest step: 1.802e-05 of recharge,
+# BIT-IDENTICAL under both couplings, collapsing to 4.8e-10 when dt halves and 8.2e-11 at dt/4. It is
+# therefore a property of that fixture at that step size, NOT of the coupling -- which is why this
+# test found it and tests/budget_closure (a different fixture) never did. Held, not hidden. Task #52.
+XFAIL_CONSERVE = {("multilake", "1yr"): 1e-6}
+
+# WHAT EACH FIXTURE IS ASKED TO SHOW. Deliberately different, because the fixtures behave
+# differently and asserting one policy on all three would either be vacuous on two of them or
+# claim a trend the data does not show on the third. Every number below is measured.
+#
+#   lake       the coupling MATTERS here (gap ~5e-2) and converges first order. Full policy.
+#   cascade    spill-dominated. evap/surface_removed converge cleanly (x2.00, x1.97); storage and
+#              ocean outflow are EXACTLY equal under both couplings, because the sills set them.
+#   multilake  the gap is SMALL (~1e-3) and does NOT converge over this range (x0.91, x1.24). It is
+#              held to a BOUND, not a trend. That non-convergence is an open observation, not a
+#              known-good behaviour -- see task #48.
+POLICY = {
+    "lake":      {"nonvacuous": [13, 17], "converge": [13, 17, 11, 12], "rate": [13, 17]},
+    "cascade":   {"identical":  [13, 12], "converge": [17, 11],         "rate": [17, 11]},
+    "multilake": {"bounded":    ([13, 17, 11, 12], 5e-3)},
+}
 
 def last(stem):
     rows = [[float(x) for x in l.split()] for l in open(f"{W}/{stem}.txt")
@@ -120,54 +156,75 @@ def last(stem):
     return rows[-1] if rows else None
 
 fail = 0
-runs = {(t, c): last(f"{t}_{c}") for t in TAGS for c in ("impulse", "continuous")}
-if any(v is None for v in runs.values()):
-    print("  FAIL  a run produced no data rows"); sys.exit(1)
+for fx, pol in POLICY.items():
+    runs = {(t, c): last(f"{fx}_{t}_{c}") for t in TAGS for c in ("impulse", "continuous")}
+    if any(v is None for v in runs.values()):
+        print(f"  FAIL  {fx}: a run produced no data rows"); fail = 1; continue
+    print(f"-- fixture: {fx} --")
 
-# 1. CONSERVATION -- both couplings, every step size. The claim the model owes.
-for (t, c), r in runs.items():
-    v = abs(r[16]) / (abs(r[8]) or 1.0)
-    ok = v < TOL_CONSERVE
-    fail |= not ok
-    print(f"  {'PASS' if ok else 'FAIL'}  CONSERVATION  {t:<6} {c:<11} |exact residual|/recharge "
-          f"{v:.3e}  (tol {TOL_CONSERVE:.0e})")
-print()
-
-gaps = {}
-for idx, name, strict in COLS:
-    gaps[name] = []
+    # CONSERVATION -- both couplings, every step size, every fixture. The claim the model owes.
+    # Reported PER STEP SIZE, not as a single worst-case, because on multilake it is the COARSEST
+    # step that misbehaves and a single number would hide which.
     for t in TAGS:
-        i, c = runs[(t, "impulse")], runs[(t, "continuous")]
-        gaps[name].append(abs(i[idx] - c[idx]) / (abs(i[8]) or 1.0))
+        w = max(abs(runs[(t, c)][16]) / (abs(runs[(t, c)][8]) or 1.0) for c in ("impulse", "continuous"))
+        xf = XFAIL_CONSERVE.get((fx, t))
+        if xf is None:
+            ok = w < TOL_CONSERVE
+            fail |= not ok
+            print(f"  {'PASS' if ok else 'FAIL'}  CONSERVATION  {t:<6} worst |exact residual|/recharge "
+                  f"{w:.3e}  (tol {TOL_CONSERVE:.0e})")
+        else:
+            # Held as an EXPECTED failure with a floor, so it keeps a regression test rather than
+            # being tuned away -- and so the suite FAILS the day it starts closing, which means the
+            # defect is fixed and this arm must be promoted.
+            still = w > xf
+            fail |= not still
+            print(f"  {'xfail' if still else 'FAIL '}   CONSERVATION  {t:<6} |exact residual|/recharge "
+                  f"{w:.3e} -- KNOWN, task #52" +
+                  ("" if still else f"  <-- NOW CLOSES (below {xf:.0e}): promote this arm"))
 
-# 2. NON-VACUOUS -- if the couplings agree at the coarsest step there is nothing to converge.
-for idx, name, strict in COLS:
-    if not strict:
-        continue
-    g0 = gaps[name][0]
-    ok = g0 > MIN_GAP
-    fail |= not ok
-    print(f"  {'PASS' if ok else 'FAIL'}  NON-VACUOUS   {name:<24} gap at the coarsest dt "
-          f"{g0:.3e}  (need > {MIN_GAP:.0e}; if this ever fails the couplings stopped differing "
-          f"and the test proves nothing)")
-print()
+    gap = {c: [abs(runs[(t, 'impulse')][c] - runs[(t, 'continuous')][c]) /
+               (abs(runs[(t, 'impulse')][8]) or 1.0) for t in TAGS] for c in NAME}
 
-# 3. CONVERGES -- monotone, every column. 4. FIRST ORDER -- rate, on the two largest gaps only.
-for idx, name, strict in COLS:
-    g = gaps[name]
-    mono = g[0] > g[1] > g[2]
-    fail |= not mono
-    r1, r2 = g[0] / g[1], g[1] / g[2]
-    print(f"  {'PASS' if mono else 'FAIL'}  CONVERGES     {name:<24} "
-          f"{g[0]:.3e} -> {g[1]:.3e} -> {g[2]:.3e}  (x{r1:.2f}, x{r2:.2f})")
-    if strict:
+    for c in pol.get("nonvacuous", []):
+        ok = gap[c][0] > MIN_GAP
+        fail |= not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  NON-VACUOUS   {NAME[c]:<20} gap at the coarsest dt "
+              f"{gap[c][0]:.3e}  (need > {MIN_GAP:.0e}, else the couplings stopped differing here)")
+
+    for c in pol.get("identical", []):
+        ok = max(gap[c]) == 0.0
+        fail |= not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  IDENTICAL     {NAME[c]:<20} both couplings agree EXACTLY "
+              f"at every dt (worst {max(gap[c]):.3e}) -- the sills set this, not the coupling")
+
+    for c in pol.get("converge", []):
+        g = gap[c]
+        ok = g[0] > g[1] > g[2]
+        fail |= not ok
+        print(f"  {'PASS' if ok else 'FAIL'}  CONVERGES     {NAME[c]:<20} "
+              f"{g[0]:.3e} -> {g[1]:.3e} -> {g[2]:.3e}  (x{g[0]/g[1]:.2f}, x{g[1]/g[2]:.2f})")
+
+    for c in pol.get("rate", []):
+        g = gap[c]
+        r1, r2 = g[0] / g[1], g[1] / g[2]
         ok = r1 >= MIN_RATE and r2 >= MIN_RATE
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  FIRST ORDER   {name:<24} shrinks >= {MIN_RATE}x per "
+        print(f"  {'PASS' if ok else 'FAIL'}  FIRST ORDER   {NAME[c]:<20} shrinks >= {MIN_RATE}x per "
               f"halving (x{r1:.2f}, x{r2:.2f})")
 
-print()
+    if "bounded" in pol:
+        cols, bound = pol["bounded"]
+        for c in cols:
+            g = gap[c]
+            ok = max(g) < bound
+            fail |= not ok
+            print(f"  {'PASS' if ok else 'FAIL'}  BOUNDED       {NAME[c]:<20} "
+                  f"{g[0]:.3e} -> {g[1]:.3e} -> {g[2]:.3e}  (worst < {bound:.0e}; NOT asserted to "
+                  f"converge -- it does not, over this range)")
+    print()
+
 print("COUPLING CONVERGENCE: " + ("ALL PASSED" if not fail else "FAILED"))
 sys.exit(1 if fail else 0)
-PY
+PYX
 exit $?
