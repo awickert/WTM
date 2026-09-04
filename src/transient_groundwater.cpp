@@ -1989,10 +1989,20 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         if (dh > 1e-3) nflick_local++;
       }
       dmdapack.starting_wtd[j][i] = relaxed;
-      // LAKE STAGE, write site A of two. Correct on its own when FSM is off; when FSM is on,
-      // couple_surface_and_recharge overwrites this from the POST-FSM table a moment later, which
-      // is the stage the active-set obstacle needs. Under the default overwrite coupling the pair
-      // reproduces max(0, starting_wtd) exactly, so carrying the stage explicitly is bit-identical.
+      // LAKE STAGE, write site A of two (site B is in couple_surface_and_recharge, WTM.cpp). Which site
+      // is AUTHORITATIVE depends on the configuration, and all three cases are live -- do not assume this
+      // write is redundant:
+      //   FSM off                    -> B never runs (it is inside `if (fsm_on)`). A is the only per-step
+      //                                 writer, and max(0, post-solve wtd) is the correct stage.
+      //   FSM on, distributed        -> B overwrites this from the POST-FSM table in the same step, before
+      //     (infiltration off)          anything reads it, so A's value is never seen. Under `impulse` the
+      //                                 two agree exactly (starting_wtd is itself post-FSM there), which is
+      //                                 why carrying the stage explicitly was bit-identical when introduced.
+      //   FSM on, serial             -> distribute_recharge is false, so B is skipped. The cycle-top block
+      //     (infiltration on)           in WTM.cpp reseeds the stage once per CYCLE; A is the writer that
+      //                                 keeps it current between steps WITHIN a cycle.
+      // Under fsm_coupling: continuous B deliberately writes something DIFFERENT from this -- max(post-FSM
+      // stage, pre-FSM ponding) -- so that the obstacle yields to water the FSM delta is still moving.
       dmdapack.lake_stage[j][i] = std::max(0.0, relaxed);
       if (dmdapack.mask[j][i] == 0) {
         // Ocean cell: Dirichlet head h = 0 by definition. The matrix-free Anderson solve enforces this
