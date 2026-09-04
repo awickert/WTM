@@ -190,9 +190,12 @@ PY
 # ---- 4. CONTRACT: plain Newton at FIXED dt now CONVERGES ------------------------------------------
 # THIS ARM WAS INVERTED on 2026-09-04. It used to assert that plain Newton at fixed dt FAILS -- that was
 # the documented contract, and the reason solver.newton.dt_continuation existed as a requirement rather
-# than an option. It no longer fails. The fixture got easier when the active-set obstacle stopped
-# destroying water the FSM delta was already moving (19ee097) and the FSM delta stopped being scaled by
-# the step (69a0d0c); plain Newton now converges on it unaided.
+# than an option. It no longer fails.
+# WHEN it stopped failing is NOT established. It was already converging at the FIRST measurement taken
+# in the 2026-09-04 session, before the active-set obstacle fix (19ee097) and before the FSM delta
+# stopped being scaled (69a0d0c) -- so neither of those is the cause, and an earlier commit message
+# wrongly credited them. No pre-flip Newton run exists to compare against, so the change may predate
+# this session entirely. Recorded as unknown rather than guessed; see task #50.
 # Assert the NEW behaviour rather than delete the arm, so a regression back to needing the ramp is still
 # caught. ADAPT=false remains load-bearing: without it adaptive_dt: auto resolves TRUE here and the arm
 # would not be testing fixed dt at all.
