@@ -491,7 +491,19 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     // makes the carrier self-clearing.
     if (fsm_continuous)
       scatter_into_owned(user_context, fsm_delta_r0.data(), dmdapack.fsm_delta_dist);
-    FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
+    // OUTPUT STATE = the immediate post-FSM table, ALWAYS. This gather copies starting_wtd back into
+    // rank-0 arp.wtd -- the array saveGDAL writes, for both the snapshots and the final answer. Under
+    // `impulse` starting_wtd was overwritten WITH the post-FSM table above, so the gather is a round trip
+    // and the levelled lakes survive it. Under `continuous` starting_wtd deliberately stays PRE-FSM, so
+    // gathering here would DISCARD FillSpillMerge's levelling one line after it was computed, and every
+    // raster the run writes would show the model mid-thought: mass balance worked through, but the water
+    // not yet spread across the lakes. Lakes are unlevelled by construction in that state, so it is not a
+    // physically consistent thing to report. The round trip therefore belongs to the impulse path only --
+    // under continuous, arp.wtd already holds the post-FSM table (gathered at the TOP of this function,
+    // then modified in place by FillSpillMerge on rank 0) and must be left alone. arp.wtd is rank-0-only
+    // by design, so skipping the collective here costs no other rank anything.
+    if (!fsm_continuous)
+      FanDarcyGroundwater::gather_wtd_to_all(params, arp, user_context, dmdapack);
     // The runoff-ratio share is NO LONGER handed over here. runoff_dist is left holding the NOMINAL
     // depth and is gathered at the TOP of the next call, scaled by the dt that step actually took --
     // see the note there.
