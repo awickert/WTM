@@ -75,11 +75,15 @@ EOF
 }
 
 fail=0
-check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL for one arm
+check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, ARM_STOL the solve
     local label="$1" stem="$2"; shift 2
     local tol="${ARM_TOL:-$TOL}"
+    # A closure assertion is only meaningful if the SOLVE is resolved tighter than the closure it
+    # asserts; otherwise the arm measures solver noise. Default 1e-8 suits every arm here except the
+    # Newton sub-stepping one, which carries the solve tolerance on every sub-step (see its note).
+    local stol="${ARM_STOL:-1e-8}"
     mkcfg "$stem" "${COLL-implicit}"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1; then
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol "$stol" > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
     TOL="$tol" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
@@ -319,12 +323,19 @@ echo "-- each solver at its OWN resolved default (collector key UNSET) --"
 COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # Newton's per-cycle residual is looser than Anderson's on the same collector because
 # -wtm_dt_continuation SUB-STEPS, and the active-set multiplier carries the solve tolerance on every
-# sub-step. TOLERANCE-LIMITED, verified by scaling the solve:
-#     snes_stol   cumulative   worst-per-cycle
-#     1e-8         3.097e-07     1.279e-05   <- what this suite runs
-#     1e-10        1.588e-07     2.078e-06
-#     1e-12        1.588e-07     2.078e-06   <- floors
-COLL="" METHOD=newton ARM_TOL=1e-4 check "Newton, unset -> active_set [loose tol, see note]" d_ntu
+# sub-step. TOLERANCE-LIMITED, verified by scaling the solve. RE-MEASURED 2026-09-04, after the FSM
+# delta stopped being scaled (69a0d0c) and the estimator stopped counting it as truncation error
+# (e8d568b):
+#     snes_stol   cumulative   worst-per-cycle        (was, before those two)
+#     1e-8         5.733e-08     1.780e-04            3.097e-07   1.279e-05
+#     1e-10        6.000e-09     1.277e-05            1.588e-07   2.078e-06
+#     1e-12        6.000e-09     1.277e-05  <- floors 1.588e-07   2.078e-06
+# The cumulative residual IMPROVED ~5x; the per-cycle FLOOR moved ~6x the other way (2.078e-06 ->
+# 1.277e-05) and is a real change, not noise -- worth knowing if it drifts further. It is still 8x
+# inside ARM_TOL. What broke this arm is that at snes_stol 1e-8 the solver noise (1.780e-04) now
+# EXCEEDS the closure being asserted (1e-4), so the arm was measuring the solver, not the budget.
+# Resolve the solve past the assertion instead of loosening the assertion.
+COLL="" METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
 COLL="" METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
 COLL=implicit METHOD=newton check "Newton + continuation x implicit" d_nt
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
