@@ -1224,22 +1224,48 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface_water.collection.method: implicit is the route (verified byte-identical). Set by the selector.
   g_direct_to_runoff = false;
 
-  // surface_water.fsm_coupling, DEFAULT source (Andy, 2026-09-04). FSM's per-step volume change is carried
-  // into the NEXT step's recharge rather than overwriting the step baseline with the post-FSM table.
+  // surface_water.fsm_coupling, DEFAULT continuous (Andy, 2026-09-04, reaffirmed after review).
   //
-  // WHY source IS THE DEFAULT, and the argument is PHYSICAL rather than numerical. FSM is instantaneous by
-  // construction, so under `impulse` the state always carries its FULLY EQUILIBRATED lake: a depression is
-  // full from the instant there is water to fill it, and evaporates at the open-water rate for the whole
-  // step. Refining dt does not soften that -- it just re-equilibrates more often. In reality water flows in
-  // over the interval and evaporates as it arrives. Measured on tests/fsm_consistency at a fixed 8 yr,
-  // cumulative evaporation converges to ~8.55e09 (overwrite) against ~7.65e09 (source): overwrite
-  // over-exposes surface water to open-water evaporation by ~11%, and the gap GROWS with refinement
-  // instead of vanishing, because it is a difference in the physics encoded, not a timing artifact.
+  // THE PHYSICAL ARGUMENT IS THE ARGUMENT. FSM is instantaneous by construction, so under `impulse` the
+  // state always carries a FULLY EQUILIBRATED lake -- a depression is full from the instant there is
+  // water to fill it, and evaporates at the open-water rate for the whole step. Real water flows in over
+  // the interval and evaporates as it arrives. `continuous` encodes that; `impulse` cannot.
+  //
+  // WHAT THE MEASUREMENTS SAY, including the ones that do NOT support this choice, so the next reader
+  // gets the whole picture rather than the case for the verdict:
+  //   * the two couplings CONVERGE, first order, to the same continuum (tests/coupling_convergence):
+  //         stored_volume  4.477e-02 -> 1.733e-02 -> 6.706e-03   (gap, /recharge)
+  //         evap_removed   5.428e-02 -> 2.529e-02 -> 1.427e-02
+  //     so they are two discretisations of one physics, and neither is a different model.
+  //   * ACCURACY at usable dt is a WASH. Richardson-extrapolating to the limit and asking which sits
+  //     closer at dt = 1 yr, same verdict on both the 8 yr and 20 yr fixtures:
+  //         stored_volume  continuous closer     evap_removed     impulse closer
+  //         ocean_outflow  continuous closer     surface_removed  impulse closer
+  //     Two columns each. There is no accuracy case for either coupling.
+  //   * the ~11% evaporation figure that ORIGINALLY justified this default did NOT survive. It was a
+  //     defect -- the active-set obstacle destroying water the FSM delta was separately moving (19ee097)
+  //     -- and the sign has not been reproduced. See #51, still open.
+  //
+  // WHY NOT `impulse`, given it is the tidier default. A case was made for it on robustness and was
+  // REJECTED as tidiness rather than correctness, which is right:
+  //   - "composes with every collector", "no estimator blind spot", "matches v2.0.1" are properties of
+  //     the SOFTWARE and the tooling, not evidence about which model is closer to the world.
+  //   - "resets cross-rank drift" is actively misleading: impulse does not HAVE less drift, it
+  //     re-broadcasts the rank-0 table every step and hides it. See task #39, which measured exactly
+  //     that -- impulse's cross-rank agreement is an artefact of the broadcast.
+  //   - "fate-invariant to the solve count" is not independent evidence: impulse earns that invariance
+  //     BY re-equilibrating the lake every step, which is the very thing being disputed.
+  //
+  // THE COSTS ARE REAL AND ARE NOT HIDDEN. `continuous` works only with collection.method: active_set
+  // (refused with explicit, #44; budget does not close with implicit, xfail in tests/budget_closure);
+  // its budget is not fate-invariant to the solve count, which is why tests/dt_invariance is scoped to
+  // impulse and tests/coupling_convergence carries continuous's conservation instead; and it costs the
+  // adaptive error estimator a blind spot over the FSM-delta cells (e8d568b). Those are the price of the
+  // physics, paid deliberately.
   //
   // What did NOT decide it: source does not restore 2nd order (1.16/1.25/1.60 against overwrite's
   // 1.13/1.23/1.59), and its flicker benefit is already spent by active_set, which is the default collector.
-  // Both couplings reach the same equilibrium (gap 20.08% at 8 yr -> 0.30% at 400 yr), so this matters for
-  // TRANSIENTS far more than for equilibrium runs.
+  // Both couplings reach the same equilibrium, so this matters for TRANSIENTS far more than equilibrium.
   // Resolved AFTER the collector below, because `auto` has to know it. Read the request here.
   PetscBool fsm_cont_set = PETSC_FALSE, fsm_cont = PETSC_TRUE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont_set);
