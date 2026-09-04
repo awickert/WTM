@@ -525,7 +525,7 @@ The groups awaiting that call, all DORMANT (zero execution coverage -- see FLAG_
 | `dev_padded_dirichlet` | 1 | dormant by BOTH routes; its schema key already exists, unused |
 | `bdf2` (head form) | 1 | archive-only; if kept it becomes a `time_integration` value, not a flag |
 | `stiff` | 1 | a preset; dissolves if `run.type` seeding is ever built, otherwise decide on its own terms |
-| `fsm_delta_source` | 1 | one live test caller; superseded for its original purpose by active_set |
+| ~~`fsm_delta_source`~~ | ~~1~~ | **NOT A DECISION -- the row was stale.** Three live test invocations, and #40 made it COMPOSE with active_set rather than be superseded by it. It survives, so under D it needs a config key |
 
 The `ar_*` four are NOT on this list: the restart mechanism has a live test, so under D its constants
 simply become keys. Whether to hard-code them instead is no longer worth asking -- a defaulted key that

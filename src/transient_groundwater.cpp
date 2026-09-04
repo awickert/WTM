@@ -269,7 +269,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_volume_storage              = true;  // dev.storage_form: volume (DEFAULT) -- BE storage folded into f, RHS b=0
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source [EXPERIMENTAL, SUPERSEDED for its original purpose]: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy); ACTIVE_SET now removes that shock by itself -- shock ratio 0.985 -> 3.6e-13 -- so this no longer has a shock to smooth and is NOT recommended for that. Retained because its source-delivery machinery is the mechanism for DECOUPLING FSM CADENCE from the GW step, if the serial-FSM ceiling is ever attacked (option B of the lake-coupling design). Incompatible with active_set (guarded in update()). See the FSM-delta-source work (backlog item, NOT a GitHub issue) and benchmark/scheme_bench/README.md.
+static bool             g_fsm_delta_source            = false; // -wtm_fsm_delta_source: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy). active_set removes that shock by itself (0.985 -> 3.6e-13), so this is no longer the way to address it -- but it is NOT superseded: it is the live alternative FSM COUPLING, covered by tests/budget_closure and tests/fsm_conservation, and its source-delivery machinery is the mechanism for decoupling FSM cadence from the GW step if the serial-FSM ceiling is ever attacked. It COMPOSES with active_set as of #40 (the obstacle reads the carried lake_stage, not the overwritten table); the old hard error is gone. See benchmark/scheme_bench/README.md.
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 
@@ -1466,14 +1466,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
 
-  // FSM-delta-source x active_set are STRUCTURALLY INCOMPATIBLE, and now that active_set is the default this has to
-  // be a hard error rather than a footnote. The lake-aware pin reads its obstacle from the water table
-  // itself (surface_water_depth = max(0, starting_wtd), the stage FSM wrote there last step).
-  // -wtm_fsm_delta_source exists precisely to STOP FillSpillMerge writing its result there -- that is its
-  // whole mechanism. So the obstacle collapses to the land surface everywhere and every lake drains:
-  // measured on the island fixture, max wtd 5.6986 m -> 0.0000 m with ZERO cells holding more than 1 mm.
-  // The reader and its source are the same line of code. Fixing it means carrying the lake stage in its
-  // own array rather than inferring it from starting_wtd; see benchmark/scheme_bench/README.md.
   // fsm_delta_source x active_set: the hard error here is GONE (2026-09-03, #40). It existed because the
   // active-set obstacle was INFERRED as max(0, starting_wtd) -- the table FSM overwrites -- and
   // fsm_delta_source exists to suppress that overwrite, so the obstacle collapsed to the land surface and

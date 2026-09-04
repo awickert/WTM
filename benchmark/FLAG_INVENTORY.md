@@ -220,7 +220,7 @@ happens without the taper*
 
 | flag | coverage | note |
 |---|---|---|
-| `-wtm_fsm_delta_source` | **varied** | `tests/budget_closure`. Superseded for its original purpose by `active_set` |
+| `-wtm_fsm_delta_source` | **varied** | THREE live invocations across `tests/budget_closure` (2) and `tests/fsm_conservation` (1). NOT superseded by `active_set`: #40 gave the lake stage its own array so the two COMPOSE, and that pairing is the one under measurement |
 
 ## Diagnostic output  (1)
 
