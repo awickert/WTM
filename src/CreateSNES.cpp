@@ -312,6 +312,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscOptionsHasName(nullptr, nullptr, "-wtm_budget_trace", &budget_trace_flag);
     user_context.budget_trace = (budget_trace_flag == PETSC_TRUE);
   }
+  {
+    PetscBool fsm_trace_flag = PETSC_FALSE;
+    PetscOptionsHasName(nullptr, nullptr, "-wtm_fsm_trace", &fsm_trace_flag);
+    user_context.fsm_trace = (fsm_trace_flag == PETSC_TRUE);
+  }
   if (user_context.use_dt_adaptive) {
     // config-owned (solver.water_volume_timestep_error_tol); unset keeps the eq_tol-tracking default
     const bool dt_tol_set = params.dt_tol_set;

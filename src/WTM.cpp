@@ -379,6 +379,33 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
     // FillSpillMerge is a global serial algorithm; run it on rank 0, which holds the full arp.
     if (mpi_rank == 0) dh::FillSpillMerge(params, deps, arp);
     fsm_seconds += fsm_timer.lap();
+    // output.trace: [fsm] -- the LAKE CONFIGURATION, immediately after FillSpillMerge. Answer-neutral;
+    // rank 0 only, which is where FSM runs and where the full table lives.
+    //
+    // WHY THIS EXISTS. The lake configuration is the quantity whose DISCRETE changes make the answer
+    // non-monotone in the time step: which cells are wet, and where water spills, depend on how much
+    // water arrives per step, so two step sizes can settle on different lakes. Measured on
+    // tests/golden transient_test, fixed-step: the error has a local minimum at N=20 and then RISES
+    // ~26% through N=32 before converging again, while the same sweep with fsm_on 0 is monotone
+    // (benchmark/BDF2_ADAPTIVE_DESIGN.md sec. 3.5). Without this line the only symptom a user sees is
+    // that refining dt made the answer worse, with nothing to point at. With it, the differing lake
+    // configuration is visible directly.
+    if (user_context.fsm_trace && mpi_rank == 0) {
+      long   wet = 0;
+      double vol = 0.0, deepest = 0.0;
+      for (int y = 0; y < arp.topo.height(); y++)
+        for (int x = 0; x < arp.topo.width(); x++) {
+          if (arp.land_mask(x, y) == 0) continue;  // ocean cells are not lakes
+          const double w = arp.wtd(x, y);
+          if (w > 0.0) {
+            wet++;
+            vol += w * arp.cell_area[y];
+            if (w > deepest) deepest = w;
+          }
+        }
+      PetscPrintf(PETSC_COMM_WORLD, "FSMTRACE wet_cells=%ld lake_volume=%.10e max_depth=%.10e\n",
+                  wet, vol, deepest);
+    }
     if (fsm_continuous) {
       // -wtm_fsm_continuous (the continuous coupling): instead of overwriting the carrier with the post-FSM table (an IC jump
       // that breaks 2nd-order accuracy on TR-BDF2/adaptive), KEEP the smooth pre-FSM GW result as starting_wtd
@@ -1169,10 +1196,11 @@ void apply_config_petsc_options(const std::string& config_file) {
       throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
     for (const auto& e : tr) {
       const std::string v =
-          require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget"});
+          require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget", "fsm"});
       if (v == "dt")         set_opt_if_unset("-wtm_dt_trace", "true");
       if (v == "water_step") set_opt_if_unset("-wtm_snes_volume_conv", "true");
       if (v == "budget")     set_opt_if_unset("-wtm_budget_trace", "true");
+      if (v == "fsm")        set_opt_if_unset("-wtm_fsm_trace", "true");
     }
   }
 

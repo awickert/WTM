@@ -206,6 +206,12 @@ struct AppCtx {
                                    // Under the water (volume) step-error the MAX worst-cell norm is hostage to a few
                                    // surface-kink cells and can stall a cold start (GH #13); RMS averages them out.
   double dt_prev_est     = 0.0;    // previous accepted step's error estimate (PI-controller history; 0 = none)
+  bool   fsm_trace       = false;  // output.trace: [fsm] -- the LAKE CONFIGURATION after each FSM call.
+                                  // Answer-neutral. Exists because the lake configuration is the quantity
+                                  // whose DISCRETE changes make the answer non-monotone in the time step
+                                  // (see benchmark/BDF2_ADAPTIVE_DESIGN.md sec. 3.5): refining dt can settle
+                                  // on a different set of wet cells and so a different -- occasionally worse
+                                  // -- answer. Without this, that shows up only as an unexplained difference.
   bool   budget_trace    = false;  // output.trace: [budget] -- per-STEP identity terms, both storage
                                    // computations side by side. Answer-neutral. See #52.
   bool   dt_trace        = false;  // -wtm_dt_trace: report (dt, est, tol, factor, iters, accepted) for every

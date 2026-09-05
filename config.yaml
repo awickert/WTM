@@ -44,6 +44,11 @@ output:
   verbosity: normal            # quiet | normal | verbose
   if_exists: increment         # increment (new subdir each run) | overwrite | error
   trace: []                    # extra machine-readable trace lines; [] = none.
+                               # [fsm] emits FSMTRACE (wet_cells, lake_volume, max_depth) after every
+                               # FillSpillMerge call, rank 0. The lake configuration is what changes
+                               # discretely between runs, so this is the first thing to compare when two
+                               # runs differ and the cause is not obvious -- e.g. when refining the time
+                               # step makes the answer WORSE, which it can (BDF2_ADAPTIVE_DESIGN.md 3.5).
                                # [dt] emits DTTRACE (dt, est, tol, factor, niter, accepted), REJECTED
                                # steps included -- they are where a mis-scaled estimate does its damage.
                                # [water_step] emits a per-ITERATION line: the head step, an independent
