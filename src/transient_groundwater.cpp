@@ -955,20 +955,20 @@ static void compute_tr_explicit(AppCtx& user_context) {
 //   step ||Δx|| against PETSc's snorm to CONFIRM the update vector on the matrix-free Anderson path; then DEFER the
 //   verdict to SNESConvergedDefault -- behaviour is UNCHANGED.
 //   GOVERN (true): swap the head relative-step (stol) test for the water one; atol/rtol/maxit stay with the default.
-// Opt-in via -wtm_snes_volume_conv[_govern]; this function is the full criterion, gated by the govern switch.
-static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
-                                          PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
-  AppCtx* uc = static_cast<AppCtx*>(ctx);
-  // Standard verdict first: atol/rtol/maxit + the head-step stol. Keep all of it except, when governing, the stol.
-  SNESConvergedDefault(snes, it, xnorm, snorm, fnorm, reason, nullptr);
+// The relative WATER step |ΔV|/|V| between this iterate and the previous accepted one, with the
+// diagnostic pieces alongside. Factored out of VolumeStepConverged (#62) so the ORDINARY path and the
+// ADAPTIVE-RESTART path judge a step the same way: the restart phase test used to compare head snorm
+// against ar_stol, which is the very head-vs-water mismatch #61 removed from the ordinary path.
+// Maintains uc->vol_prev_x. At it == 0 there is no step yet: it seeds the reference and returns false.
+static bool waterStep(SNES snes, AppCtx* uc, PetscInt it, double* water_rel, double* water_max,
+                      double* water_L2, double* head_L2) {
   // The step is taken vs the PREVIOUS accepted iterate we store ourselves. SNESGetSolutionUpdate does NOT return
   // Anderson's accepted (mixed) step here -- measured ~10x larger and near-constant, so it is some internal
   // update vector; the exact semantics were not chased since the stored-iterate diff is authoritative (== snorm).
   Vec x;
   SNESGetSolution(snes, &x);
   if (uc->vol_prev_x == nullptr) VecDuplicate(x, &uc->vol_prev_x);
-  if (it == 0) { VecCopy(x, uc->vol_prev_x); return 0; }  // reset the reference at the start of each solve
-
+  if (it == 0) { VecCopy(x, uc->vol_prev_x); return false; }  // reset the reference at the start of each solve
   const auto [xs, ys, xm, ym] = get_corners(uc->da);
   PetscScalar **xa, **xpa, **topo, **poro, **msk;
   DMDAVecGetArray(uc->da, x, &xa);
@@ -1000,10 +1000,21 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   double loc[4] = {vmax, vsq, vnsq, hsq}, g[4];
   MPI_Allreduce(&loc[0], &g[0], 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);        // water max
   MPI_Allreduce(&loc[1], &g[1], 3, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);        // sums: water L2^2, |V|^2, head L2^2
-  const double water_max = g[0];
-  const double water_L2  = std::sqrt(g[1]);
-  const double water_rel = (g[2] > 0.0) ? std::sqrt(g[1] / g[2]) : 0.0;  // solution-relative water step
-  const double head_L2   = std::sqrt(g[3]);                              // reconstructed ||Δx||; should ≈ snorm
+  *water_max = g[0];
+  *water_L2  = std::sqrt(g[1]);
+  *water_rel = (g[2] > 0.0) ? std::sqrt(g[1] / g[2]) : 0.0;  // solution-relative water step
+  *head_L2   = std::sqrt(g[3]);                              // reconstructed ||Δx||; should ≈ snorm
+  return true;
+}
+
+// Opt-in via -wtm_snes_volume_conv[_govern]; this function is the full criterion, gated by the govern switch.
+static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
+                                          PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
+  AppCtx* uc = static_cast<AppCtx*>(ctx);
+  // Standard verdict first: atol/rtol/maxit + the head-step stol. Keep all of it except, when governing, the stol.
+  SNESConvergedDefault(snes, it, xnorm, snorm, fnorm, reason, nullptr);
+  double water_rel = 0.0, water_max = 0.0, water_L2 = 0.0, head_L2 = 0.0;
+  if (!waterStep(snes, uc, it, &water_rel, &water_max, &water_L2, &head_L2)) return 0;
 
   if (uc->vol_step_trace)  // printing is now independent of the verdict: both, either, or neither
     PetscPrintf(PETSC_COMM_WORLD,
@@ -1021,7 +1032,7 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
 // Custom SNES convergence test for a -wtm_adaptive_restart Anderson phase. Tracks the GLOBAL best
 // (lowest-residual) iterate across restarts (ar_best_x) and STOPS the phase, recording WHY in
 // ar_stop_kind, so update()'s outer loop can decide converge-vs-restart:
-//   1 = true convergence (relative step < ar_stol)
+//   1 = true convergence (relative WATER step < ar_stol; see #62)
 //   2 = RATE precursor: rho = |F_k|/|F_{k-1}| > ar_rho_threshold for ar_rho_patience iters -> restart
 //   3 = phase cap ar_max_it reached -> restart
 // A stopped phase always returns a POSITIVE reason so SNESSolve does not report a spurious divergence.
@@ -1037,12 +1048,22 @@ static PetscErrorCode AdaptiveRestartTest(SNES snes, PetscInt it, PetscReal xnor
     VecCopy(x, uc->ar_best_x);
     uc->ar_best_valid = PETSC_TRUE;
   }
+  // Measure this phase's step in WATER, exactly as the ordinary path does (#62). At it == 0 there is no
+  // step yet and this only seeds the reference, alongside the rate history seeded just below.
+  (void)snorm; (void)xnorm;  // the head step is no longer what decides; kept in the signature by PETSc
+  double water_rel = 0.0, w_max = 0.0, w_L2 = 0.0, h_L2 = 0.0;
+  const bool have_step = waterStep(snes, uc, it, &water_rel, &w_max, &w_L2, &h_L2);
   if (it == 0) {  // start of a phase: seed the rate history, no rho/step test yet
     uc->ar_prev_norm = fnorm;
     uc->ar_rho_bad   = 0;
     return 0;
   }
-  if (snorm < uc->ar_stol * xnorm) {  // true convergence
+  // TRUE CONVERGENCE, judged in water. This was `snorm < ar_stol * xnorm` -- a HEAD step against a
+  // head-relative bound, the same mismatch #61 removed from the ordinary solve path. It let a phase call
+  // itself converged once the iterate stopped MOVING in head, which on a warm start happens well before
+  // the water it still owes has been driven out. water_rel is already solution-relative, so ar_stol
+  // carries over unchanged -- only the metric moves, not the tolerance.
+  if (have_step && water_rel < uc->ar_stol) {  // true convergence
     *reason          = SNES_CONVERGED_SNORM_RELATIVE;
     uc->ar_stop_kind = 1;
     return 0;

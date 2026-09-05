@@ -138,7 +138,8 @@ struct AppCtx {
   PetscReal ar_best_norm         = 0.0;
   PetscReal ar_prev_norm         = 0.0;       // previous iter's residual (per phase), for rho
   PetscReal ar_rho_threshold     = 0.9;       // restart when rho exceeds this...
-  PetscReal ar_stol              = 1e-8;      // ...true-convergence step tol inside a phase
+  PetscReal ar_stol              = 1e-8;      // ...true-convergence step tol inside a phase, on the
+                                             // relative WATER step |ΔV|/|V| since #62 (was head)
   PetscInt  ar_rho_patience      = 2;         // ...for this many consecutive iters
   PetscInt  ar_rho_bad           = 0;
   PetscInt  ar_max_it            = 40;        // cap per Anderson phase before a forced restart
