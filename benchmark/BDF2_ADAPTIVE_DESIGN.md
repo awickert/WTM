@@ -425,10 +425,20 @@ Fixed-step convergence on the same fixture, densely sampled, `fsm_on 1`:
 | err (m) | 2.159 | 1.220 | 0.871 | **0.716** | 0.795 | 0.856 | **0.903** | 0.742 | 0.578 | 0.398 | 0.236 | 0.151 |
 
 A local minimum at N=20, then the error RISES ~26% through N=32 before convergence resumes. The
-same sweep with `fsm_on 0` is monotone (2.48e-1, 8.83e-2, 3.59e-2, 1.50e-2, 4.18e-3). The cause is
-FSM's discreteness: which cells are wet and where water spills depend on how much water arrives per
-step, so different step counts settle on different lake configurations, and that configuration
-error can grow with N over a range before the time-discretisation convergence dominates again.
+same sweep with `fsm_on 0` is monotone (2.48e-1, 8.83e-2, 3.59e-2, 1.50e-2, 4.18e-3), so the
+behaviour is FSM-associated. **The cause is not known.** Two natural explanations were tested with
+`output.trace: [fsm]` and BOTH FAILED:
+
+- *"different step counts settle on different lakes."* No. At N=20 and N=32 `wet_cells` takes
+  exactly the values {16, 32} in both, and the maximum lake volume is identical to 0.00%
+  (1.425456e+10 in each).
+- *"the 16 → 32 lake expansion is quantised to step boundaries, so its timing error drives it."*
+  No. That lag is MONOTONE in N -- +1.750, +1.350, +1.083, +0.893, +0.750, +0.550, +0.417, +0.250,
+  0.000 yr as N goes 16 → 128 -- while the error is not.
+
+Recorded as an open question rather than explained away. If you are chasing it, start from
+`output.trace: [fsm]` plus a per-report field diff, and note that whatever it is lives in the
+groundwater field rather than in the lake extent, since the lake extent is the same.
 
 **Two consequences, and the second is a trap.**
 1. For a user: with lakes, a smaller time step is not automatically a better answer. Check, do not
