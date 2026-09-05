@@ -106,16 +106,22 @@ struct AppCtx {
   bool use_newton = false;
 
   // Volume-weighted per-solve convergence (#127): judge the SNES step in WATER (|S*Δwtd|) instead of head, so
-  // the per-solve gate matches eq_tol / dt_tol (all water). Opt-in. DIAGNOSTIC when !govern (prints head-vs-
-  // water step, defers the verdict to SNESConvergedDefault -- changes nothing); GOVERN swaps the head stol test
-  // for the water one (atol/rtol/maxit unchanged). See transient_groundwater.cpp::VolumeStepConverged.
+  // the per-solve gate matches eq_tol / dt_tol (all water). DEFAULT ON since #61. DIAGNOSTIC when !govern
+  // (prints head-vs-water step, defers the verdict to SNESConvergedDefault -- changes nothing); GOVERN swaps
+  // the head stol test for the water one (atol/rtol/maxit unchanged). See VolumeStepConverged.
+  // WHY IT IS THE DEFAULT (#61): a HEAD step tolerance is a length, and the budget it has to agree with is a
+  // volume. Measured, 294 solves: 88% exited on the head stol test having reduced the residual by as little
+  // as 1.8e-04, because on a warm step the update is already tiny at iteration 1 -- and the exact budget then
+  // reports the un-driven residual as real unbalanced mass (worst per-step 9.4e-05 of recharge). In water the
+  // same runs close to 3.9e-07..1.9e-06 for +1.8% wall. It also stops a few very deep cells, where a metre of
+  // head is little water, from speaking for the whole grid.
   // TWO INDEPENDENT THINGS, and they used to be tangled. `vol_step_trace` only PRINTS; it cannot move
   // the answer. `snes_volume_conv_govern` swaps the per-solve stol test from head to water and DOES move
   // it. Previously the printing flag was force-set by governing, and the print was then gated on
   // `conv && !govern` -- so governing silently SUPPRESSED the trace and the two could never be had
   // together. Now output.trace: [water_step] drives the first and solver.convergence.metric the second.
   bool      vol_step_trace          = false;   // output.trace: [water_step] -- per-iteration line, answer-neutral
-  bool      snes_volume_conv_govern = false;   // solver.convergence.metric: water -- authoritative
+  bool      snes_volume_conv_govern = true;    // solver.convergence.metric: water (DEFAULT) -- authoritative
   PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
                                                // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)

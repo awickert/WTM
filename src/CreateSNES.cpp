@@ -83,8 +83,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // looser 1e-6 that left ~1e-6 (um-scale) rank-dependence in the water table (each rank converges to
   // its own 1e-6-accurate solution). 1e-8 is tight enough that the parallel solve is machine-consistent
   // (~1e-9 cross-rank) AND still reachable on steep terrain (Corsica converges in ~80 iters; a residual
-  // -snes_atol criterion CANNOT be reached there -- the residual floors above 1e-8 -- so use the step
+  // -snes_atol criterion CANNOT be reached there -- the residual floors above 1e-8 -- so use a STEP
   // tolerance, which tracks solution change and is reachable). Set only if the user did not override.
+  // NOTE (#61): this HEAD step tolerance is no longer the governing test on the default path -- the water
+  // metric below is (solver.convergence.metric, default `water`). It still sets ar_stol and still governs
+  // when the user asks for `metric: head`, so the default stays.
   PetscBool snes_stol_set = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-snes_stol", &snes_stol_set);
   if (!snes_stol_set) PetscOptionsSetValue(nullptr, "-snes_stol", "1e-8");
@@ -92,16 +95,28 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // Volume-weighted per-solve convergence (#127): judge the SNES step in WATER (|S*Δwtd|) instead of head, so the
   // per-solve gate matches eq_tol / dt_tol. Opt-in; DIAGNOSTIC unless _govern. The test is registered in
   // transient_groundwater.cpp::update() (VolumeStepConverged); here we only read the flags into user_context.
-  PetscBool vc = PETSC_FALSE, vcg = PETSC_FALSE;
+  // WATER IS THE DEFAULT (#61). `-wtm_snes_head_conv` (config `solver.convergence.metric: head`) is the
+  // OFF-SWITCH, the same default-on/off-switch shape the evaporation tapers use. The old opt-in name is
+  // kept as an explicit request for the default, so a config or command line that asks for water still
+  // reads correctly; when both arrive the off-switch wins, because only it can have been asked for
+  // deliberately (water needs no asking).
+  PetscBool vc = PETSC_FALSE, vcg = PETSC_FALSE, vch = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv_govern", &vcg);
-  user_context.snes_volume_conv_govern = (vcg == PETSC_TRUE);
+  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_head_conv", &vch);
+  (void)vcg;                                                  // asks for the default; kept for readability
+  user_context.snes_volume_conv_govern = (vch != PETSC_TRUE);
   user_context.vol_step_trace          = (vc == PETSC_TRUE);  // INDEPENDENT of governing, see AppCtx
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_snes_vol_tol", &user_context.snes_volume_conv_tol, nullptr);
   if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.convergence.metric: water -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
                 (double)user_context.snes_volume_conv_tol);
+  else
+    PetscPrintf(PETSC_COMM_WORLD,
+                "solver.convergence.metric: head -- the per-solve step is judged as |Δhead| (snes_stol). This is\n"
+                "  NOT the default: a head step tolerance lets a few very deep cells speak for the whole grid, and\n"
+                "  it does not match the water units of eq_tol/dt_tol or of the exact budget.\n");
   if (user_context.vol_step_trace)
     PetscPrintf(PETSC_COMM_WORLD, "output.trace: [water_step] -- per-iteration head-vs-water step lines.\n");
 

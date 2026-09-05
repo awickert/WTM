@@ -1156,11 +1156,15 @@ void apply_config_petsc_options(const std::string& config_file) {
   // solver.method is fully config-owned (Parameters::solver_method); no flag bridge remains. The
   // validation still lives in Parameters, so an unknown value aborts naming the legal ones.
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
-  // solver.convergence.metric: head (default) | water. Answer-changing, so it belongs in the config:
-  // a run that used `water` could not otherwise be reproduced from its archived resolved config.
+  // solver.convergence.metric: water (DEFAULT) | head. Answer-changing, so it belongs in the config: a run
+  // that used `head` could not otherwise be reproduced from its archived resolved config. Water became the
+  // default in #61 -- the head step tolerance is a LENGTH and the budget it must agree with is a VOLUME, so
+  // 88% of solves were exiting on a test the budget could not honour. `head` is the off-switch.
   if (auto n = root["solver"]["convergence"]["metric"])
-    if (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "water"}) == "water")
-      set_opt_if_unset("-wtm_snes_volume_conv_govern", "true");
+    set_opt_if_unset(require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "water"}) == "head"
+                         ? "-wtm_snes_head_conv"
+                         : "-wtm_snes_volume_conv_govern",
+                     "true");
   if (auto n = root["solver"]["convergence"]["water_volume_tol"])
     set_opt_if_unset("-wtm_snes_vol_tol", n.as<std::string>().c_str());
   if (auto n = root["solver"]["max_iterations"]) {
