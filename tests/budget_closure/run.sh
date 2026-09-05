@@ -255,26 +255,42 @@ echo
 # differently from the fixed-dt arm above it -- it looks like coverage and is not. Measured here,
 # 20 cycles, steps (rejects):
 #
-#     -wtm_dt_tol       TR-BDF2        BDF2-on-V
-#     0.5 (default)     20  (0)  <-- DEGENERATE      62  (4)
-#     0.1               20  (0)  <-- DEGENERATE       -
-#     0.02              68  (0)                       -
-#     0.005             57  (1)                     356 (10)
+# RE-MEASURED under the WATER convergence metric (#61), which moved every number here; the previous
+# table was taken when 88% of solves were exiting early on the head step test. 20 cycles, steps (rejects):
 #
-# So BDF2-on-V subdivides and rejects at the default tolerance and is left alone, while TR-BDF2 needs
-# 0.005 before its embedded estimate is tight enough to make the controller do anything. Whatever
-# makes the two schemes differ this much at the same tolerance is NOT understood -- see the
-# non-monotonicity note below -- so the tolerance here is chosen by measurement, not by theory.
+#     -wtm_dt_tol       TR-BDF2                  BDF2-on-V
+#     0.5 (default)     20  (0)  <-- DEGENERATE   83  (2)
+#     0.1               20  (0)  <-- DEGENERATE  128 (11)
+#     0.05              20  (0)  <-- DEGENERATE  109 (13)
+#     0.02              20  (0)  <-- DEGENERATE  181 (23)
+#     0.01              40  (1)                  210 (31)
+#     0.005             ABORTS                   293 (44)
+#
+# So BDF2-on-V subdivides and rejects at the default tolerance and is left alone, while TR-BDF2 has a
+# ONE-VALUE WINDOW: degenerate at every tolerance from 0.02 up, and at 0.005 the target is below what
+# the solve can actually deliver, so the controller shrinks to dtc_max_retries and the run aborts.
+# 0.01 is the only value that both completes and makes the controller do anything, so that is what the
+# arm uses. THIS IS FRAGILE BY CONSTRUCTION -- a one-value window has no margin on either side, and any
+# change to the estimator or the convergence metric can close it. Re-measure this table, do not nudge
+# the tolerance until the run stops failing.
+#
+# WHY 0.005 STOPPED WORKING, since "the test needed a looser tolerance" is exactly what a papered-over
+# regression looks like: it never worked, it only appeared to. Under the old head-judged step test the
+# solves stopped early, which made the error estimate small, which let the controller believe it had
+# met 0.005. Judged in water the estimate is honest, 0.005 is below the achievable floor for this
+# fixture, and the controller correctly refuses. The arm is measuring the same thing as before against
+# a target it can actually reach.
 #
 # If either arm ever prints "(fixed would be N)" with its own step count equal to N and no rejects,
 # it has gone vacuous again and the tolerance must be re-measured, not the arm deleted.
 #
-# UNEXPLAINED, recorded so it is not lost: for TR-BDF2 the step count is NON-MONOTONIC in the
-# tolerance -- 0.02 gives 68 steps but the tighter 0.005 gives 57. A stricter local-error bound
-# producing FEWER steps is backwards. BDF2-on-V is monotonic (62 -> 356). Adaptive dt is the
-# robustness tool for at-scale spin-up, so this is worth understanding before we lean on it there.
+# THE OLD NON-MONOTONICITY IS NOT REPRODUCED. It was recorded here as unexplained -- TR-BDF2 giving 68
+# steps at 0.02 but 57 at the tighter 0.005 -- and under the water metric the sequence above is
+# monotone non-decreasing instead. Those numbers were measured under head-judged convergence, so at
+# least part of that backwards behaviour was an artifact of solves stopping at a tolerance-dependent
+# point rather than at the solution. Not claimed as fully explained; recorded as no longer visible.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.005 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
+COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.01 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
    
 COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
    
