@@ -426,19 +426,43 @@ Fixed-step convergence on the same fixture, densely sampled, `fsm_on 1`:
 
 A local minimum at N=20, then the error RISES ~26% through N=32 before convergence resumes. The
 same sweep with `fsm_on 0` is monotone (2.48e-1, 8.83e-2, 3.59e-2, 1.50e-2, 4.18e-3), so the
-behaviour is FSM-associated. **The cause is not known.** Two natural explanations were tested with
-`output.trace: [fsm]` and BOTH FAILED:
+behaviour is FSM-associated.
 
-- *"different step counts settle on different lakes."* No. At N=20 and N=32 `wet_cells` takes
-  exactly the values {16, 32} in both, and the maximum lake volume is identical to 0.00%
-  (1.425456e+10 in each).
-- *"the 16 → 32 lake expansion is quantised to step boundaries, so its timing error drives it."*
-  No. That lag is MONOTONE in N -- +1.750, +1.350, +1.083, +0.893, +0.750, +0.550, +0.417, +0.250,
-  0.000 yr as N goes 16 → 128 -- while the error is not.
+**CAUSE (found by measurement): a product of two monotone factors that pull opposite ways.**
 
-Recorded as an open question rather than explained away. If you are chasing it, start from
-`output.trace: [fsm]` plus a per-report field diff, and note that whatever it is lives in the
-groundwater field rather than in the lake extent, since the lake extent is the same.
+Localised first. Only **7 of 256 land cells** worsen from N=20 to N=32 -- a contiguous patch at rows
+7-9, cols 12-14, in the boundary drawdown zone where the head falls ~38 m over three cells into the
+ocean Dirichlet. The RMS error is MONOTONE throughout (0.310, 0.248, 0.208, 0.181, 0.162, 0.127,
+0.101); only the max misbehaves, and those cells carry it. The error is created almost entirely in
+the FIRST reporting interval and decays afterwards (cell (8,14): 5.62 -> 2.84 -> 1.37 -> 0.72 m at
+N=20), so it is a startup transient, not accumulation.
+
+Those cells start at **+5 m ponded** and end at **-37 m**. Stepping through the first interval:
+
+1. FSM holds such a cell at exactly 0.0000 for **precisely one step** -- the solve drains part of
+   the ponded water into the subsurface, and FSM routes whatever is still above ground to the ocean,
+   where it leaves the domain.
+2. Once below ground the cell drains laterally toward the boundary, and a coarse step OVERSHOOTS
+   that fast-decaying mode.
+
+Refining Δt therefore does two things at once, and they fight:
+
+| N | 16 | 20 | 24 | 28 | 32 | 40 | 48 | 64 | 128 | 256 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| drainage rate (m/yr) | 2.514 | 2.447 | 2.398 | 2.366 | 2.343 | 2.311 | 2.056 | 1.793 | 1.459 | 1.276 |
+| drainage time (yr) = 8 − Δt | 6.000 | 6.400 | 6.667 | 6.857 | 7.000 | 7.200 | 7.333 | 7.500 | 7.750 | 7.875 |
+| depth at 8 yr | −15.09 | −15.66 | −15.99 | −16.22 | −16.40 | **−16.64** | −15.08 | −13.45 | −11.31 | −10.05 |
+
+The rate error IMPROVES monotonically (2.514 → 1.276 m/yr, converging on the true ~1.28). The
+exposure WORSENS monotonically: the pin lasts exactly one step, so a smaller Δt starts the drainage
+EARLIER and leaves more time to overshoot in. Their product turns around at N=40. That is the bump.
+
+**Why FSM is required for the effect**: without it there is no pin, so only the rate factor exists,
+and it is monotone -- which is exactly what the `fsm_on 0` sweep shows.
+
+**This is not a defect to fix.** Both factors are correct behaviour: a coarse step legitimately
+overshoots a stiff mode, and FSM legitimately routes above-ground water to the ocean once per step.
+It is an interaction, and the practical consequence is the guidance above.
 
 **Two consequences, and the second is a trap.**
 1. For a user: with lakes, a smaller time step is not automatically a better answer. Check, do not
