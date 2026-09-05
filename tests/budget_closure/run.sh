@@ -158,12 +158,17 @@ PYX
 echo "=== water-budget closure (exact per-step identity; runoff_ratio 0.3, FSM on) ==="
 echo "WTM binary: $WTM"
 echo
-echo "-- overwrite coupling (default) --"
-check "Anderson BE (secant)"       s_and   
-STORAGE=volume check "Anderson BE (volume dV)" s_vol
-METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
+# PIN THE COUPLING ON BOTH ARMS. These two blocks exist to compare the two couplings, so neither may
+# take it from the default: when the default flipped to `continuous` this first block -- which set no
+# COUPLING -- silently BECAME the second, and `impulse` lost its budget-closure coverage entirely. The
+# tell was in the output all along, the two blocks reporting bit-identical cumulative=5.67e-09 and
+# worst-per-cycle=6.94e-07. An arm that names its configuration cannot be repurposed by a default.
+echo "-- impulse coupling --"
+COUPLING=impulse check "Anderson BE (secant)"       s_and
+COUPLING=impulse STORAGE=volume check "Anderson BE (volume dV)" s_vol
+COUPLING=impulse METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
-echo "-- the continuous coupling coupling (#116) --"
+echo "-- continuous coupling (the default; #116) --"
 COUPLING=continuous check "Anderson BE (secant)"       f_and
 COUPLING=continuous STORAGE=volume check "Anderson BE (volume dV)" f_vol
 echo
