@@ -21,6 +21,10 @@ RANKS="${*:-1 2 4 6 8}"   # cross-rank check counts (run_all.sh passes the tier'
 REFDIR="${GOLDEN_REFDIR:-reference}"
 # Overridable so the references can be re-derived at a TIGHTER solve and diffed against the committed
 # set -- the check that they are converged rather than merely different. Production value: 1e-10.
+# It is applied to BOTH per-solve gates, because which one governs is a config choice (#61): -snes_stol
+# is the head gate and -wtm_snes_vol_tol the water gate, and water is the default. Setting only
+# -snes_stol, as this did, silently stopped tightening anything the moment the default moved -- the
+# knob would still turn and the solve would not get tighter, which is the worst kind of dead control.
 GOLDEN_STOL="${GOLDEN_STOL:-1e-10}"
 mkdir -p "$REFDIR"
 
@@ -141,7 +145,8 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     # The principle is budget_closure's, applied here: an assertion is only meaningful if the SOLVE is
     # resolved tighter than the agreement it asserts, or the arm measures solver noise. These goldens
     # assert 1e-6..1e-5 m, so they must not be solved to a tolerance that permits 1e-1 m.
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol "$GOLDEN_STOL" >"$log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" \
+        -snes_stol "$GOLDEN_STOL" -wtm_snes_vol_tol "$GOLDEN_STOL" >"$log" 2>&1 )
     local rc=$?
     if [[ $rc -ne 0 ]]; then
         printf "  %-14s n=%-2s : MODEL FAILED (exit %d) -- refusing to use its output\n" "$name" "$n" "$rc" >&2
