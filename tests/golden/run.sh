@@ -77,20 +77,21 @@ case_cfg() {
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
       fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
-      # adaptive_dt PINNED FALSE. A golden is an exact-reproduction assertion, so nothing in it may be
-      # chosen by a controller whose input is a global reduction. With adaptive dt on, the embedded error
-      # estimate came out DECOMPOSITION-DEPENDENT on this fixture -- at the same dt of 4.7304e+07 s the
-      # estimate was 4.007673531e-02 at n=1, 3.113780608e-02 at n=2 and 3.987584816e-02 at n=6, a 22%
-      # spread from states agreeing to 2e-11. That moved the growth factor (1.0374 / 1.1769 / 1.0400),
-      # hence the SUB-STEP SIZES (step 7 ran at 3.4121e+07 / 3.5478e+07 / 3.4169e+07 s), hence the
-      # trajectory. Different steps give different -- and equally valid -- answers, so no comparison
-      # tolerance and no tie-break can reconcile them; the fix is to stop the test asking the question.
-      # The estimate's sensitivity is itself a real defect (task #56): it is built by a reduction over a
-      # cell set chosen by an exact `!= 0.0` float test (transient_groundwater.cpp:1883, :1922, which its
-      # own note says drops 17-22% of land cells) on a `dev` that is a difference of two nearly-equal
-      # stored volumes. Pinning the step here does NOT fix that -- it stops this test from depending on it.
-      # Same reasoning, and same fix, as tests/coupling_convergence and tests/dt_invariance (2af7e67).
-      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" "adaptive_dt false" ;;
+      # adaptive_dt: DEFAULT (auto -> true). It was pinned FALSE here between 6ee7840 and the fix
+      # below, and the reason is worth keeping rather than deleting. With adaptive dt on, this case
+      # failed across MPI rank counts because the embedded error estimate was DECOMPOSITION-DEPENDENT:
+      # at the same dt of 4.7304e+07 s it read 4.007673531e-02 at n=1, 3.113780608e-02 at n=2 and
+      # 3.987584816e-02 at n=6 -- a 22% spread from states agreeing to 2e-11 -- which moved the growth
+      # factor, the sub-step SIZES, and hence the trajectory. Root cause: the active-set pin committed
+      # cells a few ULPs above their constraint, FSM correctly read that as surface water and rewrote
+      # them, and the estimator excludes delta-carrying cells by an exact `!= 0.0` test, so its RMS
+      # DIVISOR moved (99 / 164 / 100 of 196 land cells) while the numerator stayed bit-identical.
+      # Fixed in 99a8eee by projecting pinned cells onto their constraint; verified here at n = 1, 2,
+      # 4, 6 and 8. The pin is removed because a workaround left in place after its defect is fixed
+      # misleads the next reader, and because a golden should exercise the DEFAULTS that production
+      # runs. The adaptive controller's cross-rank determinism is now asserted directly, and far more
+      # sensitively, by tests/xrank_adaptive -- which is where that property belongs.
+      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" ;;
       # fsm_impulse: the SAME case as fsm_evap1 under the non-default coupling. It exists because
       # surface_water.fsm_coupling now defaults to `continuous`, which would leave `impulse`
       # unexercised by every arm here -- and an alternative nobody runs is one that rots quietly.
