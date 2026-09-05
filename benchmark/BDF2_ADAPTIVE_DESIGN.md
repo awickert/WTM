@@ -416,6 +416,36 @@ and at `error_tol >= 0.1` the adaptive arms are *dominated*: eight uniform steps
 for 2.159 m, against adaptive's 221 iterations for 2.214 m -- cheaper AND more accurate. Use
 adaptive Δt to get through a stiff or unknown transient without hand-tuning, not to save work.
 
+
+### Two later results that bear directly on this section (2026-09-06)
+
+**(1) The numbers above were measured under HEAD-judged convergence and should be re-measured.**
+They predate `solver.convergence.metric: water` becoming the default (#61). At the time, 88 % of
+solves were exiting on PETSc's `-snes_stol` step test rather than on the residual, some having
+reduced the residual by only 1.8e-04, so both the achieved error and the step counts carry solver
+noise that the water metric removes. The *shape* of the argument survives - `error_tol` is a
+per-step local target and the path error still accumulates - but treat the table as indicative
+until it is retaken. One concrete casualty: `error_tol: 0.005`, used by the budget benchmarks, is
+**not attainable** on that fixture once the solve is judged honestly; the controller correctly
+refuses and the run aborts on max retries.
+
+**(2) There is now a mechanism for the non-monotonicity below, and part of it is not fixable by
+refining.** The embedded estimate splits into an integrator part and an FSM-coupling part. The
+integrator part is O(dt²) and refining reduces it. The coupling part is **O(1) in dt**: FSM's delta
+is delivered whole regardless of step size, so the deviation it produces does not shrink when the
+step does. Measured on `fsm_runoff_hi`, the coupling estimate held at 0.6043593790 while Δt was
+driven from 4.4e+07 s to 4.1e-02 s - nine orders of magnitude - moving only in the ninth significant
+figure.
+
+That is the quantitative form of the operator-splitting limit already noted elsewhere: with FSM on,
+part of the per-step error simply does not answer to Δt, so refining cannot drive the answer to the
+unsplit solution. It also had a practical consequence worth recording, because it looked like a
+controller bug and was one: combining the two parts by taking the larger let the un-refinable part
+drive the reject test, and the controller then shrank Δt without bound trying to fix something
+shrinking cannot fix, until it hit `max_retries` and aborted. The accept/reject decision now reads
+the integrator part alone; the coupling part may withhold growth but never force a shrink. See
+`output.trace: [dt]`, which reports both parts as `eint=` and `ecpl=`.
+
 ### WITH FSM ON, REFINING THE STEP DOES NOT MONOTONICALLY IMPROVE THE ANSWER
 
 Fixed-step convergence on the same fixture, densely sampled, `fsm_on 1`:
