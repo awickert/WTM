@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **347** across **37** tests.
+Runs recorded: **348** across **38** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,7 +13,7 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 5 |
 | `anderson` | `active_set` | `be_volume` | 6 | **0** | **0** |
-| `anderson` | `active_set` | `tr_bdf2` | 122 | 2 | 15 |
+| `anderson` | `active_set` | `tr_bdf2` | 122 | 2 | 16 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | **0** | **0** | 1 |
 | `anderson` | `explicit` | `be_volume` | 3 | **0** | 1 |
@@ -68,6 +68,7 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `combination_sweep` | equilibrium,transient | anderson,newton,picard | bdf2,be_volume,tr_bdf2 | adaptive,continuation,fixed | active_set,explicit,implicit,off | 1 | 0 | 1 |
 | `config/flag_route_equality` | equilibrium | newton | be_volume | adaptive,continuation | active_set | 1 | 1 | 1 |
 | `coupling_convergence` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
+| `cross-rank_adaptive_determinism` | transient | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 4 |
 | `cross-rank_drift_regime` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,6 |
 | `dt-sensitivity_(active-set)` | equilibrium | anderson | tr_bdf2 | fixed | active_set,implicit | 0 | 0 | 1 |
 | `flicker_1:_storativity_jump` | transient | anderson | bdf2,tr_bdf2 | adaptive | active_set | 0 | 0 | 1 |
@@ -101,7 +102,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **anderson** | 166 | 29 | 1 | 44 | 39 |
+| **anderson** | 167 | 29 | 1 | 44 | 39 |
 | **newton** | 17 | 8 |   | 9 | 6 |
 | **picard** | by design | 9 |   | 13 | 6 |
 
@@ -112,13 +113,13 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | **bdf2** | 23 | 11 |   | 15 | 12 |
 | **be_secant** | by design | 1 |   |   |   |
 | **be_volume** | 21 | 15 |   | 21 | 14 |
-| **tr_bdf2** | 139 | 19 | 1 | 30 | 25 |
+| **tr_bdf2** | 140 | 19 | 1 | 30 | 25 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **adaptive** | 102 | 27 |   |   | 26 |
+| **adaptive** | 103 | 27 |   |   | 26 |
 | **continuation** | 10 | 7 |   | 8 | 6 |
 | **fixed** | 71 | 12 | 1 | 58 | 19 |
 
@@ -128,13 +129,13 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 |---|---|---|---|---|---|
 | **equilibrium** | 156 | 34 | 1 | 53 | 41 |
 | **test** | 2 |   |   |   |   |
-| **transient** | 25 | 12 |   | 13 | 10 |
+| **transient** | 26 | 12 |   | 13 | 10 |
 
 ### solver x integrator
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 1 | 22 | 214 |
+| **anderson** | 42 | 1 | 22 | 215 |
 | **newton** | 8 |   | 32 |   |
 | **picard** | 11 |   | 17 |   |
 
@@ -144,20 +145,20 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 |---|---|---|---|
 | **equilibrium** | 243 | 26 | 16 |
 | **test** | 2 |   |   |
-| **transient** | 34 | 14 | 12 |
+| **transient** | 35 | 14 | 12 |
 
 ### fsm x collector
 
 | fsm \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
 | **0** | 46 | 12 | 1 | 9 | 12 |
-| **1** | 137 | 34 |   | 57 | 39 |
+| **1** | 138 | 34 |   | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
-| **0** | 108 | 27 | 153 |
+| **0** | 109 | 27 | 153 |
 | **1** | 47 | 4 | 8 |
 
 ## 4. Uncovered pairwise crossings
