@@ -2022,9 +2022,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
       // Back-transform the SNES variable to wtd: Kirchhoff x=Φ → wtd=Φ⁻¹(x); else head x → wtd=x−topo.
-      const double new_wtd = g_kirchhoff
+      const double solved_wtd = g_kirchhoff
                                  ? dischargePotentialInverse(dmdapack.x[j][i], my_fdepth_cb[j][i], my_ksat_cb[j][i])
                                  : dmdapack.x[j][i] - my_topo[j][i];
+      // ACTIVE SET: PROJECT ONTO THE FEASIBLE SET. The semismooth constraint is w <= lake_stage, with
+      // EQUALITY on the active set -- so on the active set the value is determined by the CONSTRAINT, not
+      // by the iterate. The solve cannot deliver that equality: at a pinned cell the residual IS the water
+      // table (f = pin = x - topo), while the SNES variable is the HEAD, of order topo, and snes_stol is a
+      // RELATIVE STEP tolerance. At 1e-12 with topo = 100 m it permits a step of 1e-10, ~1760x larger than
+      // the residual actually left, so the solver correctly stops with the constraint satisfied only to
+      // within ULP(topo) -- and WHICH ulp depends on the arithmetic path, hence on the MPI decomposition.
+      // Measured: the leftover wtd values are exactly 1, 3, 4 and 5 ULPs of 100 m (1.421e-14 .. 7.105e-14)
+      // and are IDENTICAL at snes_stol 1e-8, 1e-10, 1e-12 and 1e-14 -- six orders of tightening move them
+      // not at all, which is what proves this is not a convergence remainder. n=1 left 387 such cells,
+      // n=2 left none. Downstream that flipped FSM's "did this cell change?" answer for 65 of 196 land
+      // cells, which moved the adaptive estimate's RMS divisor and hence the time steps taken (task #56).
+      // min() is the projection, not a tolerance: a free cell already satisfies w < stage and is untouched.
+      const double new_wtd = (g_active_set && dmdapack.mask[j][i] != 0)
+                                 ? std::min(solved_wtd, static_cast<double>(dmdapack.lake_stage[j][i]))
+                                 : solved_wtd;
       // Under-relaxation (-wtm_relax a<1): damp the step to w <- a*w_solve + (1-a)*w_prev. a=1 -> byte-
       // identical. The metric measures the RELAXED change (the true state move), so it stays honest.
       const double relaxed = (g_relax >= 1.0) ? new_wtd
