@@ -1821,6 +1821,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   bool   have_est  = false;
   bool   est_valid = false;  // the estimate EXISTS -- at least one cell informed it (see the note below)
   long   est_n     = 0;      // how many cells did
+  long   est_cn    = 0;      // of those, the COUPLING population (FSM moved water there)
   // The NEXT step's dt, held back until every accumulator below has finished accounting THIS one.
   // See the DEFERRED note in the controller block.
   double dt_next      = 0.0;
@@ -1832,8 +1833,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     PetscScalar **yg, **topo_e;
     DMDAVecGetArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecGetArray(user_context.da, user_context.topo_vec, &topo_e);
-    double local_max = 0.0, local_sq = 0.0;
+    double local_max = 0.0, local_sq = 0.0;    // INTEGRATOR population: cells FSM did not touch
     long   local_n = 0;
+    double local_cmax = 0.0, local_csq = 0.0;  // COUPLING population: cells FSM moved water in
+    long   local_cn = 0;
     for (int j = ys; j < ys + ym; j++)
       for (int i = xs; i < xs + xm; i++)
         if (dmdapack.mask[j][i] != 0) {  // ALL land cells; predictor clamped to the feasible set (see below)
@@ -1875,12 +1878,43 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           // noise is ~1e-14 m of water and the smallest genuine FSM delta measured is 6.7e-03, so any
           // bound in 1e-12..1e-6 behaves identically. 1e-9 m, a nanometre of water over a cell, sits
           // ~5 orders above the noise and ~6 below the signal.
-          if (std::fabs(dmdapack.fsm_delta_dist[j][i]) > 1e-9) continue;  // see the note above
+          // THE SAME MEASUREMENT, PARTITIONED -- not two different quantities. `dev` is ONE expression,
+          // |V(x - topo) - V(h_pred - topo)|, in metres of water, evaluated identically on every land
+          // cell. Only WHICH cells it lands on differs, and so which ERROR SOURCE it reports there:
+          //   est_integrator -- cells FSM did not touch. dev there IS the integrator's time-
+          //                     discretisation error; measured order 2.00 over dt 0.25..3 yr.
+          //   est_coupling   -- cells FSM moved water in. dev there is dominated by the GW<->FSM handoff,
+          //                     which the linear predictor cannot know about; measured order 0.97 over a
+          //                     16x range in dt.
+          // Same measurement, same units, DISJOINT cell sets -- so they are directly comparable and the
+          // max() below is meaningful: take whichever error source is currently the bigger issue. The
+          // DIFFERING ORDERS are why both are needed. The order-1 coupling term decays more slowly, so it
+          // governs at coarse steps -- which is where the controller does its damage -- while the order-2
+          // term governs once the step is fine, leaving that regime bit-unchanged.
+          //
+          // max() rather than a sum, quadrature, or a single RMS over all cells: because the two
+          // components converge at DIFFERENT ORDERS, folding them into one average yields an estimate
+          // whose own order drifts with the cell mix. Quadrature of two RMSs over disjoint sets is not
+          // the norm of anything. max() keeps a meaning -- the worse of two populations, measured the
+          // same way -- and all three were measured indistinguishable on err/est anyway.
+          //
+          // WHY THIS REPLACED A BARE EXCLUSION. The coupling cells used to be DISCARDED, which left the
+          // estimate blind whenever FSM had touched every land cell. That is not incidental: it is the
+          // step right after FSM first routes a domain that starts ponded, and it happened once per run
+          // at every step count tested. Measured there: a cell plunged 10.9 m in a single 3.85 yr step
+          // while est reported exactly 0.0, and the discarded cells were carrying rms 4.34e-01 against a
+          // tolerance of 0.1 -- 4.3x over, and invisible.
           const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
                                      - storedVolume(h_pred - topo_e[j][i], poro));
-          if (dev > local_max) local_max = dev;
-          local_sq += dev * dev;
-          local_n++;
+          if (std::fabs(dmdapack.fsm_delta_dist[j][i]) > 1e-9) {  // COUPLING population
+            if (dev > local_cmax) local_cmax = dev;
+            local_csq += dev * dev;
+            local_cn++;
+          } else {                                                // INTEGRATOR population
+            if (dev > local_max) local_max = dev;
+            local_sq += dev * dev;
+            local_n++;
+          }
         }
     DMDAVecRestoreArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
@@ -1892,16 +1926,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // that step the error the estimator could not see was the LARGEST in the run -- rms 0.27-0.50,
     // max 0.86-1.23 m -- while est reported 0.0 and dt was grown by the maximum factor. Carry validity
     // separately so the controller can HOLD dt instead of guessing. Task #58.
-    long gn = 0;
-    MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
-    est_n     = gn;
-    est_valid = (gn > 0);
+    long gn = 0, gcn = 0;
+    MPI_Allreduce(&local_n,  &gn,  1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    MPI_Allreduce(&local_cn, &gcn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    est_n     = gn + gcn;   // EVERY land cell informs the estimate now; see the note in the loop
+    est_cn    = gcn;
+    est_valid = (est_n > 0);   // now false only on a domain with no land at all -- kept as a backstop
     if (user_context.dt_norm_rms) {
-      double gsq = 0.0;
-      MPI_Allreduce(&local_sq, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-      est = est_valid ? std::sqrt(gsq / (double)gn) : 0.0;
+      double gsq = 0.0, gcsq = 0.0;
+      MPI_Allreduce(&local_sq,  &gsq,  1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+      MPI_Allreduce(&local_csq, &gcsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+      const double est_integrator = (gn  > 0) ? std::sqrt(gsq  / (double)gn)  : 0.0;
+      const double est_coupling   = (gcn > 0) ? std::sqrt(gcsq / (double)gcn) : 0.0;
+      est = std::max(est_integrator, est_coupling);
     } else {
-      MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+      double m_integrator = 0.0, m_coupling = 0.0;   // same partition under the MAX norm
+      MPI_Allreduce(&local_max,  &m_integrator, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+      MPI_Allreduce(&local_cmax, &m_coupling,   1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+      est = std::max(m_integrator, m_coupling);
     }
     have_est = true;
   } else if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
@@ -1988,8 +2030,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     const bool dt_accept = !(est > reject_margin * user_context.dt_tol);
     if (user_context.dt_trace)
       PetscPrintf(PETSC_COMM_WORLD,
-                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d nest=%ld\n",
-                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0, est_n);
+                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d nest=%ld ncpl=%ld\n",
+                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0, est_n, est_cn);
     if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
       user_context.deltat = dt_now * std::min(factor, 1.0);
       return -1;
