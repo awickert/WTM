@@ -1839,6 +1839,12 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the detachment: the integrator (cc / TR-BDF2 / BDF2-on-V) is chosen by its own flags and only supplies
   // the local-error estimate; the grow/shrink/reject logic is identical for all of them.
   double est      = 0.0;
+  // The two components kept SEPARATE (#63), because only one of them answers to dt. est_int is the
+  // integrator's local truncation error, O(dt^2) -- shrinking dt reduces it. est_cpl is the FSM COUPLING
+  // deviation, and the FSM delta is delivered WHOLE regardless of dt, so est_cpl is O(1) in dt: no amount
+  // of shrinking touches it. A controller may only STEER on error it can control.
+  double est_int  = 0.0;
+  double est_cpl  = 0.0;
   bool   have_est  = false;
   bool   est_valid = false;  // the estimate EXISTS -- at least one cell informed it (see the note below)
   long   est_n     = 0;      // how many cells did
@@ -1957,14 +1963,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       double gsq = 0.0, gcsq = 0.0;
       MPI_Allreduce(&local_sq,  &gsq,  1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
       MPI_Allreduce(&local_csq, &gcsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-      const double est_integrator = (gn  > 0) ? std::sqrt(gsq  / (double)gn)  : 0.0;
-      const double est_coupling   = (gcn > 0) ? std::sqrt(gcsq / (double)gcn) : 0.0;
-      est = std::max(est_integrator, est_coupling);
+      est_int = (gn  > 0) ? std::sqrt(gsq  / (double)gn)  : 0.0;
+      est_cpl = (gcn > 0) ? std::sqrt(gcsq / (double)gcn) : 0.0;
+      est     = std::max(est_int, est_cpl);   // REPORTED total; the controller reads the parts, not this
     } else {
-      double m_integrator = 0.0, m_coupling = 0.0;   // same partition under the MAX norm
-      MPI_Allreduce(&local_max,  &m_integrator, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
-      MPI_Allreduce(&local_cmax, &m_coupling,   1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
-      est = std::max(m_integrator, m_coupling);
+      MPI_Allreduce(&local_max,  &est_int, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+      MPI_Allreduce(&local_cmax, &est_cpl, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+      est = std::max(est_int, est_cpl);       // same partition under the MAX norm
     }
     have_est = true;
   } else if (user_context.use_dt_adaptive && user_context.bdf2_have_history) {
@@ -2015,6 +2020,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     } else {
       MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
     }
+    // This predictor EXCLUDES the FSM-touched cells (see the loop), so everything it measures is
+    // integrator error and there is no coupling part to separate. est_cpl stays 0.
+    est_int  = est;
     have_est = true;
   }
   // CONTROLLER (method-agnostic): a PI step-size controller -- the standard cure for the dt "hunting" that
@@ -2038,21 +2046,33 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // WITH data, which is a genuine measurement of zero error and still earns the growth factor.
     double factor = !est_valid
                       ? 1.0
-                      : (est > 0.0)
-                          ? safety * std::pow(user_context.dt_tol / est, kI) * std::pow(prev / est, kP)
+                      : (est_int > 0.0)
+                          ? safety * std::pow(user_context.dt_tol / est_int, kI) * std::pow(prev / est_int, kP)
                           : user_context.dtc_grow;
     factor = std::min(user_context.dtc_grow, std::max(user_context.dtc_shrink, factor));
+    // THE COUPLING PART MAY WITHHOLD GROWTH, NEVER FORCE A SHRINK (#63). est_cpl does not answer to dt --
+    // MEASURED on tests/golden fsm_runoff_hi, where it sat at 0.6043593790 while dt was driven from
+    // 4.4e+07 s down to 4.1e-02 s, NINE ORDERS OF MAGNITUDE, changing in the 9th significant figure. Feeding
+    // it to the reject test (as `est = max(int, cpl)` did) therefore asks the controller to fix by shrinking
+    // something shrinking cannot fix: dt collapses until dtc_max_retries and the run ABORTS. That is not a
+    // conservative choice, it is an unsatisfiable one.
+    // Withholding growth IS legitimate and is the whole of what the coupling signal can honestly say:
+    // "FSM is moving a lot of water here, do not get greedy." The threshold is the user's own accuracy
+    // target, so no new tunable is introduced.
+    if (est_valid && est_cpl > user_context.dt_tol) factor = std::min(factor, 1.0);
     // -wtm_dt_trace: report the quantity that STEERS the integration. `est` was computed on every
     // adaptive step and reported nowhere, so nothing could tell whether it responded to dt at all --
     // which is how a generic-branch estimator of observed order p = 0.00 survived. One machine-readable
     // line per step. REJECTED steps are included deliberately: they are where a mis-scaled estimate does
     // its damage (grinding dt down against an error that will not shrink), and omitting them would hide
     // exactly the failure this exists to expose. Consumed by tests/estimator_order.
-    const bool dt_accept = !(est > reject_margin * user_context.dt_tol);
+    const bool dt_accept = !(est_int > reject_margin * user_context.dt_tol);  // est_int, not est: see #63 above
     if (user_context.dt_trace)
       PetscPrintf(PETSC_COMM_WORLD,
-                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d nest=%ld ncpl=%ld\n",
-                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0, est_n, est_cn);
+                  "DTTRACE dt=%.9e est=%.9e eint=%.9e ecpl=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d "
+                  "nest=%ld ncpl=%ld\n",
+                  dt_now, est, est_int, est_cpl, user_context.dt_tol, factor, its, dt_accept ? 1 : 0,
+                  est_n, est_cn);
     if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
       user_context.deltat = dt_now * std::min(factor, 1.0);
       return -1;
@@ -2067,7 +2087,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // residual as a fraction of recharge: TR-BDF2 + adaptive -1.603 and BDF2-on-V + adaptive -0.417,
     // against ~2e-07 for the same schemes at fixed dt. The REJECT branch above is unaffected -- it
     // returns before any of that accounting runs, so it still writes deltat directly.
-    if (est_valid) user_context.dt_prev_est = est;  // a non-estimate must not enter the PI history
+    // The PI history must hold the SAME quantity the P term divides by, which is now est_int (#63);
+    // storing the combined est would compare an integrator error against a coupling-inflated one.
+    if (est_valid) user_context.dt_prev_est = est_int;  // a non-estimate must not enter the PI history
     if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard solve: hold, don't grow
     dt_next = dt_now * factor;
     if (user_context.dtc_dt_max > 0.0 && dt_next > user_context.dtc_dt_max) dt_next = user_context.dtc_dt_max;
