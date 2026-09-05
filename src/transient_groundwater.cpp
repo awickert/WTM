@@ -1818,7 +1818,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the detachment: the integrator (cc / TR-BDF2 / BDF2-on-V) is chosen by its own flags and only supplies
   // the local-error estimate; the grow/shrink/reject logic is identical for all of them.
   double est      = 0.0;
-  bool   have_est = false;
+  bool   have_est  = false;
+  bool   est_valid = false;  // the estimate EXISTS -- at least one cell informed it (see the note below)
+  long   est_n     = 0;      // how many cells did
   // The NEXT step's dt, held back until every accumulator below has finished accounting THIS one.
   // See the DEFERRED note in the controller block.
   double dt_next      = 0.0;
@@ -1874,12 +1876,22 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         }
     DMDAVecRestoreArray(user_context.da, user_context.tr_ygamma, &yg);
     DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+    // AN ESTIMATE MUST EXIST BEFORE IT CAN STEER ANYTHING. Cells carrying an FSM delta are excluded
+    // above; when FSM has touched EVERY land cell there is nothing left to measure and gn = 0. The old
+    // code set est = 0.0 there, which the controller read as "zero error -- grow maximally". That is the
+    // opposite of the truth: it is NO DATA. Measured on tests/golden transient_test (4 cycles x 8 yr,
+    // controller free): this happened exactly ONCE PER RUN at every tolerance from 0.02 to 0.5, and at
+    // that step the error the estimator could not see was the LARGEST in the run -- rms 0.27-0.50,
+    // max 0.86-1.23 m -- while est reported 0.0 and dt was grown by the maximum factor. Carry validity
+    // separately so the controller can HOLD dt instead of guessing. Task #58.
+    long gn = 0;
+    MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    est_n     = gn;
+    est_valid = (gn > 0);
     if (user_context.dt_norm_rms) {
       double gsq = 0.0;
-      long   gn  = 0;
       MPI_Allreduce(&local_sq, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-      MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
-      est = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
+      est = est_valid ? std::sqrt(gsq / (double)gn) : 0.0;
     } else {
       MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
     }
@@ -1913,12 +1925,22 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         }
     DMDAVecRestoreArray(user_context.da, user_context.starting_wtd_prev, &swp);
     DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &topo_e);
+    // AN ESTIMATE MUST EXIST BEFORE IT CAN STEER ANYTHING. Cells carrying an FSM delta are excluded
+    // above; when FSM has touched EVERY land cell there is nothing left to measure and gn = 0. The old
+    // code set est = 0.0 there, which the controller read as "zero error -- grow maximally". That is the
+    // opposite of the truth: it is NO DATA. Measured on tests/golden transient_test (4 cycles x 8 yr,
+    // controller free): this happened exactly ONCE PER RUN at every tolerance from 0.02 to 0.5, and at
+    // that step the error the estimator could not see was the LARGEST in the run -- rms 0.27-0.50,
+    // max 0.86-1.23 m -- while est reported 0.0 and dt was grown by the maximum factor. Carry validity
+    // separately so the controller can HOLD dt instead of guessing. Task #58.
+    long gn = 0;
+    MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
+    est_n     = gn;
+    est_valid = (gn > 0);
     if (user_context.dt_norm_rms) {
       double gsq = 0.0;
-      long   gn  = 0;
       MPI_Allreduce(&local_sq, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-      MPI_Allreduce(&local_n, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
-      est = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
+      est = est_valid ? std::sqrt(gsq / (double)gn) : 0.0;
     } else {
       MPI_Allreduce(&local_max, &est, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
     }
@@ -1940,9 +1962,14 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     const double kI = 0.3, kP = 0.2;    // PI gains (elementary I-exponent ~0.5, split I+P for damping)
     const double dt_now = user_context.deltat;
     const double prev   = (user_context.dt_prev_est > 0.0) ? user_context.dt_prev_est : est;  // I-only on step 1
-    double factor = (est > 0.0)
-                      ? safety * std::pow(user_context.dt_tol / est, kI) * std::pow(prev / est, kP)
-                      : user_context.dtc_grow;
+    // NO DATA -> DO NOT ACT. factor 1.0 holds dt exactly where it is: we cannot estimate the error
+    // this step, so we neither grow into the unknown nor shrink without cause. Distinct from est == 0.0
+    // WITH data, which is a genuine measurement of zero error and still earns the growth factor.
+    double factor = !est_valid
+                      ? 1.0
+                      : (est > 0.0)
+                          ? safety * std::pow(user_context.dt_tol / est, kI) * std::pow(prev / est, kP)
+                          : user_context.dtc_grow;
     factor = std::min(user_context.dtc_grow, std::max(user_context.dtc_shrink, factor));
     // -wtm_dt_trace: report the quantity that STEERS the integration. `est` was computed on every
     // adaptive step and reported nowhere, so nothing could tell whether it responded to dt at all --
@@ -1953,8 +1980,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     const bool dt_accept = !(est > reject_margin * user_context.dt_tol);
     if (user_context.dt_trace)
       PetscPrintf(PETSC_COMM_WORLD,
-                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d\n",
-                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0);
+                  "DTTRACE dt=%.9e est=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d nest=%ld\n",
+                  dt_now, est, user_context.dt_tol, factor, its, dt_accept ? 1 : 0, est_n);
     if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
       user_context.deltat = dt_now * std::min(factor, 1.0);
       return -1;
@@ -1969,7 +1996,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // residual as a fraction of recharge: TR-BDF2 + adaptive -1.603 and BDF2-on-V + adaptive -0.417,
     // against ~2e-07 for the same schemes at fixed dt. The REJECT branch above is unaffected -- it
     // returns before any of that accounting runs, so it still writes deltat directly.
-    user_context.dt_prev_est = est;
+    if (est_valid) user_context.dt_prev_est = est;  // a non-estimate must not enter the PI history
     if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard solve: hold, don't grow
     dt_next = dt_now * factor;
     if (user_context.dtc_dt_max > 0.0 && dt_next > user_context.dtc_dt_max) dt_next = user_context.dtc_dt_max;
