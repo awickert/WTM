@@ -82,10 +82,13 @@ run newton
 METHOD= TRACE=water_step emit volconv
 run volconv
 
-# FIFTH ARM: the same solve with the water step GOVERNING (-wtm_snes_volume_conv_govern), i.e. the
-# per-solve stol test judged in water instead of head. A convergence criterion decides WHEN a solve
-# stops, never WHERE it converges, so this must land on the same equilibrium as every other arm.
-METHOD= CMETRIC=water TRACE=water_step emit volgov
+# FIFTH ARM: the same solve judged in HEAD (solver.convergence.metric: head) instead of water. Water is
+# the DEFAULT since #61, so this arm is the deviation and the other four are the control -- it was the
+# other way round until the default flipped, at which point asking for `water` here would have made this
+# arm a second copy of `anderson` and the assertion below vacuous.
+# A convergence criterion decides WHEN a solve stops, never WHERE it converges, so both metrics must land
+# on the same equilibrium. That is the whole claim, and it is what makes the default safe to change.
+METHOD= CMETRIC=head TRACE=water_step emit volgov
 run volgov
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
@@ -145,12 +148,12 @@ d_vc = float(np.max(np.abs((rasterio.open(vc_tif).read(1).astype(float) - an)[m]
 vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
        f"max|wtd(diagnostic) - wtd(plain anderson)| = {d_vc:.3e} m (must be exactly 0)")
 
-# GOVERNING. A convergence test decides when to STOP, not where to converge, so swapping the head
-# step for the water step must not move the equilibrium -- and must not be a no-op either, or the
-# switch would be untestable by construction.
+# GOVERNING. A convergence test decides when to STOP, not where to converge, so swapping the water
+# step (the default since #61) for the head step must not move the equilibrium -- and must not be a
+# no-op either, or the switch would be untestable by construction.
 d_vg = float(np.max(np.abs((rasterio.open(vg_tif).read(1).astype(float) - an)[m])))
 vcheck("GOVERNING lands on the same equilibrium", d_vg <= tol,
-       f"max|wtd(water-governed) - wtd(head-governed)| = {d_vg:.3e} m (tol {tol})")
+       f"max|wtd(head-governed) - wtd(water-governed)| = {d_vg:.3e} m (tol {tol})")
 vcheck("GOVERNING is not a no-op", d_vg > 0.0,
        f"the same figure is nonzero, so the criterion really did change the stopping")
 
