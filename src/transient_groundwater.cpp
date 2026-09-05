@@ -1867,7 +1867,15 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
           // form: where the forcing is discontinuous there is no truncation ORDER to control, so the cell
           // cannot inform a step-size decision either way. Measured coverage cost: 17-22% of land cells
           // excluded on tests/dt_invariance, so ~80% still bound the step.
-          if (dmdapack.fsm_delta_dist[j][i] != 0.0) continue;  // see the note above
+          // CLASSIFY ON A MEANINGFUL DELTA, NOT A NONZERO ONE. `!= 0.0` was an exact float test on a
+          // value FSM computes as a difference of stored volumes, so a cell FSM did not meaningfully
+          // touch could still carry ULP-level noise and be excluded. That made the excluded set
+          // DECOMPOSITION-DEPENDENT: measured n=1 vs n=2 on tests/xrank_adaptive, the count differed by
+          // 4 and 11 cells of 196 at two steps. The separation is enormous and not a delicate choice --
+          // noise is ~1e-14 m of water and the smallest genuine FSM delta measured is 6.7e-03, so any
+          // bound in 1e-12..1e-6 behaves identically. 1e-9 m, a nanometre of water over a cell, sits
+          // ~5 orders above the noise and ~6 below the signal.
+          if (std::fabs(dmdapack.fsm_delta_dist[j][i]) > 1e-9) continue;  // see the note above
           const double dev  = std::abs(storedVolume(dmdapack.x[j][i] - topo_e[j][i], poro)
                                      - storedVolume(h_pred - topo_e[j][i], poro));
           if (dev > local_max) local_max = dev;
