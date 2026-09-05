@@ -386,6 +386,59 @@ dt-dependent lake. Use the default collector with adaptive Δt.
 
 ---
 
+## 3.5 What `error_tol` actually bounds, and what adaptive Δt is FOR (measured 2026-09-05)
+
+**`solver.time_step.error_tol` is a per-step LOCAL error target. It does not bound the error of the
+answer.** The path error accumulates over the steps taken. Measured on `tests/golden/inputs`
+`transient_test` (16x16, lakes, `fsm_on`, `continuous`, `active_set`, anderson, `-snes_stol 1e-12`,
+4 cycles x 8 yr with the controller free inside each; reference = the same 4 cycles at 64 fixed
+steps per cycle):
+
+| `error_tol` | 0.02 | 0.05 | 0.1 | 0.2 | 0.5 |
+|---|---|---|---|---|---|
+| steps | 46 | 34 | 25 | 19 | 15 |
+| achieved max err (m) | 0.73 | 1.03 | 2.16 | 3.35 | 6.14 |
+| err / tol | 37 | 21 | 22 | 17 | 12 |
+
+Setting 0.1 does not buy a decimetre answer. This is not a defect and there is nothing to repair;
+it is what a local-error controller is.
+
+**Adaptive Δt is a ROBUSTNESS tool, not an efficiency one.** Precision-matched against uniform
+stepping -- match the error, compare the cost, cost = total nonlinear iterations, the same unit for
+both:
+
+| | adaptive / uniform at matched error |
+|---|---|
+| `fsm_on 0` | 1.20, 1.30 |
+| `fsm_on 1` | 1.65, 1.92 |
+
+and at `error_tol >= 0.1` the adaptive arms are *dominated*: eight uniform steps cost 95 iterations
+for 2.159 m, against adaptive's 221 iterations for 2.214 m -- cheaper AND more accurate. Use
+adaptive Δt to get through a stiff or unknown transient without hand-tuning, not to save work.
+
+**The estimator is not at fault.** Its observed order is 2.00 from 0.25 yr up to 3 yr, and above
+that it departs UPWARD from the dt^2 line (3.5x at 4 yr, ~4.8x at 6-8 yr) -- it OVER-reports at
+large steps, which makes the controller conservative, i.e. it errs safe. Checked against a lake
+event and against the estimator's own cell set: at every rung the lake was identical (16 wet cells,
+10.0000 m, volume 160.0000) and `n_in` was the full 196 land cells, so the departure is not a
+threshold at all -- it is simply the edge of the asymptotic regime, which every local-error
+estimate has. `tests/estimator_order` now measures the coarse range too, asserting the property
+that is true and needed there (strict MONOTONICITY of est in dt) rather than an order.
+
+**The reason adaptive costs more is classical, not specific to WTM**: equalising LOCAL error per
+step does not minimise GLOBAL error. The optimal distribution weights each step by how strongly its
+error is amplified downstream, which local-error control ignores. That ~1.2-1.3x is present with
+`fsm_on 0`, i.e. with no lakes at all.
+
+**Not explained: FSM roughly DOUBLES the penalty** (1.3 -> 1.8). Small, not a correctness issue,
+recorded rather than chased. See task #58 and fork issue #14.
+
+**Fixed along the way** (`b4ed1c8`): when FSM had touched every land cell the estimate had no
+contributing cells, `est` was set to 0.0, and the controller read that as "zero error" and applied
+its MAXIMUM growth factor. It happened once per run at every tolerance tested, at a step whose true
+error was among the largest in the run. "No data" and "zero error" are now distinct, and Δt is held
+when the estimate does not exist.
+
 ## 4. The equilibrium side: pseudo-transient continuation (automate the big step)
 
 For `run_type equilibrium` we don't want path accuracy at all — just the steady endpoint.

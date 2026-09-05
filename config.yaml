@@ -153,6 +153,13 @@ solver:
                                # matters: a step should resolve what the run cares about. Middle of the
                                # three gates. Setting it looser than the run's tol means stopping on
                                # steps the run cannot resolve.
+                               #
+                               # IT DOES NOT BOUND THE ERROR OF THE ANSWER. It is a PER-STEP LOCAL
+                               # target; the path error accumulates over the steps taken and is much
+                               # larger. Measured on a 16x16 transient fixture with lakes: the achieved
+                               # error exceeded error_tol by 12-37x across 0.02..0.5 m. Setting 0.1 does
+                               # not buy a decimetre answer. Treat it as a step-size dial, not an
+                               # accuracy guarantee -- see benchmark/BDF2_ADAPTIVE_DESIGN.md sec. 3.5.
     dt_max: auto               # cap on the step; auto = 1000 * time.deltat
     grow: 1.5                  # dt multiplier after an easy solve
     shrink: 0.25               # dt multiplier after a rejected solve
