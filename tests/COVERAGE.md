@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **348** across **38** tests.
+Runs recorded: **353** across **38** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,7 +13,7 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 5 |
 | `anderson` | `active_set` | `be_volume` | 6 | **0** | **0** |
-| `anderson` | `active_set` | `tr_bdf2` | 122 | 2 | 16 |
+| `anderson` | `active_set` | `tr_bdf2` | 127 | 2 | 16 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | **0** | **0** | 1 |
 | `anderson` | `explicit` | `be_volume` | 3 | **0** | 1 |
@@ -102,7 +102,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **anderson** | 167 | 29 | 1 | 44 | 39 |
+| **anderson** | 172 | 29 | 1 | 44 | 39 |
 | **newton** | 17 | 8 |   | 9 | 6 |
 | **picard** | by design | 9 |   | 13 | 6 |
 
@@ -113,13 +113,13 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | **bdf2** | 23 | 11 |   | 15 | 12 |
 | **be_secant** | by design | 1 |   |   |   |
 | **be_volume** | 21 | 15 |   | 21 | 14 |
-| **tr_bdf2** | 140 | 19 | 1 | 30 | 25 |
+| **tr_bdf2** | 145 | 19 | 1 | 30 | 25 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **adaptive** | 103 | 27 |   |   | 26 |
+| **adaptive** | 108 | 27 |   |   | 26 |
 | **continuation** | 10 | 7 |   | 8 | 6 |
 | **fixed** | 71 | 12 | 1 | 58 | 19 |
 
@@ -127,7 +127,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **equilibrium** | 156 | 34 | 1 | 53 | 41 |
+| **equilibrium** | 161 | 34 | 1 | 53 | 41 |
 | **test** | 2 |   |   |   |   |
 | **transient** | 26 | 12 |   | 13 | 10 |
 
@@ -135,7 +135,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 1 | 22 | 215 |
+| **anderson** | 42 | 1 | 22 | 220 |
 | **newton** | 8 |   | 32 |   |
 | **picard** | 11 |   | 17 |   |
 
@@ -143,7 +143,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 243 | 26 | 16 |
+| **equilibrium** | 248 | 26 | 16 |
 | **test** | 2 |   |   |
 | **transient** | 35 | 14 | 12 |
 
@@ -152,14 +152,14 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | fsm \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
 | **0** | 46 | 12 | 1 | 9 | 12 |
-| **1** | 138 | 34 |   | 57 | 39 |
+| **1** | 143 | 34 |   | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
 | **0** | 109 | 27 | 153 |
-| **1** | 47 | 4 | 8 |
+| **1** | 52 | 4 | 8 |
 
 ## 4. Uncovered pairwise crossings
 
