@@ -93,9 +93,18 @@ case_cfg() {
 # runoff path over a richer routing pattern, still band-limited and cross-rank stable.
 CASES=(below_ground fsm_evap0 fsm_evap1 fsm_runoff fsm_runoff_hi transient fsm_impulse)
 
-run_case() { # name nranks -> sets $PREFIX
+# A golden is only as trustworthy as the run that produced it. A run that aborts partway leaves
+# its EARLY cycles on disk, and golden.py's last_tif takes the newest file that exists -- so a
+# truncated run looks exactly like a finished one. Under --generate that silently enshrines a
+# half-finished run as the reference; under check, a truncated run then PASSES against it. This
+# is not hypothetical: at 5feb2c3 the transient reference was overwritten with the cycle-0
+# INITIAL CONDITION (bit-exactly the masked input water table), and the case passed vacuously
+# until later fixes let the run complete. Hence two preconditions below, both fatal: the model
+# must exit 0, and it must have written the output for the configured total_time.
+run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     local name="$1" n="$2"
     local cfg="$WORK/${name}_n${n}.yaml"
+    local log="$WORK/${name}_n${n}.log"
     PREFIX="$WORK/${name}_n${n}_"
     { case_cfg "$name" | sed "s|__X__|x|"
       echo "eq_tol 0"
@@ -104,7 +113,23 @@ run_case() { # name nranks -> sets $PREFIX
     } | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$WORK/${name}_n${n}.log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$log" 2>&1 )
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+        printf "  %-14s n=%-2s : MODEL FAILED (exit %d) -- refusing to use its output\n" "$name" "$n" "$rc" >&2
+        tail -n 15 "$log" | sed 's/^/      | /' >&2
+        return "$rc"
+    fi
+    # The run exited 0; require the output for the CONFIGURED end time, so a short run cannot pass
+    # itself off as a finished one. WTM names outputs <prefix><cycle>_<elapsed>.tif.
+    local tt
+    tt=$(case_cfg "$name" | awk '$1=="total_time"{v=$2} END{print v}')
+    if ! compgen -G "${PREFIX}*_${tt}.tif" >/dev/null; then
+        printf "  %-14s n=%-2s : INCOMPLETE -- no output at total_time=%s (have: %s)\n" \
+               "$name" "$n" "$tt" "$(basename -a ${PREFIX}*.tif 2>/dev/null | tr '\n' ' ')" >&2
+        return 1
+    fi
+    return 0
 }
 
 # Per-case cross-rank comparison tolerance (metres). All cases use the default (~1e-6, above FP-
@@ -143,11 +168,15 @@ case_tol() { case "$1" in transient) echo "1e-5" ;; fsm_runoff) echo "1e-5" ;; *
 fail=0
 for name in "${CASES[@]}"; do
     if [[ $GEN -eq 1 ]]; then
-        run_case "$name" 1
+        if ! run_case "$name" 1; then
+            echo "  REFUSING to regenerate $name from a run that did not finish" >&2; fail=1; continue
+        fi
         python3 golden.py generate "$PREFIX" "$REFDIR/${name}.txt"
     else
         for n in $RANKS; do
-            run_case "$name" "$n"
+            if ! run_case "$name" "$n"; then
+                printf "  %-14s n=%-2s : FAIL (run did not finish)\n" "$name" "$n"; fail=1; continue
+            fi
             if python3 golden.py check "$PREFIX" "$REFDIR/${name}.txt" $(case_tol "$name"); then
                 printf "  %-14s n=%-2s : PASS\n" "$name" "$n"
             else
@@ -157,8 +186,11 @@ for name in "${CASES[@]}"; do
     fi
 done
 
-if [[ $GEN -eq 0 ]]; then
-    echo
+echo
+if [[ $GEN -eq 1 ]]; then
+    [[ $fail -eq 0 ]] && echo "GOLDEN REFERENCES REGENERATED -- review the diff before committing" \
+                      || echo "GOLDEN REGENERATION INCOMPLETE (see refusals above)" >&2
+else
     [[ $fail -eq 0 ]] && echo "GOLDEN CHECKS PASSED" || echo "GOLDEN CHECKS FAILED" >&2
 fi
 exit $fail
