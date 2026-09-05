@@ -170,7 +170,7 @@ struct AppCtx {
   int    last_dh_i               = -1;  // argmax (i,j) of last_dh_max: which land cell moves most (diagnostic)
   int    last_dh_j               = -1;
   int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
-  // Convergence-based early stop (-wtm_eq_tol, metres; 0 = off): stop the cycle loop once the PER-CYCLE
+  // Convergence-based early stop (-wtm_eq_tol, metres OF WATER -- |S·Δwtd|, not head; 0 = off): stop the cycle loop once the PER-CYCLE
   // water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state measure)
   // stays below eq_tol for two consecutive cycles, instead of always running the full total_time. The per-SUB-STEP
   // max|Δw| (last_dh_max) is NOT used for the stop: at lake/shore free boundaries it carries a cosmetic
@@ -201,13 +201,16 @@ struct AppCtx {
   Vec    starting_wtd_prev = nullptr;  // h^{n-1} carrier (wtd), owned-range
 
   // --- Adaptive time stepping (gated behind -wtm_dt_adaptive; implies BDF2 -> Picard) ---
-  // Forward (no-reject) controller: after each step the local error is estimated from the
-  // deviation of the solution from a linear extrapolation of the history (~O(dt^2)), and the
-  // NEXT step size is set to hold that near dt_tol (metres). No accept/reject retry (which
-  // would double-count the per-step recharge/ocean accumulators); a too-large step is simply
-  // followed by a smaller one. See BDF2_ADAPTIVE_DESIGN.md.
+  // After each step the local error is estimated from the deviation of the solution from a linear
+  // extrapolation of the history (~O(dt^2)), and the step size is set to hold that near dt_tol.
+  // A LARGE overshoot is REJECTED and retried at a smaller dt (up to dtc_max_retries); a mild one is
+  // accepted and simply followed by a smaller step. The reject path returns before every accumulator,
+  // so a thrown-away step books nothing -- #41 audited this and found the rollback already correct.
+  // UNITS: dt_tol is in WATER, not head -- the estimate differences storedVolume() (stored water per
+  // unit area, a water depth), so it shares eq_tol's units and the exact budget's. See CreateSNES.cpp
+  // where the two are reconciled, and BDF2_ADAPTIVE_DESIGN.md.
   bool   use_dt_adaptive = false;
-  double dt_tol          = 0.1;    // target |h - linear-extrapolation| per step, metres
+  double dt_tol          = 0.1;    // target per-step local error, in WATER (|ΔV| per unit area, metres of water)
   bool   dt_norm_rms     = true;   // adaptive error norm: RMS (DEFAULT; robust on cold spin-up) | MAX via -wtm_dt_norm_max.
                                    // Under the water (volume) step-error the MAX worst-cell norm is hostage to a few
                                    // surface-kink cells and can stall a cold start (GH #13); RMS averages them out.
