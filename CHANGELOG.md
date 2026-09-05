@@ -45,6 +45,40 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Changed
 
+- **BREAKING — the per-solve convergence test is now judged in WATER, not head.** New default
+  `solver.convergence.metric: water` (`head` is the off-switch). The step that ends a solve is
+  measured as |S·Δwtd| rather than |Δh|, so all three "close enough" gates - this one,
+  `run.equilibrium_stop`, and `solver.time_step.error_tol` - finally speak one language. It changes
+  the answer, and it changes it toward the converged one.
+
+  PETSc's `-snes_stol`, which WTM set itself at 1e-8, is a STEP-SIZE test: it stops when the iterate
+  stops moving, not when the residual is small. It is a stagnation detector, and WTM was treating
+  `CONVERGED_SNORM_RELATIVE` as success. Measured over 294 solves on `tests/budget_closure`, **259 of
+  them - 88 % - exited that way**, some having reduced the residual by as little as 1.8e-04, against a
+  median 4.66e-09 for the solves that exited on the residual test. The offenders were all
+  well-warm-started steps, where the update is already tiny at the first iteration and the step test
+  trips before the residual is ever driven down.
+
+  The units are the crux. A head step tolerance is a LENGTH and the water budget it has to agree with
+  is a VOLUME; on this fixture `stol` 1e-8 ends the solve once the update falls below ~2.4e-06 m of
+  head, and a few microns of head over cells of ~1e8 m² is a great deal of water. The exact budget is
+  an algebraic consequence of the discrete equations being satisfied, so those steps left real
+  unbalanced mass and the ledger reported it faithfully: the ledger was right, the solve was not.
+  Worst per-step residual falls from 9.4e-05 of recharge to 3.9e-07, for about +2 % wall time and
+  +6 % nonlinear iterations. It also stops a few very deep cells, where a metre of head is very little
+  water, from speaking for the whole grid.
+
+  Three golden references moved, and they moved toward the truth rather than merely away from the old
+  values. Re-deriving the whole set at a tolerance three decades tighter and measuring each binary's
+  production answer against it: the new default reproduces the converged answer **exactly** on all
+  seven cases, while the old head-judged default was off by up to **1.43 m** (`fsm_runoff`,
+  `fsm_runoff_hi`; 0.394 m on `transient`, 6.6e-03 m on `fsm_evap0/1`).
+
+  One consequence worth knowing before tightening anything: `solver.time_step.error_tol: 0.005`, the
+  tightest value the adaptive benchmarks used, is **not actually attainable** on the budget fixture.
+  It only ever appeared to be, because the solves were stopping early and reporting a small error
+  estimate. Judged honestly the controller correctly refuses and the run aborts on max retries.
+
 - **BREAKING — FillSpillMerge's water now reaches the groundwater as a CONTINUOUS SOURCE, not an
   IMPULSE.** New key `surface_water.fsm_coupling: continuous | impulse`, defaulting to `continuous`.
   Under the old behaviour (`impulse`, still selectable) FSM's post-routing water table replaced the step
@@ -134,6 +168,32 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
   between decompositions), where `implicit` reproduced below 1e-6.
 
 ### Fixed
+
+- **The adaptive step controller could shrink `dt` without bound, and abort, chasing an error that
+  `dt` cannot reduce.** The embedded estimate is split into an integrator part and an FSM-coupling
+  part, and these were combined by taking the larger. Only one of them answers to `dt`: the
+  integrator error is O(dt²), while the coupling deviation comes from FillSpillMerge's delta, which
+  is delivered whole regardless of step size and is therefore O(1) in `dt`. Measured on
+  `tests/golden` `fsm_runoff_hi`, the estimate sat at 0.6043593790 while `dt` was driven from
+  4.4e+07 s down to 4.1e-02 s - **nine orders of magnitude** - moving only in the ninth significant
+  figure. Handing that to the reject test asks the controller to fix by shrinking something shrinking
+  cannot fix, so `dt` collapses to `max_retries` and the run aborts. Not a conservative choice, an
+  unsatisfiable one.
+
+  A controller may only steer on error it can control, so the accept/reject decision and the PI
+  shrink now read the integrator part alone. The coupling part may **withhold growth** - all it can
+  honestly say is "FillSpillMerge is moving a lot of water here, do not get greedy" - but it can no
+  longer force a shrink. `output.trace: [dt]` now reports both parts (`eint=`, `ecpl=`) so the split
+  is visible rather than inferred. This was aborting three suites outright, all now passing: the
+  `fsm_runoff_hi` golden at every rank count, `budget_closure`'s TR-BDF2 adaptive arm, and
+  `xrank_growth`'s continuous arm.
+
+- **The adaptive-restart phase declared convergence on a head step.** `AdaptiveRestartTest` compared
+  PETSc's head `snorm` against `ar_stol`, and that path was also the one place the volume-weighted
+  test was deliberately not registered, so nothing about `-wtm_adaptive_restart` was judged in water.
+  It could call a phase converged once the iterate stopped moving in head, which on a warm start
+  happens well before the water it still owes has been driven out. The water-step computation is now
+  shared between the two convergence tests. The tolerance is unchanged; only the metric moved.
 
 - **The water budget's baseline was one cycle late, which on a cold start was most of the reported
   residual.** `stored_volume_initial` was captured on the first `PrintValues` call, and `PrintValues`
