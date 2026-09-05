@@ -116,7 +116,8 @@ this mechanism is in git history and can come back.
 | flag | now reached by | coverage |
 |---|---|---|
 | `-wtm_snes_volume_conv` | `output.trace: [water_step]` | **varied** -- `solver_consistency` arm 4 |
-| `-wtm_snes_volume_conv_govern` | `solver.convergence.metric: water` | **varied** -- `solver_consistency` arm 5 |
+| `-wtm_snes_volume_conv_govern` | `solver.convergence.metric: water` | now the DEFAULT (#61); asks for what is already on |
+| `-wtm_snes_head_conv` | `solver.convergence.metric: head` | **varied** -- `solver_consistency` arm 5, the OFF-switch |
 | `-wtm_snes_vol_tol` | `solver.convergence.water_volume_tol` | default-only; a live dial, measured below |
 
 All three are config-owned as of `aa49674`; the flags REMAIN as the internal transport and still

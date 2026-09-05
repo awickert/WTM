@@ -252,7 +252,8 @@ can retune the sigmoid but cannot turn it off.
 | `-wtm_eq_metric` | which metric judges equilibrium | **RETIRED** (was 1:1) | `run.equilibrium_stop.metric` |
 | `-wtm_eq_frac` | fraction-of-cells threshold | **RETIRED** (was 1:1) | `run.equilibrium_stop.frac` |
 | `-wtm_snes_volume_conv` | judge the SNES step in water, not head | GAP — advanced | none |
-| `-wtm_snes_volume_conv_govern` | make that judgement authoritative | GAP — advanced | none |
+| `-wtm_snes_volume_conv_govern` | make that judgement authoritative | **DEFAULT since #61** | `solver.convergence.metric: water` |
+| `-wtm_snes_head_conv` | revert to judging the step in head | opt-out | `solver.convergence.metric: head` |
 | `-wtm_snes_vol_tol` | its relative tolerance | GAP — advanced | none |
 
 ## Developer
