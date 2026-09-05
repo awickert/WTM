@@ -410,11 +410,34 @@ both:
 | | adaptive / uniform at matched error |
 |---|---|
 | `fsm_on 0` | 1.20, 1.30 |
-| `fsm_on 1` | 1.65, 1.92 |
+| `fsm_on 1` | **not defined by this method -- see below** |
 
 and at `error_tol >= 0.1` the adaptive arms are *dominated*: eight uniform steps cost 95 iterations
 for 2.159 m, against adaptive's 221 iterations for 2.214 m -- cheaper AND more accurate. Use
 adaptive Δt to get through a stiff or unknown transient without hand-tuning, not to save work.
+
+### WITH FSM ON, REFINING THE STEP DOES NOT MONOTONICALLY IMPROVE THE ANSWER
+
+Fixed-step convergence on the same fixture, densely sampled, `fsm_on 1`:
+
+| N | 8 | 12 | 16 | **20** | 24 | 28 | **32** | 40 | 48 | 64 | 96 | 128 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| err (m) | 2.159 | 1.220 | 0.871 | **0.716** | 0.795 | 0.856 | **0.903** | 0.742 | 0.578 | 0.398 | 0.236 | 0.151 |
+
+A local minimum at N=20, then the error RISES ~26% through N=32 before convergence resumes. The
+same sweep with `fsm_on 0` is monotone (2.48e-1, 8.83e-2, 3.59e-2, 1.50e-2, 4.18e-3). The cause is
+FSM's discreteness: which cells are wet and where water spills depend on how much water arrives per
+step, so different step counts settle on different lake configurations, and that configuration
+error can grow with N over a range before the time-discretisation convergence dominates again.
+
+**Two consequences, and the second is a trap.**
+1. For a user: with lakes, a smaller time step is not automatically a better answer. Check, do not
+   assume.
+2. For anyone benchmarking: **precision-matched comparison (match the error, compare the cost) is
+   INVALID here**, because one error maps to several step counts. An earlier revision of this
+   section quoted 1.65-1.92x for `fsm_on 1`, obtained by interpolating cost against error on this
+   curve. That number was an artifact of the method and has been withdrawn. The `fsm_on 0` ratios
+   stand because that curve is monotone.
 
 **The estimator is not at fault.** Its observed order is 2.00 from 0.25 yr up to 3 yr, and above
 that it departs UPWARD from the dt^2 line (3.5x at 4 yr, ~4.8x at 6-8 yr) -- it OVER-reports at
@@ -430,8 +453,10 @@ step does not minimise GLOBAL error. The optimal distribution weights each step 
 error is amplified downstream, which local-error control ignores. That ~1.2-1.3x is present with
 `fsm_on 0`, i.e. with no lakes at all.
 
-**Not explained: FSM roughly DOUBLES the penalty** (1.3 -> 1.8). Small, not a correctness issue,
-recorded rather than chased. See task #58 and fork issue #14.
+**The apparent "FSM doubles the penalty" is WITHDRAWN**: it came from precision-matched
+interpolation on the non-monotone curve above, which that method does not admit. What FSM actually
+does is break the monotonicity, and that is the finding worth carrying. See task #58 and fork
+issue #14.
 
 **Fixed along the way** (`b4ed1c8`): when FSM had touched every land cell the estimate had no
 contributing cells, `est` was set to 0.0, and the controller read that as "zero error" and applied
