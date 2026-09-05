@@ -62,7 +62,7 @@ mkcfg() { # $1 stem, $2 deltat, $3 fsm_on
     cat > "$WORK/$1.yaml.in" <<EOF
 solver_method anderson
 run_type equilibrium
-total_time 20yr
+total_time ${TT:-20}yr
 supplied_wt 1
 deltat $2
 report_interval 1
@@ -146,6 +146,56 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
     fi
 }
 
+# COARSE RANGE: is the estimate still a local-error measure WHERE THE CONTROLLER ACTUALLY OPERATES?
+#
+# The ladder above tops out at 1 yr. The controller does not. Measured on tests/golden transient_test
+# with 8-yr cycles, it accepted steps of 3.926 and 3.850 yr -- nearly 4x above the coarsest rung whose
+# order had ever been checked. So the one quantity steering the integration was verified only BELOW the
+# range it is used in, which is the same blind spot this file was written to close, one octave up.
+#
+# What the measurement found (fsm_test, TR-BDF2, frozen controller, first step, snes_stol 1e-12):
+#   dt (yr)   8      6      4      3      2      1.5    1      0.5    0.25
+#   p              1.87   2.87   5.95   2.26   1.97   1.98   1.99   1.99
+# Clean 2nd order up to ~2 yr, then it stops being a power law at all: est falls 5.5x between dt 4 and
+# 3, a 1.33x change. That is a REGIME CHANGE, not an order degrading, so asserting an order up here
+# would be asserting a fiction.
+#
+# ASSERT WHAT IS ACTUALLY TRUE AND ACTUALLY NEEDED: strict MONOTONICITY. A controller can only find a
+# step if a bigger step yields a bigger estimate; that property does hold across the whole range
+# (1.34e-04 at 0.25 yr rising to 6.36e-01 at 8 yr) and it is what makes reject-and-shrink terminate.
+# The observed orders are PRINTED, not asserted, so a future change of character is visible without
+# pinning a number nobody has justified. See task #58.
+COARSE_LADDER_YR="8 6 4 3 2"
+
+coarse_arm() { # $1 label, $2 fsm_on
+    local label="$1" fsm="$2" tag pdt="" pe="" line="" mono=1
+    tag=$(echo "$label" | tr -c 'a-zA-Z0-9' '_')
+    for m in $COARSE_LADDER_YR; do
+        local d; d=$(python3 -c "print(int(31536000*$m))")
+        # total_time = one step: only the FIRST traced step is read, and a coarse rung must divide evenly.
+        read -r dt e <<< "$(TT="$m" INTEG=tr-bdf2 probe "coarse_${tag}_${m}" "$d" "$fsm" "")"
+        if [ -z "${e:-}" ]; then
+            echo "  FAIL  $label -- no DTTRACE at deltat=$d yr"; fail=1; return
+        fi
+        if [ -n "$pe" ]; then
+            local p; p=$(python3 -c "import math;print(f'{math.log($pe/$e)/math.log($pdt/$dt):.2f}')")
+            line="$line $p"
+            # ladder descends, so est must DECREASE as dt decreases
+            [ "$(python3 -c "print(1 if $e < $pe else 0)")" = 1 ] || mono=0
+        fi
+        pdt="$dt"; pe="$e"
+    done
+    if [ "$mono" = 1 ]; then
+        echo "  PASS  $label: est strictly monotone in dt over 8..2 yr (observed p =$line, NOT asserted)"
+    else
+        echo "  FAIL  $label: est is NOT monotone in dt over 8..2 yr (observed p =$line)."
+        echo "        A controller cannot size a step from a non-monotone estimate: shrinking would not"
+        echo "        reduce it, so reject-and-retry need not terminate. Re-diagnose before trusting"
+        echo "        adaptive stepping at these step sizes."
+        fail=1
+    fi
+}
+
 # PRECONDITION: the trace must exist at all, and est must genuinely MOVE across the ladder -- otherwise
 # every order below is fitted to noise and this whole test is decoration.
 read -r d0 e0 <<< "$(INTEG=tr-bdf2 probe pre_coarse 31536000 1 "")"
@@ -166,6 +216,7 @@ echo
 # to the operator split because it never differences across a handoff.
 arm "TR-BDF2   fsm on " ""   1 2.0 check tr-bdf2
 arm "TR-BDF2   fsm off" ""   0 2.0 check tr-bdf2
+coarse_arm "TR-BDF2   fsm on, COARSE (the range the controller uses)" 1
 # The generic linear-history predictor. With FSM OFF it now achieves the O(dt^2) its source claims.
 #
 # It did NOT until 879a188, where it measured 1.56 1.08 1.00 -- degrading toward first order as dt
