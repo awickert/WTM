@@ -77,7 +77,20 @@ case_cfg() {
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
       fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
       fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
-      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" ;;
+      # adaptive_dt PINNED FALSE. A golden is an exact-reproduction assertion, so nothing in it may be
+      # chosen by a controller whose input is a global reduction. With adaptive dt on, the embedded error
+      # estimate came out DECOMPOSITION-DEPENDENT on this fixture -- at the same dt of 4.7304e+07 s the
+      # estimate was 4.007673531e-02 at n=1, 3.113780608e-02 at n=2 and 3.987584816e-02 at n=6, a 22%
+      # spread from states agreeing to 2e-11. That moved the growth factor (1.0374 / 1.1769 / 1.0400),
+      # hence the SUB-STEP SIZES (step 7 ran at 3.4121e+07 / 3.5478e+07 / 3.4169e+07 s), hence the
+      # trajectory. Different steps give different -- and equally valid -- answers, so no comparison
+      # tolerance and no tie-break can reconcile them; the fix is to stop the test asking the question.
+      # The estimate's sensitivity is itself a real defect (task #56): it is built by a reduction over a
+      # cell set chosen by an exact `!= 0.0` float test (transient_groundwater.cpp:1883, :1922, which its
+      # own note says drops 17-22% of land cells) on a `dev` that is a difference of two nearly-equal
+      # stored volumes. Pinning the step here does NOT fix that -- it stops this test from depending on it.
+      # Same reasoning, and same fix, as tests/coupling_convergence and tests/dt_invariance (2af7e67).
+      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" "adaptive_dt false" ;;
       # fsm_impulse: the SAME case as fsm_evap1 under the non-default coupling. It exists because
       # surface_water.fsm_coupling now defaults to `continuous`, which would leave `impulse`
       # unexercised by every arm here -- and an alternative nobody runs is one that rots quietly.
@@ -156,7 +169,12 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
 # if you run the tests under, expect that to return.)
 # Per-case tolerance override (empty = golden.py's default 1e-6 m).
 #
-# transient: 1e-5 m. Under the default active_set enforcement this case reproduces across MPI rank
+# BOTH PER-CASE RELAXATIONS ARE RETIRED (2026-09-05). Every case now passes at the 1e-6 default at
+# n = 1, 2, 4, 6 and 8. The two diagnoses below were correct about the MECHANISM; what changed is that
+# neither needs a relaxation any more, once the solve is resolved tighter than the assertion
+# (snes_stol 1e-10) and the transient case no longer lets a controller choose its step. Kept as history.
+#
+# transient: WAS 1e-5 m. Under the default active_set enforcement this case reproduces across MPI rank
 # counts only to ~2e-6 m (measured: n=1 and n=4 match the n=1 reference exactly; n=2/6/8 differ by
 # 1.2e-6, 2.1e-6 and 1.2e-6 m). That is MICROMETRE-scale round-off on a field with 21 m features,
 # sitting at the SNES tolerance: the semismooth pin's active set can differ in its last bits between
@@ -166,18 +184,20 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
 # genuine (tiny) loss of cross-rank reproducibility that comes with the constraint being solved rather
 # than approximated. Recorded rather than hidden; if this ever needs to be TIGHT again, the fix is an
 # active-set tie-break that is decomposition-independent, not a looser number here.
-# fsm_runoff: 1e-5 m, and this one is a DIAGNOSED relaxation rather than a shrug. Under the default
+# fsm_runoff: WAS 1e-5 m, and this one is a DIAGNOSED relaxation rather than a shrug. Under the default
 # fsm_coupling: continuous, cross-rank drift COMPOUNDS instead of being reset: `impulse` overwrote every
 # rank's starting_wtd from rank 0 every step (WTM.cpp, the impulse branch), which wiped accumulated drift;
 # continuous never runs that line. Measured n=1 vs n=6 on this fixture: 8.2e-10 -> 1.3e-09 -> 7.1e-09 under
 # continuous against a flat 9.0e-12 -> 1.6e-11 under impulse. This arm lands at 1.214e-06, just over the
 # 1e-6 default.
 #
-# The relaxation is only defensible because the behaviour is now measured DIRECTLY, by
-# tests/xrank_growth, which asserts the REGIME (flat vs compounding) rather than a magnitude. Without that
-# test this number would be hiding the finding instead of recording it. If xrank_growth is ever deleted,
-# this tolerance must go back to 1e-6 and the arm must fail. See task #39.
-case_tol() { case "$1" in transient) echo "1e-5" ;; fsm_runoff) echo "1e-5" ;; *) echo "" ;; esac; }
+# The relaxation was only defensible because the behaviour is measured DIRECTLY, by tests/xrank_growth,
+# which asserts the REGIME (flat vs compounding) rather than a magnitude. That test remains where the #39
+# finding lives and must not be deleted. What the retirement shows is that the 1.214e-06 which pushed this
+# arm over 1e-6 was mostly SOLVER NOISE rather than coupling drift: at snes_stol 1e-10 the arm clears 1e-6
+# outright. The compounding regime is real; its magnitude HERE was inflated by an under-resolved solve.
+# See task #39.
+case_tol() { case "$1" in *) echo "" ;; esac; }   # no per-case relaxations; all cases at the 1e-6 default
 
 fail=0
 for name in "${CASES[@]}"; do
