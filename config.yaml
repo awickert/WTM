@@ -115,23 +115,32 @@ solver:
                                # newton means the WORKING recipe: the analytic-Jacobian path WITH
                                # dt-continuation, which it needs to converge from a cold start.
   tolerance: 1e-6              # per-solve step tolerance (-> snes_stol). RELATIVE and in HEAD: stop the
-                               # solve when ||Δh|| falls below this fraction of ||h||. Note it is the odd
-                               # one out -- the two water thresholds are absolute DEPTHS, this is a
-                               # dimensionless ratio, so there is no clean way to derive it from them.
+                               # solve when ||Δh|| falls below this fraction of ||h||.
+                               # ONLY LIVE WHEN convergence.metric: head. The default metric is `water`
+                               # (see below), which uses water_volume_tol instead; this then survives
+                               # only as PETSc's own backstop and as the adaptive-restart phase bound.
                                # Innermost of the three gates: solve ⊂ step ⊂ run. Set it LOOSER than the
                                # step target and the step's error estimate is measuring solver noise.
   convergence:
-    metric: head               # head | water -- what the PER-SOLVE step test judges.
-                               # `water` swaps the relative head-step test for |S*Δwtd|, so all three
-                               # "close enough" gates speak one language (this, run.equilibrium_stop
-                               # and solver.time_step.error_tol are otherwise 2 water, 1 head). It
-                               # matters where storativity is small: a deep tight cell can swing its
-                               # head a long way while moving almost no water, and head-judged
-                               # convergence keeps grinding on it. CHANGES THE ANSWER.
+    metric: water              # water (DEFAULT) | head -- what the PER-SOLVE step test judges.
+                               # `water` judges the step as |S*Δwtd|, so all three "close enough" gates
+                               # speak one language (this, run.equilibrium_stop and
+                               # solver.time_step.error_tol); `head` is the off-switch and leaves this
+                               # one gate out of step with the other two. CHANGES THE ANSWER.
+                               # It matters where storativity is small: a deep tight cell can swing its
+                               # head a long way while moving almost no water, and a head-judged test
+                               # lets those few cells speak for the whole grid.
+                               # WHY IT IS THE DEFAULT (#61): a head step tolerance is a LENGTH and the
+                               # water budget it must agree with is a VOLUME. Measured over 294 solves,
+                               # 88% were exiting on the head step test having reduced the residual by
+                               # as little as 1.8e-04 -- and the exact budget then reports the un-driven
+                               # residual as REAL unbalanced mass (worst step 9.4e-05 of recharge). In
+                               # water the same runs close to 3.9e-07..1.9e-06, for about +2% wall.
     water_volume_tol: 1.0e-8   # the SAME gate as solver.tolerance above, in water instead of head.
-                               # Exactly one of the two is live, chosen by metric. READ ONLY when
-                               # metric: water -- it sits here rather than beside tolerance because it
-                               # is only meaningful with the metric that selects it.
+                               # Exactly one of the two is live, chosen by metric -- and since `water`
+                               # is the default, THIS is normally the live one. It sits here rather than
+                               # beside tolerance because it is only meaningful with the metric that
+                               # selects it.
                                # RELATIVE, like tolerance: a fraction of the water already in the domain,
                                # not a depth. Loosening it does NOT save time -- each solve stops
                                # under-converged and the outer loop needs more cycles (measured: 1e-5
