@@ -45,6 +45,19 @@ mkcfg() { # $1 = stem, $2 = runoff_ratio
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 run_type equilibrium
+# CONVERGE TIGHTER THAN YOU COMPARE. The FATES CANCEL assertion below is threshold-free by design: it
+# says the total moves LESS than its largest single part. That only means anything once the per-arm
+# solver noise is smaller than the fate differences being compared. At the default water tolerance
+# (1e-8, #61) the routed-ON block gave 0.9x -- no cancellation visible -- because the noise WAS the
+# signal. Measured (cancellation factor, routed-off / routed-on):
+#     vol_tol 1e-8   9.4x / 0.9x       <- fails
+#     vol_tol 1e-10  19.4x / 1.3x
+#     vol_tol 1e-12  19.4x / 1.3x      <- IDENTICAL to 1e-10
+# 1e-10 and 1e-12 agree to every digit printed, which is the proof that 1e-10 is already converged:
+# what is left is the documented BDF2-startup gap the comment below describes, not solver noise.
+# NOTE the routed-ON margin is only 1.3x even converged. That arm is thin, and it is thin about a REAL
+# residual gap, not about tolerance -- see task #48.
+convergence_water_volume_tol 1e-10
 time_integration tr-bdf2
 total_time 20yr
 supplied_wt 1
