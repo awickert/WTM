@@ -18,7 +18,10 @@ GEN=0
 WTM=$(readlink -f "${1:-../../build/wtm.x}")
 shift || true
 RANKS="${*:-1 2 4 6 8}"   # cross-rank check counts (run_all.sh passes the tier's set); default = full sweep
-REFDIR=reference
+REFDIR="${GOLDEN_REFDIR:-reference}"
+# Overridable so the references can be re-derived at a TIGHTER solve and diffed against the committed
+# set -- the check that they are converged rather than merely different. Production value: 1e-10.
+GOLDEN_STOL="${GOLDEN_STOL:-1e-10}"
 mkdir -p "$REFDIR"
 
 if [[ ! -x "$WTM" ]]; then echo "ERROR: WTM binary not found at $WTM" >&2; exit 1; fi
@@ -113,7 +116,18 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     } | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-8 >"$log" 2>&1 )
+    # -snes_stol 1e-10, NOT 1e-8. snes_stol is a STEP tolerance: it stops when the iterate stops
+    # moving, which in a near-null direction of this operator leaves real positional slack in the
+    # answer. At 1e-8 the transient fixture's step-7 solve landed 1.3916e-01 m apart at n=1 vs n=4 --
+    # from IDENTICAL inputs (lake stage agreeing to 5.8e-13) with ZERO difference in the active set --
+    # and that fed a 2.126e-03 m difference in the final field, which read as MPI non-reproducibility.
+    # Measured across the tolerance: 1e-8 -> 1.3916e-01 m, 1e-10 -> 2.9179e-10 m, 1e-12 -> 2.9179e-10,
+    # 1e-14 -> 2.9179e-10. It collapses to round-off at 1e-10 and SATURATES there, so 1e-10 is
+    # sufficient and nothing pathological sits underneath.
+    # The principle is budget_closure's, applied here: an assertion is only meaningful if the SOLVE is
+    # resolved tighter than the agreement it asserts, or the arm measures solver noise. These goldens
+    # assert 1e-6..1e-5 m, so they must not be solved to a tolerance that permits 1e-1 m.
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol "$GOLDEN_STOL" >"$log" 2>&1 )
     local rc=$?
     if [[ $rc -ne 0 ]]; then
         printf "  %-14s n=%-2s : MODEL FAILED (exit %d) -- refusing to use its output\n" "$name" "$n" "$rc" >&2
