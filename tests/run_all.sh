@@ -73,6 +73,7 @@ run "active-set collector-indep"   ./active_set/run.sh "$WTM"
 run "FSM conservation + lake"       ./fsm_conservation/run.sh "$WTM"
 run "lake evap == ET (transition inert)" ./lake_evap_equals_et/run.sh "$WTM"
 run "cross-rank drift regime"     ./xrank_growth/run.sh "$WTM"
+run "cross-rank adaptive determinism" ./xrank_adaptive/run.sh "$WTM" $MPI_RANKS
 run "water-budget closure (schemes)" ./budget_closure/run.sh "$WTM"
 run "multi-lake stages vs dt"       ./multilake/run.sh "$WTM"
 run "solve-count invariance"        ./dt_invariance/run.sh "$WTM"
