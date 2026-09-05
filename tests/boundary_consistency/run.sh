@@ -20,7 +20,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/bcons_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/bcons_XXXX); trap 'rm -rf "$WORK"' EXIT
-MATCH_TOL="${MATCH_TOL:-1e-8}"   # metres; dirichlet-vs-padding agreement (observed ~7e-12)
+MATCH_TOL="${MATCH_TOL:-1e-8}"   # metres; dirichlet-vs-padding agreement (observed ~2.2e-11 at the vol_tol set below)
 DIFF_MIN="${DIFF_MIN:-0.1}"      # metres; dirichlet-vs-neumann must differ by at least this
 PY="${PY:-python3}"
 CPD=100
@@ -30,6 +30,15 @@ emit() { # stem region surfdir southern_edge   [env: LAND_BC=dirichlet for the D
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 land_boundary ${LAND_BC:-neumann_toposlope}
+# CONVERGE TIGHTER THAN YOU COMPARE. Assertion (1) below says two spellings of the SAME boundary
+# condition land on the same interior, so what actually bounds their agreement is how far each solve
+# was driven -- not the boundary condition, which is identical by construction. At the default water
+# tolerance (1e-8, #61) they agree to 3.6e-08 m, which is looser than the 1e-8 m the test compares at.
+# Measured here: vol_tol 1e-8 -> 3.606e-08 m, 1e-10 -> 6.038e-09 m, 1e-12 -> 2.179e-11 m -- a clean
+# convergence-level artifact, so drive the solves three decades past the comparison instead of
+# loosening the comparison. (Under the OLD head-judged default these happened to agree to ~7e-12,
+# which is why no such setting was needed before.)
+convergence_water_volume_tol 1e-12
 ${METHOD:+solver_method $METHOD}
 ${DTC:+dt_continuation $DTC}
 fsm_on 0
