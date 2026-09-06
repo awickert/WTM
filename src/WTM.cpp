@@ -1436,10 +1436,22 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  run_log: '" << params.textfilename << "'\n";
   f << "  if_exists: " << params.if_exists << "\n";
   f << "  verbosity: " << params.verbosity << "\n";
-  {  // a REAL list now that there are two values -- "[dt]" hard-coded would misreport [water_step]
+  {  // ALL FOUR channels output.trace accepts -- dt, water_step, budget, fsm. It listed only the first
+    // two, so a run using the budget or FSM trace recorded that it had used NEITHER: measured on
+    // tests/budget_step_ledger, whose log carries 8 BUDGETTRACE lines while this file wrote `trace: []`.
+    // A provenance record that under-reports the channels a run had open is worse than no record, since
+    // it reads as authoritative. The list must be derived from the same state the channels are, which
+    // is why every entry below reads its own uc flag rather than re-deriving from the config.
     std::string tr;
-    if (uc.dt_trace)       tr += "dt";
-    if (uc.vol_step_trace) tr += (tr.empty() ? "" : ", "), tr += "water_step";
+    auto add = [&tr](bool on, const char* name) {
+      if (!on) return;
+      if (!tr.empty()) tr += ", ";
+      tr += name;
+    };
+    add(uc.dt_trace,       "dt");
+    add(uc.vol_step_trace, "water_step");
+    add(uc.budget_trace,   "budget");
+    add(uc.fsm_trace,      "fsm");
     f << "  trace: [" << tr << "]\n";
   }
 
