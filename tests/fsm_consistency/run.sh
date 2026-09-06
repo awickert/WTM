@@ -12,6 +12,7 @@
 # Default binary: ../../build/wtm.x   Default extra rank counts: 2 4
 set -euo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 
 WTM=$(readlink -f "${1:-../../build/wtm.x}")
 shift || true
@@ -25,8 +26,7 @@ if [[ ! -f "$SD/fsm_test_t0_topography.tif" ]]; then
     python3 make_inputs.py >/dev/null
 fi
 
-WORK=$(mktemp -d /tmp/fsm_consistency_XXXX)
-trap 'rm -rf "$WORK"' EXIT
+make_work fsm_consistency
 
 mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml, echoes prefix
     local n="$1"

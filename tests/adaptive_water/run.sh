@@ -7,12 +7,13 @@
 # Bites if the adaptive controller or the water-depth metric ever produces a wrong field or fails to stop.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 # .tif inputs are gitignored -> generate them if absent (needs rasterio, like the other suites)
 [[ -f inputs/adwater_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/adw_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work adw
 # metres OF WATER VOLUME (tests/wtm_volume.py), not head -- see #61/#65. Uniform phi = 0.25 here, so this is
 # the old 0.05 m head bound x0.25 exactly.
 TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water

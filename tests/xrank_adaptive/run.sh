@@ -25,12 +25,13 @@
 # only in that combination.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM=$(readlink -f "${1:-../../build/wtm.x}")
 RANKS="${*:2}"; RANKS="${RANKS:-1 2 4 6}"
 [[ -x "$WTM" ]] || { echo "ERROR: WTM binary not found at $WTM" >&2; exit 1; }
 [[ -f ../golden/inputs/transient_test_ta_topography.tif ]] || ( cd ../golden && python3 make_transient_inputs.py >/dev/null )
 TRANS=$(readlink -f ../golden/inputs)
-WORK=$(mktemp -d /tmp/xrank_adaptive_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work xrank_adaptive
 
 echo "=== cross-rank determinism under adaptive dt (defaults: adaptive, continuous, active_set) ==="
 echo "WTM binary: $WTM"

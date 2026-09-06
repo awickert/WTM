@@ -13,12 +13,13 @@
 # here in the same commit. The diff is then the record that the change was intended.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 PY="${PY:-python3}"
 GHOST=$(readlink -f ../ghost_cell/inputs)
 [[ -f "$GHOST/ghost_cell_test_t0_topography.tif" ]] || ( cd ../ghost_cell && python3 make_inputs.py >/dev/null )
-WORK=$(mktemp -d /tmp/logschema_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work logschema
 export OMP_NUM_THREADS=1
 
 ../emit_config.sh > "$WORK/pin.yaml" <<CFG

@@ -23,7 +23,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/limitcyc_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/lc_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work lc
 TOL="${TOL:-1e-4}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

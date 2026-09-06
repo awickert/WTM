@@ -19,7 +19,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/runoffgather_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/dtr_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work dtr
 TOL="${TOL:-1e-4}"          # metres; settled if final per-cycle |Δwtd| below this
 SURF_TOL="${SURF_TOL:-0.5}" # metres; implicit pins the table at the surface to the SNES tolerance (a small
                             # cm-dm overshoot, no clamp backstop) -- a exfiltration constraint, not a pile

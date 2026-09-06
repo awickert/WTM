@@ -6,9 +6,10 @@
 # PASS iff the three schemes agree at the fine dt within TOL. Bites before the fixed-volume-recharge fix.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/rechtest_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work rechtest
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 0.05 head bound x0.25 exactly -- the same strictness, correctly labelled.

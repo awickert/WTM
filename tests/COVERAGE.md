@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **354** across **39** tests.
+Runs recorded: **354** across **45** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -83,7 +83,13 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `nested_DH_+_skim_spill-accuracy` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,4 |
 | `per-step_water_ledger` | equilibrium | anderson | bdf2,be_volume,tr_bdf2 | fixed | active_set,explicit,implicit,off | 1 | 0 | 1 |
 | `recharge_consistency_(#93)` | transient | anderson | bdf2,tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
-| `runoff_collector_selector` | equilibrium | anderson | tr_bdf2 | fixed | active_set,explicit,extended_soil,implicit,off | 0 | 0 | 1 |
+| `runoff_collector/aset` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
+| `runoff_collector/explicit` | equilibrium | anderson | tr_bdf2 | fixed | explicit | 0 | 0 | 1 |
+| `runoff_collector/implicit` | equilibrium | anderson | tr_bdf2 | fixed | implicit | 0 | 0 | 1 |
+| `runoff_collector/off` | equilibrium | anderson | tr_bdf2 | fixed | off | 0 | 0 | 1 |
+| `runoff_collector/unset` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
+| `runoff_collector/xsoil_mode` | equilibrium | anderson | tr_bdf2 | fixed | extended_soil | 0 | 0 | 1 |
+| `runoff_collector_selector` | equilibrium | anderson | tr_bdf2 | fixed | active_set,explicit | 0 | 0 | 1 |
 | `runoff_gathering_(wtd=0)` | equilibrium | anderson | tr_bdf2 | adaptive,fixed | implicit,off | 0 | 0 | 1 |
 | `serial_rank-0_recharge_path` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,4 |
 | `snapshot_name_+_restart` | equilibrium | anderson | tr_bdf2 | fixed | implicit | 0 | 0 | 1 |

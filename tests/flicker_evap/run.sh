@@ -24,7 +24,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/flickevap_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/fe_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work fe
 # metres OF WATER VOLUME (|S*Δwtd|, run-log column abs_change_volume_max), not head (#61/#65).
 # THE SCALE FACTOR HERE IS 0.0158, NOT 0.25, and the reason is the whole argument for the metric.
 # Column 5 is the max over cells of |Δwtd|; the volume column is the max over cells of |S*Δwtd| -- and

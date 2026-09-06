@@ -11,12 +11,13 @@
 # schemes. See finding on the (retracted) "secant storage inconsistency" -- there is none, and this proves it.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 # .tif inputs are gitignored -> generate them if absent (needs rasterio, like the other suites)
 [[ -f inputs/storeq_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/storeq_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work storeq
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-6 head bound x0.25 exactly -- the same strictness, correctly labelled.

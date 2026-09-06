@@ -37,6 +37,7 @@
 # Usage:  tests/serial_recharge/run.sh [path/to/wtm.x] [ranks]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 NRANKS="${2:-4}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
@@ -46,7 +47,7 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 # predates it, since the serial path cannot start without it.
 [[ -f "$FSMDIR/inputs/fsm_test_vertical_ksat.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
-WORK=$(mktemp -d /tmp/serialrech_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work serialrech
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

@@ -50,13 +50,14 @@
 # Usage:  tests/newton_solver/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
 FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
-WORK=$(mktemp -d /tmp/newton_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work newton
 JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it well above 1e-8
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head (#61/#65).
 # THE VALUE DOES NOT SCALE BY phi HERE, and the reason is the point of the whole conversion: on

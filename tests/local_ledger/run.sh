@@ -26,11 +26,12 @@
 # Usage:  tests/local_ledger/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/ledgerA_t0_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/ledger_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work ledger
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

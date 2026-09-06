@@ -30,11 +30,12 @@
 # working when the size changes and it says which regime we are in. See task #39.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f ../golden/inputs_runoff/runoff_test_t0_topography.tif ]] || ( cd ../golden && python3 make_runoff_inputs.py >/dev/null )
 INP=$(readlink -f ../golden/inputs_runoff)
-WORK=$(mktemp -d /tmp/xrg_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work xrg
 NRANK="${NRANK:-6}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

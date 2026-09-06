@@ -141,3 +141,31 @@ expect_resolved() {
     [ $rc -eq 0 ] && echo "  OK   RESOLVED  the run actually used: $*"
     return $rc
 }
+
+# make_work <tag>   Create the work directory, and KEEP IT WHEN THE TEST FAILS.
+#
+# 38 of the 39 runners carried `WORK=$(mktemp -d ...); trap 'rm -rf "$WORK"' EXIT`, so the moment a
+# number surprised you the evidence was already gone. That is not a hypothetical inconvenience: a
+# hand-built reproduction of one arm gave IDENTICAL results with and without the change under test,
+# and the real arm could only be recovered by patching the trap out of the script. Failure-keeps-
+# evidence should be the default, not a flag you remember to set after the fact.
+#
+# The directory name carries the tag, the commit and the time, so two runs never collide and a kept
+# directory says which build produced it without opening anything.
+_wtm_work_cleanup() {
+    local rc=$?
+    if [ "$rc" -ne 0 ] || [ "${WTM_KEEP:-0}" = 1 ]; then
+        [ -d "${WORK:-}" ] && echo "  kept: $WORK  (exit $rc)" >&2
+    else
+        [ -n "${WORK:-}" ] && rm -rf "$WORK"
+    fi
+    return "$rc"
+}
+
+make_work() {
+    local tag="${1:?make_work needs a tag}" root commit
+    root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
+    commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo nogit)
+    WORK=$(mktemp -d "/tmp/wtm_${tag}_${commit}_$(date +%H%M%S)_XXXX") || return 1
+    trap _wtm_work_cleanup EXIT
+}

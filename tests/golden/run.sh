@@ -12,6 +12,7 @@
 # Regenerate ONLY when a behavior change is intended and understood.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 
 GEN=0
 [[ "${1:-}" == "--generate" ]] && { GEN=1; shift; }
@@ -36,8 +37,7 @@ if [[ ! -x "$WTM" ]]; then echo "ERROR: WTM binary not found at $WTM" >&2; exit 
 [[ -f inputs/transient_test_ta_topography.tif ]] || python3 make_transient_inputs.py >/dev/null
 [[ -f inputs_runoff/runoff_test_t0_topography.tif ]] || python3 make_runoff_inputs.py >/dev/null
 
-WORK=$(mktemp -d /tmp/golden_XXXX)
-trap 'rm -rf "$WORK"' EXIT
+make_work golden
 
 # Each case: name | surfdatadir | region | extra config lines (key value; ...)
 # The extra lines override the defaults in emit_cfg.

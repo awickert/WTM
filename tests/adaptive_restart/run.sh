@@ -10,11 +10,12 @@
 # within ~13 cycles, so a bare `-wtm_adaptive_restart` run aborts without the fix -- this test bites.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/arestart_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/arst_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work arst
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not metres of head: the model
 # conserves water and judges every stopping criterion in water volume (#61), so an agreement bound belongs
 # in the same units. Uniform phi = 0.25 here, so this is the old 1e-3 m head bound x0.25 exactly.

@@ -32,12 +32,13 @@
 # Usage:  tests/config_schema/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 ROOT=$(readlink -f ../..)
 REF="$ROOT/config.yaml"
 [ -f "$REF" ] || { echo "ERROR: reference config not found at $REF"; exit 1; }
-WORK=$(mktemp -d /tmp/cfgschema_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work cfgschema
 export OMP_NUM_THREADS=1
 
 echo "=== config schema: unknown keys must abort, informatively ==="

@@ -15,12 +15,13 @@
 # is deliberately gentle/subsurface. Do NOT crank the recharge -- that would break the oracle by design.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 # .tif inputs are gitignored -> generate them if absent (needs rasterio, like the other suites)
 [[ -f inputs/sconsist_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/scons_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work scons
 # metres OF WATER VOLUME (|V(wtd_a) - V(wtd_b)|, tests/wtm_volume.py), not metres of head. The model
 # conserves water and every stopping criterion is judged in water since #61, so an agreement bound
 # belongs in the same units. This fixture is uniform phi = 0.25 and purely subsurface, so the

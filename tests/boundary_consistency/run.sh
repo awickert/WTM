@@ -15,11 +15,12 @@
 # latitudes (identical geometry) -- without that, cos-lat cell-size drift would blur the machine-precision match.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/bcons_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/bcons_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work bcons
 # metres OF WATER VOLUME (tests/wtm_volume.py), not head (#61/#65).
 MATCH_TOL="${MATCH_TOL:-2.5e-9}" # dirichlet-vs-padding agreement, in water (was 1e-8 head)
 DIFF_MIN="${DIFF_MIN:-0.1}"      # metres OF WATER VOLUME; dirichlet-vs-neumann must differ by at least this.

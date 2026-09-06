@@ -16,12 +16,13 @@
 # Usage:  tests/fsm_conservation/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
-WORK=$(mktemp -d /tmp/fscons_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work fscons
 TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

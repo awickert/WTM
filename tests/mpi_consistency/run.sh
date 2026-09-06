@@ -11,6 +11,7 @@
 # Default binary: ../../build/wtm.x   Default extra rank counts: 2 4
 set -euo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 
 WTM=${1:-../../build/wtm.x}
 shift || true
@@ -30,8 +31,7 @@ if [[ ! -d "$INPUTS" ]]; then
     exit 1
 fi
 
-WORK=$(mktemp -d /tmp/mpi_consistency_XXXX)
-trap 'rm -rf "$WORK"' EXIT
+make_work mpi_consistency
 
 # Base config (equilibrium, small grid). evap_mode and fsm_on are overridden per case.
 base_cfg() {

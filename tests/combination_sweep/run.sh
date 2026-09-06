@@ -32,13 +32,14 @@
 # Usage:  tests/combination_sweep/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
 RECH=$(readlink -f ../recharge_consistency)
 [[ -f "$RECH/inputs/rech_test_ta_topography.tif" ]] || ( cd "$RECH" && python3 make_inputs.py >/dev/null )
 INP="$RECH/inputs"
-WORK=$(mktemp -d /tmp/combo_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work combo
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume]

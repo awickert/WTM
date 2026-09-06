@@ -11,11 +11,12 @@
 # ocean-Dirichlet); land-Neumann is analytically anchored here.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/anbcD_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
-WORK=$(mktemp -d /tmp/anbc_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work anbc
 FIT_TOL="${FIT_TOL:-1e-6}"   # metres; max deviation of the water table from the closed-form parabola
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1

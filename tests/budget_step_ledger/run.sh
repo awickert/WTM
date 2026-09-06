@@ -36,6 +36,7 @@
 # Usage:  tests/budget_step_ledger/run.sh [path/to/wtm.x]
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 
@@ -43,7 +44,7 @@ LAKE=$(readlink -f ../fsm_consistency); MULTI=$(readlink -f ../multilake); CASC=
 for d in "$LAKE" "$MULTI" "$CASC"; do
     [[ -d "$d/inputs" ]] || ( cd "$d" && python3 make_inputs.py >/dev/null )
 done
-WORK=$(mktemp -d /tmp/bledger_XXXX); trap 'rm -rf "$WORK"' EXIT
+make_work bledger
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
