@@ -27,8 +27,13 @@
 # truncation error -- measured: at -wtm_dt_tol 0.001 the step count doubles (90 -> 178) on snes_stol
 # alone. Order must be measured where the algebraic error cannot masquerade as truncation error.
 #
-# THE KNOWN HOLE IS CARRIED AS AN xfail, NOT HIDDEN. On the generic path with FSM ON the observed order
-# is 0.00 -- est is constant in dt to 3 significant figures across a 64x refinement. The cause is
+# THE KNOWN HOLE IS CARRIED AS AN xfail, NOT HIDDEN. On the generic path with FSM ON the estimate
+# carries NO ORDER: measured p = 0.80, -0.37, 0.49 over a 64x refinement, one of them NEGATIVE, so est
+# does not even move monotonically with dt. (This note previously said "order 0.00, constant to 3
+# significant figures". That was never measured: the probe read the FIRST traced step, which for this
+# one arm is a 3-level scheme's startup step with no history -- nest=0, est=0 -- so the arm differenced
+# 0/0 at every rung and asserted an empty string. Fixed 2026-09-06; the numbers above are the first real
+# measurement this arm has produced.) The cause is
 # structural: WTM's step is an operator SPLIT (solve maps w^n -> x, then FillSpillMerge maps
 # x -> w^{n+1}), so EVERY pair of states a history-based estimator can difference straddles a handoff,
 # and the FSM jump -- which does not shrink with dt -- lands in the estimate. Phase-aligning WHICH pair
@@ -94,12 +99,35 @@ EOF
 # One frozen-controller run; echoes "dt est" from the FIRST traced step, or nothing on failure.
 probe() { # $1 stem, $2 deltat, $3 fsm_on, $4 integrator flag
     mkcfg "$1" "$2" "$3"
-    "$WTM" "$WORK/$1.yaml" $4 -wtm_dt_trace \
+    WTM_COVERAGE_TAG="estimator_order/$1" "$WTM" "$WORK/$1.yaml" $4 -wtm_dt_trace \
         -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \
         -snes_stol 1e-12 > "$WORK/$1.log" 2>&1
-    grep -m1 DTTRACE "$WORK/$1.log" | sed -E 's/.*dt=([-0-9.e+]+) est=([-0-9.e+]+).*/\1 \2/'
+    # An observed ORDER is only attributable to a scheme if the run used that scheme. mkcfg emits
+    # time_integration only when INTEG is set, and an absent key resolves to `auto` -> tr-bdf2 on the
+    # Anderson path -- so a BDF2 arm that lost its config value would silently measure TR-BDF2's order
+    # and, being 2.0 as well, would agree with its expectation for the wrong reason (#24, #37).
+    if [ -n "${WANT_INTEG:-}" ]; then
+        expect_resolved "$WTM_COVERAGE_LOG" "integrator=$WANT_INTEG" >/dev/null || return 1
+    fi
+    # The first traced step is NOT always a measurement. A 3-level scheme has no history on its first
+    # step, so it reports nest=0 (no cell informed the estimate) and est=0 by definition. `grep -m1` took
+    # that step, and for BDF2-on-V with FSM ON it is the ONLY arm where step 1 is a startup step -- so
+    # that arm differenced 0/0 at every rung of the ladder, raised ZeroDivisionError four times, and
+    # produced an empty order that the xfail below then accepted. Take the first step that actually
+    # CARRIES an estimate. Verified not to move the other three arms: their step 1 already has nest=196.
+    awk '/DTTRACE/ {
+             n = 0; dt = ""; e = ""
+             for (i = 1; i <= NF; i++) {
+                 split($i, kv, "=")
+                 if (kv[1] == "nest") n  = kv[2] + 0
+                 if (kv[1] == "dt")   dt = kv[2]
+                 if (kv[1] == "est")  e  = kv[2]
+             }
+             if (n > 0) { print dt, e; exit }
+         }' "$WORK/$1.log"
 }
 
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 echo "=== adaptive local-error estimate: observed order in dt ==="
 echo "WTM binary: $WTM"
 echo
@@ -113,7 +141,8 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
     tag=$(echo "$label" | tr -c 'a-zA-Z0-9' '_')
     for d in $LADDER; do
         stem="${tag}_${d}"
-        read -r dt e <<< "$(INTEG="$integ" probe "$stem" "$d" "$fsm" "$ig")"
+        local wi; case "$integ" in tr-bdf2) wi=tr_bdf2 ;; bdf2) wi=bdf2 ;; *) wi="" ;; esac
+        read -r dt e <<< "$(INTEG="$integ" WANT_INTEG="$wi" probe "$stem" "$d" "$fsm" "$ig")"
         if [ -z "${e:-}" ]; then
             echo "  FAIL  $label -- no DTTRACE at deltat=$d (is -wtm_dt_trace wired?)"
             tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
@@ -128,10 +157,17 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
     local pfin; pfin=$(echo "$line" | awk '{print $NF}')
     local ok; ok=$(python3 -c "print(1 if abs($pfin-($want))<=$PTOL else 0)")
     if [ "$mode" = xfail ]; then
-        if [ "$ok" = 1 ]; then
-            echo "  xfail   $label: p =$line  (finest $pfin, expected ~$want) -- KNOWN HOLE, still broken"
+        # For an xfail arm $want is an UPPER BOUND on |p|, not a target. The hole is that the estimate
+        # carries NO order at all -- it is not "order 0" in the sense of a clean constant. Measured:
+        # p = 0.80 -0.37 0.49 over the ladder, one of them negative, so the estimate does not even move
+        # monotonically with dt. Asserting a bound is the falsifiable form of that: the arm fails the day
+        # the estimator reaches its scheme's design order, which is the news worth interrupting for.
+        # (The previous target-form assertion, ~0.00 +/- 0.2, was never actually tested -- see the probe.)
+        local under; under=$(python3 -c "print(1 if abs($pfin) < $want else 0)")
+        if [ "$under" = 1 ]; then
+            echo "  xfail   $label: p =$line  (finest $pfin, |p| < $want) -- KNOWN HOLE, still no order"
         else
-            echo "  FAIL  $label: p =$line  (finest $pfin) -- expected the KNOWN HOLE at ~$want."
+            echo "  FAIL  $label: p =$line  (finest $pfin) -- the estimate now carries an ORDER (|p| >= $want)."
             echo "        If the estimator has been repaired this is GOOD NEWS: promote this arm to"
             echo "        check() and update the note at the top of this file. If it has moved some"
             echo "        other way, the estimator has changed character and needs re-diagnosing."
@@ -234,7 +270,7 @@ coarse_arm "TR-BDF2   fsm on, COARSE (the range the controller uses)" 1
 # so the order is set by whether the pin is enforced from the first step, not by the storage assembly.
 arm "BDF2-on-V fsm off" "" 0 2.0 check bdf2
 # ... and with FSM ON it does not respond to dt at all. See the KNOWN HOLE note at the top.
-arm "BDF2-on-V fsm on " "" 1 0.0 xfail bdf2
+arm "BDF2-on-V fsm on " "" 1 1.0 xfail bdf2   # $4 = |p| BOUND for an xfail arm, not a target
 
 echo
 if [[ $fail -eq 0 ]]; then echo "ESTIMATOR ORDER: ALL PASSED"; else echo "ESTIMATOR ORDER: FAILED" >&2; fi
