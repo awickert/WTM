@@ -72,22 +72,31 @@ EOF
 # eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
 BB=""
 emit anderson; METHOD=picard emit picard; METHOD=newton DTC=true emit newton
-run() { # arm  extra-flags...
-  local arm="$1"; shift
-  "$WTM" "$WORK/$arm.yaml" $BB "$@" > "$WORK/$arm.log" 2>&1 \
+# THE ORACLE IS ONLY AN ORACLE IF THE THREE SOLVERS ARE ACTUALLY DIFFERENT. This suite's whole claim
+# is that two matrix-based solvers independently corroborate the matrix-free one -- so if `picard`
+# silently downgraded to anderson (which the model DOES do in some combinations, and announces with a
+# note), the test would be comparing anderson with itself and would pass while proving nothing. That
+# is the vacuous-arm failure in its most damaging form: not a missing check, a fake corroboration.
+# expect_resolved reads the fingerprint the MODEL writes after every override and downgrade.
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"   # defer to the suite's log if set
+run() { # arm  [expected solver]  [extra flags...]
+  local arm="$1" want="${2:-}"; shift; shift || true
+  WTM_COVERAGE_TAG="solver_consistency/$arm" "$WTM" "$WORK/$arm.yaml" $BB "$@" > "$WORK/$arm.log" 2>&1 \
     || { echo "FAIL: $arm did not run cleanly (diverged?):"; grep -oE "DIVERGED[A-Z_]*" "$WORK/$arm.log" | tail -1; tail -3 "$WORK/$arm.log"; exit 1; }
   grep -q "equilibrium reached" "$WORK/$arm.log" \
     || { echo "FAIL: $arm ran but never reached equilibrium (hit the cycle cap)"; exit 1; }
+  [ -n "$want" ] && { expect_resolved "$WTM_COVERAGE_LOG" "solver=$want" || exit 3; }
+  return 0
 }
-run anderson
-run picard
-run newton
+run anderson anderson
+run picard picard
+run newton newton
 
 # FOURTH ARM: the same Anderson solve with the volume-step DIAGNOSTIC registered
 # (-wtm_snes_volume_conv, not _govern). Three things are asserted below, and the fixture is the reason
 # they can be: it is gentle and purely SUBSURFACE, so every cell sits on the porosity branch of V(wtd).
 METHOD= TRACE=water_step emit volconv
-run volconv
+run volconv anderson
 
 # FIFTH ARM: the same solve judged in HEAD (solver.convergence.metric: head) instead of water. Water is
 # the DEFAULT since #61, so this arm is the deviation and the other four are the control -- it was the
@@ -96,7 +105,7 @@ run volconv
 # A convergence criterion decides WHEN a solve stops, never WHERE it converges, so both metrics must land
 # on the same equilibrium. That is the whole claim, and it is what makes the default safe to change.
 METHOD= CMETRIC=head TRACE=water_step emit volgov
-run volgov
+run volgov anderson
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)
