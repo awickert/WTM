@@ -53,26 +53,32 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
   PETSc's `-snes_stol`, which WTM set itself at 1e-8, is a STEP-SIZE test: it stops when the iterate
   stops moving, not when the residual is small. It is a stagnation detector, and WTM was treating
-  `CONVERGED_SNORM_RELATIVE` as success. Measured over 294 solves on `tests/budget_closure`, **259 of
-  them - 88 % - exited that way**, some having reduced the residual by as little as 1.8e-04, against a
-  median 4.66e-09 for the solves that exited on the residual test. The offenders were all
+  `CONVERGED_SNORM_RELATIVE` as success. Measured on `tests/budget_closure`, **259 of 294 solves -
+  88 % - exited that way** at `error_tol` 0.005, and 38 of 40 - 95 % - at 0.05. The offenders are
   well-warm-started steps, where the update is already tiny at the first iteration and the step test
-  trips before the residual is ever driven down.
+  trips before the residual is ever driven down. With everything else in this release in place, the
+  step-test exits reduce the residual by a median 7.40e-08 and a worst 5.20e-07, against 9.46e-09 and
+  9.49e-09 for the solves that exit on the residual test: looser by roughly one decade in the median
+  and by 55x at worst.
 
   The units are the crux. A head step tolerance is a LENGTH and the water budget it has to agree with
   is a VOLUME; on this fixture `stol` 1e-8 ends the solve once the update falls below ~2.4e-06 m of
   head, and a few microns of head over cells of ~1e8 m² is a great deal of water. The exact budget is
   an algebraic consequence of the discrete equations being satisfied, so those steps left real
   unbalanced mass and the ledger reported it faithfully: the ledger was right, the solve was not.
-  Worst per-step residual falls from 9.4e-05 of recharge to 3.9e-07, for about +2 % wall time and
-  +6 % nonlinear iterations. It also stops a few very deep cells, where a metre of head is very little
-  water, from speaking for the whole grid.
+  Measured head against water on the same fixture and binary, `error_tol` 0.05: the worst per-step
+  budget residual improves from 2.88e-07 of recharge to 4.56e-08, a factor of 6.3, at **identical wall
+  time** (1.11 s both ways, 20 solves both ways). It also stops a few very deep cells, where a metre of
+  head is very little water, from speaking for the whole grid.
 
-  Three golden references moved, and they moved toward the truth rather than merely away from the old
-  values. Re-deriving the whole set at a tolerance three decades tighter and measuring each binary's
-  production answer against it: the new default reproduces the converged answer **exactly** on all
-  seven cases, while the old head-judged default was off by up to **1.43 m** (`fsm_runoff`,
-  `fsm_runoff_hi`; 0.394 m on `transient`, 6.6e-03 m on `fsm_evap0/1`).
+  Three golden references moved, but only ONE of them was actually stale. Measuring the previously
+  committed references against a set re-derived three decades tighter: `fsm_runoff_hi` was off by
+  **1.72e-01 m** and genuinely needed replacing - it is the case the controller defect below had been
+  aborting - while `fsm_runoff` (1.40e-10 m) and `fsm_impulse` (5.90e-08 m) were already converged and
+  their new values differ only in the last digits, well inside the 1e-6 check tolerance. The four
+  unchanged references were already exact. The new default reproduces the tight reference on all seven
+  cases, and so does the old head metric once the controller defect is fixed - a convergence criterion
+  decides WHEN a solve stops, not WHERE it converges, which is what `tests/solver_consistency` asserts.
 
   One consequence worth knowing before tightening anything: `solver.time_step.error_tol: 0.005`, the
   tightest value the adaptive benchmarks used, is **not actually attainable** on the budget fixture.
