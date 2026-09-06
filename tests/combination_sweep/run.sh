@@ -99,7 +99,7 @@ REFUSALS="${WTM_COVERAGE_LOG:-$WORK/refusals.txt}"
 attempt() { # $1 stem, $2 extra flags...
     local stem="$1"; shift
     MSG=""
-    if sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+    if WTM_COVERAGE_TAG="combination_sweep/$stem" sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
             > "$WORK/$stem.log" 2>&1; then
         return 0
     fi
@@ -117,9 +117,21 @@ for rt in "${RUNTYPES[@]}"; do
         # These are per-iteration VARIABLES, not command prefixes, so both calls see them. As prefixes
         # they applied to the first call only, and the retry silently ran the DEFAULT solver: that turned
         # "picard cannot converge" into a false "picard runs at dt/8" for 12 combinations.
-        STORAGE=$([ "$ig" = volume ] && echo volume)
         METHOD="$sv"
-        case "$ig" in bdf2v) INTEG=bdf2 ;; trbdf2) INTEG=tr-bdf2 ;; *) INTEG= ;; esac
+        # NAME BOTH SCHEME AXES EXPLICITLY. `be` and `volume` used to leave INTEG empty, and an absent
+        # solver.time_integration is `auto` -- which resolves to tr-bdf2 on the Anderson path. STORAGE
+        # was likewise empty for `be`, and the storage-form default is volume. So `be` and `volume` were
+        # the same run as each other on every solver, and on anderson both were also the same run as
+        # `trbdf2` (auto -> tr-bdf2 there). 32 of the 96 cells were duplicates of another cell in the
+        # same table -- 16 on anderson (3 columns resolving to 1, over 4 collectors x 2 run types) and
+        # 8 each on picard and newton (be == volume) -- while the table reported them as distinct
+        # coverage (#24, #37).
+        case "$ig" in
+            be)     INTEG=backward-euler; STORAGE=secant ;;
+            volume) INTEG=backward-euler; STORAGE=volume ;;
+            bdf2v)  INTEG=bdf2;           STORAGE= ;;
+            trbdf2) INTEG=tr-bdf2;        STORAGE= ;;
+        esac
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
             OUT="runs"; nrun=$((nrun+1))
