@@ -59,12 +59,19 @@ EOF
 
 BB=""
 emit cc; ADAPT=true INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
-"$WTM" "$WORK/cc.yaml"    $BB > "$WORK/cc.log"    2>&1 \
-  || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
-"$WTM" "$WORK/adapt.yaml" $BB > "$WORK/adapt.log" 2>&1 \
-  || { echo "RUN FAILED: adapt"; tail -3 "$WORK/adapt.log"; exit 2; }
-"$WTM" "$WORK/water.yaml" $BB > "$WORK/water.log" 2>&1 \
-  || { echo "RUN FAILED: water"; tail -3 "$WORK/water.log"; exit 2; }
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
+# The whole point of this suite is that DIFFERENT schemes reach the SAME equilibrium, so each arm has to
+# prove it ran the scheme it names. Checked against the fingerprint the model writes, not the config we
+# think we wrote -- that is what caught all three arms silently sharing one configuration.
+go() { # $1 stem  $2.. expected resolutions
+    local stem="$1"; shift
+    WTM_COVERAGE_TAG="adaptive_water/$stem" "$WTM" "$WORK/$stem.yaml" $BB > "$WORK/$stem.log" 2>&1 \
+      || { echo "RUN FAILED: $stem"; tail -3 "$WORK/$stem.log"; exit 2; }
+    expect_resolved "$WTM_COVERAGE_LOG" "$@" >/dev/null || exit 3
+}
+go cc    integrator=be_volume dtctl=fixed
+go adapt integrator=tr_bdf2   dtctl=adaptive
+go water integrator=be_volume dtctl=fixed
 
 # (1) adaptive must have actually reached equilibrium (not hit the total_time cap)
 grep -q "equilibrium reached" "$WORK/adapt.log" || { echo "FAIL: adaptive did not reach equilibrium"; exit 1; }
