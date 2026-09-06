@@ -107,14 +107,21 @@ for rr_tag in "0:z" "0.3:r"; do
 done
 [[ $fail -eq 0 ]] || { echo "DT INVARIANCE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" "$PY" - <<'PY'
-import os, sys
+WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+import os, sys, glob
 W = os.environ["WORK"]
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_log as LOG                 # columns BY NAME; the header is pinned by tests/log_schema
 YEAR = 31536000.0
-# (index, label). Columns are 1-indexed in the header; these are the 0-indexed positions.
-INPUTS = [(18, "19 recharge_direct"), (19, "20 runoff_to_surface"), (8, "9 total_recharge_added")]
-TRAJ   = [(9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
-          (12, "13 total_ocean_outflow"), (13, "14 stored_volume"), (17, "18 total_evap_removed")]
+# COLUMNS BY NAME, not by literal index. These lists used to carry hand-written 0-based positions with
+# the column number baked into the label ("19 recharge_direct"), so a column inserted upstream would
+# have shifted every one of them onto its neighbour AND left the printed label confidently wrong.
+# Derived from the header the run actually wrote, the label maintains itself.
+I = LOG.index_map(sorted(glob.glob(f"{W}/*.txt"))[0])
+def col(name): return (I[name], f"{I[name] + 1} {name}")
+INPUTS = [col("recharge_direct"), col("runoff_to_surface"), col("total_recharge_added")]
+TRAJ   = [col("total_loss_to_ocean"), col("total_surface_removed"),
+          col("total_ocean_outflow"), col("stored_volume"), col("total_evap_removed")]
 # Tolerances MEASURED on this fixture. The input channels are exactly invariant here because this
 # fixture's recharge does not depend on the water table, which is what makes them a clean probe --
 # asserted below so the test cannot silently stop discriminating.
@@ -157,8 +164,8 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     rows = [last(s) for s in stems]
     if any(r is None for r in rows):
         print(f"  FAIL  {label} -- missing output"); fail = 1; continue
-    elapsed = [r[20] / YEAR for r in rows]
-    solves  = [int(r[21]) for r in rows]
+    elapsed = [r[I["elapsed_time_s"]] / YEAR for r in rows]
+    solves  = [int(r[I["solves_done"]]) for r in rows]
     print(f"-- {label} --")
     print(f"        elapsed_yr {[round(e,4) for e in elapsed]}   solves {solves}")
 
@@ -181,7 +188,7 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     # INPUT channels: driven by the forcing and elapsed time, so exactly invariant on this fixture.
     # Every spread is normalised by CUMULATIVE RECHARGE (col 9), which the INPUT block just below
     # proves is identical across arms -- so the divisor is one number for the whole comparison.
-    RECH = abs(rows[0][8]) or 1.0
+    RECH = abs(rows[0][I["total_recharge_added"]]) or 1.0
     for idx, name in INPUTS:
         s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_INPUT
@@ -189,7 +196,8 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
         print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread/rech {s:.3e}  (tol {TOL_INPUT:.0e})")
 
     # col 9 must be exactly the sum of the two channels, in every arm.
-    ok = all(abs(r[8] - (r[18] + r[19])) <= 1e-11 * max(1.0, abs(r[8])) for r in rows)
+    ok = all(abs(r[I["total_recharge_added"]] - (r[I["recharge_direct"]] + r[I["runoff_to_surface"]]))
+             <= 1e-11 * max(1.0, abs(r[I["total_recharge_added"]])) for r in rows)
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20 in every arm")
 
@@ -200,7 +208,7 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     # conflating them cost a real investigation: when the fate columns disagreed it was not obvious
     # whether water was being LOST or merely partitioned differently. It was partitioned.
     for st, r in zip(stems, rows):
-        c = abs(r[16]) / RECH
+        c = abs(r[I["exact_budget_residual"]]) / RECH
         ok = c < TOL_CONSERVE
         fail |= not ok
         print(f"  {'PASS' if ok else 'FAIL'}  CONSERVATION  {st:<8} |exact residual|/recharge "
@@ -217,7 +225,8 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     # count -- so the sum does not go to machine zero and any absolute tolerance here would be a
     # number invented to fit. What IS true, and is the whole point, is that the differences CANCEL:
     # the total moves LESS than its largest single part does. Assert exactly that.
-    FATES = [13, 17, 12, 9]  # stored_volume, evap_removed, ocean_outflow, loss_to_ocean
+    FATES = [I[n] for n in ("stored_volume", "total_evap_removed",
+                            "total_ocean_outflow", "total_loss_to_ocean")]
     base = rows[0]
     worst = max(abs(sum(r[i] - base[i] for i in FATES)) / RECH for r in rows)
     biggest_part = max(spread([r[i] for r in rows], RECH) for i in FATES)

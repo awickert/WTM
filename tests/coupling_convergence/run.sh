@@ -121,12 +121,22 @@ for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
 done; done
 [[ $fail -eq 0 ]] || { echo "COUPLING CONVERGENCE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" "$PY" - <<'PYX' || fail=1
+WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PYX' || fail=1
 import os, sys
 W = os.environ["WORK"]
 TAGS = ["1yr", "05yr", "025yr"]                       # each half the previous
-NAME = {9: "10 loss_to_ocean", 11: "12 surface_removed",
-        12: "13 ocean_outflow", 13: "14 stored_volume", 17: "18 evap_removed"}
+# COLUMNS BY NAME. This map used to be hand-written 0-based indices with the column number baked into
+# each label, so a column inserted upstream would have shifted every entry onto its neighbour AND left
+# the label confidently wrong. Built from the header the run wrote; tests/log_schema pins that header.
+import glob
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_log as LOG
+I = LOG.index_map(sorted(glob.glob(f"{W}/*.txt"))[0])
+NAME = {I[n]: f"{I[n] + 1} {lbl}" for n, lbl in
+        (("total_loss_to_ocean", "loss_to_ocean"), ("total_surface_removed", "surface_removed"),
+         ("total_ocean_outflow", "ocean_outflow"), ("stored_volume", "stored_volume"),
+         ("total_evap_removed", "evap_removed"))}
+RECH_COL, RESID_COL = I["total_recharge_added"], I["exact_budget_residual"]
 TOL_CONSERVE, MIN_GAP, MIN_RATE = 1e-6, 1e-2, 1.5
 # The exact budget identity does NOT close on multilake at the coarsest step: 1.802e-05 of recharge,
 # BIT-IDENTICAL under both couplings, collapsing to 4.8e-10 when dt halves and 8.2e-11 at dt/4. It is
@@ -166,7 +176,7 @@ for fx, pol in POLICY.items():
     # Reported PER STEP SIZE, not as a single worst-case, because on multilake it is the COARSEST
     # step that misbehaves and a single number would hide which.
     for t in TAGS:
-        w = max(abs(runs[(t, c)][16]) / (abs(runs[(t, c)][8]) or 1.0) for c in ("impulse", "continuous"))
+        w = max(abs(runs[(t, c)][RESID_COL]) / (abs(runs[(t, c)][RECH_COL]) or 1.0) for c in ("impulse", "continuous"))
         xf = XFAIL_CONSERVE.get((fx, t))
         if xf is None:
             ok = w < TOL_CONSERVE
@@ -184,7 +194,7 @@ for fx, pol in POLICY.items():
                   ("" if still else f"  <-- NOW CLOSES (below {xf:.0e}): promote this arm"))
 
     gap = {c: [abs(runs[(t, 'impulse')][c] - runs[(t, 'continuous')][c]) /
-               (abs(runs[(t, 'impulse')][8]) or 1.0) for t in TAGS] for c in NAME}
+               (abs(runs[(t, 'impulse')][RECH_COL]) or 1.0) for t in TAGS] for c in NAME}
 
     for c in pol.get("nonvacuous", []):
         ok = gap[c][0] > MIN_GAP
