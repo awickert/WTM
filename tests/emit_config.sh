@@ -51,6 +51,8 @@
 #   region|time_start|time_end -> io.region|time_start|time_end
 #   textfilename          -> output.run_log
 #   outfile_prefix        -> output.outfile_prefix
+#   run_dir               -> output.directory (+ output.if_exists: overwrite). OPTIONAL: when unset it
+#                            is DERIVED as '<outfile_prefix>prov' so every run records provenance.
 #   evap_mode             -> DROPPED. No longer a config key; the member is frozen at 0 and is inert
 #                            under the default evaporation taper (taper-first: evap_mode is only
 #                            consulted with -wtm_evap_taper OFF). A test that needs the legacy
@@ -247,11 +249,34 @@ fi
 # `trace` joins the gate rather than hiding behind it: it was emitted only when a PATH key was also
 # present, so a config asking for `trace` and nothing else silently got no trace channel at all -- the
 # same shape of failure as an unknown key, and invisible for the same reason.
-if have textfilename || have outfile_prefix || have trace; then
+if have textfilename || have outfile_prefix || have trace || have run_dir; then
     echo "output:"
     have outfile_prefix && echo "  outfile_prefix: '$(val outfile_prefix)'"
     have textfilename   && echo "  run_log: '$(val textfilename)'"
     have trace          && echo "  trace: [$(val trace)]"
+    # EVERY RUN GETS A PROVENANCE RECORD. output.directory is what gates write_provenance() and
+    # write_full_config() in the model (src/WTM.cpp), and no test had ever set it -- so not one run in
+    # the suite recorded which binary produced it. That is exactly how a measurement got attributed to
+    # the wrong build and published (see the CORRECTION in bce7cc8): had each compared run carried its
+    # own commit hash on disk, the mistake would have been visible immediately.
+    #
+    # Derived from outfile_prefix rather than asked of all 37 runners, so it cannot be forgotten in a
+    # new test: `<prefix>prov/`, beside the outputs it describes, one directory per ARM (the prefix is
+    # already per-arm) so arms cannot overwrite each other's record. `if_exists: overwrite` keeps the
+    # path deterministic -- the default `increment` would mint run<NNN>_<timestamp>/ every time and the
+    # directory would be unfindable from the test.
+    #
+    # This costs no path churn, which is worth stating because it was expected to: outfile_prefix and
+    # run_log are rewritten as `run_dir / prefix`, and std::filesystem replaces rather than appends when
+    # the right-hand side is ABSOLUTE. Every test passes an absolute prefix, so the outputs stay exactly
+    # where they were. VERIFIED by running it before wiring it in.
+    if have run_dir; then
+        echo "  directory: '$(val run_dir)'"
+        echo "  if_exists: overwrite"
+    elif have outfile_prefix; then
+        echo "  directory: '$(val outfile_prefix)prov'"
+        echo "  if_exists: overwrite"
+    fi
 fi
 
 # The script's exit status is its LAST command's, and every emitter here is a `have X && echo ...`
