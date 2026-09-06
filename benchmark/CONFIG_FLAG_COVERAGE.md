@@ -38,6 +38,28 @@ alone."** The status column answers that.
 > default solver, since a setting that moves from flag to config reaches only the config-construction
 > sites, and that harness has two.
 
+> **UPDATE 2026-09-06 (latest).** The ABSTRACTED class is **empty**: all four flags the previous update
+> listed as remaining -- `-wtm_newton`, `-wtm_bdf2_on_V`, `-wtm_tr_bdf2`, `-wtm_anderson` -- are retired
+> too, so the "27 of 65 are gone" figure above is stale. **29 `-wtm_` option names remain**, counted as
+> distinct string literals in `src/*.cpp`:
+>
+> ```
+> grep -ohE '"-wtm_[a-z0-9_]+"' src/*.cpp | tr -d '"' | sort -u | wc -l
+> ```
+>
+> Three of those 29 are newer than this file and appear in no row below: `-wtm_budget_trace`,
+> `-wtm_fsm_trace`, `-wtm_version`.
+>
+> **This was found by a test, not by reading.** `tests/route_equality` exists to assert that a config key
+> and the flag it abstracts produce the same run. Its four arms were all solver-path flags; each
+> retirement above correctly deleted its arm, and when the last one went the suite was left asserting
+> nothing -- while still printing its banner and passing. The retirements were each proved
+> byte-equivalent, so the mechanism was never the problem. What no step owned was the question of what
+> the suite still covered once the class it covered was empty. Rebuilt with three arms over the
+> abstractions that DO remain (`solver.convergence.metric`, `solver.convergence.water_volume_tol`,
+> `surface_water.fsm_coupling`), each carrying a control that fails if the setting stops changing the
+> answer.
+
 > **UPDATE 2026-09-01 (later).** The three MODE INTERFACE flags are RETIRED too, with
 > `collection.method: legacy` and the taper-1 band sink (fork issue #7). 20 of the 65 flags are now gone.
 > The `-wtm_fringe_*` rows below describe knobs that no longer exist: they sized the sink's band.
