@@ -155,6 +155,19 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
     done
     # Judge on the FINEST pair: the asymptotic regime is where an order claim actually lives.
     local pfin; pfin=$(echo "$line" | awk '{print $NF}')
+    # NO ARM MAY PASS ON ABSENT DATA. With pfin empty the comparison below becomes abs(-(want)), which
+    # is 0 for want=0 -- so the xfail arm reported "KNOWN HOLE, still broken" while having measured
+    # NOTHING, for as long as this file has existed. An expected failure that cannot tell a hole from a
+    # missing measurement is not holding anything visible.
+    # Tested as "is a number", not "is non-empty": awk '{print $NF}' on a whitespace-only line has NF=0
+    # and $NF then refers to field 0, i.e. the whole record -- so a line of failed ratios comes back as
+    # SPACES, and [ -z ] is false. The guard silently did not fire the first time for exactly that reason.
+    if ! printf '%s' "$pfin" | grep -qE '^-?[0-9]+(\.[0-9]+)?$'; then
+        echo "  FAIL  $label -- no observed order could be computed (p =$line)."
+        echo "        Every ladder pair failed to produce a ratio. Check the DTTRACE lines in"
+        echo "        $WORK/${tag}_*.log: an estimate of exactly 0 at two rungs gives log(0/0)."
+        fail=1; return
+    fi
     local ok; ok=$(python3 -c "print(1 if abs($pfin-($want))<=$PTOL else 0)")
     if [ "$mode" = xfail ]; then
         # For an xfail arm $want is an UPPER BOUND on |p|, not a target. The hole is that the estimate
