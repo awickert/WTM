@@ -96,6 +96,11 @@ run "config schema (unknown keys)"  ./config_schema/run.sh "$WTM"
 run "config/flag route equality"   ./route_equality/run.sh "$WTM"
 run "snapshot name + restart"    ./snapshot_restart/run.sh "$WTM"
 run "solver consistency (A≡P≡N)" ./solver_consistency/run.sh "$WTM"
+# The ONLY fixture with spatially varying porosity, and the only place a head norm and a volume
+# norm can rank cells differently -- everywhere else phi is uniform 0.25 and the distinction is
+# invisible by construction. Its DISCRIMINATES arm asserts exactly that, so the fixture cannot
+# quietly decay into uniform-equivalent behaviour while its other arms keep passing.
+run "variable porosity (head != volume)" ./variable_porosity/run.sh "$WTM"
 run "boundary: dirichlet≡padding" ./boundary_consistency/run.sh "$WTM"
 run "boundary: analytic parabola" ./boundary_analytic/run.sh "$WTM"
 run "adaptive-restart robustness" ./adaptive_restart/run.sh "$WTM"
