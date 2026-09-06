@@ -36,6 +36,9 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
 make_work budget
+# Defer to the suite's coverage log when run under run_all.sh, so the aggregated matrix sees these
+# arms; fall back to a per-run file so the resolution assertions still work standalone.
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 TOL="${TOL:-1e-6}"      # relative to the run's solver recharge
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
@@ -84,9 +87,29 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, 
     # Newton sub-stepping one, which carries the solve tolerance on every sub-step (see its note).
     local stol="${ARM_STOL:-1e-8}"
     mkcfg "$stem" "${COLL-implicit}"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol "$stol" > "$WORK/$stem.log" 2>&1; then
+    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol "$stol" \
+            > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
+    # DID THIS ARM RUN WHAT IT ASKED FOR? (#24, #72) Only axes this arm SET are checked, against the
+    # fingerprint the MODEL emits after every override. Deliberately NOT a re-derivation of the auto
+    # policy: that would be this script asserting its own guess, and the guess was wrong -- the first
+    # version of this check "found" three defects that are all documented auto-resolutions
+    # (time_integration: auto -> tr-bdf2 for anderson; adaptive_dt: auto -> off under the implicit
+    # collector; fsm_coupling: auto -> impulse under the explicit collector). What it DID find is below.
+    local -a want=()
+    if   [ -n "${WANT_COLL:-}" ];    then want+=("collector=$WANT_COLL")        # COLL="" arms: the resolution IS the claim
+    elif [ -n "${COLL-implicit}" ];  then want+=("collector=${COLL-implicit}")
+    fi
+    case "${INTEG:-}" in
+        tr-bdf2)        want+=("integrator=tr_bdf2") ;;
+        bdf2)           want+=("integrator=bdf2") ;;
+        backward-euler) want+=("integrator=$([ "${STORAGE:-volume}" = secant ] && echo be_secant || echo be_volume)") ;;
+    esac
+    [ -n "${METHOD:-}" ]   && want+=("solver=$METHOD")
+    [ -n "${COUPLING:-}" ] && want+=("coupling=$COUPLING")
+    [ -n "${ADAPT:-}" ]    && want+=("dtctl=adaptive")
+    expect_resolved "$WTM_COVERAGE_LOG" "${want[@]}" || fail=1
     TOL="$tol" LABEL="$label" TESTS="$(readlink -f ..)" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 tol   = float(os.environ["TOL"]); label = os.environ["LABEL"]
@@ -345,7 +368,7 @@ echo
 # Newton needs -wtm_dt_continuation to converge on this fixture; without it every collector aborts with
 # "The SNES solver has not converged".
 echo "-- each solver at its OWN resolved default (collector key UNSET) --"
-COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
+COLL="" WANT_COLL=active_set ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # Newton's per-cycle residual is looser than Anderson's on the same collector because
 # -wtm_dt_continuation SUB-STEPS, and the active-set multiplier carries the solve tolerance on every
 # sub-step. TOLERANCE-LIMITED, verified by scaling the solve. RE-MEASURED 2026-09-04, after the FSM
@@ -360,8 +383,8 @@ COLL="" ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # inside ARM_TOL. What broke this arm is that at snes_stol 1e-8 the solver noise (1.780e-04) now
 # EXCEEDS the closure being asserted (1e-4), so the arm was measuring the solver, not the budget.
 # Resolve the solve past the assertion instead of loosening the assertion.
-COLL="" METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
-COLL="" METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
+COLL="" WANT_COLL=active_set METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
+COLL="" WANT_COLL=explicit METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
 # THE COUPLING IS WHAT BREAKS THIS ARM, and it is worth two arms rather than one. `implicit` closes
 # perfectly well under impulse; under continuous it does not. Measured at snes_stol 1e-10 (past the
 # solver floor, so this is the model and not the solve):
