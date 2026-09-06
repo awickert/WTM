@@ -15,7 +15,10 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/arestart_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/arst_XXXX); trap 'rm -rf "$WORK"' EXIT
-TOL="${TOL:-0.001}"       # metres; adaptive-restart vs plain-Anderson steady-state agreement
+# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not metres of head: the model
+# conserves water and judges every stopping criterion in it (#61), so an agreement bound belongs
+# in the same units. Uniform phi = 0.25 here, so this is the old 1e-3 m head bound x0.25 exactly.
+TOL="${TOL:-0.00025}"     # 0.25 mm of water; adaptive-restart vs plain-Anderson steady-state agreement
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
@@ -59,13 +62,17 @@ grep -q "equilibrium reached" "$WORK/ar.log" \
   || { echo "FAIL: plain Anderson reference run failed"; tail -4 "$WORK/base.log"; exit 2; }
 
 AR=$(ls "$WORK"/ar_*.tif | tail -1); BASE=$(ls "$WORK"/base_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$AR" "$BASE" <<'PY'
+TOL="$TOL" PHI="$(readlink -f inputs/arestart_porosity.tif)" TESTS="$(readlink -f ..)" \
+  "$PY" - "$AR" "$BASE" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
 ar, base = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
+phi = W.read_band(os.environ["PHI"])
 m = np.ones_like(ar, bool); m[:, 0] = False   # exclude the ocean column
-d = float(np.max(np.abs((ar - base)[m]))); tol = float(os.environ["TOL"])
-print(f"  adaptive-restart vs plain Anderson: max|Δwtd| = {d:.3e} m  (tol {tol})")
+d = float(W.water_diff(ar, base, phi)[m].max()); tol = float(os.environ["TOL"])
+print(f"  adaptive-restart vs plain Anderson: max|ΔV| = {d:.3e} m water  (tol {tol})")
 if d <= tol:
     print("PASS: -wtm_adaptive_restart runs to equilibrium and matches plain Anderson"); sys.exit(0)
-print(f"FAIL: adaptive-restart differs from plain Anderson by {d:.3e} m > tol {tol} m"); sys.exit(1)
+print(f"FAIL: adaptive-restart differs from plain Anderson by {d:.3e} > tol {tol} m water"); sys.exit(1)
 PY

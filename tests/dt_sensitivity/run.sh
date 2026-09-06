@@ -19,7 +19,10 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/dtsens_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/dts_XXXX); trap 'rm -rf "$WORK"' EXIT
-DT_TOL="${DT_TOL:-1e-3}"     # metres; the active-set equilibrium must match across the 4x dt change (it is ~1e-14)
+# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head -- the model conserves water
+# and judges its stopping criteria in it (#61). Uniform phi = 0.25 here, so this is the old 1e-3 m
+# head bound x0.25 exactly. BITE_MIN below is derived from it, so it follows automatically.
+DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 4x dt change (it is ~1e-14)
 # The POSITIVE CONTROL was the taper-1 band sink under runoff_collector=legacy, whose band width scaled
 # as 2*qmax*dt; both were retired 2026-09-01 (fork issue #7). `implicit` replaces it, and is the better
 # control anyway: it is the enforcement active_set was chosen OVER, and its retained head is ~linear in
@@ -31,8 +34,17 @@ DT_TOL="${DT_TOL:-1e-3}"     # metres; the active-set equilibrium must match acr
 # that the control's dt-sensitivity sits far ABOVE the tolerance the test polices, so a broken comparison
 # cannot slip through. 100x DT_TOL is that statement. Measured here: active_set 6.04e-14 m, implicit
 # 2.25e-01 m -- a separation of twelve orders of magnitude, and 225x DT_TOL.
+#
+# BITE_MIN IS NO LONGER DERIVED FROM DT_TOL, and that is a consequence of the move to water (#65)
+# rather than a change of mind. The two quantities now live in DIFFERENT REGIMES of V(wtd): the
+# active-set arm it polices is subsurface, where dV/dwtd = phi, so its bound scaled by 0.25 with the
+# units change; the implicit-siphon control it bounds is water held AT THE SURFACE, where dV/dwtd -> 1,
+# so its value did NOT scale (measured: 2.250e-01 m head -> 2.248e-01 m water). Keeping the 100x
+# coupling would therefore have quietly weakened the control from a 2.25x margin to a 9x one -- a
+# looser assertion arriving as a side effect of a units fix, which is exactly the kind of silent
+# slackening this conversion exists to prevent. Set independently, it keeps the ORIGINAL strictness.
 PY="${PY:-python3}"
-BITE_MIN="${BITE_MIN:-$($PY -c "print(100 * $DT_TOL)")}"
+BITE_MIN="${BITE_MIN:-0.1}"   # metres OF WATER; the control sits at 2.248e-01, a 2.25x margin (400x DT_TOL)
 export OMP_NUM_THREADS=1
 
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
@@ -83,14 +95,18 @@ run leg_f $FINE   400 implicit ""
 
 AC=$(ls "$WORK"/as_c_*.tif|tail -1); AF=$(ls "$WORK"/as_f_*.tif|tail -1)
 LC=$(ls "$WORK"/leg_c_*.tif|tail -1); LF=$(ls "$WORK"/leg_f_*.tif|tail -1)
-DT_TOL="$DT_TOL" BITE_MIN="$BITE_MIN" "$PY" - "$AC" "$AF" "$LC" "$LF" <<'PY'
+DT_TOL="$DT_TOL" BITE_MIN="$BITE_MIN" PHI="$(readlink -f inputs/dtsens_porosity.tif)" \
+  TESTS="$(readlink -f ..)" "$PY" - "$AC" "$AF" "$LC" "$LF" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
 ac, af, lc, lf = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
+phi = W.read_band(os.environ["PHI"])
 dt_tol = float(os.environ["DT_TOL"]); bite = float(os.environ["BITE_MIN"])
-act = float(np.max(np.abs(ac - af)))   # active-set: dt sensitivity (should be ~0)
-leg = float(np.max(np.abs(lc - lf)))   # implicit siphon: dt sensitivity (should be large)
-print(f"  DT-INDEPENDENT : active-set        max|wtd(1yr) - wtd(0.25yr)| = {act:.3e} m  (<= {dt_tol})")
-print(f"  BITES          : implicit siphon   max|wtd(1yr) - wtd(0.25yr)| = {leg:.3e} m  (>= {bite})")
+act = float(W.water_diff(ac, af, phi).max())   # active-set: dt sensitivity (should be ~0)
+leg = float(W.water_diff(lc, lf, phi).max())   # implicit siphon: dt sensitivity (should be large)
+print(f"  DT-INDEPENDENT : active-set        max|ΔV(1yr) - ΔV(0.25yr)| = {act:.3e} m water  (<= {dt_tol})")
+print(f"  BITES          : implicit siphon   max|ΔV(1yr) - ΔV(0.25yr)| = {leg:.3e} m water  (>= {bite})")
 ok = act <= dt_tol and leg >= bite
 print("PASS: the active-set exfiltration constraint gives a dt-independent equilibrium; implicit does not (test bites)"
       if ok else "FAIL")
