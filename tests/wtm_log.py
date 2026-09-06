@@ -66,6 +66,19 @@ def read_log(path):
     return RunLog(path)
 
 
+def index_map(path):
+    """{column name -> 0-based index}, read from the header the run actually wrote.
+
+    For call sites that already index rows positionally and only need the MAGIC NUMBERS removed:
+
+        I = index_map(txt)
+        rech = [r[I["total_recharge_added"]] for r in rows]
+
+    Minimal churn, and it converts a silent reindex into a KeyError naming the column.
+    """
+    return {n: i for i, n in enumerate(header_names(path))}
+
+
 def read_trace(path, tag):
     """Every `<tag> k=v k=v ...` line, as a list of dicts of strings.
 

@@ -86,15 +86,18 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, 
     if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol "$stol" > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
-    TOL="$tol" LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
+    TOL="$tol" LABEL="$label" TESTS="$(readlink -f ..)" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 tol   = float(os.environ["TOL"]); label = os.environ["LABEL"]
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_log as LOG               # columns BY NAME; see tests/log_schema
+I     = LOG.index_map(sys.argv[1])
 rows  = [[float(x) for x in l.split()] for l in open(sys.argv[1])
          if l.split() and l.split()[0].isdigit() and len(l.split()) >= 18]
 if len(rows) < 3:
     print(f"  FAIL  {label} -- only {len(rows)} data rows"); sys.exit(1)
 # cols (1-indexed): 9 solver-side recharge scale, 17 exact_budget_residual
-rech = [r[8] for r in rows]; res = [r[16] for r in rows]
+rech = [r[I["total_recharge_added"]] for r in rows]; res = [r[I["exact_budget_residual"]] for r in rows]
 # (a) cumulative closure
 scale = abs(rech[-1]) or 1.0
 cum   = abs(res[-1]) / scale

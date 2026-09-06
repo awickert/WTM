@@ -68,14 +68,17 @@ sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" \
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
 TIF=$(ls "$WORK"/c_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$WORK/c.txt" "$TIF" "$WORK/s.txt" <<'PY'
+TOL="$TOL" TESTS="$(readlink -f ..)" "$PY" - "$WORK/c.txt" "$TIF" "$WORK/s.txt" <<'PY'
 import sys, os, numpy as np, rasterio
 txt, tif, txt_src = sys.argv[1], sys.argv[2], sys.argv[3]
 tol = float(os.environ["TOL"])
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_log as LOG               # columns BY NAME; see tests/log_schema
+I    = LOG.index_map(txt)
 rows = [l.split() for l in open(txt) if l and l[0].isdigit()]
 # cols (1-indexed): 9 recharge(cum), 16 budget_residual(cum)
-R    = np.array([float(r[8])  for r in rows])
-resid= np.array([float(r[15]) for r in rows])
+R    = np.array([float(r[I["total_recharge_added"]])  for r in rows])
+resid= np.array([float(r[I["budget_residual"]]) for r in rows])
 # per-cycle conservation = change in the cumulative residual, normalised by the cycle's recharge increment
 dresid = np.abs(np.diff(resid))
 dR     = np.abs(np.diff(R))
@@ -111,8 +114,8 @@ check("LAKE PERSISTS (head kept)", lake > 1.0,
 # water table can draw a different P-ET. On THIS fixture the two arms agree EXACTLY (0.0e+00 at every
 # cycle), so the tolerance is headroom, not slack being consumed.
 rows_s = [l.split() for l in open(txt_src) if l and l[0].isdigit()]
-R19    = np.array([float(r[18]) for r in rows])
-R19s   = np.array([float(r[18]) for r in rows_s])
+R19    = np.array([float(r[I["recharge_direct"]]) for r in rows])
+R19s   = np.array([float(r[I["recharge_direct"]]) for r in rows_s])
 S14    = np.array([float(r[13]) for r in rows])
 S14s   = np.array([float(r[13]) for r in rows_s])
 n = min(len(R19), len(R19s))
