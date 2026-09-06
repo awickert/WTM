@@ -140,7 +140,7 @@ PY
 check_nan() { # TR-BDF2 must report the exact residual as unavailable, not as a number
     local label="$1" stem="$2"; shift 2
     mkcfg "$stem"
-    "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1
+    WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1
     LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 label = os.environ["LABEL"]
@@ -164,7 +164,8 @@ PY
 xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags ; XTASK names the defect
     local label="$1" stem="$2" floor="$3"; shift 3
     mkcfg "$stem" "${COLL-implicit}"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1; then
+    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+            > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
     FLOOR="$floor" LABEL="$label" XTASK="${XTASK:-#12}" "$PY" - "$WORK/$stem.txt" <<'PYX' || fail=1
