@@ -30,6 +30,23 @@ else
 fi
 echo "WTM test suite -- tier: $TIER  (MPI ranks: n=1 vs {$MPI_RANKS})"
 
+# SELF-INTEGRITY. On 2026-09-05 this script was edited WHILE IT WAS RUNNING. bash reads a script by
+# BYTE OFFSET, so the edit shifted everything after it: one sub-suite ran twice, another never ran at
+# all, and the run still printed ALL SUITES PASSED. A green report from a corrupted run is the worst
+# thing a test suite can do, so record the hash now and re-check it before the summary is believed.
+SELF_SHA=$(sha256sum "$0" | cut -d" " -f1)
+EXPECTED_SUITES=$(grep -c '^run "' "$0")   # every run call is top-level and unconditional
+
+# ONE RUN AT A TIME, and a way to stop it that is not `pkill -f`. That pattern twice matched the
+# caller's own command line and killed the calling shell. tests/stop.sh reads the PID from here.
+LOCK="$(dirname "$0")/.run_all.lock"
+if [ -f "$LOCK" ] && kill -0 "$(head -1 "$LOCK" 2>/dev/null)" 2>/dev/null; then
+    echo "ERROR: a suite run is already live (PID $(head -1 "$LOCK")); stop it with tests/stop.sh" >&2
+    exit 2
+fi
+printf '%s\n%s\n' "$$" "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)" > "$LOCK"
+trap 'rm -f "$LOCK"' EXIT
+
 # COVERAGE FINGERPRINTS. Every WTM run appends one line describing what it actually resolved to; the
 # tag names the test it belongs to. Accumulated across the whole suite, then turned into
 # tests/COVERAGE.md at the end. Off for anyone running a test directly (the variable is unset), so
@@ -97,6 +114,23 @@ run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
 echo; echo "==================== SUMMARY ===================="
 fail=0
+# Was this script edited under us, and did every declared suite actually report?
+if [ "$(sha256sum "$0" | cut -d" " -f1)" != "$SELF_SHA" ]; then
+    echo "  THIS SCRIPT WAS EDITED WHILE RUNNING -- THIS RUN IS VOID (bash reads by byte offset," >&2
+    echo "  so sub-suites may have been repeated or skipped). Re-run it." >&2
+    fail=1
+fi
+if [ "${#NAMES[@]}" -ne "$EXPECTED_SUITES" ]; then
+    echo "  SUITE COUNT MISMATCH: $EXPECTED_SUITES declared, ${#NAMES[@]} reported -- a sub-suite was" >&2
+    echo "  skipped or duplicated, so this run does not cover what it claims." >&2
+    fail=1
+fi
+DUPES=$(printf '%s\n' "${NAMES[@]}" | sort | uniq -d)
+if [ -n "$DUPES" ]; then
+    echo "  DUPLICATE SUITE NAMES (one ran twice, and something else probably did not):" >&2
+    printf '    %s\n' $DUPES >&2
+    fail=1
+fi
 for i in "${!NAMES[@]}"; do
     printf "  %-4s  %s\n" "${RESULTS[$i]}" "${NAMES[$i]}"
     [[ "${RESULTS[$i]}" == "FAIL" ]] && fail=1
