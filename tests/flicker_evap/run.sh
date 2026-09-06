@@ -19,13 +19,24 @@
 #                  and that taper 2 is the fix (a regression that fails without it).
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # wtm_col: run-log columns BY NAME, not by field number
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/flickevap_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/fe_XXXX); trap 'rm -rf "$WORK"' EXIT
-QUIET="${QUIET:-1e-3}"      # metres; settled if final per-cycle |Δwtd| below this (a limit cycle stays large)
-BITE_MIN="${BITE_MIN:-1.0}" # metres; the hard-switch limit cycle keeps per-cycle |Δwtd| far above QUIET
+# metres OF WATER VOLUME (|S*Δwtd|, run-log column abs_change_volume_max), not head (#61/#65).
+# THE SCALE FACTOR HERE IS 0.0158, NOT 0.25, and the reason is the whole argument for the metric.
+# Column 5 is the max over cells of |Δwtd|; the volume column is the max over cells of |S*Δwtd| -- and
+# those maxima fall on DIFFERENT CELLS. Measured on the bare (taper-off) arm: head 1.79714, volume
+# 0.0283872. The largest head swing sits in a low-storativity cell that moves almost no water, so the
+# "flicker" this fixture detects is far smaller in water than it looks in head.
+QUIET="${QUIET:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below this (managed reads exactly 0)
+BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cycle stays far above QUIET.
+                            # Set to PRESERVE THE ORIGINAL MARGIN rather than by scaling the old number:
+                            # 1.0 against an achieved 1.79714 head was 1.80x, and 0.015 against an achieved
+                            # 0.0283872 volume is 1.89x. Scaling 1.0 by 0.25 would have demanded 0.25 from a
+                            # control that only reaches 0.0284, failing a fixture that has not changed.
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
@@ -73,13 +84,15 @@ emit bare
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.
-msettle=$(grep -E '^[0-9]' "$WORK/managed.txt" | tail -4 | awk 'BEGIN{m=0}{v=$5+0; if(v>m)m=v}END{print m}')
+VC=$(wtm_col "$WORK/managed.txt" abs_change_volume_max) || exit 1
+msettle=$(grep -E '^[0-9]' "$WORK/managed.txt" | tail -4 | awk -v c="$VC" 'BEGIN{m=0}{v=$c+0; if(v>m)m=v}END{print m}')
 awk -v v="$msettle" -v q="$QUIET" 'BEGIN{exit !(v+0 <= q+0)}' \
-  || { echo "FAIL: managed did not settle -- max recent per-cycle |Δwtd|=$msettle > $QUIET (taper not damping?)"; exit 1; }
+  || { echo "FAIL: managed did not settle -- max recent per-cycle |S*Δwtd|=$msettle > $QUIET (taper not damping?)"; exit 1; }
 # BITE (bare): the hard-switch run must NOT settle (limit cycle keeps the per-cycle change large).
-bsettle=$(grep -E '^[0-9]' "$WORK/bare.txt" | tail -1 | awk '{print $5}')
+BC=$(wtm_col "$WORK/bare.txt" abs_change_volume_max) || exit 1
+bsettle=$(grep -E '^[0-9]' "$WORK/bare.txt" | tail -1 | awk -v c="$BC" '{print $c}')
 awk -v v="$bsettle" -v b="$BITE_MIN" 'BEGIN{exit !(v+0 >= b+0)}' \
-  || { echo "FAIL: bare (taper off) SETTLED (final |Δwtd|=$bsettle < $BITE_MIN) -- fixture no longer flickers; test does not bite"; exit 1; }
+  || { echo "FAIL: bare (taper off) SETTLED (final |S*Δwtd|=$bsettle < $BITE_MIN) -- fixture no longer flickers; test does not bite"; exit 1; }
 
 MAN=$(ls "$WORK"/managed_*.tif | tail -1)
 # MASS BALANCE from the last two cycles: cols 9 (recharge), 18 (evap), 12 (surface_removed), 13 (ocean_outflow)

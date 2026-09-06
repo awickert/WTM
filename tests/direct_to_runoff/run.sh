@@ -14,6 +14,7 @@
 #                  fails without the fix.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # wtm_col: run-log columns BY NAME, not by field number
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/runoffgather_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
@@ -63,7 +64,8 @@ emit piled off
   || { echo "RUN FAILED: piled"; tail -3 "$WORK/piled.log"; exit 2; }
 
 # SETTLING (gathered): final per-cycle |Δwtd| (col 5) must be small (data rows only; skip the trailing "p" line).
-gsettle=$(grep -E '^[0-9]' "$WORK/gathered.txt" | tail -1 | awk '{print $5}')
+GC=$(wtm_col "$WORK/gathered.txt" abs_change_volume_max) || exit 1
+gsettle=$(grep -E '^[0-9]' "$WORK/gathered.txt" | tail -1 | awk -v c="$GC" '{print $c}')
 awk -v v="$gsettle" -v q="$TOL" 'BEGIN{exit !(v+0 <= q+0)}' \
   || { echo "FAIL: gathered did not settle -- final per-cycle |Δwtd|=$gsettle > $TOL"; exit 1; }
 

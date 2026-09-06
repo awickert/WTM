@@ -59,6 +59,9 @@ EXPECTED = [
     "stored_volume", "ocean_loss_closing", "budget_residual", "exact_budget_residual",
     "total_evap_removed", "recharge_direct", "runoff_to_surface",
     "elapsed_time_s", "solves_done", "rejects_done",
+    # Appended for #65: the per-cycle change in WATER VOLUME (|S*dwtd|), the units the equilibrium
+    # stop, the adaptive step target and the budget all use. Column 5 stays the HEAD change.
+    "abs_change_volume_max", "abs_change_volume_rms",
 ]
 fail = 0
 def check(name, ok, detail):

@@ -215,6 +215,13 @@ struct Parameters {
   double  runoff_booked_upto_s = 0.0;
   int64_t solves_done        = 0;  // accepted groundwater solves
   int64_t rejects_done       = 0;  // rejected + retried steps (adaptive / dt-continuation only)
+  // Per-cycle change in WATER VOLUME (|S*Dwtd|, water per unit area -- a depth in metres, not m^3),
+  // carried here purely so PrintValues can write it to the run log. The authoritative copies live in
+  // AppCtx (last_cycle_dw_water / last_cycle_rms_water) and drive the equilibrium stop; these are set
+  // from them in WTM.cpp immediately before PrintValues, in the same unconditional block, so they
+  // cannot go one cycle stale the way the budget baseline once did.
+  double last_cycle_dw_volume  = 0.0;   // max over land cells
+  double last_cycle_rms_volume = 0.0;   // rms over land cells
   double infiltration_change = 0.;
   // Exact stored water volume at t=0, captured by CaptureInitialStoredVolume at the END of
   // initialise() -- before any stepping -- so the budget-closing diagnostic differences a storage

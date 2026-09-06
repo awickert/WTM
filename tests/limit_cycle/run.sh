@@ -18,6 +18,7 @@
 #   AGREEMENT       : backward-Euler (cc) and BDF2-on-V settle to the same water table.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # wtm_col: run-log columns BY NAME, not by field number
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/limitcyc_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
@@ -73,7 +74,8 @@ RELAX=1.0 emit rx1; RELAX=0.5 emit rx05
 
 # SETTLING: the final per-cycle |wtd change| (col 5) must be small -- a limit cycle would keep it large.
 for a in cc bd; do
-  last=$(tail -1 "$WORK/$a.txt" | awk '{print $5}')
+  LC=$(wtm_col "$WORK/$a.txt" abs_change_volume_max) || exit 1
+  last=$(tail -1 "$WORK/$a.txt" | awk -v c="$LC" '{print $c}')
   awk -v v="$last" -v q="$QUIET" 'BEGIN{exit !(v+0 <= q+0)}' \
     || { echo "FAIL: $a did not settle -- final per-cycle |Δwtd|=$last > $QUIET (limit cycle?)"; exit 1; }
 done

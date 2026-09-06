@@ -700,7 +700,10 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
            // -wtm_dt_continuation, whose loop runs report_steps STEPS at a dt it may grow. The derived
            // form reported 20.000 yr for a continuation run that had simulated 5.77 yr.
            << params.elapsed_time_s << " "
-           << params.solves_done << " " << params.rejects_done << " " << std::endl;
+           << params.solves_done << " " << params.rejects_done << " "
+           // Columns 24-25: per-cycle change in WATER VOLUME (|S*Dwtd|), the units the model's own
+           // equilibrium stop, adaptive step target and budget all use. Column 5 remains the HEAD change.
+           << params.last_cycle_dw_volume << " " << params.last_cycle_rms_volume << " " << std::endl;
 
   textfile.close();
 }

@@ -176,6 +176,11 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
               "sum_of_water_tables total_surface_removed total_ocean_outflow "
               "stored_volume ocean_loss_closing budget_residual exact_budget_residual total_evap_removed "
               "recharge_direct runoff_to_surface elapsed_time_s solves_done rejects_done "
+              // Columns 24-25: the per-cycle change in WATER VOLUME. APPENDED, so every existing index
+              // stays put. The head column 5 (absolute_value_total_wtd_change) is kept beside them --
+              // it is still what a reader wants when asking "how far did the TABLE move", and the two
+              // together are the head-vs-volume contrast the suite now measures in.
+              "abs_change_volume_max abs_change_volume_rms "
            << std::endl;
   textfile.close();
 }
@@ -917,6 +922,10 @@ void update(
     user_context.last_cycle_fracabove = (gn > 0) ? (double)gabove / (double)gn : 0.0;
     user_context.last_cycle_dw_water  = gvmax;
     user_context.last_cycle_rms_water = (gn > 0) ? std::sqrt(gvsq / (double)gn) : 0.0;
+    // ...and hand them to PrintValues, which only receives params. Set HERE, six lines before the call,
+    // so the log row carries THIS cycle's change rather than the previous one.
+    params.last_cycle_dw_volume  = user_context.last_cycle_dw_water;
+    params.last_cycle_rms_volume = user_context.last_cycle_rms_water;
     DMDAVecRestoreArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
   }
 
