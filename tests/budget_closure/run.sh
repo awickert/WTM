@@ -168,13 +168,13 @@ echo
 # tell was in the output all along, the two blocks reporting bit-identical cumulative=5.67e-09 and
 # worst-per-cycle=6.94e-07. An arm that names its configuration cannot be repurposed by a default.
 echo "-- impulse coupling --"
-COUPLING=impulse check "Anderson BE (secant)"       s_and
-COUPLING=impulse STORAGE=volume check "Anderson BE (volume dV)" s_vol
+COUPLING=impulse INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       s_and
+COUPLING=impulse INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" s_vol
 COUPLING=impulse METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
 echo "-- continuous coupling (the default; #116) --"
-COUPLING=continuous check "Anderson BE (secant)"       f_and
-COUPLING=continuous STORAGE=volume check "Anderson BE (volume dV)" f_vol
+COUPLING=continuous INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       f_and
+COUPLING=continuous INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" f_vol
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
