@@ -50,6 +50,10 @@ run() { # name  command...
 # in front of every assertion that uses it. A verified helper that nothing verifies on every run
 # is exactly the "dead control" failure -- the knob turns and nothing is checked.
 run "unit: volume helper == C++ storedVolume" ./verify_wtm_volume.sh
+# Pins the run-log column NAMES and order. Four budget suites read that log; until wtm_log.py they
+# read it positionally, and nothing asserted the mapping -- so a column inserted mid-header would
+# silently reindex every budget assertion, and several would still report PASS. Loud, in one place.
+run "unit: run-log header + trace parsing" ./log_schema/run.sh "$WTM"
 run "unit: DMDA gather + storage + geometry" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"
