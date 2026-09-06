@@ -58,7 +58,20 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 INP="$FSMDIR/inputs"
 WORK=$(mktemp -d /tmp/newton_XXXX); trap 'rm -rf "$WORK"' EXIT
 JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it well above 1e-8
-AGREE_TOL="${AGREE_TOL:-0.05}"   # metres; same band tests/recharge_consistency uses cross-scheme
+# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head (#61/#65).
+# THE VALUE DOES NOT SCALE BY phi HERE, and the reason is the point of the whole conversion: on
+# this fixture the move to water CHANGES WHICH CELL GOVERNS. Measured, Anderson vs Newton:
+#     HEAD  max 4.7388e-02 at (12,13), wtd = -30.16  -- a DEEP cell, where that head difference
+#                                                       is only ~1.2e-02 m of actual water
+#     WATER max 4.2714e-02 at (9,9),   wtd = +0.175  -- a cell AT THE SURFACE, dV/dh = 0.999
+# So the old head norm was reporting a disagreement that barely moved any water, while the real
+# largest disagreement in water sat somewhere else entirely. A blind x0.25 would have set the
+# bound to 0.0125 and failed a test that had not regressed.
+# 0.05 m OF WATER keeps the original numeric bound where it governs (the surface, dV/dh ~ 1) and
+# is 4x STRICTER below ground, so this is not a loosening in any regime.
+# NOTE the margin is thin either way: 0.05 against an achieved 4.27e-02 is 1.17x (the old head
+# pairing was tighter still, 1.055x). This test runs close to its limit by nature.
+AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
@@ -170,9 +183,15 @@ EQ_TOL=1e-4 ADAPT=false mkcfg eq_and  active_set "2000yr"
 EQ_TOL=1e-4 METHOD=newton DTC=false ADAPT=false mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"                  -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
-WORK="$WORK" AGREE_TOL="$AGREE_TOL" python3 - <<'PY' || fail=1
+WORK="$WORK" AGREE_TOL="$AGREE_TOL" PHI="$INP/fsm_test_porosity.tif" TESTS="$(readlink -f ..)" \
+  python3 - <<'PY' || fail=1
 import glob, os, sys
 import numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as WATER                  # ONE verified V(wtd); see tests/verify_wtm_water.sh
+# NOT aliased to W: this block already binds W to the work directory, and the collision made the
+# helper vanish behind a str at runtime.
+
 W, tol = os.environ["WORK"], float(os.environ["AGREE_TOL"])
 def last(stem):
     fs = sorted(glob.glob(f"{W}/{stem}_[0-9]" + "[0-9]"*8 + "_*yr.tif"))
@@ -180,10 +199,11 @@ def last(stem):
 a, n = last("eq_and"), last("eq_newt")
 if a is None or n is None:
     print("  FAIL  SAME ROOT  missing output"); sys.exit(1)
-d = np.abs(a - n)
+phi = WATER.read_band(os.environ["PHI"])
+d = WATER.water_diff(a, n, phi)   # WATER, not head
 ok = d.max() < tol
 print(f"  {'PASS' if ok else 'FAIL'}  SAME ROOT  Anderson vs Newton at equilibrium: "
-      f"max|dwtd| = {d.max():.3e} m, rms = {np.sqrt((d**2).mean()):.3e} m  (tol {tol})")
+      f"max|dV| = {d.max():.3e} m water, rms = {np.sqrt((d**2).mean()):.3e}  (tol {tol})")
 sys.exit(0 if ok else 1)
 PY
 

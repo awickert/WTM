@@ -9,7 +9,10 @@ cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/rechtest_XXXX); trap 'rm -rf "$WORK"' EXIT
-TOL="${TOL:-0.05}"           # metres; cross-scheme agreement required at fine dt
+# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head: the model conserves water
+# and judges every stopping criterion in it (#61/#65). Uniform phi = 0.25 on this fixture, so this
+# is the old 0.05 head bound x0.25 exactly -- the same strictness, correctly labelled.
+TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
 PY="${PY:-python3}"
 
 emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
@@ -72,15 +75,20 @@ CO_BV=$(ls "$WORK"/bdf2v_coarse_*.tif | tail -1)
 # recharge they agree closely; the larger cc-vs-bdf2v residual is legitimate 1st- vs 2nd-order truncation
 # on this (deliberately non-draining, mounding) domain and is reported for information only. The definitive
 # steady-state cross-scheme check is the Esquibel -20% benchmark (benchmark/TRANSIENT_RECHARGE_INCONSISTENCY.md).
-TOL="$TOL" "$PY" - "$FINE_CC" "$FINE_TR" "$FINE_BV" "$CO_CC" <<'PY'
+TOL="$TOL" PHI="$INP/rech_test_porosity.tif" TESTS="$(readlink -f ..)" \
+  "$PY" - "$FINE_CC" "$FINE_TR" "$FINE_BV" "$CO_CC" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+
 cc, tr, bv, cc_co = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 m = np.ones_like(cc, bool); m[0,:]=m[-1,:]=m[:,0]=m[:,-1]=False
-def mx(a,b): return float(np.max(np.abs((a-b)[m])))
+phi = W.read_band(os.environ["PHI"])
+def mx(a,b): return float(W.water_diff(a, b, phi)[m].max())   # WATER, not head
 tol = float(os.environ["TOL"])
 d_cc_tr, d_cc_bv, d_tr_bv, d_self = mx(cc,tr), mx(cc,bv), mx(tr,bv), mx(cc,cc_co)
-print(f"  cc self (coarse vs fine dt): {d_self:.4f} m  (cc is dt-converged)")
-print(f"  cross-scheme max|dwtd| at fine dt:  cc-tr={d_cc_tr:.4f}  cc-bdf2v={d_cc_bv:.4f} (order trunc.)  tr-bdf2v={d_tr_bv:.4f} m")
+print(f"  cc self (coarse vs fine dt, water): {d_self:.4f} m  (cc is dt-converged)")
+print(f"  cross-scheme max|dV| (water) at fine dt:  cc-tr={d_cc_tr:.4f}  cc-bdf2v={d_cc_bv:.4f} (order trunc.)  tr-bdf2v={d_tr_bv:.4f} m")
 if d_cc_tr <= tol:
     print(f"PASS: cc and tr agree within {tol} m at a surface-crossing interior (was ~3.7 m before the volume-based recharge fix)")
     sys.exit(0)
