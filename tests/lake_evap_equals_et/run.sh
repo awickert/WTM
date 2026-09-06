@@ -73,11 +73,13 @@ for region in eq neq; do
   emit "$region" b 1.0  2.0     # 20x deeper centre, 20x wider transition
 done
 
-"$PY" - "$WORK" <<'PY'
-import sys, glob, numpy as np, rasterio
+TESTS="$(readlink -f ..)" "$PY" - "$WORK" <<'PY'
+import sys, os, glob, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
 work = sys.argv[1]
 def wtd(region, tag):
-    f = sorted(glob.glob(f"{work}/{region}_{tag}_*.tif"))[-1]
+    f = VOL.latest_output(f"{work}/{region}_{tag}_")
     return rasterio.open(f).read(1).astype(np.float64)[1:-1, 1:-1]
 
 ok = True

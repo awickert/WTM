@@ -195,8 +195,11 @@ import wtm_volume as VOL                  # ONE verified V(wtd); see tests/verif
 
 W, tol = os.environ["WORK"], float(os.environ["AGREE_TOL"])
 def last(stem):
-    fs = sorted(glob.glob(f"{W}/{stem}_[0-9]" + "[0-9]"*8 + "_*yr.tif"))
-    return rasterio.open(fs[-1]).read(1).astype(float) if fs else None
+    try:
+        f = VOL.latest_output(f"{W}/{stem}_")   # guards against a stem that is a prefix of another
+    except FileNotFoundError:
+        return None
+    return rasterio.open(f).read(1).astype(float)
 a, n = last("eq_and"), last("eq_newt")
 if a is None or n is None:
     print("  FAIL  SAME ROOT  missing output"); sys.exit(1)

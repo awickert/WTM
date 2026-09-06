@@ -30,10 +30,15 @@ DEFAULT_TOL = 1e-6  # metres; above FP-reduction noise, below any real change
 
 
 def last_tif(prefix):
-    tifs = sorted(glob.glob(prefix + "*.tif"))
-    if not tifs:
-        raise FileNotFoundError(f"no output TIF for prefix {prefix}")
-    return tifs[-1]
+    # Delegates to the shared guard: many matches are expected (one per cycle) and the last is the
+    # one wanted, but ONLY if every match belongs to this stem. `fsm_runoff_` would also match
+    # `fsm_runoff_hi_...`, and since 'h' sorts after a digit the last match would be the WRONG
+    # fixture. Safe today only because PREFIX carries an `_n<ranks>_` infix that separates them --
+    # a property of the naming, not of this function, so assert it rather than rely on it.
+    import os, sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    import wtm_volume as VOL
+    return VOL.latest_output(prefix)
 
 
 def read_field(prefix):

@@ -112,10 +112,12 @@ for RI in 1 2 4; do
 done
 [[ $fail -eq 0 ]] || { echo "LOCAL LEDGER: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" INP="$INP" "$PY" - <<'PY'
+WORK="$WORK" INP="$INP" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import glob, os, sys
 import numpy as np
 import rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
 
 W, INP = os.environ["WORK"], os.environ["INP"]
 SPY = 31536000.0
@@ -126,7 +128,7 @@ def rd(p):
         return s.read(1).astype(np.float64)
 
 def final_wtd(stem):
-    fs = sorted(glob.glob(f"{W}/{stem}_[0-9]" + "[0-9]" * 8 + "_*yr.tif"))
+    fs = [VOL.latest_output(f"{W}/{stem}_")]   # guards against a stem that is a prefix of another
     return rd(fs[-1]) if fs else None
 
 # ---------------------------------------------------------------- A. PLACEMENT

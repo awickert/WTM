@@ -73,9 +73,11 @@ EOF
 done
 
 PY=${PYTHON:-python3}
-"$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
+TESTS="$(readlink -f ..)" "$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
 import sys, glob, os
 import numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
 work, ranks = sys.argv[1], [int(r) for r in sys.argv[2:]]
 ok = True
 def check(label, cond, msg):
@@ -84,8 +86,9 @@ def check(label, cond, msg):
     ok = ok and cond
 
 def last(n):
-    fs = sorted(glob.glob(os.path.join(work, f"n{n}_*.tif")))
-    with rasterio.open(fs[-1]) as s:
+    # latest_output, not a bare glob: `n1_` would also match `n1x_...` if a stem were ever added
+    # whose name extends this one, and the last match would silently be the wrong run.
+    with rasterio.open(VOL.latest_output(os.path.join(work, f"n{n}_"))) as s:
         a = s.read(1).astype(float); nod = s.nodata
     return np.where(a == nod, np.nan, a) if nod is not None else a
 

@@ -96,9 +96,11 @@ run I1 15768000 10 implicit   || fail=1   # implicit, dt = 0.5  yr
 run I2  7884000 20 implicit   || fail=1   # implicit, dt = 0.25 yr
 [[ $fail -eq 0 ]] || { echo "MULTI-LAKE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" INP="$INP" "$PY" - <<'PY'
+WORK="$WORK" INP="$INP" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os, sys, glob
 import numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
 from collections import deque
 
 W, INP = os.environ["WORK"], os.environ["INP"]
@@ -108,7 +110,7 @@ FLAT_TOL, MIN_SPREAD = 1e-9, 1.0
 
 def lakes(stem):
     """[(ncells, stage, sigma, depth_spread)] for connected ponded clusters of >=3 cells."""
-    fs = sorted(glob.glob(f"{W}/{stem}_[0-9]" + "[0-9]"*8 + "_*yr.tif"))
+    fs = [VOL.latest_output(f"{W}/{stem}_")]   # guards against a stem that is a prefix of another
     if not fs: return None
     w = rasterio.open(fs[-1]).read(1).astype(float)
     P = {(y, x) for y, x in zip(*np.where((w > 1e-3) & mask))}
