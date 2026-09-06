@@ -34,6 +34,12 @@ echo "WTM test suite -- tier: $TIER  (MPI ranks: n=1 vs {$MPI_RANKS})"
 # BYTE OFFSET, so the edit shifted everything after it: one sub-suite ran twice, another never ran at
 # all, and the run still printed ALL SUITES PASSED. A green report from a corrupted run is the worst
 # thing a test suite can do, so record the hash now and re-check it before the summary is believed.
+# WHICH BINARY IS THIS? Announced once, up front, and the run REFUSES to start if src/ is newer than
+# the binary -- testing code you did not build makes every number below meaningless. A dirty tree is
+# recorded but does not block; see the reasoning in lib.sh.
+. ./lib.sh
+wtm_provenance "$WTM" || exit 2
+
 SELF_SHA=$(sha256sum "$0" | cut -d" " -f1)
 EXPECTED_SUITES=$(grep -c '^run "' "$0")   # every run call is top-level and unconditional
 

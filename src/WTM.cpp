@@ -1551,6 +1551,25 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
 }
 
 int main(int argc, char** argv) {
+  // -wtm_version: print WHICH BUILD this is and exit, before touching MPI, PETSc or a config file.
+  //
+  // The test suite's binary-identity guards (tests/lib.sh) need to know a binary's commit and
+  // clean/dirty state WITHOUT doing a run, so they can refuse an A/B comparison whose two binaries
+  // turn out to be the same one, or one built from a dirty tree. That refusal is not hypothetical:
+  // a 1.43 m golden discrepancy was once attributed to a convergence change when the comparison had
+  // actually run against a binary carrying an unrelated controller defect (see the CORRECTION in
+  // bce7cc8). Machine-readable `key value` lines, one per line, for the shell to parse.
+  //
+  // This is a DIAGNOSTIC, not a model setting, which is why it does not cut against the
+  // flags-into-config arc (#30/#32): that arc is about knobs which change answers, and this changes
+  // none. It also stops `wtm.x` with no arguments dereferencing argv[1] below.
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "-wtm_version") {
+      std::cout << "wtm_git_commit " << wtm_git_commit() << "\n"
+                << "wtm_git_state " << wtm_git_state() << std::endl;
+      return 0;
+    }
+  }
   // if (argc != 2) {
   //   // Make sure that the user is running the code with a configuration file.
   //   std::cerr << "Syntax: " << argv[0] << " <Configuration File>" << std::endl;
