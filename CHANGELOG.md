@@ -35,9 +35,14 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 - **The adaptive controller's error estimate is invalid on non-TR integrators when FSM is on.** A
   history-based estimate must difference two states, and in an operator-split step every such pair
   straddles the FSM handoff, so the jump — which does not shrink with `dt` — lands in the estimate.
-  Measured order of the estimate itself: **0.00** (constant in `dt` across a 64× refinement). TR-BDF2 is
-  immune structurally, its estimate being embedded within a single step, and measures 2.00. Pinned as an
-  expected failure in `tests/estimator_order` so it fails loudly if it changes in either direction.
+  Measured order of the estimate itself, over a 64× refinement: **0.80, −0.37, 0.49** — no order at all,
+  and one rung negative, so the estimate does not even move monotonically with `dt`. (This entry
+  previously read "0.00, constant in `dt`". That number had never been taken: the test's probe read the
+  first traced step, which for a three-level scheme carries no history, so it differenced 0/0 and
+  asserted an empty result. Corrected 2026-09-06 along with the test.) TR-BDF2 is immune structurally,
+  its estimate being embedded within a single step, and measures 2.00. Pinned as an expected failure in
+  `tests/estimator_order`, now as a bound on |p| rather than a target, so it fails loudly the day the
+  estimator acquires an order.
   **Practical consequence: prefer `solver.time_integration: tr-bdf2` when using `solver.adaptive_dt`.**
 
 - **The default surface-water enforcement is validated only at small scale.** Every result supporting
