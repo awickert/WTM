@@ -230,6 +230,32 @@ time_start t0
 time_end t0
 textfilename /dev/null
 outfile_prefix /tmp/none_
+# The list above covered 22 of the shim's 44 keys while the comment claimed "every legacy key". That
+# overclaim is why the `trace` gating defect survived: trace was not in the list, so nothing noticed
+# the shim silently dropping it. The rest of the vocabulary follows, so SHIM and SHIM/BACK now mean
+# what they say. Values are legal ones -- the model's own validator runs over this config.
+solver_method anderson
+time_integration tr-bdf2
+adaptive_dt true
+dt_tol 0.5
+dt_max 31536000
+dt_continuation false
+under_relaxation 1.0
+t_bar true
+storage volume
+convergence_metric volume
+convergence_water_volume_tol 1e-8
+eq_tol 0.001
+eq_metric rms
+eq_frac 0.001
+land_boundary dirichlet
+fsm_coupling continuous
+runoff_ratio_on 1
+extinction_depth 8
+et_sigmoid_width 0.1
+et_sigmoid_wtd_center 0.0
+trace dt
+run_dir /tmp/shim_explicit_rundir   # DISTINCT from the derived <prefix>prov, or thedifference  vanishes
 EOF
 bash ../emit_config.sh < "$WORK/shim_keys.txt" > "$WORK/shim.yaml"
 OUT=$(msg "$WORK/shim.yaml")
@@ -238,7 +264,71 @@ if echo "$OUT" | grep -q "unrecognised key"; then
     echo "$OUT" | grep -A3 "unrecognised key" | sed 's/^/        /'
     fail=1
 else
-    echo "  PASS  SHIM       every key emit_config.sh emits validates ($(grep -c . "$WORK/shim_keys.txt") legacy keys)"
+    echo "  PASS  SHIM       every key emit_config.sh emits validates ($(grep -cE "^[a-z]" "$WORK/shim_keys.txt") legacy keys)"
+fi
+
+# ---- SHIM/BACK: every key the shim is GIVEN must CHANGE what it emits ------------------------------
+# The arm above checks one direction only -- that the emitted YAML validates. That is exactly how the
+# `trace` defect lived: the emitted config was perfectly valid, it just silently LACKED the key it had
+# been asked for, because `trace` was gated on an output PATH key also being present. Valid and
+# complete are different properties, and only one of them was being tested.
+#
+# THE TEST IS DIFFERENTIAL, not a search for the value in the output, and that distinction was learned
+# the hard way: the first version of this arm grepped the emitted YAML for each key's VALUE, and it
+# did NOT catch the trace defect when it was deliberately reintroduced -- `trace dt` looks for "dt",
+# which already appears in `dt: 31536000` and `adaptive_dt`. A substring match on short values is
+# almost no assertion at all. So instead: emit the config WITH and WITHOUT each key and require the
+# two to DIFFER. A key that changes nothing is a key being dropped, whatever the reason.
+missing=""
+while read -r k v; do
+    [ -z "$k" ] && continue
+    case "$k" in \#*) continue ;; esac
+    # EXEMPTIONS, each for a reason the shim documents -- not a way to quieten an inconvenient result.
+    #   evap_mode        accepted-but-inert; it announces itself on stderr and is SUPPOSED to emit nothing.
+    #   runoff_ratio_on  legitimately SHADOWED when a numeric runoff_ratio is present ("a numeric value
+    #                    takes precedence; else runoff_ratio_on 1 requires the raster"). Both keys stay in
+    #                    the list so SHIM still validates them; only this differential check skips the
+    #                    shadowed one. Flagged by the test on its first run, then verified against the
+    #                    shim's own documented precedence before being exempted.
+    case "$k" in evap_mode|runoff_ratio_on) continue ;; esac
+    grep -vE "^$k " "$WORK/shim_keys.txt" > "$WORK/without.txt"
+    bash ../emit_config.sh < "$WORK/without.txt" > "$WORK/without.yaml" 2>/dev/null
+    cmp -s "$WORK/shim.yaml" "$WORK/without.yaml" && missing="$missing $k"
+done < "$WORK/shim_keys.txt"
+if [ -n "$missing" ]; then
+    echo "  FAIL  SHIM/BACK  removing these keys changes NOTHING in the emitted config, so the shim is"
+    echo "                   silently dropping them -- every arm that sets one is VACUOUS:"
+    for k in $missing; do echo "                     $k"; done
+    fail=1
+else
+    echo "  PASS  SHIM/BACK  every legacy key fed in demonstrably changes the emitted config"
+fi
+
+# ---- SHIM/ALONE: every key must still do something when it is the ONLY key set ---------------------
+# REMOVAL FROM THE FULL SET IS NOT ENOUGH, and the trace defect is the proof. It only manifested when
+# NEITHER textfilename NOR outfile_prefix was present -- and the full key list sets both, so dropping
+# `trace` from it still left the output block emitted and the key with it. SHIM/BACK passed with the
+# defect deliberately reintroduced. A key gated on ANOTHER key can only be caught in isolation.
+alone=""
+while read -r k v; do
+    [ -z "$k" ] && continue
+    case "$k" in \#*) continue ;; esac
+    # run_type IS the baseline this compares against, so it can never differ from it. The other two
+    # exemptions carry over from SHIM/BACK above, for the reasons documented there.
+    case "$k" in evap_mode|runoff_ratio_on|run_type) continue ;; esac
+    printf 'run_type equilibrium\n%s %s\n' "$k" "$v" > "$WORK/alone.txt"
+    printf 'run_type equilibrium\n'                    > "$WORK/bare.txt"
+    bash ../emit_config.sh < "$WORK/alone.txt" > "$WORK/alone.yaml" 2>/dev/null
+    bash ../emit_config.sh < "$WORK/bare.txt"  > "$WORK/bare.yaml"  2>/dev/null
+    cmp -s "$WORK/alone.yaml" "$WORK/bare.yaml" && alone="$alone $k"
+done < "$WORK/shim_keys.txt"
+if [ -n "$alone" ]; then
+    echo "  FAIL  SHIM/ALONE these keys emit NOTHING when set on their own, so they are gated on some"
+    echo "                   other key being present -- set one by itself and it silently does nothing:"
+    for k in $alone; do echo "                     $k"; done
+    fail=1
+else
+    echo "  PASS  SHIM/ALONE every legacy key does something even when it is the only key set"
 fi
 
 # ---- REPORT (not a gate): accepted keys that config.yaml does not document -------------------------
