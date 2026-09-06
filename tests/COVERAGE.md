@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **354** across **45** tests.
+Runs recorded: **345** across **38** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,18 +13,17 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 5 |
 | `anderson` | `active_set` | `be_volume` | 6 | **0** | **0** |
-| `anderson` | `active_set` | `tr_bdf2` | 128 | 2 | 16 |
+| `anderson` | `active_set` | `tr_bdf2` | 124 | 2 | 16 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | **0** | **0** | 1 |
 | `anderson` | `explicit` | `be_volume` | 3 | **0** | 1 |
-| `anderson` | `explicit` | `tr_bdf2` | 16 | **0** | 3 |
-| `anderson` | `extended_soil` | `tr_bdf2` | 1 | **0** | **0** |
+| `anderson` | `explicit` | `tr_bdf2` | 14 | **0** | 3 |
 | `anderson` | `implicit` | `bdf2` | 7 | **0** | 1 |
 | `anderson` | `implicit` | `be_volume` | 6 | **0** | **0** |
-| `anderson` | `implicit` | `tr_bdf2` | 27 | **0** | 3 |
+| `anderson` | `implicit` | `tr_bdf2` | 26 | **0** | 3 |
 | `anderson` | `off` | `bdf2` | 7 | **0** | 1 |
 | `anderson` | `off` | `be_volume` | 6 | **0** | **0** |
-| `anderson` | `off` | `tr_bdf2` | 22 | **0** | 3 |
+| `anderson` | `off` | `tr_bdf2` | 21 | **0** | 3 |
 | `newton` | `active_set` | `bdf2` | 1 | **0** | 1 |
 | `newton` | `active_set` | `be_volume` | 11 | **0** | 4 |
 | `newton` | `explicit` | `bdf2` | 1 | **0** | 1 |
@@ -40,12 +39,11 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 | `picard` | `off` | `bdf2` | 1 | **0** | 1 |
 | `picard` | `off` | `be_volume` | 2 | **0** | 2 |
 
-**28** distinct combinations are exercised at all. Of those, **23** run in BOTH equilibrium and transient, **4** are equilibrium-only and **1** transient-only.
+**27** distinct combinations are exercised at all. Of those, **23** run in BOTH equilibrium and transient, **3** are equilibrium-only and **1** transient-only.
 
 Equilibrium-only, i.e. never exercised on the transient path:
 
 - `anderson` x `active_set` x `be_volume`
-- `anderson` x `extended_soil` x `tr_bdf2`
 - `anderson` x `implicit` x `be_volume`
 - `anderson` x `off` x `be_volume`
 
@@ -83,13 +81,6 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `nested_DH_+_skim_spill-accuracy` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,4 |
 | `per-step_water_ledger` | equilibrium | anderson | bdf2,be_volume,tr_bdf2 | fixed | active_set,explicit,implicit,off | 1 | 0 | 1 |
 | `recharge_consistency_(#93)` | transient | anderson | bdf2,tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
-| `runoff_collector/aset` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
-| `runoff_collector/explicit` | equilibrium | anderson | tr_bdf2 | fixed | explicit | 0 | 0 | 1 |
-| `runoff_collector/implicit` | equilibrium | anderson | tr_bdf2 | fixed | implicit | 0 | 0 | 1 |
-| `runoff_collector/off` | equilibrium | anderson | tr_bdf2 | fixed | off | 0 | 0 | 1 |
-| `runoff_collector/unset` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 0 | 0 | 1 |
-| `runoff_collector/xsoil_mode` | equilibrium | anderson | tr_bdf2 | fixed | extended_soil | 0 | 0 | 1 |
-| `runoff_collector_selector` | equilibrium | anderson | tr_bdf2 | fixed | active_set,explicit | 0 | 0 | 1 |
 | `runoff_gathering_(wtd=0)` | equilibrium | anderson | tr_bdf2 | adaptive,fixed | implicit,off | 0 | 0 | 1 |
 | `serial_rank-0_recharge_path` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,4 |
 | `snapshot_name_+_restart` | equilibrium | anderson | tr_bdf2 | fixed | implicit | 0 | 0 | 1 |
@@ -107,42 +98,42 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 ### solver x collector
 
-| solver \ collector | active_set | explicit | extended_soil | implicit | off |
-|---|---|---|---|---|---|
-| **anderson** | 173 | 29 | 1 | 44 | 39 |
-| **newton** | 17 | 8 |   | 9 | 6 |
-| **picard** | by design | 9 |   | 13 | 6 |
+| solver \ collector | active_set | explicit | implicit | off |
+|---|---|---|---|---|
+| **anderson** | 169 | 27 | 43 | 38 |
+| **newton** | 17 | 8 | 9 | 6 |
+| **picard** | by design | 9 | 13 | 6 |
 
 ### integrator x collector
 
-| integrator \ collector | active_set | explicit | extended_soil | implicit | off |
-|---|---|---|---|---|---|
-| **bdf2** | 23 | 11 |   | 15 | 12 |
-| **be_secant** | by design | 1 |   |   |   |
-| **be_volume** | 21 | 15 |   | 21 | 14 |
-| **tr_bdf2** | 146 | 19 | 1 | 30 | 25 |
+| integrator \ collector | active_set | explicit | implicit | off |
+|---|---|---|---|---|
+| **bdf2** | 23 | 11 | 15 | 12 |
+| **be_secant** | by design | 1 |   |   |
+| **be_volume** | 21 | 15 | 21 | 14 |
+| **tr_bdf2** | 142 | 17 | 29 | 24 |
 
 ### dtctl x collector
 
-| dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
-|---|---|---|---|---|---|
-| **adaptive** | 109 | 27 |   |   | 26 |
-| **continuation** | 10 | 7 |   | 8 | 6 |
-| **fixed** | 71 | 12 | 1 | 58 | 19 |
+| dtctl \ collector | active_set | explicit | implicit | off |
+|---|---|---|---|---|
+| **adaptive** | 109 | 27 |   | 26 |
+| **continuation** | 10 | 7 | 8 | 6 |
+| **fixed** | 67 | 10 | 57 | 18 |
 
 ### run_type x collector
 
-| run_type \ collector | active_set | explicit | extended_soil | implicit | off |
-|---|---|---|---|---|---|
-| **equilibrium** | 162 | 34 | 1 | 53 | 41 |
-| **test** | 2 |   |   |   |   |
-| **transient** | 26 | 12 |   | 13 | 10 |
+| run_type \ collector | active_set | explicit | implicit | off |
+|---|---|---|---|---|
+| **equilibrium** | 158 | 32 | 52 | 40 |
+| **test** | 2 |   |   |   |
+| **transient** | 26 | 12 | 13 | 10 |
 
 ### solver x integrator
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 1 | 22 | 221 |
+| **anderson** | 42 | 1 | 22 | 212 |
 | **newton** | 8 |   | 32 |   |
 | **picard** | 11 |   | 17 |   |
 
@@ -150,50 +141,40 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 249 | 26 | 16 |
+| **equilibrium** | 240 | 26 | 16 |
 | **test** | 2 |   |   |
 | **transient** | 35 | 14 | 12 |
 
 ### fsm x collector
 
-| fsm \ collector | active_set | explicit | extended_soil | implicit | off |
-|---|---|---|---|---|---|
-| **0** | 47 | 12 | 1 | 9 | 12 |
-| **1** | 143 | 34 |   | 57 | 39 |
+| fsm \ collector | active_set | explicit | implicit | off |
+|---|---|---|---|---|
+| **0** | 43 | 10 | 8 | 11 |
+| **1** | 143 | 34 | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
-| **0** | 110 | 27 | 153 |
+| **0** | 110 | 27 | 144 |
 | **1** | 52 | 4 | 8 |
 
 ## 4. Uncovered pairwise crossings
 
-**22** combinations are reachable but exercised by nothing:
+**12** combinations are reachable but exercised by nothing:
 
-- `solver=newton` x `collector=extended_soil`
-- `solver=picard` x `collector=extended_soil`
-- `integrator=bdf2` x `collector=extended_soil`
-- `integrator=be_secant` x `collector=extended_soil`
 - `integrator=be_secant` x `collector=implicit`
 - `integrator=be_secant` x `collector=off`
-- `integrator=be_volume` x `collector=extended_soil`
-- `dtctl=adaptive` x `collector=extended_soil`
 - `dtctl=adaptive` x `collector=implicit`
-- `dtctl=continuation` x `collector=extended_soil`
 - `run_type=test` x `collector=explicit`
-- `run_type=test` x `collector=extended_soil`
 - `run_type=test` x `collector=implicit`
 - `run_type=test` x `collector=off`
-- `run_type=transient` x `collector=extended_soil`
 - `solver=newton` x `integrator=be_secant`
 - `solver=newton` x `integrator=tr_bdf2`
 - `solver=picard` x `integrator=be_secant`
 - `solver=picard` x `integrator=tr_bdf2`
 - `run_type=test` x `solver=newton`
 - `run_type=test` x `solver=picard`
-- `fsm=1` x `collector=extended_soil`
 
 Each is a place a defect could live unseen. That is not a demand to cover all of them -- some are uninteresting -- but the list should be read, and anything load-bearing should get an arm.
 

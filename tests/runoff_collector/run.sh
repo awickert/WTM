@@ -20,6 +20,7 @@
 # This test asserts the modes via the config KEY, so it also fences off the -wtm_<flag> 0 CLI mis-parse hazard.
 set -uo pipefail
 cd "$(dirname "$0")"
+. ../lib.sh                            # make_work + expect_resolved: source BEFORE first use
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
 [[ -f inputs/rcoll_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
@@ -70,7 +71,6 @@ EOF
 # actually resolved to, AFTER overrides and the solver-dependent downgrade, so it is the only witness
 # that cannot be fooled by a config that looks right. A wrong resolution invalidates the arm outright,
 # so it is fatal rather than a recorded failure.
-. ../lib.sh
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"   # keep the suite's log if it set one
 run() { # stem  collector-line  extra-flags  [expected resolved collector]
   emit "$1" "$2"
