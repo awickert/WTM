@@ -21,7 +21,13 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/sconsist_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/scons_XXXX); trap 'rm -rf "$WORK"' EXIT
-TOL="${TOL:-0.001}"       # metres; cross-solver steady-state agreement (1 mm on a ~6 m mound)
+# metres OF WATER (|V(wtd_a) - V(wtd_b)|, tests/wtm_water.py), not metres of head. The model
+# conserves water and every stopping criterion is judged in water since #61, so an agreement bound
+# belongs in the same units. This fixture is uniform phi = 0.25 and purely subsurface, so the
+# conversion from the old 1e-3 m head bound is exactly x0.25 and nothing about what passes changes
+# today -- it starts to matter the moment porosity varies (it does in production) or the table
+# reaches the surface, where dV/dwtd runs from phi up to 1.
+TOL="${TOL:-0.00025}"    # 0.25 mm of water on a ~6 m mound (was 1e-3 m of head)
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
@@ -93,18 +99,23 @@ run volgov
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)
-TOL="$TOL" "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
+TOL="$TOL" PHI="$(readlink -f inputs/sconsist_porosity.tif)" TESTS="$(readlink -f ..)" \
+  "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
 import sys, os, re, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
 an, pi, ne = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 vc_tif, vc_log, vg_tif = sys.argv[4], sys.argv[5], sys.argv[6]
+phi = W.read_band(os.environ["PHI"])
 m = np.ones_like(an, bool); m[:, 0] = False   # exclude the ocean column
-d_pi = float(np.max(np.abs((pi - an)[m]))); d_ne = float(np.max(np.abs((ne - an)[m])))
+# Compare in WATER. Subtracting the rasters directly would be a head norm with no label on it.
+d_pi = float(W.water_diff(pi, an, phi)[m].max()); d_ne = float(W.water_diff(ne, an, phi)[m].max())
 tol = float(os.environ["TOL"])
 interior = an[m]
 print(f"  equilibrium mound elevation: {100 + interior.min():.2f} .. {100 + interior.max():.2f} m "
       f"(all subsurface: {bool((interior < 0).all())})")
-print(f"  picard vs anderson: max|Δwtd| = {d_pi:.3e} m")
-print(f"  newton vs anderson: max|Δwtd| = {d_ne:.3e} m   (tol {tol})")
+print(f"  picard vs anderson: max|ΔV| = {d_pi:.3e} m water")
+print(f"  newton vs anderson: max|ΔV| = {d_ne:.3e} m water   (tol {tol} m water)")
 if not (interior < 0).all():
     print("FAIL: equilibrium is not purely subsurface -> the fixture drifted into the pinned-surface regime "
           "where Picard/Newton are invalid; regenerate inputs / lower the recharge"); sys.exit(1)
@@ -144,23 +155,23 @@ vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) <
 
 # ANSWER-NEUTRALITY, which is what makes the diagnostic safe to leave on. Without _govern it must only
 # print; if it ever perturbs the solve, this is the arm that says so.
-d_vc = float(np.max(np.abs((rasterio.open(vc_tif).read(1).astype(float) - an)[m])))
+d_vc = float(W.water_diff(rasterio.open(vc_tif).read(1).astype(float), an, phi)[m].max())
 vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
-       f"max|wtd(diagnostic) - wtd(plain anderson)| = {d_vc:.3e} m (must be exactly 0)")
+       f"max|ΔV(diagnostic) - ΔV(plain anderson)| = {d_vc:.3e} m water (must be exactly 0)")
 
 # GOVERNING. A convergence test decides when to STOP, not where to converge, so swapping the water
 # step (the default since #61) for the head step must not move the equilibrium -- and must not be a
 # no-op either, or the switch would be untestable by construction.
-d_vg = float(np.max(np.abs((rasterio.open(vg_tif).read(1).astype(float) - an)[m])))
+d_vg = float(W.water_diff(rasterio.open(vg_tif).read(1).astype(float), an, phi)[m].max())
 vcheck("GOVERNING lands on the same equilibrium", d_vg <= tol,
-       f"max|wtd(head-governed) - wtd(water-governed)| = {d_vg:.3e} m (tol {tol})")
+       f"max|ΔV(head-governed) - ΔV(water-governed)| = {d_vg:.3e} m water (tol {tol})")
 vcheck("GOVERNING is not a no-op", d_vg > 0.0,
        f"the same figure is nonzero, so the criterion really did change the stopping")
 
 if d_pi <= tol and d_ne <= tol and ok_vc:
     print("PASS: Anderson, Picard, and Newton converge to the same interior water table"); sys.exit(0)
 if d_pi > tol or d_ne > tol:
-    print(f"FAIL: picard={d_pi:.3e} m, newton={d_ne:.3e} m exceed tol {tol} m")
+    print(f"FAIL: picard={d_pi:.3e}, newton={d_ne:.3e} m water exceed tol {tol} m water")
 else:
     print("FAIL: the solvers agree, but a volume-step diagnostic assertion above failed")
 sys.exit(1)
