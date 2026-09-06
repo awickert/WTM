@@ -77,6 +77,9 @@ run "unit: volume helper == C++ storedVolume" ./verify_wtm_volume.sh
 # read it positionally, and nothing asserted the mapping -- so a column inserted mid-header would
 # silently reindex every budget assertion, and several would still report PASS. Loud, in one place.
 run "unit: run-log header + trace parsing" ./log_schema/run.sh "$WTM"
+# Refuses a NEW water-table comparison written in head. Cheap, and it is the only thing standing
+# between the suite and a slow drift back to head norms once the conversion stops being recent.
+run "unit: no head-norm comparisons" ./lint_norms.sh
 run "unit: DMDA gather + storage + geometry" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"
