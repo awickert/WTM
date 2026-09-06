@@ -20,8 +20,15 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/bcons_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/bcons_XXXX); trap 'rm -rf "$WORK"' EXIT
-MATCH_TOL="${MATCH_TOL:-1e-8}"   # metres; dirichlet-vs-padding agreement (observed ~2.2e-11 at the vol_tol set below)
-DIFF_MIN="${DIFF_MIN:-0.1}"      # metres; dirichlet-vs-neumann must differ by at least this
+# metres OF WATER (tests/wtm_water.py), not head (#61/#65).
+MATCH_TOL="${MATCH_TOL:-2.5e-9}" # dirichlet-vs-padding agreement, in water (was 1e-8 head)
+DIFF_MIN="${DIFF_MIN:-0.1}"      # metres OF WATER; dirichlet-vs-neumann must differ by at least this.
+                                 # DELIBERATELY LEFT AT 0.1 rather than scaled to 0.025. This is a floor the
+                                 # separation must EXCEED, so keeping the number while the measured value
+                                 # scales by phi makes the check HARDER, not weaker: the separation went
+                                 # 1.858 m head -> 4.645e-01 m water, so the margin tightens from 18.6x to
+                                 # 4.6x. Scaling it would have preserved the ratio and bought nothing; a
+                                 # bites-floor is worth keeping strict.
 PY="${PY:-python3}"
 CPD=100
 export OMP_NUM_THREADS=1
@@ -91,22 +98,27 @@ METHOD=anderson emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" $BB >
 LAND_BC=dirichlet METHOD=newton emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
-MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
+MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" PHI="$INP/bcons_porosity.tif" TESTS="$(readlink -f ..)" \
+  "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+
 dir_, pad, neu, nwt = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 padi = pad[1:-1, 1:-1]                       # padded interior == the land-edge domain
 mtol = float(os.environ["MATCH_TOL"]); dmin = float(os.environ["DIFF_MIN"])
-match  = float(np.max(np.abs(dir_ - padi)))  # anderson dirichlet vs old padding
-diff   = float(np.max(np.abs(dir_ - neu)))   # dirichlet vs neumann
-newton = float(np.max(np.abs(nwt - dir_)))   # newton dirichlet vs anderson dirichlet
-print(f"  dirichlet ghost vs old padding:  max|Δwtd| = {match:.3e} m  (tol {mtol})")
-print(f"  dirichlet vs neumann_toposlope:  max|Δwtd| = {diff:.3e} m  (must exceed {dmin})")
-print(f"  newton vs anderson (dirichlet):  max|Δwtd| = {newton:.3e} m  (tol 1e-6)")
+phi = W.read_band(os.environ["PHI"])
+match  = float(W.water_diff(dir_, padi, phi).max())   # anderson dirichlet vs old padding, IN WATER
+diff   = float(W.water_diff(dir_, neu, phi).max())    # dirichlet vs neumann, IN WATER
+newton = float(W.water_diff(nwt, dir_, phi).max())    # newton vs anderson dirichlet, IN WATER
+print(f"  dirichlet ghost vs old padding:  max|ΔV| = {match:.3e} m water  (tol {mtol})")
+print(f"  dirichlet vs neumann_toposlope:  max|ΔV| = {diff:.3e} m water  (must exceed {dmin})")
+print(f"  newton vs anderson (dirichlet):  max|ΔV| = {newton:.3e} m water  (tol 1e-6)")
 ok = match <= mtol and diff >= dmin and newton <= 1e-6
 if ok:
     print("PASS: land-edge ghost Dirichlet == old sea-level padding, distinct from Neumann, and Newton agrees")
     sys.exit(0)
-if match > mtol:  print(f"FAIL: dirichlet vs padding {match:.3e} m > tol {mtol} m (the two should be the same BC)")
+if match > mtol:  print(f"FAIL: dirichlet vs padding {match:.3e} > tol {mtol} m water (the two should be the same BC)")
 if diff < dmin:   print(f"FAIL: dirichlet vs neumann {diff:.3e} m < {dmin} m (selector had no effect?)")
 if newton > 1e-6: print(f"FAIL: newton vs anderson {newton:.3e} m > 1e-6 m (Jacobian off-map Dirichlet tangent inconsistent?)")
 sys.exit(1)
