@@ -24,7 +24,8 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/limitcyc_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 make_work lc
-TOL="${TOL:-1e-4}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
+# TOL is metres OF WATER VOLUME (#61/#65), the old 1e-4 head bound x0.25 on this uniform phi=0.25 fixture.
+TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { # $1 stem  [env: INTEG=, RELAX=]
@@ -84,8 +85,10 @@ CC=$(ls "$WORK"/cc_*.tif | tail -1); BD=$(ls "$WORK"/bd_*.tif | tail -1)
 RX1=$(ls "$WORK"/rx1_*.tif | tail -1); RX05=$(ls "$WORK"/rx05_*.tif | tail -1)
 # MASS BALANCE from the runoff array: per-cycle deltas of cols 9 (recharge), 12 (surface_removed), 13 (ocean_outflow)
 read -r dR dS dO < <(grep -E '^[0-9]' "$WORK/cc.txt" | tail -2 | awk 'NR==1{r=$9;s=$12;o=$13} NR==2{print ($9-r), ($12-s), ($13-o)}')
-TOL="$TOL" MB_TOL="$MB_TOL" "$PY" - "$CC" "$BD" "$dR" "$dS" "$dO" "$RX1" "$RX05" <<'PY'
+TOL="$TOL" MB_TOL="$MB_TOL" TESTS="$(readlink -f ..)" PHI="$INP/limitcyc_porosity.tif" "$PY" - "$CC" "$BD" "$dR" "$dS" "$dO" "$RX1" "$RX05" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 cc, bd = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 dR, dS, dO = map(float, sys.argv[3:6])
 rx1, rx05 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[6:8]]
@@ -94,10 +97,11 @@ above = float(cc.max()); below_ok = bool((cc <= tol).all())
 exfiltration = bool(abs(above) < tol)                 # some cells pinned exactly at the surface = the exfiltration constraint
 mb = abs(dR - dS - dO)                            # steady-state runoff mass-balance residual
 rel = mb / max(abs(dR), 1e-30)
-agree = float(np.max(np.abs(cc - bd)))
+phi = VOL.read_band(os.environ["PHI"])
+agree = float(VOL.volume_diff(cc, bd, phi).max())
 print(f"  COMPLEMENTARITY: max wtd = {above:.3e} (=0 exfiltration constraint), all wtd<=0: {below_ok}")
 print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
-print(f"  AGREEMENT cc vs bdf2v: max|Δwtd| = {agree:.3e}")
+print(f"  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume")
 # dev.under_relaxation. Asserted at EXACTLY zero: "off" that is only nearly off is worse than no off
 # switch, because every result taken with it is quietly a different model.
 d_rx1  = float(np.max(np.abs(rx1 - cc)))

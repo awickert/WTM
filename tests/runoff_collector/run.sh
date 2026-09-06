@@ -104,13 +104,16 @@ OF=$(ls "$WORK"/off_*.tif | tail -1);      UN=$(ls "$WORK"/unset_*.tif | tail -1
 AS=$(ls "$WORK"/aset_*.tif | tail -1)
 XS=$(ls "$WORK"/xsoil_mode_*.tif | tail -1)
 OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" \
-  "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" "$XS" <<'PY'
+  TESTS="$(readlink -f ..)" PHI="$INP/rcoll_porosity.tif" "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" "$XS" <<'PY'
 import sys, os, numpy as np, rasterio
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 im, ex, of, un, aset, xs = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:7]]
 def interior(a): return a[1:-1, 1:-1]
 im_mx, ex_mx, of_mx, un_mx, as_mx = (float(interior(a).max()) for a in (im, ex, of, un, aset))
 im_seep = int((interior(im) > -1e-3).sum()); ex_seep = int((interior(ex) > -1e-3).sum())
-agree = float(np.max(np.abs(im - ex)))
+phi = VOL.read_band(os.environ["PHI"])
+agree = float(VOL.volume_diff(im, ex, phi).max())
 offwarn = int(os.environ["OFFWARN"]) > 0
 ok = True
 def check(name, cond, detail):
@@ -128,8 +131,13 @@ check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
 # hard-coding a number.
 check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < 1e-6,
       f"max wtd = {un_mx:.4f} m (== active_set {as_mx:.4f} m; implicit would be {im_mx:.4f} m)")
+# 0.1 m OF WATER VOLUME, kept at the old numeric bound rather than scaled by phi. MEASURED: the
+# governing cell sits at wtd = +0.038, AT THE SURFACE, where dV/dwtd -> 1, so head 3.8356e-02 and
+# volume 3.5087e-02 differ by a factor of 0.915, not 0.25. A blind x0.25 set the bound to 0.025 and
+# failed a test that had not regressed. Holding 0.1 keeps the original margin (2.6x -> 2.85x) and is
+# 4x STRICTER below ground, so it loosens nothing.
 check("AGREE implicit vs explicit",         agree < 0.1,
-      f"max|implicit - explicit| = {agree:.3e} m")
+      f"max|ΔV(implicit) - ΔV(explicit)| = {agree:.3e} m water volume")
 
 # --- extended_soil: mode, alias, supersession -----------------------------------------------------
 xs_mx = float(interior(xs).max())

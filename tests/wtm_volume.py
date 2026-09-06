@@ -94,6 +94,45 @@ def latest_output(prefix, suffix=".tif"):
     return hits[-1]
 
 
+def compare_series(pairs, reference, porosity, label="run",
+                   smoothing=DEFAULT_SMOOTHING, extended_soil=False, cell_threshold=0.01, quiet=False):
+    """Compare a run against a reference at EVERY time, not just the last one.
+
+    `pairs` is [(time, path), ...] for the run; `reference` is {time: path}. Only times present in
+    BOTH are compared -- comparing at mismatched model times is not a comparison at all.
+
+    WHY THIS IS THE DEFAULT SHAPE. An endpoint number cannot distinguish an error that ACCUMULATED
+    from one that is an artefact of where you happened to stop, and that distinction changed the
+    reading of a real result this week: the endpoint said 1.60 m, and the trajectory said
+    0.32 -> 1.27 -> 1.60, i.e. accumulating. Answering it took a second investigation; it should not
+    have to. Returns the per-time rows and a `growing` flag.
+    """
+    rows, prev = [], None
+    growing = True
+    for t, path in sorted(pairs):
+        if t not in reference:
+            continue
+        d = volume_diff(read_band(path), read_band(reference[t]), porosity, smoothing, extended_soil)
+        d = d[np.isfinite(d)]
+        row = {"t": t, "max": float(d.max()), "rms": float(np.sqrt((d ** 2).mean())),
+               "n_over": int((d > cell_threshold).sum()), "n_total": int(d.size)}
+        if prev is not None and row["max"] <= prev:
+            growing = False
+        prev = row["max"]
+        rows.append(row)
+    if not rows:
+        raise AssertionError("no matched times between the run and the reference -- a comparison at "
+                             "mismatched model times is not a comparison")
+    if not quiet:
+        print("  WATER-VOLUME series  %s vs reference  [metres of water volume, at matched model time]" % label)
+        print("    %-14s %-13s %-13s %s" % ("t", "max", "rms", "cells over %g" % cell_threshold))
+        for r in rows:
+            print("    %-14.6g %-13.4e %-13.4e %d of %d" % (r["t"], r["max"], r["rms"], r["n_over"], r["n_total"]))
+        print("    error is %s" % ("ACCUMULATING (monotone in t)" if growing and len(rows) > 1
+                                   else "not monotone -- an endpoint number would misrepresent it"))
+    return {"rows": rows, "growing": growing}
+
+
 def compare(wtd_a, wtd_b, porosity, label_a="a", label_b="b",
             smoothing=DEFAULT_SMOOTHING, extended_soil=False, cell_threshold=0.01, quiet=False):
     """Compare two water tables in water volume and PRINT what was compared, in what units.

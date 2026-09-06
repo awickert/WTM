@@ -80,13 +80,16 @@ run as active_set ""
 
 IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | tail -1)
 IA=$(ls "$WORK"/as_*.tif | tail -1)
-"$PY" - "$IP" "$EP" "$IA" <<'PY'
-import sys, numpy as np, rasterio
+TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" "$PY" - "$IP" "$EP" "$IA" <<'PY'
+import sys, numpy as np, rasterio, os
+sys.path.insert(0, os.environ["TESTS"])
+import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 ip, ep, ia = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 def interior(a): return a[1:-1, 1:-1]
 ip, ep, ia = map(interior, (ip, ep, ia))
 lake_head = float(ia.max())
-bite      = float(np.max(np.abs(ip - ep)))
+phi_i = interior(VOL.read_band(os.environ["PHI"]))
+bite      = float(VOL.volume_diff(ip, ep, phi_i).max())
 # active_set must also DIFFER from both plain collectors -- otherwise this arm is measuring nothing.
 differs   = min(float(np.max(np.abs(ia - ip))), float(np.max(np.abs(ia - ep))))
 ok = True
@@ -97,8 +100,12 @@ check("LAKE PERSISTS (head kept, not flattened)", lake_head > 1.0,
       f"max wtd with active-set = {lake_head:.4f} m (lake stage; the pre-lake-aware pin gave 0)")
 check("DISTINCT (active-set is not either plain collector)", differs > 1e-6,
       f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m")
-check("BITE (collectors diverge without active-set)", bite > 0.05,
-      f"max|implicit - explicit| (no active-set) = {bite:.4f} m")
+# 0.0125 m OF WATER VOLUME = the old 0.05 head floor x0.25, and here that IS correct: MEASURED
+# head 1.7992 vs volume 0.4498, ratio exactly 0.250, so this comparison is purely subsurface and
+# the 36x margin is preserved exactly. Checked rather than assumed -- the same scaling was WRONG
+# on runoff_collector and newton_solver, where the governing cell sits at the surface.
+check("BITE (collectors diverge without active-set)", bite > 0.0125,
+      f"max|ΔV(implicit) - ΔV(explicit)| (no active-set) = {bite:.4f} m water volume")
 print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
