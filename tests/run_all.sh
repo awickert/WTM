@@ -45,11 +45,11 @@ run() { # name  command...
     if "$@"; then NAMES+=("$name"); RESULTS+=("PASS"); else NAMES+=("$name"); RESULTS+=("FAIL"); fi
 }
 
-# FIRST, because everything downstream that compares water tables trusts it. tests/wtm_water.py
+# FIRST, because everything downstream that compares water tables trusts it. tests/wtm_volume.py
 # is the suite's one V(wtd); if it drifts from the C++ it puts a confident, wrongly-scaled number
 # in front of every assertion that uses it. A verified helper that nothing verifies on every run
 # is exactly the "dead control" failure -- the knob turns and nothing is checked.
-run "unit: water helper == C++ storedVolume" ./verify_wtm_water.sh
+run "unit: volume helper == C++ storedVolume" ./verify_wtm_volume.sh
 run "unit: DMDA gather + storage + geometry" ./run_unit_tests.sh "$TDMDA"
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"

@@ -1,4 +1,4 @@
-"""Compare water tables in WATER, not head.
+"""Compare water tables in WATER VOLUME, not head.
 
 WHY THIS EXISTS. WTM conserves WATER. Its budget is in cubic metres, its equilibrium stop
 (`eq_tol`), its adaptive step target (`error_tol`) and, since #61, its per-solve convergence test
@@ -8,12 +8,12 @@ dV/dwtd is the porosity, so on a phi = 0.25 fixture a head norm over-weights dee
 cell 40 m down can swing its head a long way while moving almost no water. Every stopping criterion
 in the model was converted to water for exactly this reason; this module is how the TESTS follow.
 
-USE THIS RATHER THAN SUBTRACTING RASTERS. `water_diff` mirrors src/update_effective_storativity.cpp
+USE THIS RATHER THAN SUBTRACTING RASTERS. `volume_diff` mirrors src/update_effective_storativity.cpp
 storedVolume() exactly, including the surface smoothing width, and is verified against the C++ by
-tests/verify_wtm_water.sh. Hand-rolled `abs(a - b)` in a test is a head norm wearing no label.
+tests/verify_wtm_volume.sh. Hand-rolled `abs(a - b)` in a test is a head norm wearing no label.
 
-UNITS. storedVolume returns stored water PER UNIT AREA -- a water DEPTH in metres, not m^3. So
-`water_diff` is in "metres of water": at phi = 0.25 and wtd well below the surface it is one quarter
+UNITS. storedVolume returns stored water volume PER UNIT AREA -- a DEPTH in metres, not m^3. So
+`volume_diff` is in "metres of water volume": at phi = 0.25 and wtd well below the surface it is one quarter
 of the head difference, and above the surface it approaches the head difference (slope -> 1).
 """
 import numpy as np
@@ -31,8 +31,8 @@ def stored_volume(wtd, porosity, smoothing=DEFAULT_SMOOTHING, extended_soil=Fals
                   + np.sqrt(wtd * wtd + smoothing * smoothing) * (1.0 - porosity))
 
 
-def water_diff(wtd_a, wtd_b, porosity, smoothing=DEFAULT_SMOOTHING, extended_soil=False):
-    """|V(a) - V(b)| per cell, in metres of water."""
+def volume_diff(wtd_a, wtd_b, porosity, smoothing=DEFAULT_SMOOTHING, extended_soil=False):
+    """|V(a) - V(b)| per cell, in metres of water volume."""
     return np.abs(stored_volume(wtd_a, porosity, smoothing, extended_soil)
                   - stored_volume(wtd_b, porosity, smoothing, extended_soil))
 
@@ -69,7 +69,7 @@ def only_match(pattern):
 
 def compare(wtd_a, wtd_b, porosity, label_a="a", label_b="b",
             smoothing=DEFAULT_SMOOTHING, extended_soil=False, cell_threshold=0.01, quiet=False):
-    """Compare two water tables in water and PRINT what was compared, in what units.
+    """Compare two water tables in water volume and PRINT what was compared, in what units.
 
     The label on a number is written by the code that made the number, so this prints the norms it
     computed, the units, the porosity range it used and how many cells carry the difference -- a max
@@ -77,14 +77,14 @@ def compare(wtd_a, wtd_b, porosity, label_a="a", label_b="b",
 
     Returns a dict: max, rms, n_over, n_total, threshold.
     """
-    d = water_diff(wtd_a, wtd_b, porosity, smoothing, extended_soil)
+    d = volume_diff(wtd_a, wtd_b, porosity, smoothing, extended_soil)
     finite = d[np.isfinite(d)]
     out = {"max": float(finite.max()), "rms": float(np.sqrt((finite ** 2).mean())),
            "n_over": int((finite > cell_threshold).sum()), "n_total": int(finite.size),
            "threshold": cell_threshold}
     if not quiet:
         phi = np.asarray(porosity, dtype=float)
-        print("  WATER comparison  %s vs %s  [metres of water, V(wtd) per unit area;"
+        print("  WATER-VOLUME comparison  %s vs %s  [metres of water volume, V(wtd) per unit area;"
               " porosity %.3f-%.3f, smoothing %g m%s]"
               % (label_a, label_b, float(np.nanmin(phi)), float(np.nanmax(phi)), smoothing,
                  ", extended_soil" if extended_soil else ""))

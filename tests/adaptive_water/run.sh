@@ -13,7 +13,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/adwater_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/adw_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (tests/wtm_water.py), not head -- see #61/#65. Uniform phi = 0.25 here, so this is
+# metres OF WATER VOLUME (tests/wtm_volume.py), not head -- see #61/#65. Uniform phi = 0.25 here, so this is
 # the old 0.05 m head bound x0.25 exactly.
 TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water
 PY="${PY:-python3}"
@@ -71,17 +71,17 @@ TOL="$TOL" PHI="$(readlink -f inputs/adwater_porosity.tif)" TESTS="$(readlink -f
   "$PY" - "$CC" "$AD" "$WA" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 cc, ad, wa = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
-phi = W.read_band(os.environ["PHI"])
+phi = VOL.read_band(os.environ["PHI"])
 m = np.ones_like(cc, bool); m[:, 0] = False   # exclude the ocean column
-d_ad = float(W.water_diff(ad, cc, phi)[m].max()); d_wa = float(W.water_diff(wa, cc, phi)[m].max())
+d_ad = float(VOL.volume_diff(ad, cc, phi)[m].max()); d_wa = float(VOL.volume_diff(wa, cc, phi)[m].max())
 tol = float(os.environ["TOL"])
 print(f"  adaptive (tr-bdf2+dt_adaptive) vs cc: max|ΔV| = {d_ad:.4f} m water")
-print(f"  water-depth metric vs cc:            max|ΔV| = {d_wa:.4f} m water  (tol {tol})")
+print(f"  water-depth metric vs cc:            max|ΔV| = {d_wa:.4f} m water volume  (tol {tol})")
 if d_ad <= tol and d_wa <= tol:
     print("PASS: adaptive dt and the pure-water-depth stop metric both reach cc's equilibrium")
     sys.exit(0)
-print(f"FAIL: adaptive={d_ad:.4f}, water={d_wa:.4f} m water exceed tol {tol} m water")
+print(f"FAIL: adaptive={d_ad:.4f}, water={d_wa:.4f} m water volume exceed tol {tol} m water")
 sys.exit(1)
 PY

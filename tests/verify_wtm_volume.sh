@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove tests/wtm_water.py::stored_volume IS storedVolume() from the C++, not a lookalike.
+# Prove tests/wtm_volume.py::stored_volume IS storedVolume() from the C++, not a lookalike.
 #
 # The Python helper exists so tests can compare water tables in WATER. That is only worth anything
 # if it computes the SAME V(wtd) the model does -- a helper that is subtly different would put a
@@ -37,13 +37,13 @@ for cfg in "0.01 0" "0.5 0" "0.01 1"; do
   SMOOTH="$1" EXT="$2" "$PY" - "$WORK/cpp.txt" <<'PYEOF' || fail=1
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) if False else ".")
-import wtm_water as W
+import wtm_volume as VOL
 smooth = float(os.environ["SMOOTH"]); ext = os.environ["EXT"] == "1"
 worst, worst_row = 0.0, None
 n = 0
 for line in open(sys.argv[1]):
     w, p, v_cpp = (float(x) for x in line.split())
-    v_py = float(W.stored_volume(w, p, smoothing=smooth, extended_soil=ext))
+    v_py = float(VOL.stored_volume(w, p, smoothing=smooth, extended_soil=ext))
     scale = max(abs(v_cpp), 1.0)
     rel = abs(v_py - v_cpp) / scale
     n += 1
@@ -58,5 +58,5 @@ else:
 PYEOF
 done
 
-[ "$fail" -eq 0 ] && { echo "WTM_WATER: the Python helper matches the C++ storedVolume"; exit 0; }
-echo "WTM_WATER: FAILED"; exit 1
+[ "$fail" -eq 0 ] && { echo "WTM_VOLUME: the Python helper matches the C++ storedVolume"; exit 0; }
+echo "WTM_VOLUME: FAILED"; exit 1

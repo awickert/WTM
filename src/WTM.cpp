@@ -1156,12 +1156,12 @@ void apply_config_petsc_options(const std::string& config_file) {
   // solver.method is fully config-owned (Parameters::solver_method); no flag bridge remains. The
   // validation still lives in Parameters, so an unknown value aborts naming the legal ones.
   if (auto n = root["solver"]["tolerance"]) set_opt_if_unset("-snes_stol", n.as<std::string>().c_str());
-  // solver.convergence.metric: water (DEFAULT) | head. Answer-changing, so it belongs in the config: a run
-  // that used `head` could not otherwise be reproduced from its archived resolved config. Water became the
-  // default in #61 -- the head step tolerance is a LENGTH and the budget it must agree with is a VOLUME, so
-  // 88% of solves were exiting on a test the budget could not honour. `head` is the off-switch.
+  // solver.convergence.metric: volume (DEFAULT) | head. Answer-changing, so it belongs in the config: a run
+  // that used `head` could not otherwise be reproduced from its archived resolved config. Water volume became
+  // the default in #61 -- the head step tolerance is a LENGTH and the budget it must agree with is a VOLUME,
+  // so 88% of solves were exiting on a test the budget could not honour. `head` is the off-switch.
   if (auto n = root["solver"]["convergence"]["metric"])
-    set_opt_if_unset(require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "water"}) == "head"
+    set_opt_if_unset(require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "volume"}) == "head"
                          ? "-wtm_snes_head_conv"
                          : "-wtm_snes_volume_conv_govern",
                      "true");
@@ -1481,7 +1481,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";
   f << "  tolerance: " << stol << "\n";
   f << "  convergence:\n";
-  f << "    metric: " << (uc.snes_volume_conv_govern ? "water" : "head") << "\n";
+  f << "    metric: " << (uc.snes_volume_conv_govern ? "volume" : "head") << "\n";
   f << "    water_volume_tol: " << uc.snes_volume_conv_tol << "\n";
   f << "  max_iterations: " << maxit << "\n";
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";

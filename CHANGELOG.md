@@ -45,9 +45,9 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Changed
 
-- **BREAKING — the per-solve convergence test is now judged in WATER, not head.** New default
-  `solver.convergence.metric: water` (`head` is the off-switch). The step that ends a solve is
-  measured as |S·Δwtd| rather than |Δh|, so all three "close enough" gates - this one,
+- **BREAKING — the per-solve convergence test is now judged in WATER VOLUME, not head.** New
+  default `solver.convergence.metric: volume` (`head` is the off-switch). The step that ends a solve is
+  measured as |S·Δwtd| -- water volume per unit area, so a depth in metres, not m³ -- rather than |Δh|, so all three "close enough" gates - this one,
   `run.equilibrium_stop`, and `solver.time_step.error_tol` - finally speak one language. It changes
   the answer, and it changes it toward the converged one.
 

@@ -19,7 +19,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/dtsens_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/dts_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head -- the model conserves water
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head -- the model conserves water
 # and judges its stopping criteria in it (#61). Uniform phi = 0.25 here, so this is the old 1e-3 m
 # head bound x0.25 exactly. BITE_MIN below is derived from it, so it follows automatically.
 DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 4x dt change (it is ~1e-14)
@@ -44,7 +44,7 @@ DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 
 # looser assertion arriving as a side effect of a units fix, which is exactly the kind of silent
 # slackening this conversion exists to prevent. Set independently, it keeps the ORIGINAL strictness.
 PY="${PY:-python3}"
-BITE_MIN="${BITE_MIN:-0.1}"   # metres OF WATER; the control sits at 2.248e-01, a 2.25x margin (400x DT_TOL)
+BITE_MIN="${BITE_MIN:-0.1}"   # metres OF WATER VOLUME; the control sits at 2.248e-01, a 2.25x margin (400x DT_TOL)
 export OMP_NUM_THREADS=1
 
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
@@ -99,12 +99,12 @@ DT_TOL="$DT_TOL" BITE_MIN="$BITE_MIN" PHI="$(readlink -f inputs/dtsens_porosity.
   TESTS="$(readlink -f ..)" "$PY" - "$AC" "$AF" "$LC" "$LF" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 ac, af, lc, lf = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
-phi = W.read_band(os.environ["PHI"])
+phi = VOL.read_band(os.environ["PHI"])
 dt_tol = float(os.environ["DT_TOL"]); bite = float(os.environ["BITE_MIN"])
-act = float(W.water_diff(ac, af, phi).max())   # active-set: dt sensitivity (should be ~0)
-leg = float(W.water_diff(lc, lf, phi).max())   # implicit siphon: dt sensitivity (should be large)
+act = float(VOL.volume_diff(ac, af, phi).max())   # active-set: dt sensitivity (should be ~0)
+leg = float(VOL.volume_diff(lc, lf, phi).max())   # implicit siphon: dt sensitivity (should be large)
 print(f"  DT-INDEPENDENT : active-set        max|ΔV(1yr) - ΔV(0.25yr)| = {act:.3e} m water  (<= {dt_tol})")
 print(f"  BITES          : implicit siphon   max|ΔV(1yr) - ΔV(0.25yr)| = {leg:.3e} m water  (>= {bite})")
 ok = act <= dt_tol and leg >= bite

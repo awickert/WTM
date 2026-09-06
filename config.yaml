@@ -122,8 +122,9 @@ solver:
                                # Innermost of the three gates: solve ⊂ step ⊂ run. Set it LOOSER than the
                                # step target and the step's error estimate is measuring solver noise.
   convergence:
-    metric: water              # water (DEFAULT) | head -- what the PER-SOLVE step test judges.
-                               # `water` judges the step as |S*Δwtd|, so all three "close enough" gates
+    metric: volume             # volume (DEFAULT) | head -- what the PER-SOLVE step test judges.
+                               # `volume` judges the step as |S*Δwtd| -- WATER VOLUME, per unit area, so it
+                               # is a depth in metres and not m^3 -- and then all three "close enough" gates
                                # speak one language (this, run.equilibrium_stop and
                                # solver.time_step.error_tol); `head` is the off-switch and leaves this
                                # one gate out of step with the other two. CHANGES THE ANSWER.

@@ -17,8 +17,8 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/storeq_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/storeq_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head: the model conserves water
-# and judges every stopping criterion in it (#61/#65). Uniform phi = 0.25 on this fixture, so this
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
+# and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-6 head bound x0.25 exactly -- the same strictness, correctly labelled.
 TOL="${TOL:-2.5e-7}"      # machine-precision agreement expected (observed ~1e-12 head)
 PY="${PY:-python3}"
@@ -96,14 +96,14 @@ VOL=$(ls "$WORK"/volume_*.tif | tail -1)
 TOL="$TOL" PHI="$INP/storeq_porosity.tif" TESTS="$(readlink -f ..)" "$PY" - "$SEC" "$VOL" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 
 sec, vol = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 m = np.ones_like(sec, bool); m[:, 0] = False   # interior + land edges (exclude ocean column)
-phi = W.read_band(os.environ["PHI"])
-d = float(W.water_diff(sec, vol, phi)[m].max())
+phi = VOL.read_band(os.environ["PHI"])
+d = float(VOL.volume_diff(sec, vol, phi)[m].max())
 tol = float(os.environ["TOL"])
-print(f"  secant-BE vs volume-BE (S·Δh ≡ ΔV): max|ΔV| = {d:.3e} m water  (tol {tol})")
+print(f"  secant-BE vs volume-BE (S·Δh ≡ ΔV): max|ΔV| = {d:.3e} m water volume  (tol {tol})")
 if d <= tol:
     print("PASS: exact-secant storativity makes the two forms identical (machine precision)")
     sys.exit(0)

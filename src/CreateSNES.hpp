@@ -121,7 +121,7 @@ struct AppCtx {
   // `conv && !govern` -- so governing silently SUPPRESSED the trace and the two could never be had
   // together. Now output.trace: [water_step] drives the first and solver.convergence.metric the second.
   bool      vol_step_trace          = false;   // output.trace: [water_step] -- per-iteration line, answer-neutral
-  bool      snes_volume_conv_govern = true;    // solver.convergence.metric: water (DEFAULT) -- authoritative
+  bool      snes_volume_conv_govern = true;    // solver.convergence.metric: volume (DEFAULT) -- authoritative
   PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
                                                // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)

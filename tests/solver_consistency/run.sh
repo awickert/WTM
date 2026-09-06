@@ -21,7 +21,7 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/sconsist_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/scons_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a) - V(wtd_b)|, tests/wtm_water.py), not metres of head. The model
+# metres OF WATER VOLUME (|V(wtd_a) - V(wtd_b)|, tests/wtm_volume.py), not metres of head. The model
 # conserves water and every stopping criterion is judged in water since #61, so an agreement bound
 # belongs in the same units. This fixture is uniform phi = 0.25 and purely subsurface, so the
 # conversion from the old 1e-3 m head bound is exactly x0.25 and nothing about what passes changes
@@ -103,19 +103,19 @@ TOL="$TOL" PHI="$(readlink -f inputs/sconsist_porosity.tif)" TESTS="$(readlink -
   "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
 import sys, os, re, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 an, pi, ne = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 vc_tif, vc_log, vg_tif = sys.argv[4], sys.argv[5], sys.argv[6]
-phi = W.read_band(os.environ["PHI"])
+phi = VOL.read_band(os.environ["PHI"])
 m = np.ones_like(an, bool); m[:, 0] = False   # exclude the ocean column
-# Compare in WATER. Subtracting the rasters directly would be a head norm with no label on it.
-d_pi = float(W.water_diff(pi, an, phi)[m].max()); d_ne = float(W.water_diff(ne, an, phi)[m].max())
+# Compare in WATER VOLUME. Subtracting the rasters directly would be a head norm with no label on it.
+d_pi = float(VOL.volume_diff(pi, an, phi)[m].max()); d_ne = float(VOL.volume_diff(ne, an, phi)[m].max())
 tol = float(os.environ["TOL"])
 interior = an[m]
 print(f"  equilibrium mound elevation: {100 + interior.min():.2f} .. {100 + interior.max():.2f} m "
       f"(all subsurface: {bool((interior < 0).all())})")
 print(f"  picard vs anderson: max|ΔV| = {d_pi:.3e} m water")
-print(f"  newton vs anderson: max|ΔV| = {d_ne:.3e} m water   (tol {tol} m water)")
+print(f"  newton vs anderson: max|ΔV| = {d_ne:.3e} m water volume   (tol {tol} m water)")
 if not (interior < 0).all():
     print("FAIL: equilibrium is not purely subsurface -> the fixture drifted into the pinned-surface regime "
           "where Picard/Newton are invalid; regenerate inputs / lower the recharge"); sys.exit(1)
@@ -155,14 +155,14 @@ vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) <
 
 # ANSWER-NEUTRALITY, which is what makes the diagnostic safe to leave on. Without _govern it must only
 # print; if it ever perturbs the solve, this is the arm that says so.
-d_vc = float(W.water_diff(rasterio.open(vc_tif).read(1).astype(float), an, phi)[m].max())
+d_vc = float(VOL.volume_diff(rasterio.open(vc_tif).read(1).astype(float), an, phi)[m].max())
 vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
        f"max|ΔV(diagnostic) - ΔV(plain anderson)| = {d_vc:.3e} m water (must be exactly 0)")
 
 # GOVERNING. A convergence test decides when to STOP, not where to converge, so swapping the water
 # step (the default since #61) for the head step must not move the equilibrium -- and must not be a
 # no-op either, or the switch would be untestable by construction.
-d_vg = float(W.water_diff(rasterio.open(vg_tif).read(1).astype(float), an, phi)[m].max())
+d_vg = float(VOL.volume_diff(rasterio.open(vg_tif).read(1).astype(float), an, phi)[m].max())
 vcheck("GOVERNING lands on the same equilibrium", d_vg <= tol,
        f"max|ΔV(head-governed) - ΔV(water-governed)| = {d_vg:.3e} m water (tol {tol})")
 vcheck("GOVERNING is not a no-op", d_vg > 0.0,
@@ -171,7 +171,7 @@ vcheck("GOVERNING is not a no-op", d_vg > 0.0,
 if d_pi <= tol and d_ne <= tol and ok_vc:
     print("PASS: Anderson, Picard, and Newton converge to the same interior water table"); sys.exit(0)
 if d_pi > tol or d_ne > tol:
-    print(f"FAIL: picard={d_pi:.3e}, newton={d_ne:.3e} m water exceed tol {tol} m water")
+    print(f"FAIL: picard={d_pi:.3e}, newton={d_ne:.3e} m water volume exceed tol {tol} m water")
 else:
     print("FAIL: the solvers agree, but a volume-step diagnostic assertion above failed")
 sys.exit(1)

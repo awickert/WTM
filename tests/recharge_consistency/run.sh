@@ -9,8 +9,8 @@ cd "$(dirname "$0")"
 WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/rechtest_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head: the model conserves water
-# and judges every stopping criterion in it (#61/#65). Uniform phi = 0.25 on this fixture, so this
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
+# and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 0.05 head bound x0.25 exactly -- the same strictness, correctly labelled.
 TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
 PY="${PY:-python3}"
@@ -79,12 +79,12 @@ TOL="$TOL" PHI="$INP/rech_test_porosity.tif" TESTS="$(readlink -f ..)" \
   "$PY" - "$FINE_CC" "$FINE_TR" "$FINE_BV" "$CO_CC" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 
 cc, tr, bv, cc_co = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 m = np.ones_like(cc, bool); m[0,:]=m[-1,:]=m[:,0]=m[:,-1]=False
-phi = W.read_band(os.environ["PHI"])
-def mx(a,b): return float(W.water_diff(a, b, phi)[m].max())   # WATER, not head
+phi = VOL.read_band(os.environ["PHI"])
+def mx(a,b): return float(VOL.volume_diff(a, b, phi)[m].max())   # WATER VOLUME, not head
 tol = float(os.environ["TOL"])
 d_cc_tr, d_cc_bv, d_tr_bv, d_self = mx(cc,tr), mx(cc,bv), mx(tr,bv), mx(cc,cc_co)
 print(f"  cc self (coarse vs fine dt, water): {d_self:.4f} m  (cc is dt-converged)")

@@ -58,7 +58,7 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 INP="$FSMDIR/inputs"
 WORK=$(mktemp -d /tmp/newton_XXXX); trap 'rm -rf "$WORK"' EXIT
 JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it well above 1e-8
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head (#61/#65).
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head (#61/#65).
 # THE VALUE DOES NOT SCALE BY phi HERE, and the reason is the point of the whole conversion: on
 # this fixture the move to water CHANGES WHICH CELL GOVERNS. Measured, Anderson vs Newton:
 #     HEAD  max 4.7388e-02 at (12,13), wtd = -30.16  -- a DEEP cell, where that head difference
@@ -71,7 +71,7 @@ JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it
 # is 4x STRICTER below ground, so this is not a loosening in any regime.
 # NOTE the margin is thin either way: 0.05 against an achieved 4.27e-02 is 1.17x (the old head
 # pairing was tighter still, 1.055x). This test runs close to its limit by nature.
-AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER
+AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER VOLUME
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
@@ -188,7 +188,7 @@ WORK="$WORK" AGREE_TOL="$AGREE_TOL" PHI="$INP/fsm_test_porosity.tif" TESTS="$(re
 import glob, os, sys
 import numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as WATER                  # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                  # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 # NOT aliased to W: this block already binds W to the work directory, and the collision made the
 # helper vanish behind a str at runtime.
 
@@ -199,11 +199,11 @@ def last(stem):
 a, n = last("eq_and"), last("eq_newt")
 if a is None or n is None:
     print("  FAIL  SAME ROOT  missing output"); sys.exit(1)
-phi = WATER.read_band(os.environ["PHI"])
-d = WATER.water_diff(a, n, phi)   # WATER, not head
+phi = VOL.read_band(os.environ["PHI"])
+d = VOL.volume_diff(a, n, phi)   # WATER VOLUME, not head
 ok = d.max() < tol
 print(f"  {'PASS' if ok else 'FAIL'}  SAME ROOT  Anderson vs Newton at equilibrium: "
-      f"max|dV| = {d.max():.3e} m water, rms = {np.sqrt((d**2).mean()):.3e}  (tol {tol})")
+      f"max|dV| = {d.max():.3e} m water volume, rms = {np.sqrt((d**2).mean()):.3e}  (tol {tol})")
 sys.exit(0 if ok else 1)
 PY
 

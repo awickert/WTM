@@ -420,10 +420,10 @@ adaptive Δt to get through a stiff or unknown transient without hand-tuning, no
 ### Two later results that bear directly on this section (2026-09-06)
 
 **(1) The numbers above were measured under HEAD-judged convergence and should be re-measured.**
-They predate `solver.convergence.metric: water` becoming the default (#61). At the time, 88 % of
+They predate `solver.convergence.metric: volume` becoming the default (#61). At the time, 88 % of
 solves were exiting on PETSc's `-snes_stol` step test rather than on the residual, some having
 reduced the residual by only 1.8e-04, so both the achieved error and the step counts carry solver
-noise that the water metric removes. The *shape* of the argument survives - `error_tol` is a
+noise that the water-volume metric removes. The *shape* of the argument survives - `error_tol` is a
 per-step local target and the path error still accumulates - but treat the table as indicative
 until it is retaken. One concrete casualty: `error_tol: 0.005`, used by the budget benchmarks, is
 **not attainable** on that fixture once the solve is judged honestly; the controller correctly

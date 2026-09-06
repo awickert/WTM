@@ -95,11 +95,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // Volume-weighted per-solve convergence (#127): judge the SNES step in WATER (|S*Δwtd|) instead of head, so the
   // per-solve gate matches eq_tol / dt_tol. Opt-in; DIAGNOSTIC unless _govern. The test is registered in
   // transient_groundwater.cpp::update() (VolumeStepConverged); here we only read the flags into user_context.
-  // WATER IS THE DEFAULT (#61). `-wtm_snes_head_conv` (config `solver.convergence.metric: head`) is the
+  // WATER VOLUME IS THE DEFAULT (#61). `-wtm_snes_head_conv` (config `solver.convergence.metric: head`) is the
   // OFF-SWITCH, the same default-on/off-switch shape the evaporation tapers use. The old opt-in name is
-  // kept as an explicit request for the default, so a config or command line that asks for water still
+  // kept as an explicit request for the default, so a config or command line that asks for volume still
   // reads correctly; when both arrive the off-switch wins, because only it can have been asked for
-  // deliberately (water needs no asking).
+  // deliberately (volume needs no asking).
   PetscBool vc = PETSC_FALSE, vcg = PETSC_FALSE, vch = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv_govern", &vcg);
@@ -110,7 +110,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsGetReal(nullptr, nullptr, "-wtm_snes_vol_tol", &user_context.snes_volume_conv_tol, nullptr);
   if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
-                "solver.convergence.metric: water -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
+                "solver.convergence.metric: volume -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
                 (double)user_context.snes_volume_conv_tol);
   else
     PetscPrintf(PETSC_COMM_WORLD,

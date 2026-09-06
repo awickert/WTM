@@ -56,10 +56,10 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
                   "t_bar",
                   "time_step", "smoothing", "anderson", "newton", "convergence"}},
-      // solver.convergence: what the PER-SOLVE step test judges. `metric: water` swaps the head
+      // solver.convergence: what the PER-SOLVE step test judges. `metric: volume` swaps the head
       // relative-step test for |S*Δwtd|, so all three "close enough" gates (this, run.equilibrium_stop
       // and solver.time_step.error_tol) finally speak the same units. water_volume_tol is read ONLY when
-      // metric: water, and sits beside it for that reason.
+      // metric: volume, and sits beside it for that reason.
       {"solver.convergence", {"metric", "water_volume_tol"}},
       // solver.time_step: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would

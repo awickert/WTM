@@ -43,7 +43,7 @@
 #   storage               -> dev.storage_form (volume | secant)
 #   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
-#   convergence_metric    -> solver.convergence.metric (head | water)
+#   convergence_metric    -> solver.convergence.metric (head | volume)
 #   convergence_water_volume_tol -> solver.convergence.water_volume_tol
 #   trace                 -> output.trace (a bare list body, e.g. `trace dt, water_step`)
 #   time_integration      -> solver.time_integration (backward-euler | bdf2 | tr-bdf2)

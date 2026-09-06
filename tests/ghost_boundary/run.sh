@@ -22,8 +22,8 @@ NPROCS="${2:-4}"
 [[ -f inputs/ghostbc_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/ghostbc_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head: the model conserves water
-# and judges every stopping criterion in it (#61/#65). Uniform phi = 0.25 on this fixture, so this
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
+# and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-3 head bound x0.25 exactly -- the same strictness, correctly labelled.
 TOL="${TOL:-2.5e-4}"      # cross-scheme + MPI agreement under the ghost boundary
 JTOL="${JTOL:-1e-2}"      # Newton ||J-Jfd||/||J|| ceiling (smooth-T tangent; piecewise kink keeps it >1e-8)
@@ -93,12 +93,12 @@ TOL="$TOL" NPROCS="$NPROCS" PHI="$INP/ghostbc_porosity.tif" TESTS="$(readlink -f
   "$PY" - "$CC1" "$CCN" "$TRF" "$BVF" "$NWF" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 
 cc1, ccn, tr, bv, nw = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:6]]
 m = np.ones_like(cc1, bool); m[:, 0] = False   # interior + land edges; exclude the ocean column
-phi = W.read_band(os.environ["PHI"])
-def mx(a, b): return float(W.water_diff(a, b, phi)[m].max())   # WATER, not head
+phi = VOL.read_band(os.environ["PHI"])
+def mx(a, b): return float(VOL.volume_diff(a, b, phi)[m].max())   # WATER VOLUME, not head
 tol = float(os.environ["TOL"]); n = os.environ["NPROCS"]
 d_mpi = mx(cc1, ccn); d_tr = mx(cc1, tr); d_bv = mx(cc1, bv); d_nw = mx(cc1, nw)
 print(f"  cc steady wtd: min {cc1[m].min():.3f} max {cc1[m].max():.3f} m (land, incl. edges)")

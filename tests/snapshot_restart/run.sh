@@ -13,8 +13,8 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/snaptest_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 WORK=$(mktemp -d /tmp/snap_XXXX); trap 'rm -rf "$WORK"' EXIT
-# metres OF WATER (|V(wtd_a)-V(wtd_b)|, tests/wtm_water.py), not head: the model conserves water
-# and judges every stopping criterion in it (#61/#65). Uniform phi = 0.25 on this fixture, so this
+# metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
+# and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 0.05 head bound x0.25 exactly -- the same strictness, correctly labelled.
 TOL="${TOL:-0.0125}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
@@ -107,13 +107,13 @@ COLD_TIF=$(ls "$WORK"/cold_*.tif | tail -1); RST_TIF=$(ls "$WORK"/restart_*.tif 
 TOL="$TOL" PHI="$INP/snaptest_porosity.tif" TESTS="$(readlink -f ..)" "$PY" - "$COLD_TIF" "$RST_TIF" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
-import wtm_water as W                      # ONE verified V(wtd); see tests/verify_wtm_water.sh
+import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 
 cold, rst = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 m = np.ones_like(cold, bool); m[:, 0] = False   # exclude ocean column
-phi = W.read_band(os.environ["PHI"])
-d = float(W.water_diff(rst, cold, phi)[m].max()); tol = float(os.environ["TOL"])
-print(f"  restart vs cold equilibrium: max|ΔV| = {d:.4f} m water  (tol {tol})")
+phi = VOL.read_band(os.environ["PHI"])
+d = float(VOL.volume_diff(rst, cold, phi)[m].max()); tol = float(os.environ["TOL"])
+print(f"  restart vs cold equilibrium: max|ΔV| = {d:.4f} m water volume  (tol {tol})")
 if d <= tol:
     print("PASS: snapshot filenames carry the simulated year, and restart-from-snapshot warm-starts to the same equilibrium")
     sys.exit(0)

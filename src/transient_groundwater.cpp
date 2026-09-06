@@ -1704,7 +1704,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // Volume-weighted per-solve convergence (#127), opt-in. Registered here so it covers the plain + TR-BDF2
     // paths; the adaptive-restart branch below installs ITS own test (so volume-conv applies only to the
     // ordinary production solve). Registered if EITHER half is wanted -- output.trace: [water_step] to
-    // print, solver.convergence.metric: water to decide -- because the test computes the water step that
+    // print, solver.convergence.metric: volume to decide -- because the test computes the water step that
     // both need. The two are independent; see VolumeStepConverged and the AppCtx note.
     if ((user_context.vol_step_trace || user_context.snes_volume_conv_govern) && !user_context.use_adaptive_restart)
       SNESSetConvergenceTest(user_context.snes, VolumeStepConverged, &user_context, nullptr);
