@@ -20,11 +20,17 @@ TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: INTEG=]
+emit() { # $1 stem  [env: INTEG= ADAPT= EQ_TOL=]
+  # BOTH keys are emitted UNCONDITIONALLY, with the control arm's values as the defaults. They used to be
+  # emitted only when the caller set them (`${INTEG:+...}`), which left the key ABSENT -- and absent means
+  # `auto`, which resolves to tr-bdf2 on the Anderson path and to adaptive under any non-implicit
+  # collector. So all three arms ran tr_bdf2 + adaptive + active_set: the `cc` arm named as the
+  # backward-Euler fixed-step CONTROL was a second copy of `adapt`, and guard (1) -- "adaptive matches
+  # backward-Euler" -- compared adaptive with itself. See #24, #37.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
-${INTEG:+time_integration $INTEG}
-${ADAPT:+adaptive_dt true}
+time_integration ${INTEG:-backward-euler}
+adaptive_dt ${ADAPT:-false}
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -52,7 +58,7 @@ EOF
 }
 
 BB=""
-emit cc; ADAPT=1 INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
+emit cc; ADAPT=true INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
 "$WTM" "$WORK/cc.yaml"    $BB > "$WORK/cc.log"    2>&1 \
   || { echo "RUN FAILED: cc";    tail -3 "$WORK/cc.log";    exit 2; }
 "$WTM" "$WORK/adapt.yaml" $BB > "$WORK/adapt.log" 2>&1 \
