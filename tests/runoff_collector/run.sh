@@ -64,16 +64,26 @@ textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
-run() { # stem  collector-line  extra-flags
+# ASSERT THE RUN USED THE COLLECTOR THE ARM ASKED FOR. This suite is the one whose arms went vacuous:
+# every arm ran the DEFAULT because the tests said `collection_method` while the shim only knows
+# `runoff_collector`, and they all passed while proving nothing. The model itself writes what it
+# actually resolved to, AFTER overrides and the solver-dependent downgrade, so it is the only witness
+# that cannot be fooled by a config that looks right. A wrong resolution invalidates the arm outright,
+# so it is fatal rather than a recorded failure.
+. ../lib.sh
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"   # keep the suite's log if it set one
+run() { # stem  collector-line  extra-flags  [expected resolved collector]
   emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" $3 > "$WORK/$1.log" 2>&1 \
+  WTM_COVERAGE_TAG="runoff_collector/$1" "$WTM" "$WORK/$1.yaml" $3 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
+  [ -n "${4:-}" ] && { expect_resolved "$WTM_COVERAGE_LOG" "collector=$4" || exit 3; }
+  return 0
 }
-run implicit "runoff_collector implicit" ""
-run explicit "runoff_collector explicit" ""
-run off      "runoff_collector off"      ""
-run aset     "runoff_collector active_set" ""
-run unset    ""                          ""
+run implicit "runoff_collector implicit"   "" implicit
+run explicit "runoff_collector explicit"   "" explicit
+run off      "runoff_collector off"        "" off
+run aset     "runoff_collector active_set" "" active_set
+run unset    ""                            "" active_set
 # extended_soil, reachable only as a MODE. The legacy alias -wtm_extended_soil and its supersession
 # warning were retired 2026-09-01 with the rest of the alias flags; the RETIRED arm below replaces the
 # two arms that covered them, asserting the flag now aborts rather than silently doing nothing.

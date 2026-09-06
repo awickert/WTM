@@ -106,3 +106,38 @@ bg_run() {
     [ -d "$dir" ] || { echo "bg_run: no such directory: $dir" >&2; return 1; }
     ( cd "$dir" && "$@" ) &
 }
+
+# expect_resolved <coverage-log> key=value [key=value ...]
+#
+# Assert that the MOST RECENT run resolved to what the arm asked for. The model itself writes that
+# line (src/transient_groundwater.cpp::emit_coverage_fingerprint) AFTER every override, downgrade and
+# auto-enable, so it records what the run ACTUALLY did rather than what a config appears to say.
+#
+# WHY THIS MATTERS MORE THAN IT SOUNDS: the fingerprint exists because "twice during this work a sed
+# meant to switch a collector silently did nothing and a whole measurement was made on the wrong
+# configuration". Until now it only fed COVERAGE.md, which run_all.sh calls "a map, not a gate". This
+# turns it into a gate for the arms that care. It is also the antidote to the vacuous-arm class: an
+# arm that quietly inherits a default -- because a key was misspelled, or a default later moved -- is
+# testing the control twice and proving nothing, and only the model can say so.
+#
+# Keyed on the LAST coverage line rather than on the test tag: tags contain spaces, so `test=<tag>`
+# cannot be tokenised unambiguously, whereas "the run I just did" is exact. Call it straight after
+# the run whose resolution you mean.
+expect_resolved() {
+    local log="$1"; shift
+    local line rc=0 pair k v got
+    [ -s "$log" ] || { echo "  FAIL  RESOLVED  no coverage fingerprints in $log (is WTM_COVERAGE_LOG set?)" >&2; return 1; }
+    line=$(grep '^coverage ' "$log" | tail -1)
+    for pair in "$@"; do
+        k=${pair%%=*}; v=${pair#*=}
+        # tokenise on whitespace, then split at the FIRST '=' -- substring-proof, as in wtm_log.py
+        got=$(printf '%s\n' $line | awk -F= -v k="$k" '$1==k {print substr($0, index($0,"=")+1); exit}')
+        if [ "$got" != "$v" ]; then
+            echo "  FAIL  RESOLVED  the run resolved $k=${got:-<absent>}, but the arm asked for $k=$v" >&2
+            echo "                  full fingerprint: $line" >&2
+            rc=1
+        fi
+    done
+    [ $rc -eq 0 ] && echo "  OK   RESOLVED  the run actually used: $*"
+    return $rc
+}
