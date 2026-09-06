@@ -71,6 +71,42 @@ done
 have() { [[ -n "${V[$1]+x}" ]]; }
 val()  { printf '%s' "${V[$1]}"; }
 
+# REFUSE A KEY THIS SHIM DOES NOT CONSUME. Until now an unrecognised legacy key was silently
+# DROPPED, and this sits UPSTREAM of every guard the model has: WTM aborts on an unknown YAML key
+# and on an unread -wtm_ flag, but neither ever sees a key the shim swallowed. That is not
+# hypothetical -- it is how a set of collector arms went vacuous, every one of them running the
+# default because the tests said `collection_method` while the shim only knows `runoff_collector`.
+# The arms passed, and what they proved was nothing. The cost of that failure is not a lost setting,
+# it is a LOST NEGATIVE RESULT.
+#
+# The vocabulary is derived from THIS SCRIPT'S OWN have/val calls rather than kept as a hand-written
+# list beside them, so it cannot drift from the code that consumes it. (Safe because every call site
+# names a literal key; there are no dynamic lookups.)
+mapfile -t KNOWN < <(grep -vE '^[[:space:]]*#' "$0" | grep -oE '\b(have|val) [a-z_0-9]+' \
+                     | awk '{print $2}' | sort -u)
+# Keys the shim ACCEPTS AND DELIBERATELY IGNORES. Each needs a reason in the header map above, and
+# each is announced on stderr rather than swallowed -- a test that sets one should see that it did
+# nothing, which is the whole point of this guard.
+ACCEPTED_INERT=(evap_mode)
+declare -A IS_KNOWN=(); for k in "${KNOWN[@]}" "${ACCEPTED_INERT[@]}"; do IS_KNOWN["$k"]=1; done
+for k in "${ACCEPTED_INERT[@]}"; do
+    have "$k" && printf 'emit_config.sh: note: %s is accepted but INERT (see the key map above); it sets nothing.\n' "$k" >&2
+done
+unknown=()
+for k in "${!V[@]}"; do [[ -n "${IS_KNOWN[$k]+x}" ]] || unknown+=("$k"); done
+if (( ${#unknown[@]} )); then
+    printf 'emit_config.sh: unknown key(s), refusing to emit a config that silently drops them:\n' >&2
+    for k in "${unknown[@]}"; do
+        printf '  %s\n' "$k" >&2
+        # did-you-mean: same first token, or a short edit distance by shared prefix
+        for c in "${KNOWN[@]}"; do
+            [[ "${c%%_*}" == "${k%%_*}" || "$c" == *"${k#*_}"* ]] && printf '      did you mean: %s ?\n' "$c" >&2
+        done
+    done
+    printf '  known keys: %s\n' "${KNOWN[*]}" >&2
+    exit 2
+fi
+
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
@@ -208,7 +244,10 @@ if have surfdatadir || have region || have time_start || have time_end; then
 fi
 
 # --- output ------------------------------------------------------------------
-if have textfilename || have outfile_prefix; then
+# `trace` joins the gate rather than hiding behind it: it was emitted only when a PATH key was also
+# present, so a config asking for `trace` and nothing else silently got no trace channel at all -- the
+# same shape of failure as an unknown key, and invisible for the same reason.
+if have textfilename || have outfile_prefix || have trace; then
     echo "output:"
     have outfile_prefix && echo "  outfile_prefix: '$(val outfile_prefix)'"
     have textfilename   && echo "  run_log: '$(val textfilename)'"
