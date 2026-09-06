@@ -108,6 +108,7 @@ echo
 # So the size of the effect is NOT set by how much water FSM routes. It is specific to starting with a
 # water table above the surface over a plateau, which is what `lake` does and the others do not.
 fail=0
+export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 for fixture in "lake:$FSMDIR/inputs:fsm_test" "multilake:$MLDIR/inputs:multilake" "cascade:$CASDIR/inputs:fsm_cascade"; do
 IFS=: read -r fxname fxinp fxregion <<<"$fixture"
 for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
@@ -115,8 +116,18 @@ for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
     for cp in impulse continuous; do
         stem="${fxname}_${tag}_${cp}"
         mkcfg "$stem" "$cp" "$dt" "$ri" "$fxinp" "$fxregion"; rm -f "$WORK/$stem.txt"
-        if ! "$WTM" "$WORK/$stem.yaml" -snes_stol 1e-10 > "$WORK/$stem.log" 2>&1; then
+        if ! WTM_COVERAGE_TAG="coupling_convergence/$stem" "$WTM" "$WORK/$stem.yaml" -snes_stol 1e-10 \
+                > "$WORK/$stem.log" 2>&1; then
             echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1
+        # This suite's ENTIRE subject is the difference between the two couplings. If one silently
+        # resolved to the other -- which the model does do, and announces, when the collector is
+        # `explicit` -- every pair below would compare a run with itself and the convergence orders
+        # would agree perfectly while measuring nothing (#24). Check against the fingerprint the model
+        # writes, not against the config we think we wrote.
+        elif ! expect_resolved "$WTM_COVERAGE_LOG" "coupling=$cp" >/dev/null 2>&1; then   # its own message is redundant with the one below
+            echo "  FAIL  $stem asked for coupling=$cp but the run resolved otherwise:"
+            command grep '^coverage ' "$WTM_COVERAGE_LOG" | tail -1 | sed 's/^/        /'
+            fail=1
         fi
     done
 done; done
