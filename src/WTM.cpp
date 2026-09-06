@@ -1396,7 +1396,18 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   if (found) stol = buf;
   found = PETSC_FALSE;
   PetscOptionsGetString(nullptr, nullptr, "-snes_max_it", buf, sizeof(buf), &found);
-  if (found) maxit = buf;
+  if (found) {
+    maxit = buf;
+  } else if (uc.snes) {
+    // NOT "auto". This file's own header promises "every setting this run resolved to" and
+    // "re-runnable as-is", and the word `auto` keeps neither promise: it records the QUESTION rather
+    // than the answer, so a run cannot be reproduced from it if the auto policy or PETSc's default
+    // ever moves. `auto` is also unusable as a value a test can DECLARE to match, which is what
+    // blocks a declared-config == resolved-config identity check. Read the number PETSc settled on.
+    PetscInt mi = 0;
+    if (SNESGetTolerances(uc.snes, nullptr, nullptr, nullptr, &mi, nullptr) == 0)
+      maxit = std::to_string(static_cast<long long>(mi));
+  }
   PetscBool dev_aboveground = PETSC_FALSE;
   PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &dev_aboveground, nullptr);
 
