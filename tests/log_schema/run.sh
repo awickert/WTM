@@ -27,8 +27,6 @@ run_type equilibrium
 eq_tol 0
 supplied_wt 0
 fsm_on 0
-cells_per_degree 100
-southern_edge 0
 deltat 2419200
 total_time 4838400s
 report_interval 1

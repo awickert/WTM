@@ -40,8 +40,6 @@ run_type           equilibrium
 fsm_on             __FSM__
 infiltration_on    0
 runoff_ratio       __RR__
-cells_per_degree   10
-southern_edge      -45
 deltat             31536000
 total_time       8yr
 report_interval            2

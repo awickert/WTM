@@ -48,8 +48,6 @@ fsm_on 1
 evap_mode 1
 infiltration_on 0
 runoff_ratio_on 1
-cells_per_degree 10
-southern_edge -45
 deltat 31536000
 total_time 6yr
 report_interval 2

@@ -64,8 +64,6 @@ evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 runoff_collector $4
-cells_per_degree 120
-southern_edge 0
 deltat $2
 total_time $(( $3 * 20 * $2 ))s
 save_nreport_interval $3

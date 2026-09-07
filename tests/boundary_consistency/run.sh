@@ -60,8 +60,6 @@ runoff_collector explicit
 evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
-cells_per_degree $CPD
-southern_edge $4
 deltat 2419200
 total_time 96768000000s
 save_nreport_interval 800

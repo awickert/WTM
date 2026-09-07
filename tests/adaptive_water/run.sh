@@ -36,8 +36,6 @@ fsm_on 0
 evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
-cells_per_degree 1
-southern_edge 0
 deltat 2419200
 total_time 24192000000s
 save_nreport_interval 200

@@ -19,8 +19,6 @@
 #   total_time            -> time.total
 #   report_interval       -> time.report_interval
 #   save_nreport_interval -> time.save_every_n_reports
-#   cells_per_degree      -> grid.cells_per_degree      (override; fixtures lack georeferencing)
-#   southern_edge         -> grid.southern_edge
 #   fdepth_a|b|fmin       -> transmissivity.fdepth.a|b|fmin
 #   fsm_on 1|0            -> surface_water.mode: routed|ponded
 #   runoff_ratio <num>    -> surface_water.runoff_ratio: <num>   (uniform)
@@ -134,12 +132,12 @@ if have total_time || have report_interval || have save_nreport_interval; then
     have save_nreport_interval && echo "  save_every_n_reports: $(val save_nreport_interval)"
 fi
 
-# --- grid (override; fixtures are not georeferenced) -------------------------
-if have cells_per_degree || have southern_edge; then
-    echo "grid:"
-    have cells_per_degree && echo "  cells_per_degree: $(val cells_per_degree)"
-    have southern_edge    && echo "  southern_edge: $(val southern_edge)"
-fi
+# --- grid: REMOVED. Geometry comes from the input raster's GDAL geotransform (#124), full stop.
+# The `grid:` block was a deprecated override that the model READ, WARNED about, and then IGNORED
+# whenever a geotransform was present -- which was 629 of 685 measured runs, while 0 used the
+# no-geotransform fallback. A key that reads as a choice and is not one is the defect this shim
+# exists to prevent, so it is gone rather than merely discouraged. The resolved geometry is recorded
+# in full_config.yaml under `derived:`, where it belongs.
 
 # --- transmissivity ----------------------------------------------------------
 if have fdepth_a || have fdepth_b || have fdepth_fmin; then

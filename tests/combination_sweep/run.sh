@@ -53,8 +53,6 @@ ${DTC:+dt_continuation $DTC}
 fsm_on 1
 infiltration_on 0
 runoff_ratio 0
-cells_per_degree 1
-southern_edge 0
 deltat $4
 total_time 4yr
 report_interval 2

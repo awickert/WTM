@@ -87,8 +87,6 @@ supplied_wt 1
 deltat 31536000
 report_interval 1
 save_nreport_interval 1
-cells_per_degree 10
-southern_edge -45
 fdepth_a 200
 fdepth_b 150
 fdepth_fmin 2
