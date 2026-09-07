@@ -40,12 +40,11 @@ namespace {
 // which is what catches a key added to one and not the other.
 const std::map<std::string, std::set<std::string>>& config_schema() {
   static const std::map<std::string, std::set<std::string>> schema = {
-      {"", {"run", "time", "grid", "transmissivity", "surface_water", "evaporation", "boundaries", "solver",
+      {"", {"run", "time", "transmissivity", "surface_water", "evaporation", "boundaries", "solver",
             "dev", "parallel", "io", "output", "derived"}},
       {"run", {"type", "initial_water_table", "equilibrium_stop"}},
       {"run.equilibrium_stop", {"tol", "metric", "frac"}},
       {"time", {"total", "report_interval", "save_every_n_reports"}},
-      {"grid", {"cells_per_degree", "southern_edge"}},
       // OUTPUT-ONLY. `derived` records what the run READ FROM THE DATA rather than what anyone chose:
       // grid geometry comes from the input raster's GDAL geotransform, not from the config. It is
       // written into full_config.yaml so a run's provenance is complete, and ACCEPTED-AND-IGNORED here
@@ -327,8 +326,6 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["time"]["save_every_n_reports"]) save_nreport_interval = n.as<int32_t>();
 
   // -------- grid: DEPRECATED (override only; geometry derives from the GDAL geotransform, #124) --------
-  if (auto n = root["grid"]["cells_per_degree"]) cells_per_degree = n.as<double>();
-  if (auto n = root["grid"]["southern_edge"])    southern_edge    = n.as<double>();
 
   // -------- transmissivity (was physics.fdepth) --------
   if (auto n = root["transmissivity"]["fdepth"]["a"])    fdepth_a    = n.as<double>();
@@ -501,14 +498,10 @@ void Parameters::check() const {
 
   check_positive("save_nreport_interval", save_nreport_interval);
   check_positive("deltat", deltat);
-  // Grid geometry (cells_per_degree / southern_edge) is now derived from the geotransform (#124), so it is
-  // no longer required here. Validate only when supplied as the deprecated override.
-  if (cells_per_degree != -1) {
-    check_positive("cells_per_degree", cells_per_degree);
-  }
-  if (!std::isnan(southern_edge) && (southern_edge < -90 || southern_edge > 90)) {
-    throw std::runtime_error("please enter a value between -90 and 90 degrees for the southern_edge!");
-  }
+  // Grid geometry is NOT validated here any more: cells_per_degree and southern_edge are no longer
+  // inputs. They are DERIVED from the input raster's geotransform (grid_geometry.cpp), which validates
+  // what it reads -- north-up, geographic CRS, a geotransform present at all -- at the point of reading.
+  // Validating a derived value here would be checking our own arithmetic against the user's mistake.
   // evap_mode is no longer a config key (dropped in the Phase-2 schema; vestigial when the ET sigmoid is on,
   // which is the default). It keeps its member default and is not validated here.
   check_positive("fdepth_a", fdepth_a);
@@ -593,12 +586,13 @@ void Parameters::print() const {
   std::cout << "c total_time (s)         = " << total_time << std::endl;
   std::cout << "c total_reports          = " << total_reports << std::endl;
   std::cout << "c save_nreport_interval  = " << save_nreport_interval << std::endl;
-  // Grid geometry: cells_per_degree is the DEPRECATED override; ns/ew_deg_per_cell are what the run uses
-  // when the geometry comes from the topography's geotransform (#124).
+  // Grid geometry, ALL DERIVED from the topography's geotransform (#124) -- none of it is a config key.
+  // ns/ew_deg_per_cell are what the run actually uses; cells_per_degree is the nominal 1/ns_deg_per_cell,
+  // kept because the run log and older scripts refer to it.
   std::cout << "c ncells_x, ncells_y     = " << ncells_x << ", " << ncells_y << std::endl;
   std::cout << "c ns_deg_per_cell        = " << ns_deg_per_cell << std::endl;
   std::cout << "c ew_deg_per_cell        = " << ew_deg_per_cell << std::endl;
-  std::cout << "c cells_per_degree       = " << cells_per_degree << " (deprecated override)" << std::endl;
+  std::cout << "c cells_per_degree       = " << cells_per_degree << " (nominal = 1/ns_deg_per_cell)" << std::endl;
   std::cout << "c southern_edge          = " << southern_edge << std::endl;
   std::cout << "c cellsize_n_s_metres    = " << cellsize_n_s_metres << std::endl;
   // Transmissivity.

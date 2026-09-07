@@ -30,25 +30,16 @@ void derive_grid_geometry(Parameters& params, const ArrayPack& arp) {
       (gt.size() != 6) || (gt[0] == 1000. && gt[1] == 1. && gt[3] == 1000. && gt[5] == -1.);
 
   if (no_georef) {
-    // Fallback: ungeoreferenced input -> use the deprecated grid: override, which must then be supplied.
-    if (params.cells_per_degree <= 0 || std::isnan(params.southern_edge)) {
-      throw std::runtime_error(
-          "Input topography has no geotransform and no grid: override was given. Provide a georeferenced "
-          "raster, or set the (deprecated) grid: block (cells_per_degree + southern_edge) in the config.");
-    }
-    std::cerr << "WARNING: the input topography carries no geotransform; falling back to the DEPRECATED "
-                 "grid: block (cells_per_degree/southern_edge). Provide a georeferenced raster (#124)."
-              << std::endl;
-    params.ns_deg_per_cell = 1.0 / params.cells_per_degree;
-    params.ew_deg_per_cell = 1.0 / params.cells_per_degree;  // fallback grid is square by construction
-    return;                                                  // southern_edge already set from config
-  }
-
-  // A real geotransform is authoritative; a stray grid: override is ignored (warn once).
-  if (params.cells_per_degree > 0) {
-    std::cerr << "WARNING: the grid: block (cells_per_degree/southern_edge) is DEPRECATED and IGNORED because "
-                 "the input topography carries a geotransform; geometry is read from it (#124). Remove grid:."
-              << std::endl;
+    // HARD ERROR. There used to be a fallback here: an ungeoreferenced raster could supply its geometry
+    // through the deprecated `grid:` config block (cells_per_degree + southern_edge). That block is gone
+    // (#124) -- geometry has ONE source, the geotransform. Measured before removing it: of 685 test runs,
+    // 0 used this fallback and 629 were warned their grid: block was being ignored, so it was carrying
+    // no load while giving every one of those runs a warning nobody read.
+    throw std::runtime_error(
+        "Input topography has no GDAL geotransform, so its grid geometry cannot be determined. "
+        "WTM reads cell size and origin from the raster itself; provide a georeferenced input "
+        "(e.g. gdal_translate -a_ullr / -a_srs, or write the transform from your fixture generator). "
+        "The `grid:` config block that used to supply this is removed -- geometry has one source.");
   }
 
   // Phase 1 supports geographic (lat-lon) grids only: a projected CRS puts dx/dy in metres and makes the
