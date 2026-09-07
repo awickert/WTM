@@ -1536,8 +1536,12 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  time_step:\n";
   f << "    dt: " << cfg_num(params.deltat) << "\n";
   f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
+  // EMITTED ONLY WHEN IN FORCE. There is no dt cap unless the adaptive controller or Newton's ramp
+  // installs one, and "auto" is not a value: it records the QUESTION, cannot be re-run to the same
+  // answer if the policy moves, and cannot be DECLARED by a test, which is what the declared==resolved
+  // rule needs. Absence stays unambiguous because the mechanisms that own this key --
+  // solver.adaptive_dt and solver.newton.dt_continuation -- are both emitted above, explicitly.
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
-  else                     f << "    dt_max: auto\n";
   f << "    grow: " << uc.dtc_grow << "\n";
   f << "    shrink: " << uc.dtc_shrink << "\n";
   f << "    grow_if_niter_leq: " << uc.dtc_easy_iters << "\n";
@@ -1568,8 +1572,9 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "      max_restarts: " << uc.ar_max_restarts << "\n";
   f << "  newton:\n";
   f << "    dt_continuation: " << params.dt_continuation << "\n";
+  // Same rule as dt_max: the ramp's starting step exists only while the ramp does, and
+  // solver.newton.dt_continuation says whether it does. Its default when in force is deltat/200.
   if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
-  else                  f << "    dt0: auto\n";
 
   f << "\ndev:\n";
   f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
