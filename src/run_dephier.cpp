@@ -1,4 +1,5 @@
 #include "ArrayPack.hpp"
+#include "grid_geometry.hpp"
 #include "parameters.hpp"
 
 #include <richdem/common/Array2D.hpp>
@@ -37,51 +38,18 @@ int main(int argc, char** argv) {
 
   rd::Array2D<rd::flowdir_t> flowdirs(params.ncells_x, params.ncells_y, rd::NO_FLOW);  // No cells flow anywhere
 
-  constexpr float earth_radius = 6371000.;  // metres
-  // Radius * Pi = Distance from N to S pole
-  // Distance / 180 = Meters / degree latitude
-  const auto meters_per_degree = earth_radius * deg_to_rad;
-
-  // distance between lines of latitude is a constant.
-  params.cellsize_n_s_metres = meters_per_degree / params.cells_per_degree;
-
-  // initialise some arrays
-  // size of a cell in the east-west direction at the centre of the cell (metres)
-  arp.cellsize_e_w_metres.resize(params.ncells_y);
-  // cell area (metres squared)
-  arp.cell_area.resize(params.ncells_y);
-
-  // used to calculate cell latitude in radians.
-  // southern edge of the domain in degrees, plus the number of cells up from this
-  // location/the number of cells per degree, converted to radians.
-  const auto cell_position_latitude = [&](const auto cell_idx) {
-    return (cell_idx / params.cells_per_degree + params.southern_edge) * deg_to_rad;
-  };
-  for (int32_t j = 0; j < params.ncells_y; j++) {
-    // southern edge of the domain in degrees, plus the number of cells up
-    // from this location/the number of cells per degree, converted to radians.
-    // latitude at the southern edge of a cell (subtract half a cell):
-    const double latitude_radians_S = cell_position_latitude(j);
-    // latitude at the northern edge of a cell (add half a cell):
-    const double latitude_radians_N = cell_position_latitude(j + 1);
-
-    // distance at the northern edge of the cell for the given latitude:
-    const double cellsize_e_w_metres_N = params.cellsize_n_s_metres * std::cos(latitude_radians_N);
-    // distance at the southern edge of the cell for the given latitude:
-    const double cellsize_e_w_metres_S = params.cellsize_n_s_metres * std::cos(latitude_radians_S);
-
-    // distance between lines of longitude varies with latitude.
-    // This is the distance at the centre of a cell for a given latitude:
-    arp.cellsize_e_w_metres[j] = (cellsize_e_w_metres_N + cellsize_e_w_metres_S) / 2.;
-
-    // cell area computed as a trapezoid, using unchanging north-south distance,
-    // and east-west distances at the northern and southern edges of the cell:
-    arp.cell_area[j] = params.cellsize_n_s_metres * arp.cellsize_e_w_metres[j];
-
-    if (arp.cell_area[j] < 0) {
-      throw std::runtime_error("Cell with a negative area was found!");
-    }
-  }
+  // GRID GEOMETRY -- from the shared translation unit, NOT computed here.
+  //
+  // This block used to be an inline copy of irf.cpp's cell_size_area, and it never used
+  // ew_deg_per_cell: it assumed E-W spacing equals N-S spacing. On a non-square tile (dx != |dy|,
+  // which is exactly what the GDAL geotransform work #124 added support for) that made every cell
+  // area wrong by the aspect ratio -- measured 2.000x at ns_deg=0.1, ew_deg=0.2. cell_area is passed
+  // straight into GetDepressionHierarchy below, so every depression VOLUME in the hierarchy this
+  // tool built was wrong by that factor, silently, on any clipped tile.
+  //
+  // Two implementations of one piece of geometry is what caused it, so there is now exactly one.
+  derive_grid_geometry(params, arp);   // ns/ew_deg_per_cell + southern_edge, from the geotransform
+  cell_size_area(params, arp);         // per-row cell sizes, areas, and the FV face factors
 
   // Label the ocean cells. This is a precondition for using
   //`GetDepressionHierarchy()`.

@@ -100,6 +100,7 @@ add_executable(dephier.x
   src/run_dephier.cpp
   src/parameters.cpp
   src/ArrayPack.cpp
+  src/grid_geometry.cpp   # ONE copy of the cell geometry, shared with wtm.x -- see grid_geometry.hpp
 )
 target_compile_options(dephier.x PRIVATE -Wfloat-conversion -Wall -Wextra -pedantic -Wshadow)
 target_link_libraries(dephier.x PRIVATE richdem OpenMP::OpenMP_CXX fmt::fmt yaml-cpp::yaml-cpp)
