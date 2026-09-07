@@ -70,6 +70,7 @@ add_custom_target(wtm_git_stamp ALL
 add_library(wtm
   src/ArrayPack.cpp
   src/git_version.cpp
+  src/grid_geometry.cpp
   src/irf.cpp
   src/parameters.cpp
   src/transient_groundwater.cpp

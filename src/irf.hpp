@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ArrayPack.hpp"
+#include "grid_geometry.hpp"  // derive_grid_geometry / cell_size_area -- shared with dephier.x
 #include "parameters.hpp"
 
 void InitialiseTransient(Parameters& params, ArrayPack& arp);
@@ -8,10 +9,6 @@ void InitialiseTransient(Parameters& params, ArrayPack& arp);
 void InitialiseEquilibrium(Parameters& params, ArrayPack& arp);
 
 void InitialiseTest(Parameters& params, ArrayPack& arp);
-
-void derive_grid_geometry(Parameters& params, const ArrayPack& arp);
-
-void cell_size_area(Parameters& params, ArrayPack& arp);
 
 void InitialiseBoth(const Parameters& params, ArrayPack& arp);
 
