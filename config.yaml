@@ -146,9 +146,10 @@ solver:
                                # not a depth. Loosening it does NOT save time -- each solve stops
                                # under-converged and the outer loop needs more cycles (measured: 1e-5
                                # costs 3x the solves of 1e-8 on tests/solver_consistency).
-  max_iterations: auto         # per-solve cap (-> snes_max_it); auto = PETSc's per-method default
-  time_integration: tr-bdf2    # auto | backward-euler | bdf2 | tr-bdf2
-                               # auto resolves PER METHOD and the run prints what it chose. tr-bdf2 runs
+# max_iterations:              # per-solve cap (-> snes_max_it). OMIT for PETSc's per-method default.
+  time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2. OMIT to resolve PER METHOD:
+                               # anderson -> tr-bdf2, picard/newton -> backward-euler. The run prints
+                               # what it chose, and full_config.yaml records it. tr-bdf2 runs
                                # only on the Anderson path, so a constant tr-bdf2 default would make a
                                # config naming only `method: picard` abort on a key it never set.
   adaptive_dt: true            # error-controlled adaptive timestep
@@ -162,9 +163,9 @@ solver:
                                # step but does not choose it. When adaptive_dt resolves true this is
                                # the STARTING step; report_interval x deltat is always the report
                                # span the run must land on exactly.
-    error_tol: auto            # target per-step local error, in metres of WATER like
+#   error_tol:                 # target per-step local error, in metres of WATER like
                                # run.equilibrium_stop.tol -- an absolute depth, not a ratio.
-                               # auto tracks run.equilibrium_stop.tol, which is the derivation that
+                               # OMIT to track run.equilibrium_stop.tol, which is the derivation that
                                # matters: a step should resolve what the run cares about. Middle of the
                                # three gates. Setting it looser than the run's tol means stopping on
                                # steps the run cannot resolve.
@@ -175,7 +176,7 @@ solver:
                                # error exceeded error_tol by 12-37x across 0.02..0.5 m. Setting 0.1 does
                                # not buy a decimetre answer. Treat it as a step-size dial, not an
                                # accuracy guarantee -- see benchmark/BDF2_ADAPTIVE_DESIGN.md sec. 3.5.
-    dt_max: auto               # cap on the step; auto = 1000 * time.deltat
+#   dt_max:                    # cap on the step. OMIT for 1000 * time.deltat.
     grow: 1.5                  # dt multiplier after an easy solve
     shrink: 0.25               # dt multiplier after a rejected solve
     grow_if_niter_leq: 8       # grow only when the solve took at most this many nonlinear iterations.
@@ -207,8 +208,8 @@ solver:
     dt_continuation: true      # the pseudo-transient dt ramp. ON by default under method: newton,
                                # which does not converge from a cold start without it. Set false for
                                # PLAIN Newton -- valid as a warm finisher -- and the run warns.
-    dt0: auto                  # starting dt for the dt_continuation ramp.
-                               # auto = time.deltat / 200 -- small, so the storage term S/deltat keeps
+#   dt0:                       # starting dt for the dt_continuation ramp. OMIT for the default below.
+                               # default = time.deltat / 200 -- small, so the storage term S/deltat keeps
                                # the Jacobian diagonally dominant; a large step from a far guess
                                # overshoots into a singular Jacobian that fails even a direct solve.
 

@@ -225,13 +225,29 @@ Parameters::Parameters(const std::string& config_file) {
   // dev.storage_form: DEFAULT volume. Because the default is volume, `volume_storage == false` can only
   // mean the user explicitly asked for secant -- which is what lets the active-set check below abort on an
   // EXPLICIT request without needing a companion _set boolean.
+  // `auto` IS NOT A VALUE (2026-09-07). Omitting a key already means "take the default"; a WORD that
+  // means the same thing is a second way to say one thing, and it is the one that leaked into the
+  // resolved config -- where it recorded the QUESTION instead of the answer, so a run could not be
+  // reproduced from its own record if the policy moved, and no test could DECLARE it to satisfy the
+  // declared==resolved rule. Refused by name here, with the migration in the message, rather than
+  // failing later as an unparseable number.
+  const auto refuse_auto = [](const YAML::Node& n, const std::string& key) {
+    if (n.as<std::string>() == "auto")
+      throw std::runtime_error(
+          "config: " + key + ": auto is no longer accepted. OMIT the key to take the default -- absence "
+          "already means auto, and the resolved value is recorded in full_config.yaml. (A test config "
+          "should instead state the value it wants; see tests/config_identity.py.)");
+  };
+
   if (auto n = root["dev"]["storage_form"])
     volume_storage = (require_enum(n.as<std::string>(), "dev.storage_form", {"volume", "secant"}) == "volume");
   if (auto n = root["solver"]["method"])
     solver_method = require_enum(n.as<std::string>(), "solver.method", {"anderson", "picard", "newton"});
-  if (auto n = root["solver"]["time_integration"])
+  if (auto n = root["solver"]["time_integration"]) {
+    refuse_auto(n, "solver.time_integration");
     time_integration = require_enum(n.as<std::string>(), "solver.time_integration",
-                                    {"auto", "backward-euler", "bdf2", "tr-bdf2"});
+                                    {"backward-euler", "bdf2", "tr-bdf2"});
+  }
   if (auto n = root["solver"]["newton"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
   // solver.method: newton implies dt-continuation unless the user explicitly declined it. Read the method
   // here rather than depending on the flag bridge, so the implication holds however the method arrives.
@@ -251,7 +267,7 @@ Parameters::Parameters(const std::string& config_file) {
   //                               mode and is the alternative, but Picard is a verification oracle, not
   //                               a production path, so minimum surprise wins.
   //   newton   -> backward-euler  today's behaviour; tr-bdf2 is unavailable off the Anderson path.
-  if (time_integration.empty() || time_integration == "auto") {
+  if (time_integration.empty()) {   // ABSENT means auto-resolve; the word itself is refused above
     const std::string m   = solver_method.empty() ? "anderson" : solver_method;
     time_integration      = (m == "anderson") ? "tr-bdf2" : "backward-euler";
     time_integration_auto = true;
@@ -261,19 +277,21 @@ Parameters::Parameters(const std::string& config_file) {
       if (n.as<std::string>() == "newton") dt_continuation = true;
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto n = root["solver"]["adaptive_dt"]) {
-    const std::string v = n.as<std::string>();
-    if (v == "auto") adaptive_dt_auto = true;
-    else { adaptive_dt = n.as<bool>(); adaptive_dt_set = true; }
+    refuse_auto(n, "solver.adaptive_dt");
+    adaptive_dt = n.as<bool>();
+    adaptive_dt_set = true;
   } else {
     adaptive_dt_auto = true;  // an absent key means auto
   }
   if (auto n = root["solver"]["time_step"]["error_tol"]) {
-    const std::string v = n.as<std::string>();
-    if (v != "auto") { dt_tol = std::stod(v); dt_tol_set = true; }
+    refuse_auto(n, "solver.time_step.error_tol");
+    dt_tol = std::stod(n.as<std::string>());
+    dt_tol_set = true;
   }
   if (auto n = root["solver"]["time_step"]["dt_max"]) {
-    const std::string v = n.as<std::string>();
-    if (v != "auto") { dtc_dt_max = parse_time_seconds(v, "solver.time_step.dt_max"); dtc_dt_max_set = true; }
+    refuse_auto(n, "solver.time_step.dt_max");
+    dtc_dt_max = parse_time_seconds(n.as<std::string>(), "solver.time_step.dt_max");
+    dtc_dt_max_set = true;
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
   if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();

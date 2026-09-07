@@ -1176,9 +1176,18 @@ void apply_config_petsc_options(const std::string& config_file) {
                      "true");
   if (auto n = root["solver"]["convergence"]["water_volume_tol"])
     set_opt_if_unset("-wtm_snes_vol_tol", n.as<std::string>().c_str());
+  // `auto` is refused, not silently accepted -- see the note in parameters.cpp. Omitting the key is how
+  // you ask for the default; the word is a second way to say the same thing and it leaked into
+  // full_config.yaml, where it recorded the question rather than the answer.
+  const auto refuse_auto = [](const YAML::Node& n, const char* key) {
+    if (n.as<std::string>() == "auto")
+      throw std::runtime_error(
+          std::string("config: ") + key + ": auto is no longer accepted. OMIT the key to take the "
+          "default; the resolved value is recorded in full_config.yaml.");
+  };
   if (auto n = root["solver"]["max_iterations"]) {
-    const std::string v = n.as<std::string>();
-    if (v != "auto") set_opt_if_unset("-snes_max_it", v.c_str());
+    refuse_auto(n, "solver.max_iterations");
+    set_opt_if_unset("-snes_max_it", n.as<std::string>().c_str());
   }
   // solver.time_integration is fully config-owned (Parameters::time_integration); no bridge remains.
 
@@ -1221,8 +1230,8 @@ void apply_config_petsc_options(const std::string& config_file) {
   // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
   // time_step's shared dials.
   if (auto n = root["solver"]["newton"]["dt0"]) {
-    const std::string v = n.as<std::string>();
-    if (v != "auto") set_opt_if_unset("-wtm_dtc_dt0", v.c_str());
+    refuse_auto(n, "solver.newton.dt0");
+    set_opt_if_unset("-wtm_dtc_dt0", n.as<std::string>().c_str());
   }
 
   // solver.anderson.restart -> rho-triggered proactive Anderson restart. NOTE enabled: true currently
