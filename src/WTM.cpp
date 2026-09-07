@@ -1551,11 +1551,26 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // rule needs. Absence stays unambiguous because the mechanisms that own this key --
   // solver.adaptive_dt and solver.newton.dt_continuation -- are both emitted above, explicitly.
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
-  f << "    grow: " << uc.dtc_grow << "\n";
-  f << "    shrink: " << uc.dtc_shrink << "\n";
-  f << "    grow_if_niter_leq: " << uc.dtc_easy_iters << "\n";
-  f << "    max_retries: " << uc.dtc_max_retries << "\n";
-  f << "    norm: " << (uc.dt_norm_rms ? "rms" : "max") << "\n";
+  // THE STEP-CONTROLLER DIALS, and like dt_max they are emitted ONLY WHEN A CONTROLLER IS RUNNING.
+  //
+  // This file promises, in its own header, to be "re-runnable as-is". It was not: on a FIXED-STEP run
+  // it wrote all five of these, they bridge to -wtm_dtc_grow / -wtm_dtc_shrink / -wtm_dtc_easy_iters /
+  // -wtm_dtc_max_retries / -wtm_dt_norm_rms, and nothing parses those unless the adaptive loop or
+  // Newton's ramp is active -- so feeding the file back to the model aborted on its own output:
+  //     what(): the run was given 5 -wtm_ flags that nothing read
+  // The unconsumed-flag guard was right and this emitter was wrong. A dial on a controller that is not
+  // running is not a setting of the run; recording it invents one.
+  const bool step_controller = uc.use_dt_adaptive || uc.use_newton_continuation;
+  if (step_controller) {
+    f << "    grow: " << uc.dtc_grow << "\n";
+    f << "    shrink: " << uc.dtc_shrink << "\n";
+    f << "    grow_if_niter_leq: " << uc.dtc_easy_iters << "\n";
+    f << "    max_retries: " << uc.dtc_max_retries << "\n";
+    // norm is narrower still: -wtm_dt_norm_rms/-wtm_dt_norm_max are parsed in the ADAPTIVE branch only
+    // (CreateSNES.cpp), not in Newton's continuation ramp, so emitting it for a continuation run trips
+    // the same unconsumed-flag guard. Each key is emitted under the condition of the code that READS it.
+    if (uc.use_dt_adaptive) f << "    norm: " << (uc.dt_norm_rms ? "rms" : "max") << "\n";
+  }
   // The three smoothing widths are parsed inside the SOLVE (transient_groundwater.cpp), not in
   // initialise(), so at this point the globals still hold their compile-time defaults. Read the options
   // database instead -- the bridge has already put the config's values there -- seeding each fallback
