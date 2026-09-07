@@ -1,5 +1,47 @@
 #pragma once
 
+// ============================================================================================
+// PROVENANCE -- THIS FILE IS A VENDORED COPY, NOT THE richdem SUBMODULE.
+//
+// It declares `namespace richdem::dephier` and includes <richdem/common/...> headers, so it READS
+// as part of common/richdem. It is not. common/richdem is a submodule -- a pinned pointer git can
+// resolve to an exact upstream commit. This file is a COPY committed into WTM, which git tracks as
+// ours; the tie to upstream survives only because it is written down here.
+//
+// UPSTREAM (the real ancestor):  richdem, include/richdem/depressions/depression_hierarchy.hpp
+// FORK POINT:                    richdem 0ffc4c2, 2022-05-14
+//                                "Reconcile depression hierarchy with version in TWSM -- largely formatting"
+// WTM's last sync:               14fe56d, 2022-05-31, "Minor cleaning of dephier based on version in
+//                                RichDEM (#60)". Sync stopped there, in both directions.
+//
+// NOT Barnes2019-DepressionHierarchy. That repo is a SEPARATE lineage (~/dataanalysis/, same
+// namespace, target of benchmark/DH_INTEGRATION_PLAN.md for its parallel builder). This file is
+// nowhere near it: 406 differing lines at its closest revision, against 100 for richdem 0ffc4c2.
+//
+// HOW THE FORK POINT WAS FOUND, so it can be re-derived rather than trusted: normalised-diff bisect
+// -- strip comments, collapse whitespace, drop blank lines, then count differing lines against every
+// revision of both candidate upstreams. The minimum names the ancestor.
+//
+// DIVERGENCE IS TWO-WAY. This is not a stale copy sitting still; both lineages moved.
+//
+//   LOCAL TO WTM (not upstream):
+//     * AREA-WEIGHTED marginal volumes. CalculateMarginalVolumes takes `cell_area` and accumulates
+//       total_areas / total_volumes, where upstream accumulates `total_elevation`. This carries WTM's
+//       latitude-varying cell area and is CORRECTNESS-BEARING physics -- it is the piece that must be
+//       ported, not dropped, if this file is ever replaced (DH_INTEGRATION_PLAN.md gap 3 / ENH-4).
+//     * FSM support fields on Depression: wtd_vol, wtd_only, my_cells, dep_area.
+//     * `is_full` -- the FSM fullness walk (572529e, #122).
+//
+//   UPSTREAM SINCE THE FORK (12 commits to that file, 2023-06 .. 2024-05). A COMMIT-COUNT GAP IS AN
+//   UPPER BOUND ON DIVERGENCE, NOT A DEFECT LIST -- check by CONTENT before claiming anything is
+//   missing here. Worked example: richdem 5ac329e, "BUGFIX: Stop MV search at ocean link", is
+//   ALREADY PRESENT in this file's CalculateMarginalVolumes (the `ocean_parent -> clabel = OCEAN`
+//   early exit), reached independently. The remaining 11 have not been content-checked.
+//
+// See task #82 and benchmark/DH_INTEGRATION_PLAN.md. If you sync, re-run the bisect and update the
+// fork point above; if you replace this file, carry the LOCAL list across first.
+// ============================================================================================
+
 #include "DisjointDenseIntSet.hpp"
 #include "radix_heap.hpp"
 
