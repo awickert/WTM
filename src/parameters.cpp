@@ -41,11 +41,23 @@ namespace {
 const std::map<std::string, std::set<std::string>>& config_schema() {
   static const std::map<std::string, std::set<std::string>> schema = {
       {"", {"run", "time", "grid", "transmissivity", "surface_water", "evaporation", "boundaries", "solver",
-            "dev", "parallel", "io", "output"}},
+            "dev", "parallel", "io", "output", "derived"}},
       {"run", {"type", "initial_water_table", "equilibrium_stop"}},
       {"run.equilibrium_stop", {"tol", "metric", "frac"}},
       {"time", {"total", "report_interval", "save_every_n_reports"}},
       {"grid", {"cells_per_degree", "southern_edge"}},
+      // OUTPUT-ONLY. `derived` records what the run READ FROM THE DATA rather than what anyone chose:
+      // grid geometry comes from the input raster's GDAL geotransform, not from the config. It is
+      // written into full_config.yaml so a run's provenance is complete, and ACCEPTED-AND-IGNORED here
+      // so that file stays loadable -- full_config.yaml promises to be re-runnable as-is, and a config
+      // the model refuses to read would break that promise on its own output.
+      //
+      // The distinction is load-bearing for the explicit-config rule (tests/config_identity.py): a test
+      // config must state every SETTING the run resolved to, but it cannot state a DERIVED fact, since
+      // that comes from the raster. Without somewhere to put them, derived values would make the rule
+      // unsatisfiable; with this section, the comparator simply excludes it.
+      {"derived", {"ns_deg_per_cell", "ew_deg_per_cell", "southern_edge", "cells_per_degree",
+                   "ncells_x", "ncells_y"}},
       {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
       {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection", "fsm_coupling"}},

@@ -58,12 +58,19 @@ def same(a, b):
         return True
     return str(a).strip().strip("'\"") == str(b).strip().strip("'\"")
 
+# Sections of full_config.yaml that are NOT settings. A test cannot be required to declare these:
+# they are read from the input raster, not chosen by anyone. See the `derived` note in parameters.cpp.
+DERIVED_SECTIONS = ("derived",)
+
+def _settings_only(d):
+    return {k: v for k, v in d.items() if not k.startswith(DERIVED_SECTIONS)}
+
 def compare(input_path, resolved_path):
     """Returns (missing, extra, differ) as sorted lists of dotted keys."""
     with open(input_path) as f:
-        declared = flatten(yaml.safe_load(f) or {})
+        declared = _settings_only(flatten(yaml.safe_load(f) or {}))
     with open(resolved_path) as f:
-        resolved = flatten(yaml.safe_load(f) or {})
+        resolved = _settings_only(flatten(yaml.safe_load(f) or {}))
     missing = sorted(k for k in resolved if k not in declared)
     extra   = sorted(k for k in declared if k not in resolved)
     differ  = sorted(k for k in resolved if k in declared and not same(declared[k], resolved[k]))

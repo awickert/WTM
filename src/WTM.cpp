@@ -1431,9 +1431,23 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   else                                f << "  report_interval: " << params.report_steps << "\n";
   f << "  save_every_n_reports: " << params.save_nreport_interval << "\n";
 
-  f << "\ngrid:\n";
-  f << "  cells_per_degree: " << params.cells_per_degree << "\n";
+  // DERIVED, not chosen. Everything above this point is a SETTING -- something a person wrote, or a
+  // documented default. Everything here was READ FROM THE INPUT RASTER's geotransform. Keeping the two
+  // apart is what lets a test config be required to state every setting (tests/config_identity.py)
+  // without being asked to state facts that come from the data.
+  //
+  // It also fixes an omission: ns_deg_per_cell and ew_deg_per_cell are what the run ACTUALLY uses for
+  // cell size and area, and they were recorded NOWHERE. What this file used to report instead was
+  // `grid.cells_per_degree` -- a DEPRECATED INPUT key whose value is overwritten from the geotransform
+  // (grid_geometry.cpp, "nominal, for the run log/printout"). So the provenance record named a derived
+  // fact after the input it ignores, and omitted the numbers that matter. Both are fixed here.
+  f << "\nderived:                     # read from the input raster, NOT settings -- see parameters.cpp\n";
+  f << "  ns_deg_per_cell: " << params.ns_deg_per_cell << "\n";
+  f << "  ew_deg_per_cell: " << params.ew_deg_per_cell << "\n";
   f << "  southern_edge: " << params.southern_edge << "\n";
+  f << "  cells_per_degree: " << params.cells_per_degree << "   # nominal = 1/ns_deg_per_cell\n";
+  f << "  ncells_x: " << params.ncells_x << "\n";
+  f << "  ncells_y: " << params.ncells_y << "\n";
 
   f << "\nio:\n";
   f << "  source: '" << params.surfdatadir << "'\n";
