@@ -71,6 +71,19 @@ done
 have() { [[ -n "${V[$1]+x}" ]]; }
 val()  { printf '%s' "${V[$1]}"; }
 
+# EMIT WITH A DEFAULT. The value a suite set, or the MODEL's default when it set none.
+#
+# WHY EVERY KEY IS EMITTED RATHER THAN OMITTED. A test config must state every setting its run
+# resolves to (tests/config_identity.py): what was tested should be exactly what was written down.
+# Omitting a key and letting the model default it is how four suites came to measure something other
+# than their arm names claimed -- an omitted key meant "the old default" when the tests were written
+# and means `auto` now, and nothing re-read the tests when that changed.
+#
+# The defaults below are the MODEL'S OWN, taken from a minimal run's full_config.yaml, so emitting
+# them cannot change any answer: setting a key to the value it would have taken anyway is a no-op.
+# That is the property that makes this safe to do in one sweep rather than suite by suite.
+def_()  { if have "$1"; then val "$1"; else printf '%s' "$2"; fi; }
+
 # REFUSE A KEY THIS SHIM DOES NOT CONSUME. Until now an unrecognised legacy key was silently
 # DROPPED, and this sits UPSTREAM of every guard the model has: WTM aborts on an unknown YAML key
 # and on an unread -wtm_ flag, but neither ever sees a key the shim swallowed. That is not
@@ -82,7 +95,7 @@ val()  { printf '%s' "${V[$1]}"; }
 # The vocabulary is derived from THIS SCRIPT'S OWN have/val calls rather than kept as a hand-written
 # list beside them, so it cannot drift from the code that consumes it. (Safe because every call site
 # names a literal key; there are no dynamic lookups.)
-mapfile -t KNOWN < <(grep -vE '^[[:space:]]*#' "$0" | grep -oE '\b(have|val) [a-z_0-9]+' \
+mapfile -t KNOWN < <(grep -vE '^[[:space:]]*#' "$0" | grep -oE '\b(have|val|def_) [a-z_0-9]+' \
                      | awk '{print $2}' | sort -u)
 # Keys the shim ACCEPTS AND DELIBERATELY IGNORES. Each needs a reason in the header map above, and
 # each is announced on stderr rather than swallowed -- a test that sets one should see that it did
@@ -110,12 +123,10 @@ fi
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
-if have eq_frac || have eq_tol || have eq_metric; then
-    echo "  equilibrium_stop:"
-    have eq_tol    && echo "    tol: $(val eq_tol)"
-    have eq_metric && echo "    metric: $(val eq_metric)"
-    have eq_frac   && echo "    frac: $(val eq_frac)"
-fi
+echo "  equilibrium_stop:"
+echo "    tol: $(def_ eq_tol 0)"
+echo "    metric: $(def_ eq_metric frac)"
+echo "    frac: $(def_ eq_frac 0.001)"
 if have supplied_wt; then
     case "$(val supplied_wt)" in
         0) echo "  initial_water_table: saturated" ;;
@@ -146,6 +157,7 @@ if have fdepth_a || have fdepth_b || have fdepth_fmin; then
     have fdepth_a    && echo "    a: $(val fdepth_a)"
     have fdepth_b    && echo "    b: $(val fdepth_b)"
     have fdepth_fmin && echo "    fmin: $(val fdepth_fmin)"
+    echo "  additive_background_transmissivity: $(def_ t_bedrock 0)"
 fi
 
 # --- surface_water -----------------------------------------------------------
@@ -180,59 +192,90 @@ fi
 # --- boundaries --------------------------------------------------------------
 # land_boundary was the -wtm_land_boundary flag until it was retired; the config spelling for the
 # Dirichlet case is `dirichlet_sea_level`, so translate rather than pass the flag value through.
-if have land_boundary; then
-    echo "boundaries:"
-    case "$(val land_boundary)" in
-        dirichlet|dirichlet_sea_level) echo "  land: dirichlet_sea_level" ;;
-        *)                             echo "  land: neumann_toposlope" ;;
-    esac
-fi
+echo "boundaries:"
+case "$(def_ land_boundary neumann_toposlope)" in
+    dirichlet|dirichlet_sea_level) echo "  land: dirichlet_sea_level" ;;
+    *)                             echo "  land: neumann_toposlope" ;;
+esac
 
 # --- solver ---------------------------------------------------------------------
-if have adaptive_dt || have dt_tol || have t_bar || have dt_max || have deltat || have dt_continuation || have solver_method || have time_integration; then
-    echo "solver:"
-    have solver_method && echo "  method: $(val solver_method)"
-    have time_integration && echo "  time_integration: $(val time_integration)"
-    have adaptive_dt && echo "  adaptive_dt: $(val adaptive_dt)"
-    have t_bar       && echo "  t_bar: $(val t_bar)"
-    if have dt_continuation; then
-        echo "  newton:"
-        echo "    dt_continuation: $(val dt_continuation)"
-    fi
-    if have dt_max || have dt_tol || have deltat; then
-        echo "  time_step:"
-        have deltat && echo "    dt: $(val deltat)"
-        have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
-        have dt_max && echo "    dt_max: \"$(val dt_max)\""
-    fi
+echo "solver:"
+have solver_method    && echo "  method: $(val solver_method)"
+have time_integration && echo "  time_integration: $(val time_integration)"
+have adaptive_dt      && echo "  adaptive_dt: $(val adaptive_dt)"
+echo "  tolerance: $(def_ snes_stol 1e-8)"
+echo "  max_iterations: $(def_ max_iterations 10000)"
+echo "  t_bar: $(def_ t_bar false)"
+echo "  convergence:"
+echo "    metric: $(def_ convergence_metric volume)"
+echo "    water_volume_tol: $(def_ convergence_water_volume_tol 1e-08)"
+echo "  smoothing:"
+echo "    ksat_surface: $(def_ ksat_surface_smoothing 0)"
+echo "    ksat_soilbottom: $(def_ ksat_soilbottom_smoothing 0)"
+echo "    storativity_surface: $(def_ storativity_surface_smoothing 0.01)"
+echo "  anderson:"
+echo "    restart:"
+echo "      enabled: $(def_ ar_enabled false)"
+echo "      rho: $(def_ ar_rho 0.9)"
+echo "      patience: $(def_ ar_patience 2)"
+echo "      max_it: $(def_ ar_max_it 40)"
+echo "      max_restarts: $(def_ ar_max_restarts 30)"
+# dt_continuation is IMPLIED by solver.method: newton, so its default is not a constant. The shim
+# mirrors that rule rather than hard-coding false -- and tests/config_identity.py is what keeps the
+# mirror honest: if this derivation ever drifts from the model's, every run reports DIFFER on this key.
+# That is the difference between a shim deriving a value (checked every run) and a TEST re-deriving a
+# policy to assert against (checked by nothing) -- the second is what cried wolf in #24.
+echo "  newton:"
+if have dt_continuation; then echo "    dt_continuation: $(val dt_continuation)"
+elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then echo "    dt_continuation: true"
+else echo "    dt_continuation: false"; fi
+echo "  time_step:"
+have deltat && echo "    dt: $(val deltat)"
+have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
+have dt_max && echo "    dt_max: \"$(val dt_max)\""
+# THE STEP-CONTROLLER DIALS, only when a controller actually runs. They bridge to -wtm_dtc_* flags that
+# nothing parses on a fixed-step run, and the model ABORTS on a flag nothing read -- rightly: a dial on a
+# controller that is not running is not a setting of the run. full_config.yaml emits them under the same
+# condition (src/WTM.cpp), so the two agree and config_identity has nothing to report either way.
+_ctl=false
+if [[ "$(have adaptive_dt && val adaptive_dt)" == "true" ]] \
+   || [[ "$(have dt_continuation && val dt_continuation)" == "true" ]] \
+   || { ! have adaptive_dt && ! have dt_continuation \
+        && [[ "$(have runoff_collector && val runoff_collector)" != "implicit" ]] \
+        && [[ "$(have solver_method && val solver_method)" != "newton" ]]; } \
+   || { ! have dt_continuation && [[ "$(have solver_method && val solver_method)" == "newton" ]]; }; then
+    _ctl=true
 fi
-
-if have convergence_metric || have convergence_water_volume_tol; then
-    echo "  convergence:"
-    have convergence_metric    && echo "    metric: $(val convergence_metric)"
-    have convergence_water_volume_tol && echo "    water_volume_tol: $(val convergence_water_volume_tol)"
+if [[ "$_ctl" == true ]]; then
+    echo "    grow: $(def_ dtc_grow 1.5)"
+    echo "    shrink: $(def_ dtc_shrink 0.25)"
+    echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)"
+    echo "    max_retries: $(def_ dtc_max_retries 15)"
+    # norm narrower still -- parsed in the ADAPTIVE branch only, not Newton's ramp.
+    [[ "$(have adaptive_dt && val adaptive_dt)" == "true" ]] \
+      || { ! have adaptive_dt && [[ "$(have solver_method && val solver_method)" != "newton" ]] \
+           && [[ "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; } \
+      && echo "    norm: $(def_ dt_norm rms)"
 fi
 
 # --- dev ---------------------------------------------------------------------
 # Both are DEV keys. storage_form exists for tests/storage_equivalence, not for tuning (the two
 # assemblies are the same equation -- S is the exact secant). under_relaxation VOIDS a transient
 # trajectory: it steps a damped surrogate rather than the problem stated.
-if have storage || have under_relaxation; then
-    echo "dev:"
-    have storage          && echo "  storage_form: $(val storage)"
-    have under_relaxation && echo "  under_relaxation: $(val under_relaxation)"
-fi
+echo "dev:"
+echo "  allow_aboveground_water_columns: $(def_ allow_aboveground false)"
+echo "  storage_form: $(def_ storage volume)"
+echo "  under_relaxation: $(def_ under_relaxation 1)"
+
+echo "parallel:"
+echo "  threads_per_rank: $(def_ threads_per_rank 1)"
 
 # --- evaporation ---------------------------------------------------------------
-if have extinction_depth || have et_sigmoid_wtd_center || have et_sigmoid_width; then
-    echo "evaporation:"
-    have extinction_depth && echo "  extinction_depth: $(val extinction_depth)"
-    if have et_sigmoid_wtd_center || have et_sigmoid_width; then
-        echo "  et_sigmoid:"
-        have et_sigmoid_wtd_center && echo "    wtd_center: $(val et_sigmoid_wtd_center)"
-        have et_sigmoid_width      && echo "    logistic_width: $(val et_sigmoid_width)"
-    fi
-fi
+echo "evaporation:"
+echo "  et_sigmoid:"
+echo "    wtd_center: $(def_ et_sigmoid_wtd_center 0.05)"
+echo "    logistic_width: $(def_ et_sigmoid_width 0.1)"
+echo "  extinction_depth: $(def_ extinction_depth 8)"
 
 # --- io ----------------------------------------------------------------------
 if have surfdatadir || have region || have time_start || have time_end; then
@@ -251,7 +294,8 @@ if have textfilename || have outfile_prefix || have trace || have run_dir; then
     echo "output:"
     have outfile_prefix && echo "  outfile_prefix: '$(val outfile_prefix)'"
     have textfilename   && echo "  run_log: '$(val textfilename)'"
-    have trace          && echo "  trace: [$(val trace)]"
+    echo "  trace: [$(def_ trace '')]"
+    echo "  verbosity: $(def_ verbosity normal)"
     # EVERY RUN GETS A PROVENANCE RECORD. output.directory is what gates write_provenance() and
     # write_full_config() in the model (src/WTM.cpp), and no test had ever set it -- so not one run in
     # the suite recorded which binary produced it. That is exactly how a measurement got attributed to
