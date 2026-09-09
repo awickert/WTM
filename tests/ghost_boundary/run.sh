@@ -32,9 +32,12 @@ PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem cycles   [env: METHOD=, DTC=]
+emit() { # stem cycles   [env: METHOD=, DTC=, MAXIT=, KSMOOTH=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 snes_stol 1e-8
+${MAXIT:+max_iterations $MAXIT}
+${KSMOOTH:+ksat_surface_smoothing $KSMOOTH}
+${KSMOOTH:+ksat_soilbottom_smoothing $KSMOOTH}
 ${METHOD:+solver_method $METHOD}
 ${INTEG:+time_integration $INTEG}
 ${DTC:+dt_continuation $DTC}
@@ -111,10 +114,14 @@ PY
 [ $? -ne 0 ] && fail=1
 
 # ---- 3. Newton Jacobian FD check (ghost boundary ON, smooth T so the tangent is exact) ---------------
-METHOD=newton DTC=false emit jac 1   # PLAIN Newton: the FD check wants the raw Jacobian
-JR=$("$WTM" "$WORK/jac.yaml" $GB \
-        -wtm_ksat_surface_smoothing_width 0.5 -wtm_ksat_soilbottom_smoothing_width 0.5 \
-        -snes_test_jacobian -snes_max_it 1 2>&1 \
+# PLAIN Newton: the FD check wants the raw Jacobian. Its three WTM settings are stated in the CONFIG --
+# one iteration because this is a derivative check and not a solve, and the two ksat smoothing widths
+# because a smooth T is what makes the analytic tangent exact. They used to be CLI flags, so this arm's
+# config claimed the defaults (max_iterations 10000, smoothing 0) while the run used 1 and 0.5 -- a
+# config that stated three values its own run did not use. -snes_test_jacobian stays on the command
+# line: it is a PETSc diagnostic, not a WTM setting, and PETSc's flags keep their CLI surface.
+METHOD=newton DTC=false MAXIT=1 KSMOOTH=0.5 emit jac 1
+JR=$("$WTM" "$WORK/jac.yaml" $GB -snes_test_jacobian 2>&1 \
      | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1)
 if [ -z "$JR" ]; then
   echo "  3. Newton Jacobian FD: FAIL (no ratio produced)"; fail=1
