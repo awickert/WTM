@@ -89,8 +89,9 @@ struct Parameters {
   // solver.time_integration: bdf2 and solver.time_integration: tr-bdf2 are retired one at a time; while either remains, CreateSNES ORs this
   // member with the surviving flag rather than replacing it.
   std::string time_integration;
-  // True when time_integration came from `auto` (or an absent key) rather than an explicit value, so the
-  // run can report what it resolved to instead of leaving the user to infer it.
+  // True when the key was ABSENT rather than explicitly written, so the run can report what it resolved
+  // to instead of leaving the user to infer it. (Named _auto from when `auto` was a writable value; the
+  // word is refused now -- omission is the only way to ask for the default.)
   bool time_integration_auto = false;
 
   // solver.newton.dt_continuation: PSEUDO-TRANSIENT CONTINUATION (PTC) -- the standard method for
@@ -117,25 +118,25 @@ struct Parameters {
   // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
   bool t_bar       = false;
   bool adaptive_dt = false;
-  // solver.adaptive_dt accepts `auto` (and an absent key means `auto`). RESOLVED like dt_continuation,
+  // solver.adaptive_dt: an ABSENT key is resolved here, like dt_continuation (the word `auto` is refused;
+  // see parameters.cpp). Resolved rather than defaulted to a constant,
   // because its default is not constant: adaptive stepping and Newton's continuation ramp are two
   // controllers for ONE question -- who sizes the step -- and WTM.cpp:593 is
   // `if (use_dt_adaptive) ... else if (use_newton_continuation)`, so adaptive silently WINS and the ramp
-  // never runs while InitialiseSNES has already announced it. auto therefore yields to the ramp.
-  bool adaptive_dt_auto = false;  // came from `auto`/absent rather than an explicit true|false
+  // never runs while InitialiseSNES has already announced it. An absent key therefore yields to the ramp.
+  bool adaptive_dt_auto = false;  // the key was ABSENT rather than an explicit true|false
   bool adaptive_dt_set  = false;  // the user wrote an explicit true|false
   // Set when an EXPLICIT solver.adaptive_dt: true turned off an IMPLIED continuation ramp, so the run
   // can say so rather than leaving the user to notice the ramp did not happen.
   bool adaptive_dt_disabled_continuation = false;
 
-  // solver.time_step.error_tol: per-step local-error target in WATER volume. "auto" or an absent key
-  // leaves it unset so the consumer's own default (which tracks eq_tol) applies. Named
+  // solver.time_step.error_tol: per-step local-error target in WATER volume. An ABSENT key leaves it
+  // unset so the consumer's own default (which tracks eq_tol) applies. Named
   // solver.water_volume_timestep_error_tol until it joined the rest of the controller.
   double dt_tol     = 0.1;
   bool   dt_tol_set = false;
 
-  // solver.dt_max: cap on the adaptive/continuation step [s]. "auto" (or an absent key) leaves this
-  // UNSET, and each consumer keeps its own default -- they differ deliberately: the continuation ramp
+  // solver.dt_max: cap on the adaptive/continuation step [s]. An ABSENT key leaves this UNSET, and each consumer keeps its own default -- they differ deliberately: the continuation ramp
   // caps at 1000*deltat, while the adaptive controller treats 0 as "no cap". A single shared default
   // would silently change one of them, so the was-it-set flag carries that distinction.
   double dtc_dt_max     = 0.0;

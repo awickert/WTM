@@ -1257,7 +1257,8 @@ void apply_config_petsc_options(const std::string& config_file) {
   // surface_water.fsm_coupling: how FillSpillMerge's result reaches the groundwater. Answer-changing,
   // so it belongs in the config -- a run using `continuous` could not otherwise be reproduced from its
   // archived resolved config.
-  // BOTH values are bridged, not just `continuous`. The C++ default is now source, so setting the flag only
+  // BOTH values are bridged, not just `continuous`. The C++ default is the source coupling (spelled
+  // `continuous` in the config), so setting the flag only
   // for `continuous` would leave `fsm_coupling: impulse` silently doing nothing -- a config key that reads
   // as a choice and is not one, which is the exact defect this migration exists to remove.
   if (auto n = root["surface_water"]["fsm_coupling"])

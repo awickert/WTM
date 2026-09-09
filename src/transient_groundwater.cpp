@@ -1429,12 +1429,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // The check does not exclude the b=0 integrators (bdf2 / tr-bdf2): on those the storage branch is never
   // reached, so an explicit `secant` would be silently void rather than honoured, which is the same
   // failure by a quieter route.
-  // surface_water.fsm_coupling: auto. `continuous` is what we want everywhere it is valid, but it is
+  // surface_water.fsm_coupling, resolved when the key is ABSENT (the enum itself is impulse|continuous;
+  // there is no `auto` value). `continuous` is what we want everywhere it is valid, but it is
   // REFUSED with collection.method: explicit (below), and `explicit` is what solver.method: picard
   // resolves to when the collector is unset. A constant `continuous` default therefore made plain
   // `solver.method: picard` ABORT out of the box -- and Picard is the independent oracle that certifies
-  // matrix-free Anderson, so that is not a corner. auto yields to `impulse` exactly where continuous
-  // cannot run, which is the same shape as solver.time_integration: auto and solver.adaptive_dt: auto.
+  // matrix-free Anderson, so that is not a corner. An absent key yields to `impulse` exactly where
+  // continuous cannot run, the same shape as an absent solver.time_integration or solver.adaptive_dt.
   // An EXPLICIT fsm_coupling is never overridden: it falls through to the refusal and the user is told.
   if (fsm_cont_set == PETSC_FALSE && rc == "explicit") {
     g_fsm_continuous = false;
