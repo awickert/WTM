@@ -244,25 +244,31 @@ have dt_max && echo "    dt_max: \"$(val dt_max)\""
 # nothing parses on a fixed-step run, and the model ABORTS on a flag nothing read -- rightly: a dial on a
 # controller that is not running is not a setting of the run. full_config.yaml emits them under the same
 # condition (src/WTM.cpp), so the two agree and config_identity has nothing to report either way.
-_ctl=false
-if [[ "$(have adaptive_dt && val adaptive_dt)" == "true" ]] \
-   || [[ "$(have dt_continuation && val dt_continuation)" == "true" ]] \
-   || { ! have adaptive_dt && ! have dt_continuation \
-        && [[ "$(have runoff_collector && val runoff_collector)" != "implicit" ]] \
-        && [[ "$(have solver_method && val solver_method)" != "newton" ]]; } \
-   || { ! have dt_continuation && [[ "$(have solver_method && val solver_method)" == "newton" ]]; }; then
-    _ctl=true
+# THE MODEL'S RULE, mirrored exactly (parameters.cpp):
+#     dt_continuation = explicit value, else TRUE when solver.method is newton
+#     adaptive_dt     = explicit value, else !dt_continuation && collector != implicit
+# The first version of this mirror was WRONG for `method: newton` with dt_continuation EXPLICITLY
+# false -- it concluded "no controller" while the model resolved adaptive_dt: true, so the five dials
+# went undeclared on tests/ghost_boundary's jac arm. config_identity.py reported it as five MISSING
+# keys, which is exactly the drift it exists to catch: a shim that DERIVES a value is checked on every
+# run, unlike a test that re-derives a policy to assert against.
+_dtc=false
+if have dt_continuation; then _dtc=$(val dt_continuation)
+elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then _dtc=true
 fi
+_ad=false
+if have adaptive_dt; then _ad=$(val adaptive_dt)
+elif [[ "$_dtc" != true && "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; then _ad=true
+fi
+_ctl=false
+[[ "$_ad" == true || "$_dtc" == true ]] && _ctl=true
 if [[ "$_ctl" == true ]]; then
     echo "    grow: $(def_ dtc_grow 1.5)"
     echo "    shrink: $(def_ dtc_shrink 0.25)"
     echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)"
     echo "    max_retries: $(def_ dtc_max_retries 15)"
     # norm narrower still -- parsed in the ADAPTIVE branch only, not Newton's ramp.
-    [[ "$(have adaptive_dt && val adaptive_dt)" == "true" ]] \
-      || { ! have adaptive_dt && [[ "$(have solver_method && val solver_method)" != "newton" ]] \
-           && [[ "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; } \
-      && echo "    norm: $(def_ dt_norm rms)"
+    [[ "$_ad" == true ]] && echo "    norm: $(def_ dt_norm rms)"
 fi
 
 # --- dev ---------------------------------------------------------------------
