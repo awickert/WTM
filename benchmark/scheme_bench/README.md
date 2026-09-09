@@ -180,7 +180,27 @@ Final max wtd / ponded-cell count:
 Under active-set × between all eight rows agree exactly. dt-independence shows up as
 scheme-independence, which is what it should look like.
 
-## `active_set` and `-wtm_fsm_continuous` are STRUCTURALLY INCOMPATIBLE as built
+## `active_set` and the `continuous` coupling are STRUCTURALLY INCOMPATIBLE as built
+
+> **SUPERSEDED 2026-09-10. The measurements below stand; the conclusion does not.**
+>
+> This section's finding was true of the code as it stood: the lake-aware pin read its stage from
+> `starting_wtd`, and the continuous coupling exists precisely to stop FSM writing there, so the two
+> could not both work. **#40 removed that collision** by giving the lake stage its OWN array -- the
+> obstacle now reads the carried stage rather than the overwritten table -- and the old hard error is
+> gone. The two COMPOSE.
+>
+> Two further things moved underneath the conclusion at the end of this section:
+> **#51** re-measured the ~11% evaporation evidence that motivated the coupling and it did NOT survive
+> (same fixture, sign and trend both inverted), and **#43** then made `continuous` THE DEFAULT anyway,
+> on the physical argument alone -- FSM moved that water, so the next step should see it as a source
+> rather than as a rewritten initial condition.
+>
+> So "park #116, keep it gated off" is not the current position. Read what follows as the record of a
+> real incompatibility in a version of the code that no longer exists. The names have also changed:
+> `-wtm_fsm_continuous` is `surface_water.fsm_coupling: continuous`, `during` is `continuous`, and
+> `between` is `impulse`.
+
 
 The lake-aware pin takes its lake stage from the water table itself
 (`transient_groundwater.cpp:2381`):

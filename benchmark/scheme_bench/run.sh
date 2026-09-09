@@ -39,9 +39,12 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 RANKS="${2:-4}"
 CYCLES="${3:-120}"
 COUPLING="${COUPLING:-between}"
+# The coupling is a CONFIG key (surface_water.fsm_coupling), reaching mkcfg as a legacy shim line.
+# It was `-wtm_fsm_continuous` until the -wtm_ namespace was retired; the flag would now abort the run
+# as an unconsumed option. `during` == continuous == THE DEFAULT (#43); `between` == impulse.
 case "$COUPLING" in
-  between) COUPLING_FLAGS="" ;;
-  during)  COUPLING_FLAGS="-wtm_fsm_continuous" ;;
+  between) COUPLING_CFG="fsm_coupling impulse" ;;
+  during)  COUPLING_CFG="fsm_coupling continuous" ;;
   *) echo "ERROR: COUPLING must be 'between' or 'during' (got '$COUPLING')"; exit 1 ;;
 esac
 # COLLECTOR (env, default `implicit`) selects how the wtd<=0 exfiltration constraint is ENFORCED:
@@ -126,17 +129,17 @@ SCHEMES=(
 
 echo "=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ==="
 echo "binary: $WTM   ranks: $RANKS   cycle budget: $CYCLES   auto-stop: DISABLED (eq_tol 0)"
-echo "FSM coupling: $COUPLING${COUPLING_FLAGS:+  ($COUPLING_FLAGS)}   collector: $COLLECTOR${COLLECTOR_FLAGS:+  ($COLLECTOR_FLAGS)}"
+echo "FSM coupling: $COUPLING  ($COUPLING_CFG)   collector: $COLLECTOR${COLLECTOR_FLAGS:+  ($COLLECTOR_FLAGS)}"
 echo
 printf "%-28s %10s %12s %12s\n" "scheme" "rc" "wall_s" "SNES_iters"
 : > "$OUT/summary.csv"
 echo "stem,label,rc,wall_s,iters,cycles_run" >> "$OUT/summary.csv"
 for entry in "${SCHEMES[@]}"; do
     IFS='|' read -r stem label flags cfgextra <<< "$entry"
-    mkcfg "$stem" "$cfgextra"; rm -f "$OUT/$stem.txt"
+    mkcfg "$stem" "${cfgextra:+$cfgextra;}$COUPLING_CFG"; rm -f "$OUT/$stem.txt"
     t0=$(date +%s.%N)
     # shellcheck disable=SC2086
-    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COUPLING_FLAGS $COLLECTOR_FLAGS -snes_stol 1e-8 \
+    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COLLECTOR_FLAGS -snes_stol 1e-8 \
         > "$OUT/$stem.log" 2>&1
     rc=$?
     t1=$(date +%s.%N)
