@@ -123,51 +123,44 @@ if (( ${#unknown[@]} )); then
 fi
 
 # ---- RESOLVE FIRST, EMIT SECOND ---------------------------------------------------------------
-# These mirrors must be computed before ANY section is written, because surface_water is emitted
-# before solver and needs the resolved collector. Placing them in the solver block left $_coll unbound
-# there -- caught immediately by `set -u`, which is why this script has it.
-# THE REMAINING RESOLUTIONS, mirrored from parameters.cpp exactly as the controller rule above is.
-# Each is DERIVED by the model from another setting, so a test cannot state it by copying a constant --
-# it has to state what its own combination resolves to. config_identity.py checks every one on every
-# run, so a mirror that drifts from the model shows up as a DIFFER rather than rotting quietly.
+# Only two things are resolved up here, and only because surface_water is emitted before solver:
+# $_ctl gates the step-controller dials and must exist before the first section is written.
 #
-# This makes the config SAY what the run did. It does not, and cannot, say what the arm MEANT -- that is
-# what expect_resolved asserts (#24), and the two are complementary: budget_closure's "Anderson BE" arms
-# would still have run TR-BDF2 with this in place, but the config would have said so.
-_method=$(have solver_method && val solver_method || echo anderson)
-_coll=$(have runoff_collector && val runoff_collector || { [[ "$_method" == picard ]] && echo explicit || echo active_set; })
-_integ=$(have time_integration && val time_integration || { [[ "$_method" == anderson ]] && echo tr-bdf2 || echo backward-euler; })
-
-# THE MODEL'S RULE, mirrored exactly (parameters.cpp):
-#     dt_continuation = explicit value, else TRUE when solver.method is newton
-#     adaptive_dt     = explicit value, else !dt_continuation && collector != implicit
-# The first version of this mirror was WRONG for `method: newton` with dt_continuation EXPLICITLY
-# false -- it concluded "no controller" while the model resolved adaptive_dt: true, so the five dials
-# went undeclared on tests/ghost_boundary's jac arm. config_identity.py reported it as five MISSING
-# keys, which is exactly the drift it exists to catch: a shim that DERIVES a value is checked on every
-# run, unlike a test that re-derives a policy to assert against.
-_dtc=false
-if have dt_continuation; then _dtc=$(val dt_continuation)
-elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then _dtc=true
-fi
-_ad=false
-if have adaptive_dt; then _ad=$(val adaptive_dt)
-elif [[ "$_dtc" != true && "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; then _ad=true
-fi
+# THE MIRROR THAT LIVED HERE IS GONE (2026-09-09, Andy: "the mirror undercuts much of the point of
+# requiring explicit inputs from the tests"). It re-derived in bash what the model derives in C++ --
+# collection.method, time_integration, adaptive_dt, dt_continuation, error_tol -- so that every
+# generated config could state them. Two things were wrong with it, and the second cost real work:
+#
+#   IT LAUNDERED DEFAULTS INTO INTENTIONS. Nobody hand-writes these configs; this script generates
+#   them. So a value picked by a bash fallback arrived in the author's voice, and a default nobody had
+#   considered became indistinguishable from a deliberate setting -- inside the one mechanism whose
+#   whole purpose is to stop a config lying about its run. An omitted key is HONEST: it says the author
+#   did not choose. A written one says they did.
+#
+#   THE COPY WAS AN INCOMPLETE MODEL OF THE REAL ONE. It knew the defaults but not the COMBINATION
+#   rules. With infiltration_during_flow: true the model resolves an unset fsm_coupling to `impulse`
+#   and refuses an explicit `continuous` by name (src/transient_groundwater.cpp:1493); the mirror wrote
+#   `continuous` -- the default it knew -- and tests/serial_recharge stopped running. That was then
+#   reported as "these keys cannot be declared", when what could not be declared was a guess.
+#
+# A DERIVED KEY IS NOW EMITTED ONLY IF THE SUITE STATES IT. Until it does, tests/config_identity.py
+# reports it MISSING, which is the honest and visible state: the run resolved a setting the test never
+# chose. The fix is one line in the suite, next to the arm it belongs to.
+_method=$(have solver_method && val solver_method || echo anderson)   # a CONSTANT default, not derived
 _ctl=false
-[[ "$_ad" == true || "$_dtc" == true ]] && _ctl=true
+if [[ "$(have adaptive_dt && val adaptive_dt)" == true \
+   || "$(have dt_continuation && val dt_continuation)" == true ]]; then _ctl=true; fi
 
 
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
 echo "  equilibrium_stop:"
-# The RESOLVED default, which is run-type dependent: CreateSNES gives an equilibrium run 0.001 and a
-# transient run 0.0. Emitting 0 unconditionally was WRONG and not a no-op -- `tol: 0` on an equilibrium
-# run flips the adaptive step tolerance from min(eq_tol,0.5)=0.001 to the never-stop branch's 0.5, which
-# changed tests/xrank_growth. A default taken from a run that had SET the key is not a default.
-if [[ "$(have run_type && val run_type)" == "transient" ]]; then echo "    tol: $(def_ eq_tol 0)"
-else                                                            echo "    tol: $(def_ eq_tol 0.001)"; fi
+# tol has no constant default either: CreateSNES gives an equilibrium run 0.001 and a transient run
+# 0.0, and the difference is not cosmetic -- `tol: 0` on an equilibrium run flips the adaptive step
+# tolerance from min(eq_tol,0.5)=0.001 to the never-stop branch's 0.5, which moved tests/xrank_growth.
+# A run that stops on this tolerance says what it stops at.
+have eq_tol && echo "    tol: $(val eq_tol)"
 echo "    metric: $(def_ eq_metric frac)"
 echo "    frac: $(def_ eq_frac 0.001)"
 if have supplied_wt; then
@@ -260,8 +253,8 @@ esac
 # --- solver ---------------------------------------------------------------------
 echo "solver:"
 echo "  method: $_method"
-echo "  time_integration: $_integ"
-echo "  adaptive_dt: $_ad"
+have time_integration && echo "  time_integration: $(val time_integration)"
+have adaptive_dt      && echo "  adaptive_dt: $(val adaptive_dt)"
 echo "  tolerance: $(def_ snes_stol 1e-8)"
 echo "  max_iterations: $(def_ max_iterations 10000)"
 echo "  t_bar: $(def_ t_bar false)"
@@ -279,32 +272,22 @@ echo "      rho: $(def_ ar_rho 0.9)"
 echo "      patience: $(def_ ar_patience 2)"
 echo "      max_it: $(def_ ar_max_it 40)"
 echo "      max_restarts: $(def_ ar_max_restarts 30)"
-# dt_continuation is IMPLIED by solver.method: newton, so its default is not a constant. The shim
-# mirrors that rule rather than hard-coding false -- and tests/config_identity.py is what keeps the
-# mirror honest: if this derivation ever drifts from the model's, every run reports DIFFER on this key.
-# That is the difference between a shim deriving a value (checked every run) and a TEST re-deriving a
-# policy to assert against (checked by nothing) -- the second is what cried wolf in #24.
-echo "  newton:"
-if have dt_continuation; then echo "    dt_continuation: $(val dt_continuation)"
-elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then echo "    dt_continuation: true"
-else echo "    dt_continuation: false"; fi
+# dt_continuation is IMPLIED by solver.method: newton, so there is no constant to fall back on: the
+# model's answer depends on another setting. A suite that runs the ramp -- or deliberately runs Newton
+# WITHOUT it -- says so itself.
+if have dt_continuation; then
+    echo "  newton:"
+    echo "    dt_continuation: $(val dt_continuation)"
+fi
 echo "  time_step:"
 have deltat && echo "    dt: $(val deltat)"
-# error_tol: the adaptive step tolerance. Its default TRACKS the equilibrium-stop tolerance, capped at
-# the free-surface ring bound (CreateSNES.cpp):
+# error_tol: the adaptive step tolerance. There is no constant default -- the model TRACKS the
+# equilibrium-stop tolerance, capped at the free-surface ring bound (CreateSNES.cpp):
 #     equilibrium && eq_tol > 0 -> min(eq_tol, 0.5)
 #     equilibrium               -> 0.5   (a never-stopping run: pure accuracy knob)
 #     transient                 -> 0.1   (no stop criterion to track)
-# The comparison is numeric, so emitting 0.1 matches the 0.10000000000000001 the model prints.
-if have dt_tol; then echo "    error_tol: \"$(val dt_tol)\""
-else
-    _eqtol=$( [[ "$(have run_type && val run_type)" == "transient" ]] && def_ eq_tol 0 || def_ eq_tol 0.001 )
-    if [[ "$(have run_type && val run_type)" != "transient" ]]; then
-        echo "    error_tol: \"$(awk -v e="$_eqtol" 'BEGIN{print (e+0 > 0 && e+0 < 0.5) ? e : 0.5}')\""
-    else
-        echo "    error_tol: \"0.1\""
-    fi
-fi
+# A suite whose steps are sized by that tolerance states which of the three it means.
+have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
 have dt_max && echo "    dt_max: \"$(val dt_max)\""
 # THE STEP-CONTROLLER DIALS, only when a controller actually runs. They bridge to -wtm_dtc_* flags that
 # nothing parses on a fixed-step run, and the model ABORTS on a flag nothing read -- rightly: a dial on a
@@ -316,7 +299,7 @@ if [[ "$_ctl" == true ]]; then
     echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)"
     echo "    max_retries: $(def_ dtc_max_retries 15)"
     # norm narrower still -- parsed in the ADAPTIVE branch only, not Newton's ramp.
-    [[ "$_ad" == true ]] && echo "    norm: $(def_ dt_norm rms)"
+    [[ "$(have adaptive_dt && val adaptive_dt)" == true ]] && echo "    norm: $(def_ dt_norm rms)"
 fi
 
 # --- dev ---------------------------------------------------------------------
