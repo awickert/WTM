@@ -145,77 +145,91 @@ does not carry a spurious dt-dependence.
 
 ---
 
-## The open queue, in full (2026-09-09)
+## The open queue, in full (updated 2026-09-09, after a staleness sweep)
 
-Every open item, numbered by task ID, so the list survives a session boundary and can be picked up one
-at a time. Grouped by kind, not by priority – the ordering within a group is not a ranking.
+Every open item with its task number, grouped by kind. Ordering *within* a group is not a ranking;
+the ordering *between* the two constraints below is real.
 
-### A. The configuration arc
+**Two constraints decide sequence.** Work that changes the **schema** must precede work that pins
+configs into files. Work that changes **answers** must precede work that pins numbers. Everything
+else can move.
+
+### A. The configuration arc — the only live level of the stack
 
 | # | item |
 |---|---|
+| 38 | **Schema-mover, do first.** One key `solver.time_step.mode: fixed \| adaptive \| ramp`, replacing `solver.adaptive_dt` and `solver.newton.dt_continuation`. ~18 callers. Needs Andy: it changes a user-facing key |
 | 83 | Materialize the configs: the shim becomes a one-time generator, then is deleted |
-| 79 | Declared-config rule – the authoring pass, then enforcement for every suite |
-| 32 | Flag walk-through, **6 of 8 groups left**: one question each, does the mechanism stay? |
-| 30 | Flag retirement group 1 – 9 abstracted flags remain; follows from 32 |
-| 36 | Every setting a config key, defaulted, with a `full_config.yaml` per run |
-| 80 | The four nested levels of this work – finish inward-out, lose nothing on the way |
+| 79 | Declared-config rule – authoring pass, then Phase 5 enforces for every suite |
+| 86 | A `-wtm_` transport flag silently overrides its config key. Needs Andy: announce, refuse, or document |
+| 36 | Sketch D – only step 10 remains, and it is part-stale (names a key that no longer exists) |
+| 80 | The stack – L1, L2 and L4 are closed; L3 is what is left |
 
 ### B. Test integrity
 
 | # | item |
 |---|---|
 | 84 | 24 assertion tolerances state what they *are*, not where they *came from* |
-| 85 | Golden references carry no in-file provenance – header gives shape, not origin |
+| 85 | Golden references record shape, not origin |
 | 34 | `boundary_analytic`'s Neumann vertex assertion is defeated by `nan` |
-| 37 | Integrator coverage dropped when `time_integration: auto` began resolving to tr-bdf2 |
-| 53 | State-vs-accumulator test design is invalid only for 3-level schemes |
-| 65 | Convert head-unit measurements to water volume – 10 of ~15 |
-| 73 | Fix the measurement scripts themselves |
-| 66 | Diagnostic-process audit – 15 of 17 fixes open |
-| – | Widen `expect_resolved` beyond its 6 suites / 8 call sites: intent, not record |
+| 65 | Convert head-unit measurements to water volume – 5 suites left of ~15 |
+| 73 | `analyze_adapt_bench.py` and `compare_series` – the surviving children of the #66 audit |
+| 37 | Integrator coverage is now whatever suites declare – 8 of 39 state it. Folds into #83 |
+| 53 | State-vs-accumulator is invalid only for 3-level schemes |
+| 66 | Keep the six themes and the "what already works" patterns; ~9 of 13 ranked fixes are done |
 
 ### C. Open model defects
 
 | # | item |
 |---|---|
-| 52 | Land→ocean outflow at pinned boundary cells – 211 cells of the outer land ring |
-| 35 | Collector selector may override `dev.allow_aboveground_water_columns` |
-| 44 | `fsm_coupling: source` × `collection.method: explicit` does not converge |
-| 48 | The budget is not solve-count invariant under `continuous` |
+| 52 | Land→ocean outflow at pinned boundary cells – 211 cells of the outer ring, corners 1.5× |
 | 57 | A deliberate config refusal exits via uncaught exception and a core dump |
-| 46 | Coupling vocabulary – retire `-wtm_fsm_continuous` and "overwrite" from prose |
-| 38 | Collapse `adaptive_dt` and `newton.dt_continuation` into one `time_step.mode` |
-| 39 | Cross-rank drift: impulse resets it each step, continuous accumulates it |
+| 35 | The collector selector reassigns the same global the `dev` key sets – verified still present |
+| 44 | Re-verify under the current name: `fsm_coupling: continuous` × `collection.method: explicit` |
+| 48 | Not a blocker – `continuous` is already the default. The budget is first-order in dt, and the *test's* metric is the defect |
+| 39 | Cross-rank drift: impulse resets it each step from rank 0, continuous accumulates it |
+| 46 | Coupling vocabulary – `-wtm_fsm_continuous` (4 sites) and "overwrite" in prose |
 
 ### D. Measurement, physics, performance
 
 | # | item |
 |---|---|
-| 64 | Sub-cycle the FSM coupling to bound the delta admitted per step |
-| 60 | Order-aware retry – real speedup, exonerated; the patch is written and unapplied |
-| 42 | dt-scaling of the source coupling's in-flight budget lag |
-| 50 | Re-measure whether Newton still needs `dt_continuation` for cold starts |
-| 54 | Test and guard the budget at boundaries |
-| 77 | Storativity smoothing is inert under active_set, unlike explicit |
-| 78 | Backward-euler residual growing to ~1e-1 of recharge at fine dt |
+| 64 | **Answer-mover.** Sub-cycle the FSM coupling to bound the delta admitted per step |
+| 60 | **Answer-mover.** Order-aware retry – real speedup, exonerated; patch written and unapplied |
+| 42 | dt-scaling of the continuous coupling's in-flight budget lag – check #48 first, it may already answer it |
+| 50 | Whether Newton still needs the ramp for cold starts from far – five doc sites depend on the answer |
+| 54 | Test and guard the budget at boundaries – the gap #52 fell into |
+| 77 | Storativity smoothing is inert under active_set – a recorded measurement, not an action |
+| 78 | Backward-euler residual at fine dt – unverified, needs a purpose-built reproduction |
 | 6 | Re-run `scheme_bench` now that Newton carries the active-set tangent |
-| 58, 59 | The estimator bump: solved as rate-vs-exposure, plus the measured negative |
+| 58, 59 | The estimator bump: solved as rate×exposure, plus the measured negative |
 
 ### E. Depression hierarchy
 
 | # | item |
 |---|---|
-| 81 | Cell-area bug fixed – keep the diff for the non-vendored dephier |
-| 82 | Vendored DH: content-diff of the 11 commits, and the plan reframing |
+| 82 | Vendored DH: content-diff the 11 richdem commits; reframe the integration plan |
 
 ### Blocked on a decision rather than on work
 
-The **six remaining #32 groups**. Each asks whether a piece of the model stays or retires, which
-decides whether its config key survives – and a written config states every key, so each answer edits
-files rather than a generator.
+**#38** (a user-facing key changes), **#86** (precedence: announce, refuse, or document), and **#36**
+step 10 (three code defaults, one of which no longer exists).
+
+### Closed 2026-09-09
+
+**#32** flag walk-through, 8 of 8 – kirchhoff retired, five groups already done.
+**#30** flag retirement, 14 of 14 – the nine "abstracted" flags have zero source call sites.
+**#81** DH cell-area bug – fixed and suite-confirmed; the diff to port lives in #82.
+
+### What the sweep found, and the habit it argues for
+
+Six task bodies described work that was already finished, and every `transient_groundwater.cpp` line
+citation in the list was wrong by ~64 lines after the kirchhoff removal. In every case the
+*analysis* held – the measurements, mechanisms and refutations were all still good – and only the
+**status** and the **addresses** had decayed. So: verify status in the same turn you act on it, and
+cite by symbol rather than line number.
 
 ### Standing
 
-Nothing has left this machine: **244 commits unpushed** to the `awickert` fork. Push to `origin`
+Nothing has left this machine: **249 commits unpushed** to the `awickert` fork. Push to `origin`
 (KCallaghan) is disabled. Pushing, tagging and releasing each need their own explicit go-ahead.
