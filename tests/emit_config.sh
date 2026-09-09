@@ -124,7 +124,12 @@ fi
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
 echo "  equilibrium_stop:"
-echo "    tol: $(def_ eq_tol 0)"
+# The RESOLVED default, which is run-type dependent: CreateSNES gives an equilibrium run 0.001 and a
+# transient run 0.0. Emitting 0 unconditionally was WRONG and not a no-op -- `tol: 0` on an equilibrium
+# run flips the adaptive step tolerance from min(eq_tol,0.5)=0.001 to the never-stop branch's 0.5, which
+# changed tests/xrank_growth. A default taken from a run that had SET the key is not a default.
+if [[ "$(have run_type && val run_type)" == "transient" ]]; then echo "    tol: $(def_ eq_tol 0)"
+else                                                            echo "    tol: $(def_ eq_tol 0.001)"; fi
 echo "    metric: $(def_ eq_metric frac)"
 echo "    frac: $(def_ eq_frac 0.001)"
 if have supplied_wt; then
