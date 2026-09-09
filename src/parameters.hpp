@@ -141,6 +141,12 @@ struct Parameters {
   double dtc_dt0         = 0.0;
   bool   dtc_dt0_set     = false;
 
+  // solver.convergence.*: what the PER-SOLVE step test judges. volume is the default (#61: the head
+  // step tolerance is a LENGTH and the budget it must agree with is a VOLUME, so 88% of solves were
+  // exiting on a test the budget could not honour); `head` is the off-switch.
+  bool   convergence_metric_head = false;
+  double water_volume_tol        = 1e-8;
+
   // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
   // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
   // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp

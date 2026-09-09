@@ -285,6 +285,10 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
+  if (auto n = root["solver"]["convergence"]["metric"])
+    convergence_metric_head =
+        (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "volume"}) == "head");
+  if (auto n = root["solver"]["convergence"]["water_volume_tol"]) water_volume_tol = std::stod(n.as<std::string>());
   if (auto sc = root["solver"]["time_step"]) {
     if (auto n = sc["grow"])              dtc_grow        = n.as<double>();
     if (auto n = sc["shrink"])            dtc_shrink      = n.as<double>();

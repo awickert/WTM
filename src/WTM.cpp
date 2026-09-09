@@ -1169,13 +1169,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // that used `head` could not otherwise be reproduced from its archived resolved config. Water volume became
   // the default in #61 -- the head step tolerance is a LENGTH and the budget it must agree with is a VOLUME,
   // so 88% of solves were exiting on a test the budget could not honour. `head` is the off-switch.
-  if (auto n = root["solver"]["convergence"]["metric"])
-    set_opt_if_unset(require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "volume"}) == "head"
-                         ? "-wtm_snes_head_conv"
-                         : "-wtm_snes_volume_conv_govern",
-                     "true");
-  if (auto n = root["solver"]["convergence"]["water_volume_tol"])
-    set_opt_if_unset("-wtm_snes_vol_tol", n.as<std::string>().c_str());
+  // (metric and water_volume_tol parsed into Parameters directly; see parameters.cpp.)
   // `auto` is refused, not silently accepted -- see the note in parameters.cpp. Omitting the key is how
   // you ask for the default; the word is a second way to say the same thing and it leaked into
   // full_config.yaml, where it recorded the question rather than the answer.

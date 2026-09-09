@@ -98,14 +98,11 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // kept as an explicit request for the default, so a config or command line that asks for volume still
   // reads correctly; when both arrive the off-switch wins, because only it can have been asked for
   // deliberately (volume needs no asking).
-  PetscBool vc = PETSC_FALSE, vcg = PETSC_FALSE, vch = PETSC_FALSE;
+  PetscBool vc = PETSC_FALSE;
   PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv_govern", &vcg);
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_head_conv", &vch);
-  (void)vcg;                                                  // asks for the default; kept for readability
-  user_context.snes_volume_conv_govern = (vch != PETSC_TRUE);
+  user_context.snes_volume_conv_govern = !params.convergence_metric_head;
   user_context.vol_step_trace          = (vc == PETSC_TRUE);  // INDEPENDENT of governing, see AppCtx
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_snes_vol_tol", &user_context.snes_volume_conv_tol, nullptr);
+  user_context.snes_volume_conv_tol    = params.water_volume_tol;
   if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.convergence.metric: volume -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
