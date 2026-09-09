@@ -48,5 +48,40 @@ for f in */run*.sh */*.py; do
         fail=1
     fi
 done
-[ "$fail" -eq 0 ] && echo "NORM LINT: no water-table comparison is written in head" || echo "NORM LINT: FAILED"
+# ---- A LINE CONTINUATION THAT CONTINUES INTO NOTHING -------------------------------------------
+# A trailing `\` followed by a blank or whitespace-only line. bash PARSES it -- `bash -n` is silent,
+# the suite runs, and the arguments that used to be on the continuation are simply gone.
+#
+# Both shapes were live in this tree. In tests/budget_closure two arms ended in `\` over an empty
+# line because the flags they once carried (-wtm_anderson -wtm_tr_bdf2 -wtm_active_set) had been
+# retired and only the backslash was left. In tests/estimator_order a scripted edit removed
+# `-snes_stol 1e-12` from a continuation and left the line above it ending in `\`, producing
+#     ... -wtm_dtc_shrink 1.0 \ > "$WORK/$1.log" 2>&1
+# -- an escaped space, silently passed to the model as an extra argument.
+#
+# Neither was caught by anything. The second was found only because the first had just been noticed,
+# which is luck, not a process. This lint is the process.
+for f in */run.sh *.sh; do
+    [ -f "$f" ] || continue
+    # SKIP THIS FILE. It necessarily CONTAINS the patterns it searches for -- the grep expression and
+    # the failure message both spell them out -- so scanning itself is a guaranteed false positive.
+    # Third self-match of this session, after a pkill and a pgrep that each matched their own command
+    # line; a checker that reads source is always a candidate for its own rule.
+    [ "$f" = "lint_norms.sh" ] && continue
+    bad=$(awk '/\\$/ { prev = NR; line = $0 }
+               NR == prev + 1 && /^[[:space:]]*$/ { printf "%d: %s\n", NR - 1, line }' "$f")
+    if [ -n "$bad" ]; then
+        echo "  FAIL  $f: line continuation into a BLANK line -- the continued arguments are lost:"
+        printf '%s\n' "$bad" | sed 's/^/          /'
+        fail=1
+    fi
+    if command grep -qn '\\ >' "$f"; then
+        echo "  FAIL  $f: '\\ >' -- a stranded backslash before a redirect passes a literal space:"
+        command grep -n '\\ >' "$f" | sed 's/^/          /'
+        fail=1
+    fi
+done
+
+[ "$fail" -eq 0 ] && echo "LINT: no head-norm comparison, no continuation that continues into nothing" \
+                  || echo "LINT: FAILED"
 exit $fail
