@@ -45,6 +45,14 @@ region fsm_test
 time_start t0
 time_end t0
 eq_tol 0
+# STATED, not inherited. These four are DERIVED by the model from solver.method and the collector, so
+# leaving them out meant this suite's configs described a run they did not choose: `auto` resolves them
+# and the config recorded whatever came back. They are pinned here at the values this arm has always
+# run, so the measurement is unchanged and the choice is now visible where the arm is read.
+time_integration tr-bdf2
+adaptive_dt true
+dt_continuation false
+dt_tol 0.5
 textfilename $WORK/c.txt
 outfile_prefix $WORK/c_
 EOF
