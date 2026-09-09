@@ -67,17 +67,17 @@ run() { # name  command...
     export WTM_COVERAGE_TAG="$name"
     "$@" || rc=$?
     NAMES+=("$name"); RESULTS+=($([ $rc -eq 0 ] && echo PASS || echo FAIL))
-    # EXIT 3 = a suite on the explicit-config ratchet (tests/lib.sh WTM_EXPLICIT_SUITES) stopped saying
+    # EXIT 3 = a suite on the declared-config ratchet (tests/lib.sh WTM_DECLARED_SUITES) stopped saying
     # everything its run resolved to. BREAK OUT rather than carry on: unlike an ordinary assertion
     # failure, this one says the CONFIGURATION the rest of the run is about to test is not the
     # configuration anyone wrote down, so every result after it is of unknown provenance. Stopping here
     # keeps the failure attached to the change that caused it instead of burying it 30 suites later.
     if [ $rc -eq 3 ]; then
         echo >&2
-        echo "ABORTING THE RUN: $name broke the explicit-config rule (exit 3)." >&2
+        echo "ABORTING THE RUN: $name broke the declared-config rule (exit 3)." >&2
         echo "  A test config must already state every setting the run resolves to, so that what was" >&2
         echo "  tested is exactly what was written down. Fix the config, or -- if the key genuinely" >&2
-        echo "  should not be stated -- remove the suite from WTM_EXPLICIT_SUITES in tests/lib.sh and" >&2
+        echo "  should not be stated -- remove the suite from WTM_DECLARED_SUITES in tests/lib.sh and" >&2
         echo "  say why in the commit." >&2
         exit 3
     fi

@@ -9,7 +9,7 @@ other than what their arm names claimed, and every one of them passed.
 
 Annotating WHERE each value came from would make that visible. Requiring the input config to
 already CONTAIN every resolved key makes it impossible, which is stronger and needs no
-per-key bookkeeping: if the model had to supply anything, the test was not explicit.
+per-key bookkeeping: if the model had to supply anything, the test did not declare it.
 
 Compares the config handed to the model against the full_config.yaml that run wrote.
   MISSING  resolved but not declared  -- the test left it implicit. THE DEFECT THIS CATCHES.
@@ -102,10 +102,10 @@ def main():
                 bad.append((stem, m, e, d, dec, res))
         if sys.argv[1] == "--summary":
             if not bad:
-                print(f"{len(runs)} runs, all explicit")
+                print(f"{len(runs)} runs, all declared")
             else:
                 worst = max(len(b[1]) + len(b[2]) + len(b[3]) for b in bad)
-                print(f"{len(runs) - len(bad)}/{len(runs)} runs explicit "
+                print(f"{len(runs) - len(bad)}/{len(runs)} runs declared "
                       f"({len(bad)} with implicit keys, worst {worst})")
             return 0
         for stem, m, e, d, dec, res in bad:
@@ -120,9 +120,9 @@ def main():
         return 2
     missing, extra, differ, dec, res = compare(sys.argv[1], sys.argv[2])
     if not (missing or extra or differ):
-        print(f"OK  config is fully explicit ({len(res)} keys, all declared)")
+        print(f"OK  config declares every resolved setting ({len(res)} keys)")
         return 0
-    print(f"FAIL  {sys.argv[1]} is not explicit "
+    print(f"FAIL  {sys.argv[1]} does not declare everything "
           f"({len(missing)} missing, {len(extra)} extra, {len(differ)} differing)")
     for k in missing:
         print(f"    MISSING  {k}: {res[k]!r}   (resolved by the model; the config is silent)")

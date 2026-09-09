@@ -152,35 +152,35 @@ expect_resolved() {
 #
 # The directory name carries the tag, the commit and the time, so two runs never collide and a kept
 # directory says which build produced it without opening anything.
-# SUITES WHOSE CONFIGS ARE FULLY EXPLICIT. A suite listed here is CHECKED AND ENFORCED: every key the
+# SUITES WHOSE CONFIGS ARE FULLY DECLARED. A suite listed here is CHECKED AND ENFORCED: every key the
 # run resolved must already be stated in the config it was given, or the suite fails.
 #
 # THE RATCHET. The rule -- a test's config says everything, a user's config may rely on defaults -- cannot
 # be switched on at once: 494 of 494 runs currently leave at least one key implicit, and some of those
 # keys still arrive by CLI flag because the YAML migration is unfinished. So the check REPORTS for every
 # suite and ENFORCES for the suites named here, and a suite joins the list in the same commit that makes
-# it explicit. That makes the conversion monotone -- a converted suite cannot silently drift back while
+# it declared. That makes the conversion monotone -- a converted suite cannot silently drift back while
 # the rest is in flight -- and turns "gradually tighten this" into a count that only goes up instead of an
 # intention that quietly expires. When the list holds every suite, delete it and enforce unconditionally.
-WTM_EXPLICIT_SUITES=""
+WTM_DECLARED_SUITES=""
 
-_wtm_explicit_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
+_wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
     local tag="$1" tests_dir out rc=0
     tests_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     [ -d "${WORK:-}" ] || return 0
     command -v python3 >/dev/null 2>&1 || return 0
     out=$("$tests_dir/config_identity.py" --summary "$WORK" 2>/dev/null) || return 0
     [ -n "$out" ] || return 0
-    case " $WTM_EXPLICIT_SUITES " in
+    case " $WTM_DECLARED_SUITES " in
         *" $tag "*)
-            if ! printf '%s' "$out" | command grep -q "all explicit"; then
-                echo "  FAIL  EXPLICIT  $tag is on the explicit list but its configs no longer say everything:" >&2
+            if ! printf '%s' "$out" | command grep -q "all declared"; then
+                echo "  FAIL  DECLARED  $tag is on the declared list but its configs no longer say everything:" >&2
                 "$tests_dir/config_identity.py" --report "$WORK" >&2
                 rc=1
             else
-                echo "  OK   EXPLICIT  $out"
+                echo "  OK   DECLARED  $out"
             fi ;;
-        *) echo "  note  explicit-config progress: $out" >&2 ;;
+        *) echo "  note  declared-config progress: $out" >&2 ;;
     esac
     return $rc
 }
@@ -189,7 +189,7 @@ _wtm_work_cleanup() {
     local rc=$?
     # Run BEFORE the work dir is deleted -- the configs and their full_config.yaml records live in it.
     # Does not mask a real failure: a suite that already failed keeps its own exit code.
-    if [ "$rc" -eq 0 ] && ! _wtm_explicit_check "${WORK_TAG:-unknown}"; then rc=3; fi
+    if [ "$rc" -eq 0 ] && ! _wtm_declared_check "${WORK_TAG:-unknown}"; then rc=3; fi
     if [ "$rc" -ne 0 ] || [ "${WTM_KEEP:-0}" = 1 ]; then
         [ -d "${WORK:-}" ] && echo "  kept: $WORK  (exit $rc)" >&2
     else
