@@ -122,6 +122,42 @@ if (( ${#unknown[@]} )); then
     exit 2
 fi
 
+# ---- RESOLVE FIRST, EMIT SECOND ---------------------------------------------------------------
+# These mirrors must be computed before ANY section is written, because surface_water is emitted
+# before solver and needs the resolved collector. Placing them in the solver block left $_coll unbound
+# there -- caught immediately by `set -u`, which is why this script has it.
+# THE REMAINING RESOLUTIONS, mirrored from parameters.cpp exactly as the controller rule above is.
+# Each is DERIVED by the model from another setting, so a test cannot state it by copying a constant --
+# it has to state what its own combination resolves to. config_identity.py checks every one on every
+# run, so a mirror that drifts from the model shows up as a DIFFER rather than rotting quietly.
+#
+# This makes the config SAY what the run did. It does not, and cannot, say what the arm MEANT -- that is
+# what expect_resolved asserts (#24), and the two are complementary: budget_closure's "Anderson BE" arms
+# would still have run TR-BDF2 with this in place, but the config would have said so.
+_method=$(have solver_method && val solver_method || echo anderson)
+_coll=$(have runoff_collector && val runoff_collector || { [[ "$_method" == picard ]] && echo explicit || echo active_set; })
+_integ=$(have time_integration && val time_integration || { [[ "$_method" == anderson ]] && echo tr-bdf2 || echo backward-euler; })
+
+# THE MODEL'S RULE, mirrored exactly (parameters.cpp):
+#     dt_continuation = explicit value, else TRUE when solver.method is newton
+#     adaptive_dt     = explicit value, else !dt_continuation && collector != implicit
+# The first version of this mirror was WRONG for `method: newton` with dt_continuation EXPLICITLY
+# false -- it concluded "no controller" while the model resolved adaptive_dt: true, so the five dials
+# went undeclared on tests/ghost_boundary's jac arm. config_identity.py reported it as five MISSING
+# keys, which is exactly the drift it exists to catch: a shim that DERIVES a value is checked on every
+# run, unlike a test that re-derives a policy to assert against.
+_dtc=false
+if have dt_continuation; then _dtc=$(val dt_continuation)
+elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then _dtc=true
+fi
+_ad=false
+if have adaptive_dt; then _ad=$(val adaptive_dt)
+elif [[ "$_dtc" != true && "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; then _ad=true
+fi
+_ctl=false
+[[ "$_ad" == true || "$_dtc" == true ]] && _ctl=true
+
+
 # --- run ---------------------------------------------------------------------
 echo "run:"
 have run_type && echo "  type: $(val run_type)"
@@ -168,8 +204,7 @@ if have fdepth_a || have fdepth_b || have fdepth_fmin; then
 fi
 
 # --- surface_water -----------------------------------------------------------
-if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration_on || have runoff_collector \
-   || have fsm_coupling; then
+if true; then   # always: collection.method and fsm_coupling are resolved for every run
     echo "surface_water:"
     if have fsm_on; then
         case "$(val fsm_on)" in
@@ -182,6 +217,8 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
         echo "  runoff_ratio: $(val runoff_ratio)"
     elif [[ "$(have runoff_ratio_on && val runoff_ratio_on)" == "1" ]]; then
         echo "  runoff_ratio: raster"
+    else
+        echo "  runoff_ratio: 0"
     fi
     if have infiltration_on; then
         case "$(val infiltration_on)" in
@@ -189,11 +226,13 @@ if have fsm_on || have runoff_ratio || have runoff_ratio_on || have infiltration
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
-    have fsm_coupling && echo "  fsm_coupling: $(val fsm_coupling)"
-    if have runoff_collector; then
-        echo "  collection:"
-        echo "    method: $(val runoff_collector)"
-    fi
+    # fsm_coupling: `auto` yields to impulse under the EXPLICIT collector and is continuous otherwise.
+    # Uses the RESOLVED collector ($_coll), not the key, since an unset collector still resolves.
+    if have fsm_coupling; then echo "  fsm_coupling: $(val fsm_coupling)"
+    elif [[ "$_coll" == explicit ]]; then echo "  fsm_coupling: impulse"
+    else echo "  fsm_coupling: continuous"; fi
+    echo "  collection:"
+    echo "    method: $_coll"
 fi
 
 # --- boundaries --------------------------------------------------------------
@@ -207,9 +246,9 @@ esac
 
 # --- solver ---------------------------------------------------------------------
 echo "solver:"
-have solver_method    && echo "  method: $(val solver_method)"
-have time_integration && echo "  time_integration: $(val time_integration)"
-have adaptive_dt      && echo "  adaptive_dt: $(val adaptive_dt)"
+echo "  method: $_method"
+echo "  time_integration: $_integ"
+echo "  adaptive_dt: $_ad"
 echo "  tolerance: $(def_ snes_stol 1e-8)"
 echo "  max_iterations: $(def_ max_iterations 10000)"
 echo "  t_bar: $(def_ t_bar false)"
@@ -238,30 +277,26 @@ elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then echo "
 else echo "    dt_continuation: false"; fi
 echo "  time_step:"
 have deltat && echo "    dt: $(val deltat)"
-have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
+# error_tol: the adaptive step tolerance. Its default TRACKS the equilibrium-stop tolerance, capped at
+# the free-surface ring bound (CreateSNES.cpp):
+#     equilibrium && eq_tol > 0 -> min(eq_tol, 0.5)
+#     equilibrium               -> 0.5   (a never-stopping run: pure accuracy knob)
+#     transient                 -> 0.1   (no stop criterion to track)
+# The comparison is numeric, so emitting 0.1 matches the 0.10000000000000001 the model prints.
+if have dt_tol; then echo "    error_tol: \"$(val dt_tol)\""
+else
+    _eqtol=$( [[ "$(have run_type && val run_type)" == "transient" ]] && def_ eq_tol 0 || def_ eq_tol 0.001 )
+    if [[ "$(have run_type && val run_type)" != "transient" ]]; then
+        echo "    error_tol: \"$(awk -v e="$_eqtol" 'BEGIN{print (e+0 > 0 && e+0 < 0.5) ? e : 0.5}')\""
+    else
+        echo "    error_tol: \"0.1\""
+    fi
+fi
 have dt_max && echo "    dt_max: \"$(val dt_max)\""
 # THE STEP-CONTROLLER DIALS, only when a controller actually runs. They bridge to -wtm_dtc_* flags that
 # nothing parses on a fixed-step run, and the model ABORTS on a flag nothing read -- rightly: a dial on a
 # controller that is not running is not a setting of the run. full_config.yaml emits them under the same
 # condition (src/WTM.cpp), so the two agree and config_identity has nothing to report either way.
-# THE MODEL'S RULE, mirrored exactly (parameters.cpp):
-#     dt_continuation = explicit value, else TRUE when solver.method is newton
-#     adaptive_dt     = explicit value, else !dt_continuation && collector != implicit
-# The first version of this mirror was WRONG for `method: newton` with dt_continuation EXPLICITLY
-# false -- it concluded "no controller" while the model resolved adaptive_dt: true, so the five dials
-# went undeclared on tests/ghost_boundary's jac arm. config_identity.py reported it as five MISSING
-# keys, which is exactly the drift it exists to catch: a shim that DERIVES a value is checked on every
-# run, unlike a test that re-derives a policy to assert against.
-_dtc=false
-if have dt_continuation; then _dtc=$(val dt_continuation)
-elif [[ "$(have solver_method && val solver_method)" == "newton" ]]; then _dtc=true
-fi
-_ad=false
-if have adaptive_dt; then _ad=$(val adaptive_dt)
-elif [[ "$_dtc" != true && "$(have runoff_collector && val runoff_collector)" != "implicit" ]]; then _ad=true
-fi
-_ctl=false
-[[ "$_ad" == true || "$_dtc" == true ]] && _ctl=true
 if [[ "$_ctl" == true ]]; then
     echo "    grow: $(def_ dtc_grow 1.5)"
     echo "    shrink: $(def_ dtc_shrink 0.25)"
