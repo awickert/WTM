@@ -91,7 +91,7 @@ eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/$1_
 runoff_collector active_set
-adaptive_dt true
+time_step_mode adaptive
 dt_tol 1e9
 ${INTEG:+time_integration $INTEG}
 EOF

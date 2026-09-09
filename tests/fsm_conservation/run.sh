@@ -50,8 +50,7 @@ eq_tol 0
 # and the config recorded whatever came back. They are pinned here at the values this arm has always
 # run, so the measurement is unchanged and the choice is now visible where the arm is read.
 time_integration tr-bdf2
-adaptive_dt true
-dt_continuation false
+time_step_mode adaptive
 dt_tol 0.5
 textfilename $WORK/c.txt
 outfile_prefix $WORK/c_

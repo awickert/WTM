@@ -76,10 +76,9 @@ AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER VOLUME
 export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
-          #   env: DTC=true|false for the continuation arms, ADAPT=true|false to pin the stepping
+          #   env: MODE=fixed|adaptive|ramp pins who sizes the step (one key; was DTC= plus ADAPT=)
     { cat <<EOF
-${DTC:+dt_continuation $DTC}
-${ADAPT:+adaptive_dt $ADAPT}
+${MODE:+time_step_mode $MODE}
 ${METHOD:+solver_method $METHOD}
 run_type equilibrium
 total_time $3
@@ -118,7 +117,7 @@ echo
 fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
-METHOD=newton DTC=true mkcfg pre active_set "2yr"
+METHOD=newton MODE=ramp mkcfg pre active_set "2yr"
 "$WTM" "$WORK/pre.yaml" \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
@@ -131,14 +130,14 @@ else
 fi
 
 # ---- 2. Jacobian vs finite differences, per collector --------------------------------------------
-# ADAPT=false on the arms below is load-bearing. They set dt_continuation: false, so adaptive_dt: auto
-# resolves TRUE for them, and the FD comparison is then made at a state the controller chose rather than
-# at the fixed-dt state these ratios were characterised on: active_set read 0.0736 and explicit 1.0785
+# MODE=fixed on the arms below is load-bearing. Under the old two-boolean scheme they set
+# dt_continuation: false, adaptive_dt then resolved TRUE, and the FD comparison was made at a state the
+# controller chose rather than at the fixed-dt state these ratios were characterised on: active_set read 0.0736 and explicit 1.0785
 # against a 1e-2 ceiling. Nothing was wrong with the Jacobian -- pinned back to fixed dt they return to
 # 0.00415 and 7.36e-08. (explicit is four orders BETTER than its recorded 0.000993: the volume storage
 # default, 879a188, makes the analytic Jacobian match its own residual exactly.)
 for coll in active_set explicit; do
-    METHOD=newton DTC=false ADAPT=false mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
+    METHOD=newton MODE=fixed mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
     R=$(fd_ratio "j_$coll")
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
@@ -149,7 +148,7 @@ for coll in active_set explicit; do
     fi
 done
 
-METHOD=newton DTC=false ADAPT=false mkcfg j_implicit implicit "2yr"
+METHOD=newton MODE=fixed mkcfg j_implicit implicit "2yr"
 R=$(fd_ratio j_implicit)
 WARNED=$(grep -c "NOT the Newton Jacobian" "$WORK/j_implicit.fd.log" || true)
 if awk -v r="${R:-0}" 'BEGIN{exit !(r+0 > 0.1)}' && [ "$WARNED" -gt 0 ]; then
@@ -178,8 +177,8 @@ fi
 # which is what makes matching the stepping possible:
 #     Newton + continuation ramp   max|dwtd| 2.537e-01 m   (never reached equilibrium)
 #     Newton plain, fixed dt       max|dwtd| 4.739e-02 m   equilibrium at cycle 466, vs eq_and's 463
-EQ_TOL=1e-4 ADAPT=false mkcfg eq_and  active_set "2000yr"
-EQ_TOL=1e-4 METHOD=newton DTC=false ADAPT=false mkcfg eq_newt active_set "2000yr"
+EQ_TOL=1e-4 MODE=fixed mkcfg eq_and  active_set "2000yr"
+EQ_TOL=1e-4 METHOD=newton MODE=fixed mkcfg eq_newt active_set "2000yr"
 "$WTM" "$WORK/eq_and.yaml"                  > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" PHI="$INP/fsm_test_porosity.tif" TESTS="$(readlink -f ..)" \
@@ -221,7 +220,7 @@ PY
 # Assert the NEW behaviour rather than delete the arm, so a regression back to needing the ramp is still
 # caught. ADAPT=false remains load-bearing: without it adaptive_dt: auto resolves TRUE here and the arm
 # would not be testing fixed dt at all.
-METHOD=newton DTC=false ADAPT=false mkcfg contract active_set "2yr"
+METHOD=newton MODE=fixed mkcfg contract active_set "2yr"
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
@@ -241,7 +240,7 @@ fi
 # 4b. the SAME configuration with adaptive stepping must SUCCEED. This is the half that makes 4a a
 # statement about fixed dt rather than about Newton, and it is the positive control for 4a: if 4b also
 # failed, 4a would be proving only that the fixture is hard.
-METHOD=newton DTC=false ADAPT=true mkcfg contract_adapt active_set "2yr"
+METHOD=newton MODE=adaptive mkcfg contract_adapt active_set "2yr"
 if sh -c '"$0" "$1"' \
         "$WTM" "$WORK/contract_adapt.yaml" > "$WORK/contract_adapt.log" 2>&1; then
     echo "  PASS  CONTRACT/b the same run with adaptive stepping CONVERGES -- the ramp is not the only"

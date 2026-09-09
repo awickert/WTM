@@ -68,7 +68,7 @@ for integ in tr-bdf2 backward-euler bdf2; do
     ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
 snes_stol 1e-10
 solver_method anderson
-adaptive_dt false
+time_step_mode fixed
 time_integration $integ
 run_type equilibrium
 total_time 8yr

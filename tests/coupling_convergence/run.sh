@@ -78,7 +78,7 @@ infiltration_on 0
 fsm_on 1
 fsm_coupling $2
 runoff_ratio 0
-adaptive_dt false
+time_step_mode fixed
 surfdatadir $5
 region $6
 time_start t0

@@ -56,7 +56,7 @@ mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = run
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 snes_stol 1e-8
 solver_method anderson
-adaptive_dt false
+time_step_mode fixed
 run_type equilibrium
 total_time 150yr
 supplied_wt 1

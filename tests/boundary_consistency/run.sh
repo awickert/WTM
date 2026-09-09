@@ -48,7 +48,7 @@ land_boundary ${LAND_BC:-neumann_toposlope}
 # which is why no such setting was needed before.)
 convergence_water_volume_tol 1e-12
 ${METHOD:+solver_method $METHOD}
-${DTC:+dt_continuation $DTC}
+${MODE:+time_step_mode $MODE}
 fsm_on 0
 # Pinned to 'explicit' on purpose. This test's subject is the land-edge BOUNDARY CONDITION, not the
 # exfiltration enforcement. Its Newton arm uses PLAIN Newton deliberately (the comment below explains
@@ -87,7 +87,7 @@ METHOD=anderson emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" $BB >
 # Newton (analytic Jacobian) must reach the SAME land-Dirichlet water table -> its off-map Dirichlet Jacobian
 # tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary).
 #
-# This arm used PLAIN Newton (DTC=false) on the grounds that "this small well-posed problem converges
+# This arm used PLAIN Newton (MODE=fixed) on the grounds that "this small well-posed problem converges
 # directly (cycle ~3), so dt-continuation is unnecessary", and that continuation would grind to the
 # total_time cap at eq_tol 1e-8. BOTH premises died with dev.storage_form defaulting to volume (879a188):
 # the volume form folds the storage into f with RHS b=0 and scales by Sy, which changes the line search,

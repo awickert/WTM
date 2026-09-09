@@ -32,7 +32,7 @@
 #   under_relaxation      -> dev.under_relaxation
 #   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)
 #   et_sigmoid_width      -> evaporation.et_sigmoid.logistic_width (m)
-#   adaptive_dt true|false -> solver.adaptive_dt
+#   time_step_mode        -> solver.time_step.mode (fixed | adaptive | ramp)
 #   dt_tol                -> solver.time_step.error_tol
 #   dt_max                -> solver.time_step.dt_max
 #   t_bar true|false      -> solver.t_bar
@@ -41,7 +41,6 @@
 #   eq_metric             -> run.equilibrium_stop.metric   (max|rms|frac)
 #   land_boundary         -> boundaries.land (dirichlet -> dirichlet_sea_level)
 #   storage               -> dev.storage_form (volume | secant)
-#   dt_continuation       -> solver.newton.dt_continuation
 #   solver_method         -> solver.method (anderson | picard | newton)
 #   convergence_metric    -> solver.convergence.metric (head | volume)
 #   convergence_water_volume_tol -> solver.convergence.water_volume_tol
@@ -128,7 +127,7 @@ fi
 #
 # THE MIRROR THAT LIVED HERE IS GONE (2026-09-09, Andy: "the mirror undercuts much of the point of
 # requiring explicit inputs from the tests"). It re-derived in bash what the model derives in C++ --
-# collection.method, time_integration, adaptive_dt, dt_continuation, error_tol -- so that every
+# collection.method, time_integration, time_step.mode, error_tol -- so that every
 # generated config could state them. Two things were wrong with it, and the second cost real work:
 #
 #   IT LAUNDERED DEFAULTS INTO INTENTIONS. Nobody hand-writes these configs; this script generates
@@ -147,9 +146,12 @@ fi
 # reports it MISSING, which is the honest and visible state: the run resolved a setting the test never
 # chose. The fix is one line in the suite, next to the arm it belongs to.
 _method=$(have solver_method && val solver_method || echo anderson)   # a CONSTANT default, not derived
+# A controller runs under `adaptive` or `ramp`, not under `fixed`. This reads only what the SUITE
+# STATED -- an unstated mode leaves _ctl false and the dials undeclared, which config_identity.py then
+# reports as MISSING. That is the intended visible state, not a gap to paper over.
+_mode=$(have time_step_mode && val time_step_mode || echo "")
 _ctl=false
-if [[ "$(have adaptive_dt && val adaptive_dt)" == true \
-   || "$(have dt_continuation && val dt_continuation)" == true ]]; then _ctl=true; fi
+[[ "$_mode" == adaptive || "$_mode" == ramp ]] && _ctl=true
 
 
 # --- run ---------------------------------------------------------------------
@@ -254,7 +256,6 @@ esac
 echo "solver:"
 echo "  method: $_method"
 have time_integration && echo "  time_integration: $(val time_integration)"
-have adaptive_dt      && echo "  adaptive_dt: $(val adaptive_dt)"
 echo "  tolerance: $(def_ snes_stol 1e-8)"
 echo "  max_iterations: $(def_ max_iterations 10000)"
 echo "  t_bar: $(def_ t_bar false)"
@@ -272,14 +273,8 @@ echo "      rho: $(def_ ar_rho 0.9)"
 echo "      patience: $(def_ ar_patience 2)"
 echo "      max_it: $(def_ ar_max_it 40)"
 echo "      max_restarts: $(def_ ar_max_restarts 30)"
-# dt_continuation is IMPLIED by solver.method: newton, so there is no constant to fall back on: the
-# model's answer depends on another setting. A suite that runs the ramp -- or deliberately runs Newton
-# WITHOUT it -- says so itself.
-if have dt_continuation; then
-    echo "  newton:"
-    echo "    dt_continuation: $(val dt_continuation)"
-fi
 echo "  time_step:"
+[[ -n "$_mode" ]] && echo "    mode: $_mode"
 have deltat && echo "    dt: $(val deltat)"
 # error_tol: the adaptive step tolerance. There is no constant default -- the model TRACKS the
 # equilibrium-stop tolerance, capped at the free-surface ring bound (CreateSNES.cpp):
@@ -299,7 +294,7 @@ if [[ "$_ctl" == true ]]; then
     echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)"
     echo "    max_retries: $(def_ dtc_max_retries 15)"
     # norm narrower still -- parsed in the ADAPTIVE branch only, not Newton's ramp.
-    [[ "$(have adaptive_dt && val adaptive_dt)" == true ]] && echo "    norm: $(def_ dt_norm rms)"
+    [[ "$_mode" == adaptive ]] && echo "    norm: $(def_ dt_norm rms)"
 fi
 
 # --- dev ---------------------------------------------------------------------

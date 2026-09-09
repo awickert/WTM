@@ -63,10 +63,9 @@ region fsm_test
 time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
-${ADAPT:+adaptive_dt true}
+${ADAPT:+time_step_mode adaptive}
 ${STORAGE:+storage $STORAGE}
 ${COUPLING:+fsm_coupling $COUPLING}
-${DTC:+dt_continuation $DTC}
 solver_method ${METHOD:-anderson}
 ${INTEG:+time_integration $INTEG}
 eq_tol 0

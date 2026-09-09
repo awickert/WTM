@@ -39,7 +39,7 @@ emit() { # stem  collector-line
 # implicit's known dt-dependence. A like-for-like adaptive comparison is impossible by construction.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
-adaptive_dt false
+time_step_mode fixed
 run_type equilibrium
 fsm_on 0
 evap_mode 0

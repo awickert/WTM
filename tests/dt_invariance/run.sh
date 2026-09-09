@@ -78,7 +78,7 @@ region fsm_test
 time_start t0
 time_end t0
 ${DT_TOL:+dt_tol $DT_TOL}
-adaptive_dt $([ -n "${ADAPT:-}" ] && echo true || echo false)
+time_step_mode $([ -n "${ADAPT:-}" ] && echo adaptive || echo fixed)
 eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_

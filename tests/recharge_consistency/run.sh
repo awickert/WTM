@@ -24,7 +24,7 @@ emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
   ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
 snes_stol 1e-8
 solver_method anderson
-adaptive_dt false
+time_step_mode fixed
 run_type transient
 ${INTEG:+time_integration $INTEG}
 fsm_on 0

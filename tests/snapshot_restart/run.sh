@@ -26,7 +26,7 @@ emit() { # stem surfdir supplied_wt
 # Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
-adaptive_dt false
+time_step_mode fixed
 run_type equilibrium
 fsm_on 0
 # Pinned to the FORMER default collector on purpose. This test's subject is snapshot/restart

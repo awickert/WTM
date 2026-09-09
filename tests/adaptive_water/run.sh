@@ -20,7 +20,7 @@ TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: INTEG= ADAPT= EQ_TOL=]
+emit() { # $1 stem  [env: INTEG= ADAPT_MODE= EQ_TOL=]
   # BOTH keys are emitted UNCONDITIONALLY, with the control arm's values as the defaults. They used to be
   # emitted only when the caller set them (`${INTEG:+...}`), which left the key ABSENT -- and absent means
   # `auto`, which resolves to tr-bdf2 on the Anderson path and to adaptive under any non-implicit
@@ -30,7 +30,7 @@ emit() { # $1 stem  [env: INTEG= ADAPT= EQ_TOL=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 time_integration ${INTEG:-backward-euler}
-adaptive_dt ${ADAPT:-false}
+time_step_mode ${ADAPT_MODE:-fixed}
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -56,7 +56,7 @@ EOF
 }
 
 BB=""
-emit cc; ADAPT=true INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
+emit cc; ADAPT_MODE=adaptive INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 # The whole point of this suite is that DIFFERENT schemes reach the SAME equilibrium, so each arm has to
 # prove it ran the scheme it names. Checked against the fingerprint the model writes, not the config we

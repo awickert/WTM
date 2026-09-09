@@ -50,7 +50,7 @@ run_type $2
 ${STORAGE:+storage $STORAGE}
 ${METHOD:+solver_method $METHOD}
 ${INTEG:+time_integration $INTEG}
-${DTC:+dt_continuation $DTC}
+${MODE:+time_step_mode $MODE}
 fsm_on 1
 infiltration_on 0
 runoff_ratio 0

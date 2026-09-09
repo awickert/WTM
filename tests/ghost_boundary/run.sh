@@ -32,7 +32,7 @@ PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem cycles   [env: METHOD=, DTC=, MAXIT=, KSMOOTH=]
+emit() { # stem cycles   [env: METHOD=, MODE=, MAXIT=, KSMOOTH=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 snes_stol 1e-8
 ${MAXIT:+max_iterations $MAXIT}
@@ -40,7 +40,7 @@ ${KSMOOTH:+ksat_surface_smoothing $KSMOOTH}
 ${KSMOOTH:+ksat_soilbottom_smoothing $KSMOOTH}
 ${METHOD:+solver_method $METHOD}
 ${INTEG:+time_integration $INTEG}
-${DTC:+dt_continuation $DTC}
+${MODE:+time_step_mode $MODE}
 run_type transient
 fsm_on 0
 evap_mode 0
@@ -81,7 +81,7 @@ declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
 declare -A CFG=(  [cc]="anderson" [tr]="anderson" [bdf2v]="anderson" [newton]="newton" )
 declare -A INTEG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" [newton]="")
 for s in tr bdf2v newton; do
-  METHOD="${CFG[$s]}" INTEG="${INTEG[$s]}" DTC=$([ "${CFG[$s]}" = newton ] && echo false) emit "$s" 120
+  METHOD="${CFG[$s]}" INTEG="${INTEG[$s]}" MODE=$([ "${CFG[$s]}" = newton ] && echo fixed) emit "$s" 120
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
     || { echo "RUN FAILED: $s"; tail -3 "$WORK/$s.log"; exit 2; }
 done
@@ -120,7 +120,7 @@ PY
 # config claimed the defaults (max_iterations 10000, smoothing 0) while the run used 1 and 0.5 -- a
 # config that stated three values its own run did not use. -snes_test_jacobian stays on the command
 # line: it is a PETSc diagnostic, not a WTM setting, and PETSc's flags keep their CLI surface.
-METHOD=newton DTC=false MAXIT=1 KSMOOTH=0.5 emit jac 1
+METHOD=newton MODE=fixed MAXIT=1 KSMOOTH=0.5 emit jac 1
 JR=$("$WTM" "$WORK/jac.yaml" $GB -snes_test_jacobian 2>&1 \
      | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1)
 if [ -z "$JR" ]; then
