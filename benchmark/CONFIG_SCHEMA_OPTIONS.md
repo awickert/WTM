@@ -23,7 +23,7 @@ consumes it, so `newton:` settings are visibly Newton's.
 solver:
   method: anderson             # anderson | picard | newton
   tolerance: 1e-6
-  max_iterations: auto
+  # max_iterations:  OMIT to take PETSc's per-method default (full_config.yaml records the resolved value)
   time_integration: tr-bdf2    # backward-euler | bdf2 | tr-bdf2 | bdf2-head
   t_bar: false
   storage: volume              # volume | secant
@@ -31,7 +31,7 @@ solver:
   time_step:                # serves BOTH adaptive_dt and newton.dt_continuation
     adaptive: true
     error_tol: 1.0e-3
-    dt_max: auto
+    # dt_max:  OMIT to take 1000 * time.deltat
     grow: 1.5
     shrink: 0.25
     grow_if_niter_leq: 8
@@ -57,7 +57,7 @@ solver:
 
   newton:
     dt_continuation: true
-    dt0: auto
+    # dt0:  OMIT to take time.deltat / 200
     kirchhoff: false
     predict_guess: false
 
@@ -224,7 +224,7 @@ numerics:
   time_integration: tr-bdf2    # seeded by run.type
   t_bar: false                 # seeded by run.type
   tolerance: 1e-6
-  max_iterations: auto
+  # max_iterations:  OMIT to take PETSc's per-method default (full_config.yaml records the resolved value)
 
   time_step:                # ONE controller; serves time.adaptive AND newton.dt_continuation
     grow: 1.5
@@ -232,7 +232,7 @@ numerics:
     grow_if_niter_leq: 8
     max_retries: 15
     norm: rms
-    dt_max: auto
+    # dt_max:  OMIT to take 1000 * time.deltat
 
   smoothing:
     ksat_surface: 0            # 0 = off; exists so a Jacobian FD check has a smooth tangent
@@ -249,7 +249,7 @@ numerics:
 
   newton:
     dt_continuation: true      # implied by method: newton; opting out warns
-    dt0: auto
+    # dt0:  OMIT to take time.deltat / 200
 
 dev:
   allow_aboveground_water_columns: false
@@ -455,11 +455,11 @@ solver:                          # SHARED settings: read whatever the method
   adaptive_dt: true              # [RECONCILE] code says false
   t_bar: false
   tolerance: 1.0e-6              # -> snes_stol
-  max_iterations: auto           # -> snes_max_it; auto = PETSc's per-method default
+  # max_iterations:              # -> snes_max_it; OMIT to take PETSc's per-method default
 
   time_step:                  # ONE controller; serves adaptive_dt AND newton.dt_continuation
     error_tol: 0.1               # m of water, per step
-    dt_max: auto                 # auto = 1000 * time.deltat
+    # dt_max:                    # OMIT to take 1000 * time.deltat
     grow: 1.5
     shrink: 0.25
     grow_if_niter_leq: 8         # renamed from -wtm_dtc_easy_iters
@@ -481,7 +481,7 @@ solver:                          # SHARED settings: read whatever the method
 
   newton:                        # solver-SPECIFIC
     dt_continuation: true        # implied by method: newton; opting out warns
-    dt0: auto                    # auto = time.deltat / 200
+    # dt0:                       # OMIT to take time.deltat / 200
 
 dev:                             # VOIDS the answer; warns at runtime
   allow_aboveground_water_columns: false
@@ -605,14 +605,26 @@ DEFAULTED**. A user is answerable for what they wrote; they are not answerable f
 | honoured, but known-bad or nonphysical | **WARN**, keep running |
 | an EXPLICIT value would be overridden | **never** -- this is the defect class (#28 `dev.active_set`) |
 
-An abort must never fire on a key the user did not write. That is the whole reason `auto` exists rather
-than a concrete default: a concrete default is indistinguishable from a user's choice, so it can
-manufacture a contradiction the user cannot see or fix.
+An abort must never fire on a key the user did not write. That was the argument for `auto` rather than
+a concrete default: a concrete default is indistinguishable from a user's choice, so it can manufacture
+a contradiction the user cannot see or fix.
+
+> **OVERTURNED 2026-09-06/09.** The premise is sound and the remedy was wrong. What distinguishes a
+> default from a choice is not a magic *value* but whether the key was **written**, and the `_set`
+> flags named in the next paragraph already carry exactly that. `auto` bought nothing the flags did not
+> already provide, and it cost something real: it leaked into `full_config.yaml`, which promises to
+> record every setting a run RESOLVED TO, and there it recorded the QUESTION instead of the answer --
+> a file that could not be re-run to the same result. The rule now (Andy): *nobody writes `auto`;
+> omitting a key takes its documented default; `full_config.yaml` records the concrete resolved value.*
+> Refused at six sites -- `solver.time_integration`, `solver.adaptive_dt`, `solver.time_step.error_tol`,
+> `solver.time_step.dt_max` (`parameters.cpp`), `solver.max_iterations`, `solver.newton.dt0`
+> (`WTM.cpp`). Everything below this line that treats `auto` as a value is kept as the record of a
+> design we tried and reversed; read it as history, not as the schema.
 
 The machinery already exists -- `dt_continuation_set`, `dt_tol_set`, `dtc_dt_max_set` -- and the
 resolve-and-print pattern is already in the code, at `transient_groundwater.cpp:1480`.
 
-### Applied: `auto` as the default for all three
+### Applied: `auto` as the default for all three  — **SUPERSEDED, see the note above**
 
 PROPOSED resolutions. Each cell is a choice, not a derivation; the rule used was minimum surprise --
 preserve today's behaviour except where `config.yaml` already documents otherwise.
@@ -645,10 +657,11 @@ conflict is not a validation problem, it is a modelling error made representable
 ```yaml
 solver:
   time_step:
-    mode: auto        # auto | fixed | adaptive | continuation
+    mode: fixed | adaptive | ramp     # OMIT the key to take the resolved default
 ```
 
-`auto` -> continuation on Newton, adaptive elsewhere. The contradiction cannot be written, so no abort is
+OMITTED -> ramp on Newton, adaptive elsewhere, fixed under `collection.method: implicit`; the resolved
+value is recorded in `full_config.yaml`. The contradiction cannot be written, so no abort is
 needed for it, and `WTM.cpp`'s `if (adaptive) ... else if (continuation)` becomes a switch on a stated
 mode rather than an implicit precedence.
 
