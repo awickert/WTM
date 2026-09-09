@@ -1597,7 +1597,9 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  threads_per_rank: " << params.threads_per_rank << "\n";
 }
 
-int main(int argc, char** argv) {
+// The BODY of main. Wrapped by main() below in the one try/catch that turns a deliberate refusal into
+// a message and an exit status, instead of an uncaught exception, an MPI backtrace and a core dump.
+static int wtm_main(int argc, char** argv) {
   // -wtm_version: print WHICH BUILD this is and exit, before touching MPI, PETSc or a config file.
   //
   // The test suite's binary-identity guards (tests/lib.sh) need to know a binary's commit and
@@ -1735,4 +1737,31 @@ int main(int argc, char** argv) {
   PetscCall(PetscFinalize());
 
   return 0;
+}
+
+// EVERY CONFIG REFUSAL IS A DIAGNOSIS, AND MUST READ AS ONE.
+//
+// The model refuses illegal combinations deliberately and says exactly why -- but the throw was
+// uncaught, so a user who mis-configured a run saw `terminate called after throwing an instance of
+// std::runtime_error`, fifteen frames of MPI backtrace, and "Aborted (core dumped)" AFTER the
+// explanation. That reads as a MODEL BUG rather than as "you asked for a combination we refuse", and in
+// a batch log it is indistinguishable from a real crash -- the thing most likely to send someone
+// hunting a defect that does not exist.
+//
+// Reproduce the case that prompted this: surface_water.fsm_coupling: continuous with
+// surface_water.collection.method: explicit.
+//
+// The message is printed ONCE (rank 0) because every rank reaches the same deterministic config check
+// and would otherwise print N copies of it. Exit status is 1: nonzero, so scripts and the test harness
+// still see a failure, but not a signal.
+int main(int argc, char** argv) {
+  try {
+    return wtm_main(argc, argv);
+  } catch (const std::exception& e) {
+    int mpi_up = 0, rank = 0;
+    MPI_Initialized(&mpi_up);
+    if (mpi_up) MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (rank == 0) std::cerr << "\nERROR: " << e.what() << std::endl;
+    return 1;
+  }
 }
