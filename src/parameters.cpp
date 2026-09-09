@@ -93,7 +93,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
       // what makes an old config say so instead of drifting.
-      {"dev", {"allow_aboveground_water_columns", "storage_form", "under_relaxation"}},
+      {"dev", {"storage_form", "under_relaxation"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
       {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace"}},
@@ -284,7 +284,6 @@ Parameters::Parameters(const std::string& config_file) {
     if (auto n = sm["storativity_surface"]) storativity_surface_smoothing = n.as<double>();
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
-  if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
   if (auto tr = root["output"]["trace"]) {
     if (!tr.IsSequence()) throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
     for (const auto& e : tr) {

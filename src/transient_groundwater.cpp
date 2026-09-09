@@ -1157,16 +1157,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // g_extended_soil is now set ONLY by the selector below, where the mode is resolved and where its
   // NONPHYSICAL banner is printed -- warn where the mode is in force, not where a request for it is parsed.
 
-  // -wtm_dev_allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp
-  // entirely, so above-surface water is left to stand as nonphysical vertical COLUMNS above the land surface
-  // -- the free boundary is unmanaged and the solve limit-cycles (lakeshore flicker). For testing/diagnostics
-  // only (tests/boundary_analytic uses this to reach the constant-T ponded parabola regime); it is NOT a
-  // valid model configuration. See finding_surface_water_management_design.
-  const PetscBool allow_aboveground = params.allow_aboveground_water_columns ? PETSC_TRUE : PETSC_FALSE;
-  if (allow_aboveground == PETSC_TRUE)
-    PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_dev_allow_aboveground_water_columns]: NONPHYSICAL developer mode "
-                "-- surface water is UNMANAGED (no clamp); the free boundary will limit-cycle. Testing/diagnostics "
-                "only, not for model runs.\n");
   const bool anderson_path = !user_context.use_picard && !user_context.use_newton;
 
   // Surface-water CLAMP (Fan & Miguez-Macho) -- DEFAULT ON (all solver paths) so physical runs pin wtd<=0
@@ -1176,14 +1166,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // the surface. On every path the in-residual taper-1 sink (-wtm_surface_sink, on by default) is the primary
   // manager that already holds wtd<=0, so this is a safety net (a no-op when the sink holds; the corrective
   // truncation when a step overshoots). The Picard/Newton IN-RESIDUAL exfiltration (-wtm_direct_to_runoff) remains
-  // the operator-consistent alternative (its Jacobian tangent is task #100). Disable with
-  // -wtm_surface_exfiltration_to_runoff false, or for the nonphysical regime
-  // -wtm_dev_allow_aboveground_water_columns.
+  // the operator-consistent alternative (its Jacobian tangent is task #100). The route to the
+  // nonphysical unmanaged-free-boundary regime is surface_water.collection.method: off.
   (void)anderson_path;
   // The post-solve clamp. -wtm_surface_exfiltration_to_runoff is RETIRED: it was the interface of the
   // `legacy` mode, which is gone, and surface_water.collection.method: explicit is the documented route
-  // (verified byte-identical to the flag, max|d| = 0.000e+00). Set by the selector below.
-  g_surface_exfiltration_to_runoff_array = (allow_aboveground != PETSC_TRUE);
+  // (verified byte-identical to the flag, max|d| = 0.000e+00).
+  //
+  // SET UNCONDITIONALLY BY THE SELECTOR BELOW, which is why dev.allow_aboveground_water_columns was
+  // removed (#35): that key was read HERE and then overwritten by every branch of the selector, so it
+  // could not affect any run. `collection.method: off` is the route to an unmanaged free boundary, and
+  // it is the only one -- one setting, one key.
+  g_surface_exfiltration_to_runoff_array = false;
 
   // -wtm_Tbar: use the step-time-averaged interblock transmissivity T̄ (Kirchhoff-potential difference;
   // see interblockTransmissivity). Composes with any solver. Requires the piecewise Fan T (Φ is its
@@ -1221,7 +1215,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // on for those paths makes their solve inconsistent (Newton diverges/aborts). The Picard/Newton default
   // surface-water clamp remains the -wtm_surface_sink taper (which DOES carry tangents); wiring the
   // direct_to_runoff tangent so it can default on for those paths is future work.
-  // -wtm_dev_allow_aboveground_water_columns still forces it off.
   // The in-residual siphon. -wtm_direct_to_runoff is RETIRED alongside the `legacy` mode it belonged to;
   // surface_water.collection.method: implicit is the route (verified byte-identical). Set by the selector.
   g_direct_to_runoff = false;

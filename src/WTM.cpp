@@ -1585,7 +1585,6 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
 
   f << "\ndev:\n";
-  f << "  allow_aboveground_water_columns: " << params.allow_aboveground_water_columns << "\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
   // params, not g_relax: that global is assigned inside update(), which has not run when this is
   // written, so it would report the compile-time default whatever the user asked for. Reading the

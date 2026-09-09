@@ -70,10 +70,14 @@ surfdatadir $INP
 region flickevap
 supplied_wt 1
 eq_tol 0
-# Surface clamp OFF so the open-water-evap branch can fire (FSM is off here) -- the taper is then
-# the only thing managing surface water, which is this suite's whole subject. Was the -wtm_ flag on the
-# command line until the options-database round-trip was deleted; the config key is the only route now.
-allow_aboveground true
+# NOTE, measured 2026-09-10 (#35): this arm used to set dev.allow_aboveground_water_columns: true, on
+# the stated premise that the surface clamp was OFF and the evaporation taper was therefore the only
+# manager. THAT KEY NEVER DID ANYTHING -- it was read and then overwritten by every branch of the
+# collector selector -- so this suite has always run the DEFAULT collector (active_set), and the key is
+# now removed. Output is byte-identical with and without it.
+# What that means for this suite is #87: its NO-PONDING assertion cannot distinguish the taper from the
+# enforcement, because both drive wtd to 0. The premise in the header above the checks is wrong until
+# that is fixed; it is left visible rather than quietly reworded.
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF

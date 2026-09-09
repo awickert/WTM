@@ -302,7 +302,6 @@ fi
 # assemblies are the same equation -- S is the exact secant). under_relaxation VOIDS a transient
 # trajectory: it steps a damped surrogate rather than the problem stated.
 echo "dev:"
-echo "  allow_aboveground_water_columns: $(def_ allow_aboveground false)"
 echo "  storage_form: $(def_ storage volume)"
 echo "  under_relaxation: $(def_ under_relaxation 1)"
 

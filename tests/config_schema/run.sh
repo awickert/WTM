@@ -215,16 +215,20 @@ fi
 # removed 2026-09-01. This arm pins the REMOVAL: a config carrying the old key must say so and stop.
 # Distinct from REJECT above, which uses an invented key -- this one is a real spelling that used to
 # work, which is exactly the case a user upgrading an old config will hit.
-inject "$WORK/retired.yaml" dev.active_set
+for rk in dev.active_set dev.allow_aboveground_water_columns; do
+inject "$WORK/retired.yaml" "$rk"
 OUT=$(msg "$WORK/retired.yaml")
-if echo "$OUT" | grep -q "unrecognised key" && echo "$OUT" | grep -q "dev.active_set"; then
-    echo "  PASS  RETIRED    the removed key 'dev.active_set' aborts and is named"
+if echo "$OUT" | grep -q "unrecognised key" && echo "$OUT" | grep -q "$rk"; then
+    echo "  PASS  RETIRED    the removed key '$rk' aborts and is named"
 else
-    echo "  FAIL  RETIRED    'dev.active_set' was accepted. It is a SECOND route to the active-set"
+    echo "  FAIL  RETIRED    '$rk' was accepted. It is a SECOND route to the active-set"
     echo "        enforcement and silently overrides surface_water.collection.method -- if it is back in"
-    echo "        the schema, the dual-route defect is back. See task #28."
+    echo "        the schema, the dual-route defect is back. See task #28 (dev.active_set) and #35"
+    echo "        (dev.allow_aboveground_water_columns, read and then overwritten by every branch of"
+    echo "        the collector selector, so it could not affect any run)."
     fail=1
 fi
+done
 
 # ---- ARGV: an argument nothing reads is refused, an option and its value are not -----------------
 # The model aborts on a -wtm_ FLAG nothing consumed; until 59b7006 it had no equivalent for a

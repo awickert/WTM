@@ -122,8 +122,6 @@ struct Parameters {
   double ksat_soilbottom_smoothing     = 0.0;   // eps1: -1.5 m conductivity transition width [m]
   double storativity_surface_smoothing = 0.01;  // sub-grid roughness blend width [m]; always on
   double under_relaxation              = 1.0;   // 1 = off
-  // dev.allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp.
-  bool   allow_aboveground_water_columns = false;
 
   // solver.anderson.restart.*: the outer rho-driven restart loop. Defaults are AppCtx's own.
   bool   ar_enabled      = false;
