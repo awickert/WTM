@@ -233,25 +233,32 @@ outfile_prefix /tmp/none_
 # overclaim is why the `trace` gating defect survived: trace was not in the list, so nothing noticed
 # the shim silently dropping it. The rest of the vocabulary follows, so SHIM and SHIM/BACK now mean
 # what they say. Values are legal ones -- the model's own validator runs over this config.
+# EVERY VALUE HERE MUST BE NON-DEFAULT. SHIM/BACK is differential -- it emits the config with and
+# without each key and requires the two to DIFFER -- and the shim now emits every setting, defaulted
+# (fc18e95). So a key set to ITS OWN DEFAULT is indistinguishable from an absent one, and six of these
+# were: dt_continuation false, storage volume, convergence_metric volume, eq_frac 0.001,
+# extinction_depth 8, et_sigmoid_width 0.1. The arm failed, correctly -- it can no longer prove those
+# keys flow through. Choosing non-default values restores the assertion AND strengthens it: it now
+# proves the key's VALUE reaches the config, not merely that some line with that name appears.
 solver_method anderson
 time_integration tr-bdf2
-adaptive_dt true
+adaptive_dt false
 dt_tol 0.5
 dt_max 31536000
-dt_continuation false
-under_relaxation 1.0
+dt_continuation true
+under_relaxation 0.9
 t_bar true
-storage volume
-convergence_metric volume
-convergence_water_volume_tol 1e-8
-eq_tol 0.001
+storage secant
+convergence_metric head
+convergence_water_volume_tol 1e-9
+eq_tol 0.002
 eq_metric rms
-eq_frac 0.001
+eq_frac 0.002
 land_boundary dirichlet
 fsm_coupling continuous
 runoff_ratio_on 1
-extinction_depth 8
-et_sigmoid_width 0.1
+extinction_depth 6
+et_sigmoid_width 0.2
 et_sigmoid_wtd_center 0.0
 trace dt
 run_dir /tmp/shim_explicit_rundir   # DISTINCT from the derived <prefix>prov, or thedifference  vanishes
