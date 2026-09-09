@@ -41,6 +41,8 @@ MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+taper_surface_transition ${TAPERS:-true}
+taper_depth_extinction ${TAPERS:-true}
 solver_method anderson
 run_type equilibrium
 fsm_on 0
@@ -77,8 +79,8 @@ POND="-wtm_dev_allow_aboveground_water_columns"   # surface clamp off: let the o
 emit managed
 "$WTM" "$WORK/managed.yaml" $POND > "$WORK/managed.log" 2>&1 \
   || { echo "RUN FAILED: managed"; tail -3 "$WORK/managed.log"; exit 2; }
-emit bare
-"$WTM" "$WORK/bare.yaml" $POND -wtm_evap_taper 0 -wtm_extinction 0 > "$WORK/bare.log" 2>&1 \
+TAPERS=false emit bare   # the BARE arm is the one with the tapers off -- that is its subject
+"$WTM" "$WORK/bare.yaml" $POND > "$WORK/bare.log" 2>&1 \
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.

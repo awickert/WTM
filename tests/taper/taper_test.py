@@ -2,7 +2,7 @@
 """Surface-transition taper tests (the SURFACE_SINK_DESIGN sec 14d experiment sequence).
 
 These exercise the smooth surface-water transition -- the sub-surface sink (-wtm_surface_sink,
-taper 1) plus the demand-identity evaporation taper (-wtm_evap_taper, taper 2) -- on the matrix-free
+taper 1) plus the demand-identity evaporation taper (evaporation.tapers.surface_transition) -- on the matrix-free
 Anderson solver (forced with solver.method: anderson; the default is now Picard). This validates the tapers on
 the matrix-free path specifically (the Picard-path tapers are exercised by the golden suite). It is
 the path whose hard wtd=0 switch used to make FillSpillMerge lake formation flip with the MPI rank
@@ -94,6 +94,7 @@ fsm_on 1
 evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
+taper_surface_transition true
 snes_stol 1e-10
 deltat 31536000
 total_time 10yr
@@ -131,7 +132,7 @@ outfile_prefix {prefix}
 # snes_stol has moved into the CONFIG (see _cfg): a test config must state every setting its run
 # resolves to (#79), and a tolerance on the command line makes the config say one thing while the run
 # uses another. -wtm_evap_taper stays a flag for now -- it has no config key yet (task #30).
-TAPER_FLAGS = ["-wtm_evap_taper"]
+TAPER_FLAGS = []   # both tapers are config keys now (evaporation.tapers); nothing left on the CLI
 
 
 def _run(wtm, d, tag, n):
@@ -245,7 +246,7 @@ def _arid_fixture(d, ksat=1e-9):
 def _arid_cfg(d, txt, prefix, extra=""):
     # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
     return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
-            f"snes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
+            f"taper_surface_transition true\nsnes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
             # `legacy` was retired with the taper-1 band sink (fork issue #7). This is an ARID drawdown
@@ -266,21 +267,26 @@ def _arid_run(wtm, d, tag, flags, cfg_extra=""):
 
 
 def study_c(wtm):
-    """Taper 3 (accessibility / extinction-depth, -wtm_extinction) clamps the arid drawdown. This is the
+    """Taper 3 (evaporation.tapers.depth_extinction) clamps the arid drawdown. This is the
     regression that BITES: without taper 3, taper 2 alone has NO equilibrium in an arid cell (E_eff >
     precip) and the table runs away; with it, drawdown halts at ~ -d_ext. The taper-2-alone run below IS
     the pre-taper-3 behavior -- the test asserts it runs away while the extinction runs clamp, so it
     fails if taper 3 stops clamping. Also checks the clamp depth scales with d_ext."""
-    print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; taper 3 = -wtm_extinction)")
-    E = ["-wtm_evap_taper", "-snes_stol", "1e-8"]  # full 60-cycle clamp run
+    print("Study C -- arid extinction-depth clamp (ET=0.5 > precip=0.2; tapers.depth_extinction)")
+    # Nothing on the command line: both tapers and the tolerance are config keys, and each arm's
+    # config states what it used. snes_stol 1e-8 (not the builder's 1e-10) is this study's own choice
+    # for the full 60-cycle clamp run; the shim takes the LAST value for a key, so cfg_extra overrides.
+    E, STOL = [], "snes_stol 1e-8\n"
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:
         _arid_fixture(d)
-        # taper 3 is default-on, so "taper 2 alone" must explicitly disable it (-wtm_extinction 0).
-        w2 = float(_arid_run(wtm, d, "C2", E + ["-wtm_extinction", "0"])[c])
-        w8 = float(_arid_run(wtm, d, "C8", E + ["-wtm_extinction"], "extinction_depth 8\n")[c])
-        w4 = float(_arid_run(wtm, d, "C4", E + ["-wtm_extinction"], "extinction_depth 4\n")[c])
+        # Both tapers are CONFIG keys now (evaporation.tapers). taper 3 is default-on, so "taper 2
+        # alone" must explicitly disable it -- stated in the config rather than passed as a flag, so
+        # each arm's config says which tapers its run used.
+        w2 = float(_arid_run(wtm, d, "C2", E, STOL + "taper_depth_extinction false\n")[c])
+        w8 = float(_arid_run(wtm, d, "C8", E, STOL + "taper_depth_extinction true\nextinction_depth 8\n")[c])
+        w4 = float(_arid_run(wtm, d, "C4", E, STOL + "taper_depth_extinction true\nextinction_depth 4\n")[c])
         runaway = w2 < -50.0                                          # no equilibrium without taper 3
         ok8 = -8.0 <= w8 <= -6.5                                      # clamped just inside d_ext = 8
         ok4 = -4.0 <= w4 <= -3.0                                      # clamped just inside d_ext = 4

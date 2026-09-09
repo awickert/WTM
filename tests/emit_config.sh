@@ -26,7 +26,9 @@
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
 #   fsm_coupling          -> surface_water.fsm_coupling (impulse | continuous)
-#   extinction_depth      -> evaporation.extinction_depth          (m)
+#   extinction_depth      -> evaporation.extinction_depth
+#   taper_surface_transition -> evaporation.tapers.surface_transition  (was -wtm_evap_taper)
+#   taper_depth_extinction   -> evaporation.tapers.depth_extinction    (was -wtm_extinction)          (m)
 #   under_relaxation      -> dev.under_relaxation
 #   et_sigmoid_wtd_center -> evaporation.et_sigmoid.wtd_center     (m)
 #   et_sigmoid_width      -> evaporation.et_sigmoid.logistic_width (m)
@@ -281,6 +283,9 @@ echo "  et_sigmoid:"
 echo "    wtd_center: $(def_ et_sigmoid_wtd_center 0.05)"
 echo "    logistic_width: $(def_ et_sigmoid_width 0.1)"
 echo "  extinction_depth: $(def_ extinction_depth 8)"
+echo "  tapers:"
+echo "    surface_transition: $(def_ taper_surface_transition true)"
+echo "    depth_extinction: $(def_ taper_depth_extinction true)"
 
 # --- io ----------------------------------------------------------------------
 if have surfdatadir || have region || have time_start || have time_end; then
