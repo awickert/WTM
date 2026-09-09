@@ -285,6 +285,13 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
+  if (auto ar = root["solver"]["anderson"]["restart"]) {
+    if (auto n = ar["enabled"])      ar_enabled      = n.as<bool>();
+    if (auto n = ar["rho"])          ar_rho          = n.as<double>();
+    if (auto n = ar["patience"])     ar_patience     = n.as<int>();
+    if (auto n = ar["max_it"])       ar_max_it       = n.as<int>();
+    if (auto n = ar["max_restarts"]) ar_max_restarts = n.as<int>();
+  }
   if (auto n = root["solver"]["time_step"]["error_tol"]) {
     refuse_auto(n, "solver.time_step.error_tol");
     dt_tol = std::stod(n.as<std::string>());

@@ -25,6 +25,7 @@ export OMP_NUM_THREADS=1
 
 emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
+${AR_ON:+ar_enabled $AR_ON}
 run_type equilibrium
 fsm_on 0
 evap_mode 0
@@ -50,12 +51,15 @@ EOF
 }
 
 BB=""
-emit ar; emit base
+# The restart loop is a CONFIG key now (solver.anderson.restart.enabled); the -wtm_adaptive_restart
+# options-database entry is gone, and a -wtm_ nothing reads aborts. Only the `ar` arm enables it --
+# `base` is the plain-Anderson control it must match.
+AR_ON=true emit ar; emit base
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
-"$WTM" "$WORK/ar.yaml" $BB -wtm_adaptive_restart > "$WORK/ar.log" 2>&1 \
-  || { echo "FAIL: -wtm_adaptive_restart aborted (robust-finish regression):"; tail -4 "$WORK/ar.log"; exit 1; }
+"$WTM" "$WORK/ar.yaml" $BB > "$WORK/ar.log" 2>&1 \
+  || { echo "FAIL: solver.anderson.restart.enabled aborted (robust-finish regression):"; tail -4 "$WORK/ar.log"; exit 1; }
 grep -q "equilibrium reached" "$WORK/ar.log" \
-  || { echo "FAIL: -wtm_adaptive_restart ran but never reached equilibrium"; exit 1; }
+  || { echo "FAIL: solver.anderson.restart.enabled ran but never reached equilibrium"; exit 1; }
 # (2) and it must reach the SAME water table as a plain Anderson solve
 "$WTM" "$WORK/base.yaml" $BB > "$WORK/base.log" 2>&1 \
   || { echo "FAIL: plain Anderson reference run failed"; tail -4 "$WORK/base.log"; exit 2; }
@@ -72,6 +76,6 @@ m = np.ones_like(ar, bool); m[:, 0] = False   # exclude the ocean column
 d = float(VOL.volume_diff(ar, base, phi)[m].max()); tol = float(os.environ["TOL"])
 print(f"  adaptive-restart vs plain Anderson: max|ΔV| = {d:.3e} m water volume  (tol {tol})")
 if d <= tol:
-    print("PASS: -wtm_adaptive_restart runs to equilibrium and matches plain Anderson"); sys.exit(0)
+    print("PASS: solver.anderson.restart.enabled runs to equilibrium and matches plain Anderson"); sys.exit(0)
 print(f"FAIL: adaptive-restart differs from plain Anderson by {d:.3e} > tol {tol} m water"); sys.exit(1)
 PY

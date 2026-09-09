@@ -1756,11 +1756,11 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         VecCopy(user_context.ar_best_x, user_context.x);
         if (r < 0)
           PetscPrintf(PETSC_COMM_WORLD,
-                      "-wtm_adaptive_restart: a phase diverged (%s); fell back to the best iterate.\n",
+                      "solver.anderson.restart: a phase diverged (%s); fell back to the best iterate.\n",
                       SNESConvergedReasons[r]);
         SNESSetConvergedReason(user_context.snes, SNES_CONVERGED_FNORM_RELATIVE);
       }
-      PetscPrintf(PETSC_COMM_WORLD, "-wtm_adaptive_restart: best residual %g\n", (double)user_context.ar_best_norm);
+      PetscPrintf(PETSC_COMM_WORLD, "solver.anderson.restart: best residual %g\n", (double)user_context.ar_best_norm);
     } else {
       // Solve nonlinear system (single implicit solve)
       SNESSolve(user_context.snes, user_context.b, user_context.x);

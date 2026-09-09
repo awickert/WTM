@@ -125,6 +125,13 @@ struct Parameters {
   // dev.allow_aboveground_water_columns [DEVELOPER, NONPHYSICAL]: disable the surface-water clamp.
   bool   allow_aboveground_water_columns = false;
 
+  // solver.anderson.restart.*: the outer rho-driven restart loop. Defaults are AppCtx's own.
+  bool   ar_enabled      = false;
+  double ar_rho          = 0.9;   // restart when rho exceeds this...
+  int    ar_patience     = 2;     // ...for this many consecutive iterations
+  int    ar_max_it       = 40;    // cap per Anderson phase before a forced restart
+  int    ar_max_restarts = 30;    // outer restart cap
+
   // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
   // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
   // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp

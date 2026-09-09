@@ -4,7 +4,7 @@
 # on a gentle, purely-subsurface equilibrium (make_inputs.py) and asserts all three agree:
 #   anderson (-wtm_anderson)                    -- the matrix-free production path
 #   picard   (-wtm_picard)                       -- frozen-coefficient backward-Euler operator
-#   newton   (-wtm_newton -wtm_dt_continuation)  -- analytic-Jacobian Newton, driven from cold in its
+#   newton   (method: newton, time_step.mode: ramp)  -- analytic-Jacobian Newton, driven from cold in its
 #                                                   designed dt-continuation mode (robust; plain cold Newton
 #                                                   sits on a knife-edge in this regime)
 # All three must (a) actually REACH equilibrium (not hit the cycle cap or diverge) and (b) land on the SAME
@@ -32,11 +32,11 @@ TOL="${TOL:-0.00025}"    # 0.25 mm of water on a ~6 m mound (was 1e-3 m of head)
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: METHOD=, DTC=]
+emit() { # $1 stem  [env: METHOD=, MODE=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 run_type equilibrium
 ${METHOD:+solver_method $METHOD}
-${DTC:+dt_continuation $DTC}
+${MODE:+time_step_mode $MODE}
 ${TRACE:+trace $TRACE}
 ${CMETRIC:+convergence_metric $CMETRIC}
 fsm_on 0
@@ -69,7 +69,7 @@ EOF
 # three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
 # eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
 BB=""
-emit anderson; METHOD=picard emit picard; METHOD=newton DTC=true emit newton
+emit anderson; METHOD=picard emit picard; METHOD=newton MODE=ramp emit newton
 # THE ORACLE IS ONLY AN ORACLE IF THE THREE SOLVERS ARE ACTUALLY DIFFERENT. This suite's whole claim
 # is that two matrix-based solvers independently corroborate the matrix-free one -- so if `picard`
 # silently downgraded to anderson (which the model DOES do in some combinations, and announces with a

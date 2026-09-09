@@ -71,9 +71,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   PetscOptionsHasName(nullptr, nullptr, "-snes_anderson_restart", &restart_period_set);
   // When -wtm_adaptive_restart drives restarts from the outer rho loop (update()), the internal
   // restart must be OFF (else the two mechanisms fight and the internal one muddies the rho signal).
-  PetscBool ar_here = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &ar_here);
-  const bool adaptive_here = (ar_here == PETSC_TRUE);
+  const bool adaptive_here = params.ar_enabled;
   if (!restart_type_set)
     PetscOptionsSetValue(nullptr, "-snes_anderson_restart_type", adaptive_here ? "none" : "periodic");
   if (!restart_period_set && !adaptive_here) PetscOptionsSetValue(nullptr, "-snes_anderson_restart", "20");
@@ -185,8 +183,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // A caller that wanted plain Newton must now say `dt_continuation: false` explicitly.
   newton_flag = (params.solver_method == "newton") ? PETSC_TRUE : PETSC_FALSE;
 
-  PetscBool adaptive_restart_flag = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_adaptive_restart", &adaptive_restart_flag);
+  const bool adaptive_restart_flag = params.ar_enabled;
   // A TUNING dial must not change the solver. solver.anderson.restart is Anderson's; asking for it with
   // another method is a contradiction, not a request to switch.
   if (adaptive_restart_flag && !params.solver_method.empty() && params.solver_method != "anderson")
@@ -242,10 +239,10 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // Newton path is exclusive with Picard (a path flag wins if the user set both).
   user_context.use_newton      = (newton_flag == PETSC_TRUE) && !user_context.use_picard;
   user_context.use_adaptive_restart = (adaptive_restart_flag == PETSC_TRUE);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ar_rho", &user_context.ar_rho_threshold, nullptr);
-  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_patience", &user_context.ar_rho_patience, nullptr);
-  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_it", &user_context.ar_max_it, nullptr);
-  PetscOptionsGetInt(nullptr, nullptr, "-wtm_ar_max_restarts", &user_context.ar_max_restarts, nullptr);
+  user_context.ar_rho_threshold = params.ar_rho;
+  user_context.ar_rho_patience  = params.ar_patience;
+  user_context.ar_max_it        = params.ar_max_it;
+  user_context.ar_max_restarts  = params.ar_max_restarts;
 
   // Newton dt-continuation (solver.newton.dt_continuation; needs solver.method: newton): equilibrium PTC that starts
   // deltat small (diagonally dominant -> non-singular Jacobian from a far guess) and grows it after
@@ -523,7 +520,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     VecDuplicate(user_context.x, &user_context.ar_best_x);
     PetscOptionsGetReal(nullptr, nullptr, "-snes_stol", &user_context.ar_stol, nullptr);  // match the run's step tol
     PetscPrintf(PETSC_COMM_WORLD,
-                "-wtm_adaptive_restart: rho-triggered proactive Anderson restart (rho>%.2f for %d iters "
+                "solver.anderson.restart: rho-triggered proactive Anderson restart (rho>%.2f for %d iters "
                 "-> restart from best iterate; phase cap %d iters, <=%d restarts). Proactive vs the "
                 "periodic default; generalizes to an unknown flail iteration (global scale). See #87.\n",
                 (double)user_context.ar_rho_threshold, (int)user_context.ar_rho_patience,
