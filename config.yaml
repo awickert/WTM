@@ -162,15 +162,24 @@ solver:
                                # what it chose, and full_config.yaml records it. tr-bdf2 runs
                                # only on the Anderson path, so a constant tr-bdf2 default would make a
                                # config naming only `method: picard` abort on a key it never set.
-  adaptive_dt: true            # error-controlled adaptive timestep
   t_bar: false                 # time-/log-averaged transmissivity over the step (cures cold Picard)
 
-  time_step:                   # the time step, and the dials that adjust it. It serves adaptive_dt AND
-                               # Newton's dt_continuation ramp, so it is nested under neither.
+  time_step:                   # the time step, WHO SIZES IT, and the dials that adjust it.
+    mode: adaptive             # fixed | adaptive | ramp -- one key, because these are three answers to
+                               # ONE question: who chooses the step. OMIT to resolve: `ramp` under
+                               # method: newton (which needs it to converge from cold), `fixed` under
+                               # collection.method: implicit (an error controller cannot drive it --
+                               # its per-step error GROWS as dt shrinks), `adaptive` otherwise. The run
+                               # prints what it chose and full_config.yaml records it.
+                               #   adaptive  error-controlled, clamped to the report span
+                               #   ramp      pseudo-transient continuation: grows on solve-EASE,
+                               #             unclamped. Newton path only; asked for elsewhere it is
+                               #             refused rather than silently not run.
+                               #   fixed     dt exactly as given below
     dt: 31536000               # seconds per timestep (31536000 = 1 year). The step lives HERE, not
                                # under time:, because it is a solver property; time: keeps the run's
                                # clock -- how long, how often to report -- which is quantised BY the
-                               # step but does not choose it. When adaptive_dt resolves true this is
+                               # step but does not choose it. Under mode: adaptive or ramp this is
                                # the STARTING step; report_interval x deltat is always the report
                                # span the run must land on exactly.
 #   error_tol:                 # target per-step local error, in metres of WATER like
@@ -215,10 +224,7 @@ solver:
       max_restarts: 30         # outer restart cap
 
   newton:                      # read only on the Newton path
-    dt_continuation: true      # the pseudo-transient dt ramp. ON by default under method: newton,
-                               # which does not converge from a cold start without it. Set false for
-                               # PLAIN Newton -- valid as a warm finisher -- and the run warns.
-#   dt0:                       # starting dt for the dt_continuation ramp. OMIT for the default below.
+#   dt0:                       # starting dt for the mode: ramp continuation. OMIT for the default below.
                                # default = time.deltat / 200 -- small, so the storage term S/deltat keeps
                                # the Jacobian diagonally dominant; a large step from a far guess
                                # overshoots into a singular Jacobian that fails even a direct solve.
