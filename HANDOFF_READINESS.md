@@ -142,3 +142,80 @@ folklore.
 This is the combination that is verified green: TR-BDF2 is the only integrator whose error estimator
 measures a clean order 2 with FSM on, and active-set is the only surface enforcement whose equilibrium
 does not carry a spurious dt-dependence.
+
+---
+
+## The open queue, in full (2026-09-09)
+
+Every open item, numbered by task ID, so the list survives a session boundary and can be picked up one
+at a time. Grouped by kind, not by priority – the ordering within a group is not a ranking.
+
+### A. The configuration arc
+
+| # | item |
+|---|---|
+| 83 | Materialize the configs: the shim becomes a one-time generator, then is deleted |
+| 79 | Declared-config rule – the authoring pass, then enforcement for every suite |
+| 32 | Flag walk-through, **6 of 8 groups left**: one question each, does the mechanism stay? |
+| 30 | Flag retirement group 1 – 9 abstracted flags remain; follows from 32 |
+| 36 | Every setting a config key, defaulted, with a `full_config.yaml` per run |
+| 80 | The four nested levels of this work – finish inward-out, lose nothing on the way |
+
+### B. Test integrity
+
+| # | item |
+|---|---|
+| 84 | 24 assertion tolerances state what they *are*, not where they *came from* |
+| 85 | Golden references carry no in-file provenance – header gives shape, not origin |
+| 34 | `boundary_analytic`'s Neumann vertex assertion is defeated by `nan` |
+| 37 | Integrator coverage dropped when `time_integration: auto` began resolving to tr-bdf2 |
+| 53 | State-vs-accumulator test design is invalid only for 3-level schemes |
+| 65 | Convert head-unit measurements to water volume – 10 of ~15 |
+| 73 | Fix the measurement scripts themselves |
+| 66 | Diagnostic-process audit – 15 of 17 fixes open |
+| – | Widen `expect_resolved` beyond its 6 suites / 8 call sites: intent, not record |
+
+### C. Open model defects
+
+| # | item |
+|---|---|
+| 52 | Land→ocean outflow at pinned boundary cells – 211 cells of the outer land ring |
+| 35 | Collector selector may override `dev.allow_aboveground_water_columns` |
+| 44 | `fsm_coupling: source` × `collection.method: explicit` does not converge |
+| 48 | The budget is not solve-count invariant under `continuous` |
+| 57 | A deliberate config refusal exits via uncaught exception and a core dump |
+| 46 | Coupling vocabulary – retire `-wtm_fsm_continuous` and "overwrite" from prose |
+| 38 | Collapse `adaptive_dt` and `newton.dt_continuation` into one `time_step.mode` |
+| 39 | Cross-rank drift: impulse resets it each step, continuous accumulates it |
+
+### D. Measurement, physics, performance
+
+| # | item |
+|---|---|
+| 64 | Sub-cycle the FSM coupling to bound the delta admitted per step |
+| 60 | Order-aware retry – real speedup, exonerated; the patch is written and unapplied |
+| 42 | dt-scaling of the source coupling's in-flight budget lag |
+| 50 | Re-measure whether Newton still needs `dt_continuation` for cold starts |
+| 54 | Test and guard the budget at boundaries |
+| 77 | Storativity smoothing is inert under active_set, unlike explicit |
+| 78 | Backward-euler residual growing to ~1e-1 of recharge at fine dt |
+| 6 | Re-run `scheme_bench` now that Newton carries the active-set tangent |
+| 58, 59 | The estimator bump: solved as rate-vs-exposure, plus the measured negative |
+
+### E. Depression hierarchy
+
+| # | item |
+|---|---|
+| 81 | Cell-area bug fixed – keep the diff for the non-vendored dephier |
+| 82 | Vendored DH: content-diff of the 11 commits, and the plan reframing |
+
+### Blocked on a decision rather than on work
+
+The **six remaining #32 groups**. Each asks whether a piece of the model stays or retires, which
+decides whether its config key survives – and a written config states every key, so each answer edits
+files rather than a generator.
+
+### Standing
+
+Nothing has left this machine: **244 commits unpushed** to the `awickert` fork. Push to `origin`
+(KCallaghan) is disabled. Pushing, tagging and releasing each need their own explicit go-ahead.
