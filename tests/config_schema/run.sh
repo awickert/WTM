@@ -329,7 +329,16 @@ while read -r k v; do
     #                    the list so SHIM still validates them; only this differential check skips the
     #                    shadowed one. Flagged by the test on its first run, then verified against the
     #                    shim's own documented precedence before being exempted.
-    case "$k" in evap_mode|runoff_ratio_on) continue ;; esac
+    #   solver_method / time_integration / adaptive_dt
+    #                    DERIVED keys: the shim now emits each one whether or not it was given, using
+    #                    the model's own resolution rule. Removing such a key therefore changes NOTHING
+    #                    when the value supplied happens to equal the value derived -- which is the case
+    #                    here. That is not the shim dropping the key; it is this arm's PREMISE failing.
+    #                    A differential test cannot see a key whose absence is filled in.
+    #                    They are not unchecked: tests/config_identity.py compares the emitted value
+    #                    against what the MODEL resolved, on every run of every suite. That is strictly
+    #                    stronger than this arm, which only compares the shim against itself.
+    case "$k" in evap_mode|runoff_ratio_on|solver_method|time_integration|adaptive_dt) continue ;; esac
     grep -vE "^$k " "$WORK/shim_keys.txt" > "$WORK/without.txt"
     bash ../emit_config.sh < "$WORK/without.txt" > "$WORK/without.yaml" 2>/dev/null
     cmp -s "$WORK/shim.yaml" "$WORK/without.yaml" && missing="$missing $k"
@@ -352,9 +361,12 @@ alone=""
 while read -r k v; do
     [ -z "$k" ] && continue
     case "$k" in \#*) continue ;; esac
-    # run_type IS the baseline this compares against, so it can never differ from it. The other two
-    # exemptions carry over from SHIM/BACK above, for the reasons documented there.
-    case "$k" in evap_mode|runoff_ratio_on|run_type) continue ;; esac
+    # run_type IS the baseline this compares against, so it can never differ from it. The others
+    # carry over from SHIM/BACK above, for the reasons documented there -- including the DERIVED keys,
+    # whose value the shim supplies whether or not they are given, so setting one to the value it would
+    # have been derived as cannot change the output. config_identity.py checks those against the MODEL
+    # on every run, which is a stronger test than this one.
+    case "$k" in evap_mode|runoff_ratio_on|run_type|solver_method|time_integration|adaptive_dt) continue ;; esac
     printf 'run_type equilibrium\n%s %s\n' "$k" "$v" > "$WORK/alone.txt"
     printf 'run_type equilibrium\n'                    > "$WORK/bare.txt"
     bash ../emit_config.sh < "$WORK/alone.txt" > "$WORK/alone.yaml" 2>/dev/null

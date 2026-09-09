@@ -226,13 +226,26 @@ if true; then   # always: collection.method and fsm_coupling are resolved for ev
             0) echo "  infiltration_during_flow: false" ;;
         esac
     fi
-    # fsm_coupling: `auto` yields to impulse under the EXPLICIT collector and is continuous otherwise.
-    # Uses the RESOLVED collector ($_coll), not the key, since an unset collector still resolves.
-    if have fsm_coupling; then echo "  fsm_coupling: $(val fsm_coupling)"
-    elif [[ "$_coll" == explicit ]]; then echo "  fsm_coupling: impulse"
-    else echo "  fsm_coupling: continuous"; fi
-    echo "  collection:"
-    echo "    method: $_coll"
+    # fsm_coupling and collection.method are NOT mirrored, and this is the boundary of what mirroring
+    # can do. For both, SETTING the key to its resolved value is not the same input as leaving it unset:
+    #
+    #   fsm_coupling        with infiltration_during_flow: true the model RESOLVES an unset key to
+    #                       impulse, but REFUSES an explicit `continuous` by name (#49). Mirroring
+    #                       `continuous` turned tests/serial_recharge from a working run into a hard
+    #                       error -- a valid configuration made invalid by writing down its own answer.
+    #   collection.method   an unset key is DOWNGRADED active_set -> explicit on the Picard path, and
+    #                       the model announces it. Setting it suppresses both the downgrade and the
+    #                       NOTE, which is precisely what tests/budget_closure's d_pic arm exists to
+    #                       observe. Mirroring deleted its subject.
+    #
+    # These resolutions depend on COMBINATIONS (collector x infiltration x method x run_type), and a
+    # bash copy of that is the "do not re-derive the model's policy" rule of #24, which I wrote and then
+    # broke. The keys stay undeclared until the model itself can be asked for its resolved config.
+    have fsm_coupling && echo "  fsm_coupling: $(val fsm_coupling)"
+    if have runoff_collector; then
+        echo "  collection:"
+        echo "    method: $(val runoff_collector)"
+    fi
 fi
 
 # --- boundaries --------------------------------------------------------------
