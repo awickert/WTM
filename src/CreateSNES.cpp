@@ -154,20 +154,15 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // per step). Implies the Anderson path (self-starting; no Picard operator, no BDF2 history vector).
   PetscBool tr_bdf2_flag = PETSC_FALSE;
   // config-owned (solver.time_integration: tr-bdf2); the solver.time_integration: tr-bdf2 flag is retired.
-  if (params.adaptive_dt_auto) {
-    const char* why = params.adaptive_dt              ? "error-controlled stepping"
-                      : params.dt_continuation        ? "solver.newton.dt_continuation owns the step size here"
-                                                      : "surface_water.collection.method: implicit cannot be "
-                                                        "driven by an error controller -- its per-step error "
-                                                        "grows as dt shrinks";
-    PetscPrintf(PETSC_COMM_WORLD, "solver.adaptive_dt: auto -> %s (%s).\n",
-                params.adaptive_dt ? "true" : "false", why);
+  if (!params.time_step_mode_set) {
+    const char* why = params.time_step_mode == "ramp"  ? "solver.method: newton owns the step size on that path"
+                      : params.time_step_mode == "fixed" ? "surface_water.collection.method: implicit cannot be "
+                                                           "driven by an error controller -- its per-step error "
+                                                           "grows as dt shrinks"
+                                                         : "error-controlled stepping";
+    PetscPrintf(PETSC_COMM_WORLD, "solver.time_step.mode: absent -> %s (%s).\n",
+                params.time_step_mode.c_str(), why);
   }
-  if (params.adaptive_dt_disabled_continuation)
-    PetscPrintf(PETSC_COMM_WORLD,
-                "NOTE [solver.adaptive_dt: true]: turned OFF the dt-continuation ramp that "
-                "solver.method: newton implies -- only one of them can size the step, and an explicit "
-                "setting wins over an implied one. This is PLAIN Newton plus adaptive stepping.\n");
   if (params.time_integration_auto)
     PetscPrintf(PETSC_COMM_WORLD, "solver.time_integration: auto -> %s (resolved from solver.method: %s).\n",
                 params.time_integration.c_str(),
@@ -263,11 +258,12 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.use_newton_continuation = dtc_on && user_context.use_newton;
   // The opt-out warning lives here, not in the YAML bridge, because only this scope knows whether the
   // Newton path was actually selected.
-  if (user_context.use_newton && params.dt_continuation_set && !params.dt_continuation)
+  if (user_context.use_newton && params.time_step_mode_set && params.time_step_mode != "ramp")
     PetscPrintf(PETSC_COMM_WORLD,
-                "WARNING [solver.method: newton + solver.newton.dt_continuation: false]: dt-continuation is OFF, "
+                "WARNING [solver.method: newton + solver.time_step.mode: %s]: the continuation ramp is OFF, "
                 "so this is PLAIN Newton. It converges from a WARM start but typically DIVERGES from a "
-                "cold one (DIVERGED_LINE_SEARCH). Remove solver.newton.dt_continuation to get the working recipe.\n");
+                "cold one (DIVERGED_LINE_SEARCH). Omit solver.time_step.mode to get the working recipe.\n",
+                params.time_step_mode.c_str());
   // Convergence-based early stop (-wtm_eq_tol, a WATER depth in metres). Default ON for equilibrium runs
   // (0.001 m = 1 mm of water |S*Δwtd| per cycle), OFF for transient runs (a time-evolution run must play out
   // in full, so it is never auto-stopped). Pass -wtm_eq_tol 0 to disable on an equilibrium run, or any value

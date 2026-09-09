@@ -112,23 +112,21 @@ struct Parameters {
   // (DIVERGED_LINE_SEARCH). solver.newton.dt_continuation: false opts out -- legitimate for a warm finish --
   // and CreateSNES warns. The `_set` flag distinguishes "the user declined" from "nobody asked", which
   // is what makes the newton default overridable rather than sticky.
-  bool dt_continuation     = false;
-  bool dt_continuation_set = false;
+  bool t_bar = false;
 
-  // solver.t_bar / solver.adaptive_dt: booleans that were reachable only as bare -wtm_ flags.
-  bool t_bar       = false;
-  bool adaptive_dt = false;
-  // solver.adaptive_dt: an ABSENT key is resolved here, like dt_continuation (the word `auto` is refused;
-  // see parameters.cpp). Resolved rather than defaulted to a constant,
-  // because its default is not constant: adaptive stepping and Newton's continuation ramp are two
-  // controllers for ONE question -- who sizes the step -- and WTM.cpp:593 is
-  // `if (use_dt_adaptive) ... else if (use_newton_continuation)`, so adaptive silently WINS and the ramp
-  // never runs while InitialiseSNES has already announced it. An absent key therefore yields to the ramp.
-  bool adaptive_dt_auto = false;  // the key was ABSENT rather than an explicit true|false
-  bool adaptive_dt_set  = false;  // the user wrote an explicit true|false
-  // Set when an EXPLICIT solver.adaptive_dt: true turned off an IMPLIED continuation ramp, so the run
-  // can say so rather than leaving the user to notice the ramp did not happen.
-  bool adaptive_dt_disabled_continuation = false;
+  // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
+  // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
+  // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp
+  // never ran. An enum makes that contradiction unrepresentable rather than something to abort on.
+  // See the resolution block in parameters.cpp for what an ABSENT key resolves to, and why adaptive is
+  // not a superset of ramp.
+  std::string time_step_mode;              // always concrete after parse: fixed | adaptive | ramp
+  bool        time_step_mode_set = false;  // the user WROTE it, rather than it being resolved
+
+  // DERIVED from time_step_mode, in ONE place (parameters.cpp), so they cannot disagree with the mode
+  // or with each other. The solver paths read these; nothing else sets them.
+  bool adaptive_dt     = false;
+  bool dt_continuation = false;
 
   // solver.time_step.error_tol: per-step local-error target in WATER volume. An ABSENT key leaves it
   // unset so the consumer's own default (which tracks eq_tol) applies. Named

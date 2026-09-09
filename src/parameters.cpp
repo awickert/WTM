@@ -65,7 +65,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"evaporation.tapers", {"surface_transition", "depth_extinction"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
-      {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
+      {"solver", {"method", "tolerance", "max_iterations", "time_integration",
                   "t_bar",
                   "time_step", "smoothing", "anderson", "newton", "convergence"}},
       // solver.convergence: what the PER-SOLVE step test judges. `metric: volume` swaps the head
@@ -76,7 +76,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // solver.time_step: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
-      {"solver.time_step", {"dt", "grow", "shrink", "grow_if_niter_leq", "max_retries", "norm",
+      {"solver.time_step", {"dt", "mode", "grow", "shrink", "grow_if_niter_leq", "max_retries", "norm",
                                "dt_max", "error_tol"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
@@ -88,7 +88,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"solver.anderson", {"restart"}},
       {"solver.anderson.restart", {"enabled", "rho", "patience", "max_it", "max_restarts"}},
       // solver.newton: read only on the Newton path.
-      {"solver.newton", {"dt_continuation", "dt0"}},
+      {"solver.newton", {"dt0"}},
       // dev.active_set was REMOVED 2026-09-01: it was a SECOND YAML route to the same enforcement as
       // surface_water.collection.method: active_set, and it silently OVERRODE an explicit method (measured:
       // 54/256 cells, max 0.127 m, with no log line). One setting, one key. Removing it from this schema is
@@ -249,7 +249,11 @@ Parameters::Parameters(const std::string& config_file) {
     time_integration = require_enum(n.as<std::string>(), "solver.time_integration",
                                     {"backward-euler", "bdf2", "tr-bdf2"});
   }
-  if (auto n = root["solver"]["newton"]["dt_continuation"]) { dt_continuation = n.as<bool>(); dt_continuation_set = true; }
+  if (auto n = root["solver"]["time_step"]["mode"]) {
+    refuse_auto(n, "solver.time_step.mode");
+    time_step_mode     = require_enum(n.as<std::string>(), "solver.time_step.mode", {"fixed", "adaptive", "ramp"});
+    time_step_mode_set = true;
+  }
   // solver.method: newton implies dt-continuation unless the user explicitly declined it. Read the method
   // here rather than depending on the flag bridge, so the implication holds however the method arrives.
   // solver.time_integration: auto -- RESOLVED here, like dt_continuation, because the answer depends on
@@ -273,17 +277,7 @@ Parameters::Parameters(const std::string& config_file) {
     time_integration      = (m == "anderson") ? "tr-bdf2" : "backward-euler";
     time_integration_auto = true;
   }
-  if (!dt_continuation_set)
-    if (auto n = root["solver"]["method"])
-      if (n.as<std::string>() == "newton") dt_continuation = true;
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
-  if (auto n = root["solver"]["adaptive_dt"]) {
-    refuse_auto(n, "solver.adaptive_dt");
-    adaptive_dt = n.as<bool>();
-    adaptive_dt_set = true;
-  } else {
-    adaptive_dt_auto = true;  // an absent key means auto
-  }
   if (auto n = root["solver"]["time_step"]["error_tol"]) {
     refuse_auto(n, "solver.time_step.error_tol");
     dt_tol = std::stod(n.as<std::string>());
@@ -388,19 +382,29 @@ Parameters::Parameters(const std::string& config_file) {
     runoff_collector_set = true;
   }
 
-  // Resolve adaptive_dt against dt_continuation. They are two controllers for ONE question -- who sizes
-  // the step -- and WTM.cpp:593 is `if (use_dt_adaptive) ... else if (use_newton_continuation)`, so
-  // adaptive silently WINS and the ramp never runs, after InitialiseSNES has already printed its banner.
-  // Measured on tests/dt_sensitivity inputs with solver.method: newton: "adaptive dt: 30 steps" instead
-  // of "dt-continuation: deltat now 5.24e+08 s". Newton needs that ramp to converge from cold, which
-  // tests/newton_solver's CONTRACT arm asserts, so this must never resolve silently.
-  if (adaptive_dt_set && adaptive_dt && dt_continuation && dt_continuation_set)
-    throw std::runtime_error(
-        "config: solver.adaptive_dt: true and solver.newton.dt_continuation: true both control the step "
-        "size, and only one can. The adaptive loop takes precedence and the continuation ramp would never "
-        "run -- silently, before this check. Choose one: solver.adaptive_dt: false to keep Newton's ramp "
-        "(the recipe it needs to converge from cold), or solver.newton.dt_continuation: false to let the "
-        "adaptive controller size the step for plain Newton.");
+  // WHO SIZES THE STEP -- one question, one key (solver.time_step.mode).
+  //
+  // This used to be TWO booleans, solver.adaptive_dt and solver.newton.dt_continuation, and they could
+  // both be true. They are two controllers for ONE question, and WTM.cpp resolved the clash as
+  // `if (use_dt_adaptive) ... else if (use_newton_continuation)` -- so adaptive silently WON and the ramp
+  // never ran, after InitialiseSNES had already printed its banner. Measured on tests/dt_sensitivity
+  // inputs with solver.method: newton: "adaptive dt: 30 steps" instead of "dt-continuation: deltat now
+  // 5.24e+08 s". That earned an abort, which an enum makes UNNECESSARY: the contradiction can no longer
+  // be written down. The abort is gone with it.
+  //
+  // The two were also named on different principles -- one for what it RESPONDS to (error), one for its
+  // METHOD (continuation) -- which is why neither name suggested they competed.
+  //
+  //   adaptive  error-controlled, clamped to the report span
+  //   ramp      pseudo-transient continuation: solve-ease growth, unclamped
+  //   fixed     dt exactly as given
+  //   ABSENT    resolved below; full_config.yaml records the concrete mode, never a sentinel
+  //
+  // WHY NOT MAKE adaptive A SUPERSET OF ramp (asked 2026-09-03): an error-driven controller cannot ramp
+  // to steady state. During a long drainage transient the error IS large, and error control reads that
+  // as "shrink" -- WTM.cpp records the experiment: a residual/state-change SER controller "is WORSE
+  // here ... growing on solve-EASE advances far better". The thing continuation must do is what error
+  // control forbids. They stay distinct modes.
   // ...and against the COLLECTOR. `implicit` siphons above-surface water at rate max(0,wtd)/dt, so its
   // per-step error GROWS as the controller shrinks dt: the founding assumption of error-controlled
   // stepping -- refine dt, reduce error -- is false for it, and the reject/retry loop cannot converge.
@@ -409,24 +413,33 @@ Parameters::Parameters(const std::string& config_file) {
   // Andy, 2026-09-03: implicit + adaptive_dt is not allowed; active_set + adaptive_dt is the pairing that
   // works and is the production default.
   const bool implicit_collector = (runoff_collector == "implicit");
-  if (adaptive_dt_set && adaptive_dt && implicit_collector)
+  if (time_step_mode_set && time_step_mode == "adaptive" && implicit_collector)
     throw std::runtime_error(
-        "config: solver.adaptive_dt: true cannot be used with surface_water.collection.method: implicit. "
+        "config: solver.time_step.mode: adaptive cannot be used with surface_water.collection.method: implicit. "
         "The implicit siphon removes above-surface water at rate max(0,wtd)/dt, so its per-step error "
         "GROWS as the controller shrinks dt -- no step can ever be accepted, and the run dies with "
         "'step failed after max retries'. Use collection.method: active_set (the default, and the "
-        "enforcement adaptive stepping is built for), or set solver.adaptive_dt: false.");
-  if (adaptive_dt_auto) {
-    // auto YIELDS twice over: to Newton's ramp where that owns the step size, and to fixed stepping
-    // under the implicit collector, which adaptive cannot drive at all.
-    adaptive_dt = !dt_continuation && !implicit_collector;
-  } else if (adaptive_dt && dt_continuation) {
-    // Explicit adaptive against an IMPLIED ramp (solver.method: newton implies it). The explicit value
-    // wins over the defaulted one -- but it is not allowed to do so silently, because it strips Newton of
-    // the ramp. CreateSNES announces it and the existing plain-Newton divergence warning still fires.
-    dt_continuation = false;
-    adaptive_dt_disabled_continuation = true;
+        "enforcement adaptive stepping is built for), or solver.time_step.mode: fixed.");
+  // `ramp` is the NEWTON path's pseudo-transient continuation, and CreateSNES gates it on use_newton
+  // (`dtc_on && use_newton`). Asked for anywhere else it would simply not run, and the run would step
+  // at a fixed dt while its config said `ramp` -- a key that reads as a choice and is not one, which is
+  // the defect class of #27/#28/#49. Say so instead.
+  if (time_step_mode_set && time_step_mode == "ramp" && solver_method != "newton")
+    throw std::runtime_error(
+        "config: solver.time_step.mode: ramp is the Newton path's continuation ramp and only runs with "
+        "solver.method: newton (this run asks for " + (solver_method.empty() ? std::string("anderson") : solver_method) +
+        "). Use solver.time_step.mode: adaptive or fixed, or set solver.method: newton.");
+  // RESOLVE AN ABSENT KEY. It yields twice over: to Newton's ramp, which owns the step size on that
+  // path, and to fixed stepping under the implicit collector, which an error controller cannot drive
+  // at all (see the refusal just above).
+  if (!time_step_mode_set) {
+    const bool newton = (solver_method == "newton");
+    time_step_mode = newton ? "ramp" : implicit_collector ? "fixed" : "adaptive";
   }
+  // The two internal booleans the solver paths read. They are DERIVED here and nowhere else, so the
+  // pair can never disagree with the mode or with each other.
+  adaptive_dt     = (time_step_mode == "adaptive");
+  dt_continuation = (time_step_mode == "ramp");
 
   // -------- io (source was surfdatadir; outfile/log moved to output) --------
   if (auto n = root["io"]["source"])     surfdatadir = n.as<std::string>();

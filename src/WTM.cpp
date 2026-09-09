@@ -1572,16 +1572,18 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "    water_volume_tol: " << uc.snes_volume_conv_tol << "\n";
   f << "  max_iterations: " << maxit << "\n";
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
-  f << "  adaptive_dt: " << params.adaptive_dt << "\n";
   f << "  t_bar: " << params.t_bar << "\n";
   f << "  time_step:\n";
+  // mode is the RESOLVED value -- fixed | adaptive | ramp -- never a sentinel and never absent, so this
+  // file states who sized the step even when the input config left it to be resolved.
+  f << "    mode: " << params.time_step_mode << "\n";
   f << "    dt: " << cfg_num(params.deltat) << "\n";
   f << "    error_tol: \"" << cfg_num(uc.dt_tol) << "\"\n";
   // EMITTED ONLY WHEN IN FORCE. There is no dt cap unless the adaptive controller or Newton's ramp
   // installs one, and "auto" is not a value: it records the QUESTION, cannot be re-run to the same
   // answer if the policy moves, and cannot be DECLARED by a test, which is what the declared==resolved
   // rule needs. Absence stays unambiguous because the mechanisms that own this key --
-  // solver.adaptive_dt and solver.newton.dt_continuation -- are both emitted above, explicitly.
+  // solver.time_step.mode -- is emitted above, explicitly and concretely.
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
   // THE STEP-CONTROLLER DIALS, and like dt_max they are emitted ONLY WHEN A CONTROLLER IS RUNNING.
   //
@@ -1626,10 +1628,11 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "      patience: " << uc.ar_rho_patience << "\n";
   f << "      max_it: " << uc.ar_max_it << "\n";
   f << "      max_restarts: " << uc.ar_max_restarts << "\n";
-  f << "  newton:\n";
-  f << "    dt_continuation: " << params.dt_continuation << "\n";
+  // solver.newton carries only dt0 now: whether the ramp RUNS is solver.time_step.mode: ramp, one key
+  // for the one question of who sizes the step.
+  if (uc.dtc_dt0 > 0.0) f << "  newton:\n";
   // Same rule as dt_max: the ramp's starting step exists only while the ramp does, and
-  // solver.newton.dt_continuation says whether it does. Its default when in force is deltat/200.
+  // solver.time_step.mode: ramp says whether it does. Its default when in force is deltat/200.
   if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
 
   f << "\ndev:\n";
