@@ -156,8 +156,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     PetscPrintf(PETSC_COMM_WORLD, "solver.time_step.mode: absent -> %s (%s).\n",
                 params.time_step_mode.c_str(), why);
   }
-  if (params.time_integration_auto)
-    PetscPrintf(PETSC_COMM_WORLD, "solver.time_integration: auto -> %s (resolved from solver.method: %s).\n",
+  if (params.time_integration_absent)
+    PetscPrintf(PETSC_COMM_WORLD, "solver.time_integration: absent -> %s (resolved from solver.method: %s).\n",
                 params.time_integration.c_str(),
                 params.solver_method.empty() ? "anderson" : params.solver_method.c_str());
   tr_bdf2_flag = (params.time_integration == "tr-bdf2") ? PETSC_TRUE : PETSC_FALSE;

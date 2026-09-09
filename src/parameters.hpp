@@ -90,9 +90,9 @@ struct Parameters {
   // member with the surviving flag rather than replacing it.
   std::string time_integration;
   // True when the key was ABSENT rather than explicitly written, so the run can report what it resolved
-  // to instead of leaving the user to infer it. (Named _auto from when `auto` was a writable value; the
-  // word is refused now -- omission is the only way to ask for the default.)
-  bool time_integration_auto = false;
+  // to instead of leaving the user to infer it. Named _absent, not _auto: `auto` was a writable value
+  // once, is refused now, and leaving the old name here kept the retired word in front of every reader.
+  bool time_integration_absent = false;
 
   // solver.newton.dt_continuation: PSEUDO-TRANSIENT CONTINUATION (PTC) -- the standard method for
   // globalising Newton toward a STEADY STATE (Kelley & Keyes 1998 -- CITATION UNVERIFIED, written from

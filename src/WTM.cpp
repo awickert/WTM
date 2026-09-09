@@ -1365,7 +1365,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // the options database rather than from Parameters.
   char       buf[64];
   PetscBool  found = PETSC_FALSE;
-  std::string stol = "1e-6", maxit = "auto";
+  std::string stol = "1e-6", maxit;   // filled below from what PETSc settled on; never the word `auto`
   PetscOptionsGetString(nullptr, nullptr, "-snes_stol", buf, sizeof(buf), &found);
   if (found) stol = buf;
   found = PETSC_FALSE;
@@ -1382,6 +1382,13 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
     if (SNESGetTolerances(uc.snes, nullptr, nullptr, nullptr, &mi, nullptr) == 0)
       maxit = std::to_string(static_cast<long long>(mi));
   }
+  // This file promises "every setting this run resolved to", and an empty value is not a setting. It
+  // used to fall back to the word `auto`, which kept the promise only in appearance -- it recorded the
+  // QUESTION. If neither route above produced a number, say so instead of writing an unusable file.
+  if (maxit.empty())
+    throw std::runtime_error("full_config.yaml: solver.max_iterations could not be resolved (no "
+                             "-snes_max_it and no live SNES to ask). The file would not be re-runnable, "
+                             "so it is not written.");
 
   f << "# full_config.yaml -- every setting this run resolved to, written by the run itself.\n"
     << "# Re-runnable as-is. output.outfile_prefix and output.run_log are absolute here because\n"

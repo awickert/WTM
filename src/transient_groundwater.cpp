@@ -1452,7 +1452,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     if (!noted_auto_impulse) {
       noted_auto_impulse = true;
       PetscPrintf(PETSC_COMM_WORLD,
-                  "surface_water.fsm_coupling: auto -> impulse (collection.method: explicit cannot take "
+                  "surface_water.fsm_coupling: absent -> impulse (collection.method: explicit cannot take "
                   "the continuous coupling).\n");
     }
   }
@@ -1484,7 +1484,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     if (!noted_infil_impulse) {
       noted_infil_impulse = true;
       PetscPrintf(PETSC_COMM_WORLD,
-                  "surface_water.fsm_coupling: auto -> impulse (infiltration_during_flow: true routes "
+                  "surface_water.fsm_coupling: absent -> impulse (infiltration_during_flow: true routes "
                   "recharge serially, which carries no FSM-delta source).\n");
     }
   }

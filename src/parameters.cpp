@@ -235,9 +235,9 @@ Parameters::Parameters(const std::string& config_file) {
   const auto refuse_auto = [](const YAML::Node& n, const std::string& key) {
     if (n.as<std::string>() == "auto")
       throw std::runtime_error(
-          "config: " + key + ": auto is no longer accepted. OMIT the key to take the default -- absence "
-          "already means auto, and the resolved value is recorded in full_config.yaml. (A test config "
-          "should instead state the value it wants; see tests/config_identity.py.)");
+          "config: " + key + ": `auto` is not a value. OMIT the key to take the default -- that is what "
+          "absence means -- and the CONCRETE value it resolved to is recorded in full_config.yaml. (A "
+          "test config should instead state the value it wants; see tests/config_identity.py.)");
   };
 
   if (auto n = root["dev"]["storage_form"])
@@ -275,7 +275,7 @@ Parameters::Parameters(const std::string& config_file) {
   if (time_integration.empty()) {   // ABSENT means auto-resolve; the word itself is refused above
     const std::string m   = solver_method.empty() ? "anderson" : solver_method;
     time_integration      = (m == "anderson") ? "tr-bdf2" : "backward-euler";
-    time_integration_auto = true;
+    time_integration_absent = true;
   }
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
   if (auto sm = root["solver"]["smoothing"]) {

@@ -114,71 +114,54 @@ print(f"{np.nanmax(d):.3e} {int((d > 0).sum())}")
 PY
 }
 
-# One setting, two values, four runs: config and flag route for each value.
-pair() { # $1 label ; $2 slot(sw|solver) ; $3 v1-yaml ; $4 v1-flags ; $5 v2-yaml ; $6 v2-flags
-    local label="$1" slot="$2" tag rc
+# One setting, two values, two runs -- both from the CONFIG, because there is no longer a second route.
+arrives() { # $1 label ; $2 slot(sw|solver) ; $3 v1-yaml ; $4 v2-yaml
+    local label="$1" slot="$2" tag
     tag=$(echo "$label" | tr -c 'a-zA-Z0-9' '_')
-    local i sy fy
+    local i sy
     for i in 1 2; do
-        if [ "$i" = 1 ]; then sy="$3"; fy="$4"; else sy="$5"; fy="$6"; fi
-        if [ "$slot" = sw ]; then mk "${tag}_v${i}_c" "$sy" ""; mk "${tag}_v${i}_f" "" ""
-        else                     mk "${tag}_v${i}_c" "" "$sy"; mk "${tag}_v${i}_f" "" ""
-        fi
-        go "${tag}_v${i}_c"        || { echo "  FAIL  $label -- config route v$i did not complete"; sed -n 's/.*what():/        /p' "$WORK/${tag}_v${i}_c.log" | head -1; fail=1; return; }
-        go "${tag}_v${i}_f" $fy    || { echo "  FAIL  $label -- flag route v$i did not complete";   sed -n 's/.*what():/        /p' "$WORK/${tag}_v${i}_f.log" | head -1; fail=1; return; }
+        if [ "$i" = 1 ]; then sy="$3"; else sy="$4"; fi
+        if [ "$slot" = sw ]; then mk "${tag}_v${i}" "$sy" ""; else mk "${tag}_v${i}" "" "$sy"; fi
+        go "${tag}_v${i}" || { echo "  FAIL  $label -- value $i did not complete"; sed -n 's/.*what():/        /p' "$WORK/${tag}_v${i}.log" | head -1; fail=1; return; }
     done
 
-    local mx n arm_fail=0
-    for i in 1 2; do
-        read -r mx n <<< "$(delta "${tag}_v${i}_c" "${tag}_v${i}_f")"
-        if [ "$n" != "0" ]; then
-            arm_fail=1
-            echo "  FAIL  ROUTE-$label value $i -- the two routes DISAGREE: max|d| = $mx m over $n cells."
-            echo "        These are meant to be the same computation reached two ways. A difference means one"
-            echo "        route silently reaches a different configuration -- see the dev.active_set defect."
-            fail=1
-        fi
-    done
-
-    # THE CONTROL. If the setting is inert, both equalities above are between identical default runs.
-    read -r mx n <<< "$(delta "${tag}_v1_c" "${tag}_v2_c")"
+    local mx n
+    read -r mx n <<< "$(delta "${tag}_v1" "${tag}_v2")"
     if [ "$n" = "0" ]; then
-        echo "  FAIL  CONTROL-$label -- the two VALUES of this setting give an identical water table, so the"
-        echo "        equality above compares two default runs and asserts nothing. Either the config key"
-        echo "        stopped reaching the model, or this fixture no longer discriminates the setting."
+        echo "  FAIL  ARRIVES-$label -- the two VALUES give an IDENTICAL water table. Either the config key"
+        echo "        stopped reaching the model -- which is the failure mode a single-route interface is"
+        echo "        exposed to, and what this suite now exists to catch -- or this fixture no longer"
+        echo "        discriminates the setting. Both make every other arm here meaningless."
         fail=1
-    elif [ "$arm_fail" = 0 ]; then
-        # PASS only if the equalities ALSO held. Printing it unconditionally here reported FAIL and PASS
-        # for the same arm, and run_all.sh counts pass LINES -- so a broken arm would still have been
-        # counted as covered. Caught by the probe that proves this arm bites.
-        echo "  PASS  ROUTE-$label -- config route == flag route, byte-identical, for both values"
-        echo "        control: the two values differ by max|d| = $mx m over $n cells, so the equality bites"
+    else
+        echo "  PASS  ARRIVES-$label -- the key reaches the model: its two values differ by max|d| = $mx m"
+        echo "        over $n cells"
     fi
 }
 
-echo "=== route equality: does the config key reach the same run as the flag it abstracts? ==="
+echo "=== config arrival: does a config key reach the model and change what it should? ==="
 echo "WTM binary: $WTM"
 echo
 
 # solver.convergence.metric -> -wtm_snes_head_conv / -wtm_snes_volume_conv_govern. The per-solve
 # stopping test. Answer-changing (#61 made volume the default after finding head let 88% of solves
 # exit early on a stagnation test), and both values are bridged, so both are checked.
-pair "convergence-metric" solver \
-     "$(printf '  convergence:\n    metric: head')"   "-wtm_snes_head_conv true" \
-     "$(printf '  convergence:\n    metric: volume')" "-wtm_snes_volume_conv_govern true"
+arrives "convergence-metric" solver \
+     "$(printf '  convergence:\n    metric: head')" \
+     "$(printf '  convergence:\n    metric: volume')"
 
 # solver.convergence.water_volume_tol -> -wtm_snes_vol_tol. The tolerance that test is applied at.
-pair "volume-tol" solver \
-     "$(printf '  convergence:\n    water_volume_tol: 1e-6')"  "-wtm_snes_vol_tol 1e-6" \
-     "$(printf '  convergence:\n    water_volume_tol: 1e-11')" "-wtm_snes_vol_tol 1e-11"
+arrives "volume-tol" solver \
+     "$(printf '  convergence:\n    water_volume_tol: 1e-6')" \
+     "$(printf '  convergence:\n    water_volume_tol: 1e-11')"
 
 # surface_water.fsm_coupling -> -wtm_fsm_continuous. How FillSpillMerge's result reaches the
 # groundwater. BOTH values are bridged deliberately: the C++ default is continuous, so bridging only
 # `continuous` would leave `fsm_coupling: impulse` silently doing nothing -- a config key that reads as
 # a choice and is not one. This arm is what holds that open.
-pair "fsm-coupling" sw \
-     "$(printf '  fsm_coupling: impulse')"    "-wtm_fsm_continuous false" \
-     "$(printf '  fsm_coupling: continuous')" "-wtm_fsm_continuous true"
+arrives "fsm-coupling" sw \
+     "$(printf '  fsm_coupling: impulse')" \
+     "$(printf '  fsm_coupling: continuous')"
 
 # NEWTON COLD-START CONTRACT, from the config side (see the header: not a route equality). `solver.method:
 # newton` must be USABLE FROM YAML ALONE. Before dt-continuation was wired into the abstraction this
