@@ -1264,6 +1264,15 @@ void apply_config_petsc_options(const std::string& config_file) {
     set_opt_if_unset("-wtm_fsm_continuous",
                      require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"impulse", "continuous"})
                              == "continuous" ? "true" : "false");
+  // evaporation.tapers -> the two -wtm_ switches the solve reads (transient_groundwater.cpp). Bridged
+  // rather than read directly because both are consulted deep inside the residual, where Parameters is
+  // not in scope. BOTH VALUES are bridged, not just `false`: the C++ default is ON, so bridging only the
+  // off-case would leave `true` silently doing nothing -- a key that reads as a choice and is not one,
+  // which is the defect this migration exists to remove (fsm_coupling carries the same reasoning).
+  if (auto n = root["evaporation"]["tapers"]["surface_transition"])
+    set_opt_if_unset("-wtm_evap_taper", n.as<bool>() ? "true" : "false");
+  if (auto n = root["evaporation"]["tapers"]["depth_extinction"])
+    set_opt_if_unset("-wtm_extinction", n.as<bool>() ? "true" : "false");
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
@@ -1514,6 +1523,18 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "    wtd_center: " << params.evap_taper_wtdc << "\n";
   f << "    logistic_width: " << params.evap_taper_s << "\n";
   f << "  extinction_depth: " << params.extinction_depth << "\n";
+  {
+    // READ BACK from the options DB, not from Parameters. Both switches default ON in the C++ and the
+    // config bridges into a -wtm_ option with set_opt_if_unset, so a CLI flag still WINS -- and
+    // params.taper_* would then report the config's value for a run that used the flag's. Same reason
+    // max_iterations is read back above: this file must record what the run DID.
+    PetscBool st = PETSC_TRUE, de = PETSC_TRUE;
+    PetscOptionsGetBool(nullptr, nullptr, "-wtm_evap_taper", &st, nullptr);
+    PetscOptionsGetBool(nullptr, nullptr, "-wtm_extinction", &de, nullptr);
+    f << "  tapers:\n";
+    f << "    surface_transition: " << (st == PETSC_TRUE) << "\n";
+    f << "    depth_extinction: " << (de == PETSC_TRUE) << "\n";
+  }
 
   f << "\nsurface_water:\n";
   // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`

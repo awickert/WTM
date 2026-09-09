@@ -53,6 +53,12 @@ struct Parameters {
 
   // Evaporation taper 3 (evaporation.extinction_depth): depth below which ET cannot reach the table [m].
   double extinction_depth = 8.0;
+  // evaporation.tapers -- the two surface-transition tapers, BOTH default ON. They are SWITCHES, not
+  // values: what each uses lives beside it (et_sigmoid.* for the first, extinction_depth above for the
+  // second). Named for what each DOES rather than by the internal numbering ("taper 2", "taper 3"),
+  // which meant nothing outside transient_groundwater.cpp and had already lost taper 1 to retirement.
+  bool taper_surface_transition = true;  // blend phreatic ET to open-water ET across wtd = 0
+  bool taper_depth_extinction   = true;  // no phreatic ET below evaporation.extinction_depth
 
   // run.equilibrium_stop: tol is a WATER depth [m] (0 = the stop is off). Its DEFAULT is run-type
   // dependent -- 0.001 for equilibrium, 0 for transient (a time-evolution run must play out in full) --

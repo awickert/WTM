@@ -61,7 +61,8 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
       {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection", "fsm_coupling"}},
       {"surface_water.collection", {"method"}},
-      {"evaporation", {"et_sigmoid", "extinction_depth"}},
+      {"evaporation", {"et_sigmoid", "extinction_depth", "tapers"}},
+      {"evaporation.tapers", {"surface_transition", "depth_extinction"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
       {"boundaries", {"land"}},
       {"solver", {"method", "tolerance", "max_iterations", "time_integration", "adaptive_dt",
@@ -294,6 +295,8 @@ Parameters::Parameters(const std::string& config_file) {
     dtc_dt_max_set = true;
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
+  if (auto n = root["evaporation"]["tapers"]["surface_transition"]) taper_surface_transition = n.as<bool>();
+  if (auto n = root["evaporation"]["tapers"]["depth_extinction"])   taper_depth_extinction   = n.as<bool>();
   if (auto n = root["run"]["equilibrium_stop"]["frac"])  eq_frac          = n.as<double>();
 
   // -------- transmissivity (config-owned; formerly -wtm_ transport only) --------

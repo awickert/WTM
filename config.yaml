@@ -72,6 +72,16 @@ evaporation:
     wtd_center: 0.05
     logistic_width: 0.1
   extinction_depth: 8          # depth below which ET can no longer reach the water table [m]
+  tapers:                      # the two surface-transition tapers, BOTH default true. They are
+                               # SWITCHES; the values they use are the keys above (et_sigmoid.* for
+                               # the first, extinction_depth for the second). Turning either off is a
+                               # DIAGNOSTIC choice -- the model is stiffest exactly where they smooth,
+                               # and with both off a free-surface run can fail to find a usable step.
+    surface_transition: true   # blend phreatic ET to open-water ET across wtd = 0, instead of
+                               # switching hard at the surface.
+    depth_extinction: true     # no phreatic ET below evaporation.extinction_depth: roots and
+                               # capillarity cannot reach the table there, so an arid cell stops
+                               # drawing down instead of running away.
 
 surface_water:
   fsm_coupling: continuous     # continuous | impulse -- how FillSpillMerge's result reaches the groundwater.
