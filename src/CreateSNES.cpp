@@ -294,17 +294,18 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   else user_context.eq_metric = 2;  // "frac" (default)
   user_context.eq_frac = params.eq_frac;  // config-owned; -wtm_eq_frac retired
   if (user_context.use_newton_continuation) {
-    double dt0 = params.deltat / 200.0;
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_dt0", &dt0, nullptr);
+    // dt0's default is DERIVED, not constant, so the _set flag is what distinguishes "the user chose
+    // deltat/200" from "nobody asked".
+    const double dt0 = params.dtc_dt0_set ? params.dtc_dt0 : params.deltat / 200.0;
     user_context.deltat = dt0;  // start small (overrides the params.deltat init above)
     user_context.dtc_dt0 = dt0;  // retained so full_config.yaml can report the resolved value
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
+    user_context.dtc_grow   = params.dtc_grow;
+    user_context.dtc_shrink = params.dtc_shrink;
     user_context.dtc_dt_max = 1000.0 * params.deltat;
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
-    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
-    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
+    user_context.dtc_easy_iters  = params.dtc_easy_iters;
+    user_context.dtc_max_retries = params.dtc_max_retries;
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.newton.dt_continuation: Newton PTC, dt0=%g s, grow x%g if <=%d iters, shrink x%g on reject, "
                 "dt_max=%g s.\n",
@@ -346,17 +347,17 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // the same sweep spans 57 steps (default 8) to 229506-and-still-running (0, growth forbidden).
     // Parsing these where they are used is also what makes the controller testable: tests/estimator_order
     // needs -wtm_dtc_grow 1 -wtm_dtc_shrink 1 to freeze dt and refine it from a fixed state.
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_grow", &user_context.dtc_grow, nullptr);
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_dtc_shrink", &user_context.dtc_shrink, nullptr);
+    user_context.dtc_grow       = params.dtc_grow;
+    user_context.dtc_shrink     = params.dtc_shrink;
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
-    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_easy_iters", &user_context.dtc_easy_iters, nullptr);
+    user_context.dtc_easy_iters = params.dtc_easy_iters;
     // ...and max_retries with them. It was LEFT BEHIND when the other four were moved here: the adaptive
     // reject/retry loop reads dtc_max_retries on every rejected step (WTM.cpp:617), but the flag was
     // parsed only inside `if (use_newton_continuation)` above -- so on a plain adaptive run asking for it
     // did not tune the controller, it ABORTED the run ("the run was given 1 -wtm_ flag that nothing
     // read"). The adaptive loop was stuck on the compiled-in 15 with no way to reach it.
-    PetscOptionsGetInt(nullptr, nullptr, "-wtm_dtc_max_retries", &user_context.dtc_max_retries, nullptr);
+    user_context.dtc_max_retries = params.dtc_max_retries;
     // The adaptive step tolerance (dt_tol) is the per-step LOCAL ERROR in WATER (volume) units -- the SAME
     // units as the equilibrium-stop tolerance (eq_tol = |S·Δwtd|), because the embedded error estimate is now
     // volume-weighted (storedVolume difference; see transient_groundwater.cpp). They still measure different

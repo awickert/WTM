@@ -132,6 +132,15 @@ struct Parameters {
   int    ar_max_it       = 40;    // cap per Anderson phase before a forced restart
   int    ar_max_restarts = 30;    // outer restart cap
 
+  // solver.time_step.{grow,shrink,grow_if_niter_leq,max_retries} and solver.newton.dt0. Defaults are
+  // AppCtx's own; dt0 keeps a _set flag because its default is DERIVED (deltat/200), not constant.
+  double dtc_grow        = 1.5;
+  double dtc_shrink      = 0.25;
+  int    dtc_easy_iters  = 8;
+  int    dtc_max_retries = 15;
+  double dtc_dt0         = 0.0;
+  bool   dtc_dt0_set     = false;
+
   // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
   // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
   // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp

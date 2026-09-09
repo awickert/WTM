@@ -284,7 +284,7 @@ have deltat && echo "    dt: $(val deltat)"
 # A suite whose steps are sized by that tolerance states which of the three it means.
 have dt_tol && echo "    error_tol: \"$(val dt_tol)\""
 have dt_max && echo "    dt_max: \"$(val dt_max)\""
-# THE STEP-CONTROLLER DIALS, only when a controller actually runs. They bridge to -wtm_dtc_* flags that
+# THE STEP-CONTROLLER DIALS, only when a controller actually runs. They are config keys that
 # nothing parses on a fixed-step run, and the model ABORTS on a flag nothing read -- rightly: a dial on a
 # controller that is not running is not a setting of the run. full_config.yaml emits them under the same
 # condition (src/WTM.cpp), so the two agree and config_identity has nothing to report either way.

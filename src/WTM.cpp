@@ -1197,10 +1197,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // only when the solve took at most this many nonlinear iterations), distinct from the accuracy gate,
   // and inclusive -- a solve of exactly this many iterations still grows.
   if (auto sc = root["solver"]["time_step"]) {
-    if (auto n = sc["grow"])              set_opt_if_unset("-wtm_dtc_grow", n.as<std::string>().c_str());
-    if (auto n = sc["shrink"])            set_opt_if_unset("-wtm_dtc_shrink", n.as<std::string>().c_str());
-    if (auto n = sc["grow_if_niter_leq"]) set_opt_if_unset("-wtm_dtc_easy_iters", n.as<std::string>().c_str());
-    if (auto n = sc["max_retries"])       set_opt_if_unset("-wtm_dtc_max_retries", n.as<std::string>().c_str());
+    // (all four parsed into Parameters directly; see parameters.cpp.)
     // norm: one enum replacing the -wtm_dt_norm_rms / -wtm_dt_norm_max boolean PAIR, whose both-set case
     // was undefined at the config level. rms is the default; max is opt-in and wins if both arrive.
     if (auto n = sc["norm"]) {
@@ -1229,10 +1226,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // solver.newton.dt0 -> the pseudo-transient ramp's starting dt. Continuation-only: it is read inside
   // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
   // time_step's shared dials.
-  if (auto n = root["solver"]["newton"]["dt0"]) {
-    refuse_auto(n, "solver.newton.dt0");
-    set_opt_if_unset("-wtm_dtc_dt0", n.as<std::string>().c_str());
-  }
+  // (solver.newton.dt0 parsed into Parameters directly; see parameters.cpp.)
 
   // solver.anderson.restart -> rho-triggered proactive Anderson restart. NOTE enabled: true currently
   // FORCES the Anderson path (CreateSNES.cpp:178), so it can change the solver rather than only tune it;

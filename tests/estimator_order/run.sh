@@ -15,7 +15,7 @@
 # from a number that merely looks reasonable.
 #
 # THE CONTROLLER IS FROZEN so that dt is exactly what we set:
-#     -wtm_dtc_grow 1 -wtm_dtc_shrink 1   dt cannot change
+#     time_step.grow 1, time_step.shrink 1   dt cannot change
 #     -wtm_dt_tol 1e9                     nothing is ever rejected
 # and we read only the FIRST trace line of each run, where dt is the configured deltat by construction
 # and every arm starts from the same state. (Those dtc_* flags were themselves parsed ONLY on the
@@ -257,7 +257,7 @@ if [ -n "${e0:-}" ] && [ -n "${e1:-}" ] && \
 else
     echo "  FAIL  PRECONDITION  est did not move across a 64x dt refinement (${e0:-none} -> ${e1:-none})."
     echo "        Either -wtm_dt_trace is not reporting or the controller freeze"
-    echo "        (-wtm_dtc_grow/-wtm_dtc_shrink) is not being honoured -- both make this test vacuous."
+    echo "        (solver.time_step.grow / .shrink) is not being honoured -- both make this test vacuous."
     fail=1
 fi
 echo

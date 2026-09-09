@@ -285,6 +285,17 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
+  if (auto sc = root["solver"]["time_step"]) {
+    if (auto n = sc["grow"])              dtc_grow        = n.as<double>();
+    if (auto n = sc["shrink"])            dtc_shrink      = n.as<double>();
+    if (auto n = sc["grow_if_niter_leq"]) dtc_easy_iters  = n.as<int>();
+    if (auto n = sc["max_retries"])       dtc_max_retries = n.as<int>();
+  }
+  if (auto n = root["solver"]["newton"]["dt0"]) {
+    refuse_auto(n, "solver.newton.dt0");
+    dtc_dt0     = parse_time_seconds(n.as<std::string>(), "solver.newton.dt0");
+    dtc_dt0_set = true;
+  }
   if (auto ar = root["solver"]["anderson"]["restart"]) {
     if (auto n = ar["enabled"])      ar_enabled      = n.as<bool>();
     if (auto n = ar["rho"])          ar_rho          = n.as<double>();
