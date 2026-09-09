@@ -7,8 +7,8 @@
 # Fixture (make_inputs.py): a low ocean-ringed plateau with ET < P < owe, so below the surface the cell fills
 # toward wtd=0 while above it open-water evaporation drains it back -- opposite pushes across the surface. To
 # let the above-surface (owe) branch fire with FSM off, above-surface water is permitted to persist via
-# dev.allow_aboveground_water_columns: true (surface clamp off), so the evaporation taper is the ONLY manager
-# of the surface crossing. Asserts:
+# surface_water.collection.method: off -- no enforcement at all -- so the evaporation taper is the ONLY
+# manager of the surface crossing. Asserts:
 #   SETTLING     : with the smooth taper the run reaches equilibrium (per-cycle |Δwtd| decays; no limit cycle).
 #   NO PONDING   : despite ponding being ALLOWED, the taper drives the table back to/below the surface
 #                  (wtd <= 0 everywhere) -- the discontinuity is removed, not merely tolerated.
@@ -53,7 +53,15 @@ fsm_on 0
 # test reports "does not bite". Hold the collector fixed so the taper remains testable.
 # (That active_set alone also kills the evaporation-discontinuity flicker is a real finding, recorded
 # in benchmark/scheme_bench/README.md; it is not something this test can demonstrate.)
-runoff_collector implicit
+# collection.method: off -- above-surface water is genuinely UNMANAGED, so the evaporation taper is the
+# ONLY thing that can bring the table back down. That is what this suite's header has always claimed,
+# and what NO PONDING needs in order to mean anything.
+#
+# IT WAS `implicit` UNTIL 2026-09-10 (#87). The in-residual siphon removes above-surface water by
+# itself, so `wtd <= 0` held whichever mechanism did the work and the assertion could not tell the
+# taper from the collector. (The arm ALSO set dev.allow_aboveground_water_columns: true, which read as
+# "clamp off" but was overwritten by the collector selector and did nothing at all -- #35.)
+runoff_collector off
 evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
@@ -70,14 +78,6 @@ surfdatadir $INP
 region flickevap
 supplied_wt 1
 eq_tol 0
-# NOTE, measured 2026-09-10 (#35): this arm used to set dev.allow_aboveground_water_columns: true, on
-# the stated premise that the surface clamp was OFF and the evaporation taper was therefore the only
-# manager. THAT KEY NEVER DID ANYTHING -- it was read and then overwritten by every branch of the
-# collector selector -- so this suite has always run the DEFAULT collector (active_set), and the key is
-# now removed. Output is byte-identical with and without it.
-# What that means for this suite is #87: its NO-PONDING assertion cannot distinguish the taper from the
-# enforcement, because both drive wtd to 0. The premise in the header above the checks is wrong until
-# that is fixed; it is left visible rather than quietly reworded.
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
@@ -117,7 +117,20 @@ print(f"  SETTLING       : managed max recent per-cycle |Δwtd| = {os.environ['M
       f"bare (taper off) = {os.environ['BSETTLE']} m (limit cycle)")
 print(f"  NO PONDING     : max wtd = {above:.3e} m, all wtd<=0: {below_ok} (ponding allowed, taper drove it back)")
 print(f"  MASS BALANCE   : dRech={dR:.4e} dEvap={dE:.4e} dSurf={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
-ok = below_ok and rel < mbtol
+# THE DISCRIMINATOR, and the reason NO PONDING is worth asserting at all. surface_removed must be
+# EXACTLY zero: no collector took any water away, so the only thing that could have driven the table
+# back to wtd<=0 is the evaporation taper. Without this, NO PONDING passes whenever ANY enforcement is
+# active -- which is how it passed for its whole life while a collector, not the taper, did the work
+# (#87). If a collector is ever re-enabled here, this fails and says so instead of quietly agreeing.
+taper_alone = (dS == 0.0)
+if not taper_alone:
+    print(f"  FAIL  TAPER-ALONE: surface_removed = {dS:.4e}, not 0. A collector removed water, so "
+          f"NO PONDING above does not show the taper did it -- the assertion is vacuous as written.")
+else:
+    print(f"  TAPER ALONE    : surface_removed = {dS:.4e} -- no collector took any water, so the taper "
+          f"is the only thing that brought the table back")
+
+ok = below_ok and rel < mbtol and taper_alone
 print("PASS: smooth taper settles the surface-crossing flicker; no ponding remains; budget closes with evaporation"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
