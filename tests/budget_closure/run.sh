@@ -316,10 +316,8 @@ echo
 # least part of that backwards behaviour was an artifact of solves stopping at a tolerance-dependent
 # point rather than at the solution. Not claimed as fully explained; recorded as no longer visible.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.01 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad \
-   
-COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad \
-   
+COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.01 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad
+COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad
 echo
 
 
