@@ -95,7 +95,7 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > FSM spill) starts *at* cycle 0. The closure differenced a storage change over cycles 1..N against
 > fluxes over cycles 0..N, and the first cycle's storage change was silently absent.
 >
-> On `tests/fsm_consistency`, 120 yr, `active_set` + FSM, overwrite coupling: the whole-run gap was
+> On `tests/fsm_consistency`, 120 yr, `active_set` + FSM, the `impulse` coupling: the whole-run gap was
 > `-7.263575e+10`, **34.84% of recharge**. The same run stopped after ONE cycle — where `d_stored` is
 > 0 by construction — gave `-7.261150e+10`. The 120-year residual *was* the first cycle, essentially
 > in its entirety: the supplied initial table drains and FSM spills 6.69e+10 m³ to the ocean in year
@@ -105,7 +105,7 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > `CaptureInitialStoredVolume`. Both it and every later report call the same `ComputeStoredVolume`, so
 > the baseline cannot drift from the series it is differenced against, and `PrintValues` throws rather
 > than falling back to a zero baseline (which would make `d_stored` the absolute volume and look
-> entirely plausible). Result on that fixture: overwrite **34.841% → 0.040%**, source
+> entirely plausible). Result on that fixture: `impulse` **34.841% → 0.040%**, `continuous`
 > **2.739% → 0.014%** — 0.040% being exactly the "≈0.04% once spun up" this section already predicted.
 > The prediction was right all along; the code could not reach it on a cold start.
 >
@@ -117,8 +117,8 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > still reads 3.4e-07. **A steady residual is not a small one, and only the absolute check can tell
 > you which you have.**
 >
-> One limit stated rather than hidden: only the overwrite arm is gated absolutely. Under
-> `-wtm_fsm_continuous` FSM's volume change is handed to the NEXT step's source term, so at a report
+> One limit stated rather than hidden: only the `impulse` arm is gated absolutely. Under
+> `fsm_coupling: continuous` FSM's volume change is handed to the NEXT step's source term, so at a report
 > boundary there is water FSM has already moved — present in `stored_volume` — whose source term has
 > not yet been applied. That lag makes the source arm's closure large early and decay with run length
 > (7.37e-01 at 24 yr against 1.4e-04 at 120 yr, same fixture). That it is exactly one step, and hence
@@ -274,21 +274,21 @@ There are two accumulators, and they mean different things:
 | `total_solver_recharge` (col 17's input) | `rech_vec`, the source term the residual actually integrates | **everything the scheme treats as an input during the step** |
 
 They agree whenever all input arrives as precipitation. They diverge under
-`-wtm_fsm_continuous` (#116), where FillSpillMerge's delivery is folded into the step's source term
-rather than applied as a between-step overwrite of the water table. Once the water arrives *during*
+`fsm_coupling: continuous` (#116), where FillSpillMerge's delivery is folded into the step's source term
+rather than applied as a between-step rewrite of the water table (`impulse`). Once the water arrives *during*
 the step, the scheme's own conservation law counts it as an input, and only the second definition
 describes the scheme being run — so the exact budget uses it.
 
 Measured on the dome fixture (Anderson, FSM on, at steady state), the exact residual relative to
-recharge is `1.6e-6` for the overwrite path and **`6.9e-11`** for `-wtm_fsm_continuous`. The source
+recharge is `1.6e-6` for the `impulse` path and **`6.9e-11`** for `fsm_coupling: continuous`. The source
 path conserves *more* tightly, and for a structural reason: its coupling flux is an explicit term in
-the residual, which the solver drives to its tolerance, whereas the overwrite arrives as a state jump
+the residual, which the solver drives to its tolerance, whereas `impulse` arrives as a state jump
 that no per-step discrete identity can see. Column 16 (the physical residual, built on the external
 definition) does not close as tightly for the source path, and that is a definitional mismatch rather
 than a leak.
 
-**CORRECTED 2026-09-03. Most of what column 16 read under source coupling was a REPORTING DEFECT, not
-the definitional mismatch it was attributed to.** `-wtm_fsm_continuous` folded FSM's per-cell delta
+**CORRECTED 2026-09-03. Most of what column 16 read under the `continuous` coupling was a REPORTING DEFECT, not
+the definitional mismatch it was attributed to.** `fsm_coupling: continuous` folded FSM's per-cell delta
 into `rech_dist` — the same array `set_starting_values` books as `total_recharge_direct`. Columns 19
 and 9 therefore reported external input *plus* internal redistribution, which is not what §2 defines
 them to be, and `ocean_loss_closing` and column 16 are built on top of them. The symptom is
@@ -309,7 +309,7 @@ Giving the delta its own carrier (`AppCtx::fsm_delta_vec`) so the solve reads
 
 Conservation is untouched by construction and was verified rather than assumed:
 `accumulate_budget_terms` reads `rech_vec` (`transient_groundwater.cpp:843`), the **full source term**,
-which is the semantics this section argues for. Only the *external* columns changed. The overwrite path
+which is the semantics this section argues for. Only the *external* columns changed. The `impulse` path
 is bit-identical in every run-log column.
 
 Two things to carry forward. First, after the fix **column 19 is identical between the two couplings to
@@ -318,7 +318,7 @@ by an arm in `tests/fsm_conservation` together with a non-vacuity gate. Second, 
 paragraph used to quote was measured on the dome fixture *with the defect present*; that fixture is not
 in the repo, so the number cannot be reproduced directly, but the mechanism above applied to it equally
 and the residual quoted for it should be treated as superseded rather than as a property of the
-coupling. What remains of column 16 under source coupling on a fixture we do have is 2.7e-02, not 1.8e-01.
+coupling. What remains of column 16 under the `continuous` coupling on a fixture we do have is 2.7e-02, not 1.8e-01.
 
 ## 4a. What the exact residual then uncovered: N–S flux on a lat-lon grid
 

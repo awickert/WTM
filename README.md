@@ -266,8 +266,8 @@ to give up the thing that makes it worth having, in exchange for an accuracy pro
 right tool to deliver.
 
 **`active_set` is therefore REJECTED on Picard**, not merely discouraged, because selecting it never
-actually enforces anything. With FSM **on**, FillSpillMerge's between-step overwrite
-(`runoff += wtd; wtd = 0`, then re-level) does the job instead — a post-solve projection, i.e.
+actually enforces anything. With FSM **on**, FillSpillMerge's between-step rewrite of the water table
+(`runoff += wtd; wtd = 0`, then re-level — the `impulse` coupling) does the job instead — a post-solve projection, i.e.
 functionally `explicit`, and *not* luck: FSM duplicates that function. With FSM **off**, nothing does
 the job: Picard piles water over **1440 of ~1444 land cells** where `explicit` holds `max wtd` at 0.000.
 Building the row was tried and reverted (see the comment at the rejection in `transient_groundwater.cpp`):
