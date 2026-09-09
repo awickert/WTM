@@ -658,6 +658,9 @@ conflict is not a validation problem, it is a modelling error made representable
 solver:
   time_step:
     mode: fixed | adaptive | ramp     # OMIT the key to take the resolved default
+                                      # SHIPPED 2026-09-10 (commit a0e7265). This section is no longer
+                                      # a proposal: solver.adaptive_dt and solver.newton.dt_continuation
+                                      # are gone, and mode is the one key.
 ```
 
 OMITTED -> ramp on Newton, adaptive elsewhere, fixed under `collection.method: implicit`; the resolved

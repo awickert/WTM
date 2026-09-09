@@ -141,7 +141,7 @@ For hard equilibrium **cold starts on stiff terrain** — a deep, far-from-equil
 take the first large steps — add **`-wtm_stiff`**. It bundles the analytic-Jacobian **Newton** solver with
 *dt-continuation*: `deltat` starts small (keeping the far initial guess within the Newton basin) and ramps
 up automatically as the table settles, stopping at equilibrium on its own. It is shorthand for
-`-wtm_newton` + `solver.dt_continuation` + `run.equilibrium_stop.tol`, and each piece can be overridden individually.
+`solver.method: newton` + `solver.time_step.mode: ramp` + `run.equilibrium_stop.tol`, and each piece can be overridden individually.
 
 An experimental conditioning option, **`-wtm_Tbar`**, addresses the same stiffness from a different angle:
 it uses each cell's *step-time-averaged* transmissivity (the Kirchhoff-potential difference over the step)
@@ -243,7 +243,7 @@ row on the active set, structurally the same as the ocean Dirichlet row), and Ne
 Anderson on lake **topology** — 4 lakes on the multi-lake fixture, where `explicit` gives 6.
 **Robustness caveat:** the `max()` kink is still non-differentiable, so plain Newton can diverge in the
 line search on some problems (it does on the boundary fixture, not on the multi-lake one).
-`solver.dt_continuation` cures it — the same treatment Newton's mode already needs for cold starts.
+`solver.time_step.mode: ramp` cures it — the same treatment Newton's mode already needs for cold starts.
 
 **Picard uses `explicit` by design, not by limitation.** This is the one worth reading if you are
 choosing a mode, because it is easy to mistake for a gap waiting to be filled. Picard's whole advantage
@@ -410,10 +410,10 @@ explicit path flag wins, and Newton is mutually exclusive with Picard/Anderson.
 |---|---|---|---|
 | `-wtm_anderson` | **on** | default | Matrix-free Anderson mixing. Robust across regimes, bit-exact across MPI ranks, carries the exact in-residual exfiltration constraint. 1st-order-in-time unless `-wtm_bdf2_on_V` is added. |
 | `-wtm_bdf2_on_V` | off | opt-in | Semi-implicit, volume-form BDF2 solved by Picard (Newton + algebraic multigrid). Large stable steps; 2nd-order in time; cross-rank deterministic (the golden reference). |
-| `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, needs `solver.dt_continuation` (implied by `solver.method: newton`). |
+| `-wtm_newton` | off | opt-in | True Newton–Krylov on the analytic Jacobian (GMRES + multigrid). For cold starts from far, needs `solver.time_step.mode: ramp` (which an omitted mode resolves to under `solver.method: newton`). |
 | `-wtm_bdf2` | off | opt-in | Bare backward-looking BDF2 in head form (secant storativity), Picard operator. |
 | `-wtm_tr_bdf2` | off | opt-in | L-stable TR-BDF2 (two staged solves per step) on the matrix-free residual; larger stable step, no ringing. |
-| `-wtm_stiff` | off | opt-in | Convenience bundle for hard cold starts: `-wtm_newton` + `solver.dt_continuation` + an equilibrium stop tolerance. |
+| `-wtm_stiff` | off | opt-in | Convenience bundle for hard cold starts: `solver.method: newton` + `solver.time_step.mode: ramp` + an equilibrium stop tolerance. |
 | `-wtm_predict_guess` | off | experimental | Seed each step's initial guess by 2nd-order history extrapolation. |
 | `-wtm_aa_picard` | off | experimental | Anderson-accelerated Picard via nonlinear preconditioning. |
 
