@@ -205,6 +205,39 @@ else
     fail=1
 fi
 
+# ---- ARGV: an argument nothing reads is refused, an option and its value are not -----------------
+# The model aborts on a -wtm_ FLAG nothing consumed; until 59b7006 it had no equivalent for a
+# positional ARGUMENT and took any number of them silently -- `wtm.x a.yaml b.yaml` ran a.yaml and
+# ignored b.yaml, exit 0. That is the same defect class as a swallowed config key: a thing the caller
+# asked for that had no effect and no complaint.
+#
+# It is tested HERE, beside the schema refusals, because it is the same property one level out: what
+# the model is GIVEN must either be used or refused. The negative arm matters as much as the positive
+# -- a guard that also rejected `-snes_stol 1e-8` would make every arm in this suite unrunnable.
+ARGOK=0
+OUT=$("$WTM" "$REF" second.yaml 2>&1 || true)
+if echo "$OUT" | grep -q "nothing reads" && echo "$OUT" | grep -q "second.yaml"; then
+    echo "  PASS  ARGV-STRAY a second positional argument aborts and is NAMED"
+else
+    echo "  FAIL  ARGV-STRAY 'wtm.x cfg second.yaml' did not abort. An extra argument has no effect on"
+    echo "        the run, so accepting it silently means a caller can pass a second config -- or a"
+    echo "        quoting mistake -- and never learn it did nothing. See 59b7006."
+    ARGOK=1; fail=1
+fi
+# POSITIVE assertion, not "no error appeared". $WORK/valid.yaml -- which this arm used at first -- was
+# never created by this suite, so the model aborted on a missing file, printed no "nothing reads", and
+# the arm PASSED having tested nothing. Requiring the run to REACH the config-reading stage cannot be
+# satisfied that way: the guard runs before it, so the message only appears if the option and its value
+# were let through.
+OUT=$("$WTM" "$REF" -snes_stol 1e-8 2>&1 || true)
+if echo "$OUT" | grep -q "nothing reads" || ! echo "$OUT" | grep -q "Reading configuration file"; then
+    echo "  FAIL  ARGV-OPT   an option and its VALUE were mistaken for stray arguments. '-snes_stol 1e-8'"
+    echo "        is two argv entries and must pass; a guard this blunt would break every suite."
+    ARGOK=1; fail=1
+elif [ "$ARGOK" -eq 0 ]; then
+    echo "  PASS  ARGV-OPT   '-snes_stol 1e-8' is accepted (an option's value is not a stray)"
+fi
+
 # ---- SHIM: the suite's own config emitter must agree with the dictionary ---------------------------
 # Every legacy key tests/emit_config.sh maps, in one config. If the dictionary and the shim disagree,
 # this catches it HERE instead of as a mass failure across every other test in the suite.
