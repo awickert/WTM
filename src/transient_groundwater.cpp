@@ -78,8 +78,6 @@ static PetscErrorCode FormPicardOperator(SNES, Vec, Mat, Mat, void*);
 // So it composes with T̄ and every solver as a residual-level change. NOTE: this alters the DEEP
 // equilibrium water table (deep cells now drain slowly instead of being frozen) -- the most sensitive
 // region vs v2.0.1 -- so it is OFF by default and wants a sensitivity sweep + sign-off before adoption.
-// Incompatible with the -wtm_kirchhoff variable change (Φ + T_bedrock·wtd is not analytically invertible);
-// enforced in update().
 static double g_T_bedrock = 0.0;  // -wtm_T_bedrock: additive background transmissivity floor [m²/s], 0 = off
 
 //////////////////////
@@ -123,7 +121,11 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
   }
 }
 
-// --- Kirchhoff / discharge-potential transform (-wtm_kirchhoff) -----------------------------------
+// --- Discharge potential Φ = ∫T dwtd (the piecewise Kirchhoff antiderivative) ----------------------
+// KEPT AS A COEFFICIENT, NOT AS A SOLVE VARIABLE. Φ's one live consumer is T̄ (solver.t_bar), which needs
+// the exact wtd-average of T over a step and gets it as ΔΦ/Δwtd (see interblockTransmissivity). Solving
+// IN Φ was tried and retired 2026-09-09; the finding that retired it is kept below, because it is the
+// reason Φ earns its place here and nowhere else.
 // The steady groundwater problem is a nonlinear diffusion ∇·(T(wtd)∇h)+R=0 whose transmissivity spans
 // MANY orders of magnitude with depth (T = fdepth·ksat·exp(wtd/fdepth)); that huge dynamic range is the
 // dominant driver of the Jacobian ill-conditioning that caps the usable time step. The classic remedy
@@ -135,15 +137,17 @@ double depthIntegratedTransmissivity(const double wtd_T, const double fdepth, co
 // hence invertible. dΦ/dwtd = T by construction. Requires the piecewise T (no ksat smoothing) and the
 // standard surface physics (not -wtm_extended_soil).
 //
-// FINDING (2026-08): as a change of variable on the HEAD-FORM residual this reaches the identical
+// WHY THE VARIABLE CHANGE IS GONE (2026-08 measurement, acted on 2026-09-09): as a change of variable
+// on the HEAD-FORM residual this reaches the identical
 // equilibrium (verified to 8.7e-8 m) but does NOT raise the dt ceiling -- it worsens conditioning. The
 // exact chain-rule Jacobian is dF/dΦ = (dF/dh)/T (column scaling by 1/T); the head-form storage term
 // (h - rech) contributes dh/dΦ = 1/T to the DIAGONAL, and for deep cells T ~ 1e-11 so 1/T ~ 1e11 blows
 // the diagonal up (shallow cells get near-zero columns), and MUMPS fails as cells drain deep. The
 // continuous Kirchhoff benefit (operator -> constant-coefficient Laplacian) does not transfer to the
-// discrete harmonic-mean CONSERVATIVE scheme under a mere change of variable. Kept opt-in as a documented
-// alternative; the 1/T blow-up is specific to the head form, so a VOLUME-form residual may transform more
-// gracefully (WIP). See benchmark/EQUILIBRIUM_ROBUSTNESS.md.
+// discrete harmonic-mean CONSERVATIVE scheme under a mere change of variable. The 1/T blow-up is
+// specific to the head form, so a VOLUME-form residual may transform more gracefully -- THAT VARIANT IS
+// UNTESTED AND STILL OPEN; retiring the head-form implementation does not close it. See
+// benchmark/EQUILIBRIUM_ROBUSTNESS.md and PORT_TO_UPSTREAM.md.
 static double dischargePotential(const double wtd, const double fdepth, const double ksat) {
   if (fdepth <= 0) return 0.0;
   constexpr double shallow = 1.5;
@@ -156,18 +160,6 @@ static double dischargePotential(const double wtd, const double fdepth, const do
   const double u = wtd + shallow + fd;                                     // linear regime (-1.5 ≤ wtd ≤ 0)
   return k * (0.5 * u * u + 0.5 * fd * fd) + g_T_bedrock * wtd;
 }
-// Inverse Φ → wtd (piecewise; continuous, matches dischargePotential's branch boundaries).
-static double dischargePotentialInverse(const double Phi, const double fdepth, const double ksat) {
-  if (fdepth <= 0) return 0.0;
-  constexpr double shallow = 1.5;
-  const double fd = fdepth, k = ksat;
-  const double Phi_sb = fd * fd * k;                                                        // Φ at wtd=-1.5
-  const double Phi_0  = k * (0.5 * (shallow + fd) * (shallow + fd) + 0.5 * fd * fd);        // Φ at wtd= 0
-  if (Phi < Phi_sb) return fd * std::log(std::max(Phi, 1e-300) / (fd * fd * k)) - shallow;  // exp
-  if (Phi > Phi_0)  return (Phi - Phi_0) / (k * (shallow + fd));                            // surface
-  return std::sqrt(std::max(2.0 * (Phi / k - 0.5 * fd * fd), 0.0)) - shallow - fd;          // linear
-}
-static bool g_kirchhoff = false;  // -wtm_kirchhoff: solve in the discharge potential Φ (Newton path)
 
 // --- Land-edge boundary condition (boundaries.land) -----------------------------------------------
 // Ocean edges are ALWAYS Dirichlet h=0 (sea level; a fixed-head boundary -- not a choice). LAND edges are
@@ -1182,43 +1174,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // (verified byte-identical to the flag, max|d| = 0.000e+00). Set by the selector below.
   g_surface_exfiltration_to_runoff_array = (allow_aboveground != PETSC_TRUE);
 
-  // -wtm_kirchhoff: solve the Newton path in the discharge potential Φ = ∫T dwtd (compresses T's dynamic
-  // range out of the Jacobian conditioning; see the transform helpers above). The Φ transform is the
-  // antiderivative of the PIECEWISE Fan T, so it requires the piecewise T (no ksat smoothing widths) and
-  // the standard surface physics (not extended-soil). Only meaningful on the Newton path (use_newton).
-  PetscBool kirchhoff = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_kirchhoff", &kirchhoff);
-  g_kirchhoff = (kirchhoff == PETSC_TRUE) && user_context.use_newton;
-  if (g_kirchhoff && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 || g_extended_soil))
-    throw std::runtime_error("-wtm_kirchhoff requires the piecewise Fan transmissivity: remove "
-                             "-wtm_ksat_*_smoothing_width and surface_water.collection.method: extended_soil.");
-  if (kirchhoff == PETSC_TRUE && !user_context.use_newton)
-    throw std::runtime_error("-wtm_kirchhoff is a Newton-path option; also set solver.method: newton.");
-
   // -wtm_Tbar: use the step-time-averaged interblock transmissivity T̄ (Kirchhoff-potential difference;
   // see interblockTransmissivity). Composes with any solver. Requires the piecewise Fan T (Φ is its
-  // antiderivative), so it is incompatible with ksat smoothing, extended soil, and the Kirchhoff change
-  // of variable (which redefines the solve variable). Applies on the Anderson residual, the Picard
-  // operator, and the Newton Jacobian.
+  // antiderivative), so it is incompatible with ksat smoothing and extended soil. Applies on the Anderson
+  // residual, the Picard operator, and the Newton Jacobian.
   // config-owned (solver.t_bar); the -wtm_Tbar flag is retired
   g_Tbar = params.t_bar;
   if (g_Tbar && (g_ksat_soilbottom_smoothing_width > 0.0 || g_ksat_surface_smoothing_width > 0.0 ||
-                 g_extended_soil || g_kirchhoff))
-    throw std::runtime_error("-wtm_Tbar requires the piecewise Fan transmissivity: remove "
-                             "-wtm_ksat_*_smoothing_width, collection.method: extended_soil, and -wtm_kirchhoff.");
+                 g_extended_soil))
+    throw std::runtime_error("solver.t_bar requires the piecewise Fan transmissivity: remove "
+                             "-wtm_ksat_*_smoothing_width and collection.method: extended_soil.");
 
   // -wtm_T_bedrock: additive background (bedrock) transmissivity floor [m²/s]; default 0 = v2.0.1 (no
   // floor). A constant added to T everywhere, representing the deep crust's small nonzero conductance
   // integrated over the active flow thickness; it removes the deep-cell operator singularity by capping
   // T's dynamic range (e.g. 1e-8 -> ~3.7 orders vs surface). See the block above depthIntegratedTransmissivity.
-  // Incompatible with -wtm_kirchhoff (Φ + T_bedrock·wtd is not analytically invertible for the Φ variable).
   // Config-owned (transmissivity.additive_background_transmissivity); the -wtm_T_bedrock flag is GONE.
   g_T_bedrock = params.t_bedrock;
   if (g_T_bedrock < 0.0)
     throw std::runtime_error("-wtm_T_bedrock must be >= 0 (it is an additive transmissivity floor in m^2/s).");
-  if (g_T_bedrock > 0.0 && g_kirchhoff)
-    throw std::runtime_error("-wtm_T_bedrock is incompatible with -wtm_kirchhoff: Phi + T_bedrock*wtd has no "
-                             "closed-form inverse for the discharge-potential variable.");
 
   // boundaries.land: select the LAND-edge boundary condition (ocean is always Dirichlet h=0). Accepts
   // "neumann_toposlope" (default; terrain-following no-flow) or "dirichlet_sea_level" (ghost head = sea level, the
@@ -1228,10 +1202,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   g_land_boundary_dirichlet = params.land_boundary_dirichlet;  // config-owned (boundaries.land)
   // Land Dirichlet is wired into all three solver paths: the matrix-free residual (Anderson/TR-BDF2), the
   // Newton analytic Jacobian (FD-verified), and the Picard operator+RHS (diagonal absorbing conductance).
-  // Kirchhoff is forbidden with land Dirichlet (the potential change-of-variable at a fixed-head ghost is
-  // not handled).
-  if (g_land_boundary_dirichlet && g_kirchhoff)
-    throw std::runtime_error("boundaries.land: dirichlet_sea_level is incompatible with -wtm_kirchhoff.");
 
   // -wtm_direct_to_runoff: in-residual exfiltration removal (supersedes the qmax sink where on). Removes the
   // above-surface excess (max(0,wtd)) to runoff each step, holding the table AT the surface with no rate cap
@@ -1588,11 +1558,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     // FormFunctionLocal, the same function that carries the pin, so Newton has always ENFORCED the
     // constraint -- it merely differentiated a different function. FormJacobianLocal now carries the
     // matching semismooth tangent, so the pair is consistent and active_set is supported there.
-    if (user_context.use_newton && g_kirchhoff)
-      throw std::runtime_error(
-          "surface_water.collection.method: active_set is not supported together with -wtm_kirchhoff. In "
-          "the discharge-potential variable the pinned residual has no unit derivative, so the "
-          "active-set Jacobian row would be assembled wrong. Drop one of the two.");
   }
 
   // fsm_continuous x active_set: the hard error here is GONE (2026-09-03, #40). It existed because the
@@ -2122,15 +2087,10 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // per cycle by gather_wtd_to_all. Read topo/mask/porosity from DMDA arrays
   // (topo_vec is re-scattered each cycle in transient) so arp is not needed here.
   PetscScalar** my_topo;
-  PetscScalar **my_fdepth_cb = nullptr, **my_ksat_cb = nullptr;  // for the Kirchhoff Φ⁻¹ back-transform
   PetscScalar **my_evap = nullptr, **my_owe = nullptr, **my_precip = nullptr;
   DMDAVecGetArray(user_context.da, user_context.topo_vec, &my_topo);
   PetscScalar** my_exfiltration_post = nullptr;  // -wtm_active_set: captured exfiltration depth from the converged residual eval
   if (g_active_set) DMDAVecGetArray(user_context.da, user_context.exfiltration_vec, &my_exfiltration_post);
-  if (g_kirchhoff) {
-    DMDAVecGetArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
-    DMDAVecGetArray(user_context.da, user_context.ksat_vec, &my_ksat_cb);
-  }
   if (evap_active_this_step) {
     DMDAVecGetArray(user_context.da, user_context.evap_vec, &my_evap);
     DMDAVecGetArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
@@ -2141,10 +2101,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   int    nflick_local = 0;                  // # owned land cells with |Δw| > 1mm (within-cycle flicker diagnostic)
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
-      // Back-transform the SNES variable to wtd: Kirchhoff x=Φ → wtd=Φ⁻¹(x); else head x → wtd=x−topo.
-      const double solved_wtd = g_kirchhoff
-                                 ? dischargePotentialInverse(dmdapack.x[j][i], my_fdepth_cb[j][i], my_ksat_cb[j][i])
-                                 : dmdapack.x[j][i] - my_topo[j][i];
+      // The SNES variable IS the head: wtd = x - topo.
+      const double solved_wtd = dmdapack.x[j][i] - my_topo[j][i];
       // ACTIVE SET: PROJECT ONTO THE FEASIBLE SET. The semismooth constraint is w <= lake_stage, with
       // EQUALITY on the active set -- so on the active set the value is determined by the CONSTRAINT, not
       // by the iterate. The solve cannot deliver that equality: at a pinned cell the residual IS the water
@@ -2289,10 +2247,6 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   }
   DMDAVecRestoreArray(user_context.da, user_context.topo_vec, &my_topo);
   if (g_active_set) DMDAVecRestoreArray(user_context.da, user_context.exfiltration_vec, &my_exfiltration_post);
-  if (g_kirchhoff) {
-    DMDAVecRestoreArray(user_context.da, user_context.fdepth_vec, &my_fdepth_cb);
-    DMDAVecRestoreArray(user_context.da, user_context.ksat_vec, &my_ksat_cb);
-  }
   if (evap_active_this_step) {
     DMDAVecRestoreArray(user_context.da, user_context.evap_vec, &my_evap);
     DMDAVecRestoreArray(user_context.da, user_context.open_water_evap_vec, &my_owe);
@@ -2567,14 +2521,13 @@ static PetscErrorCode FormInitialGuess(AppCtx* user_context, DM da, Vec X) {
 
   const auto [xs, ys, xm, ym] = get_corners(da);
 
-  // Kirchhoff: the SNES variable is the discharge potential Φ, so seed x = Φ(starting_wtd); else x is the
-  // head starting_wtd+topo. Ocean cells (starting_wtd = topo = 0) seed Φ(0) / 0 respectively.
+  // Seed the SNES variable, which is the head: x = starting_wtd + topo. Ocean cells (starting_wtd =
+  // topo = 0) seed 0.
 #pragma omp parallel for default(none) \
-    shared(my_starting_wtd, my_topo, my_fdepth, my_ksat, ys, ym, xs, xm, x, g_kirchhoff) collapse(2)
+    shared(my_starting_wtd, my_topo, ys, ym, xs, xm, x) collapse(2)
   for (auto j = ys; j < ys + ym; j++) {
     for (auto i = xs; i < xs + xm; i++) {
-      x[j][i] = g_kirchhoff ? dischargePotential(my_starting_wtd[j][i], my_fdepth[j][i], my_ksat[j][i])
-                            : my_starting_wtd[j][i] + my_topo[j][i];
+      x[j][i] = my_starting_wtd[j][i] + my_topo[j][i];
     }
   }
 
@@ -2705,13 +2658,11 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   // -wtm_Tbar swaps the instantaneous T for the step-time-averaged T̄ (Kirchhoff-potential difference
   // against the ghosted w^n); off it, this is byte-identical to the instantaneous form.
 #pragma omp parallel for default(none)                                                                          \
-    shared(info, my_T, x, my_topo, my_fdepth, my_ksat, smooth_T, g_kirchhoff, g_Tbar, my_starting_wtd_local)   \
+    shared(info, my_T, x, my_topo, my_fdepth, my_ksat, smooth_T, g_Tbar, my_starting_wtd_local)   \
     collapse(2)
   for (auto j = info->gys; j < info->gys + info->gym; j++) {
     for (auto i = info->gxs; i < info->gxs + info->gxm; i++) {
-      // Kirchhoff: the SNES variable x is the discharge potential Φ, so wtd = Φ⁻¹(x); else x is the head.
-      const double wtd_T = g_kirchhoff ? dischargePotentialInverse(x[j][i], my_fdepth[j][i], my_ksat[j][i])
-                                       : x[j][i] - my_topo[j][i];
+      const double wtd_T = x[j][i] - my_topo[j][i];   // the SNES variable is the head
       const double wtd_old = g_Tbar ? my_starting_wtd_local[j][i] : 0.0;  // w^n (ghosted); unused off -wtm_Tbar
       my_T[j][i] = 1. / interblockTransmissivity(wtd_T, wtd_old, my_fdepth[j][i], my_ksat[j][i], smooth_T);
     }
@@ -2723,23 +2674,18 @@ static PetscErrorCode FormFunctionLocal(DMDALocalInfo* info, PetscScalar** x, Pe
   const bool as_on    = g_active_set;         // -wtm_active_set: pin exfiltrating land cells at wtd=0 in-solve
 #pragma omp parallel for default(none)                                                                                \
     shared(info, gew, gn, gs, x, my_T, my_mask, my_rech, user_context, my_porosity, my_starting_wtd, my_topo, f,      \
-           my_evap, my_owe, my_precip, my_fdepth, my_ksat, dtr_on, taper_on, g_kirchhoff, \
+           my_evap, my_owe, my_precip, my_fdepth, my_ksat, dtr_on, taper_on, \
            bdf2v, vol_storage, a_c, b_c, c_c, my_starting_wtd_prev, smooth_T, g_land_boundary_dirichlet,      \
            tr_stage, TR_G, tr_c1, tr_c2, tr_c3, my_tr_ygamma, my_tr_expl, as_on, my_exfiltration,   \
            my_lake_stage) collapse(2)
   for (auto j = info->ys; j < info->ys + info->ym; j++) {
     for (auto i = info->xs; i < info->xs + info->xm; i++) {
-      // Head from the SNES variable: Kirchhoff x=Φ → h = Φ⁻¹(x)+topo; else x IS the head. Used for the
-      // flux (h_c - h_nbr) and the centre wtd (h_c - topo). Cheap per-cell pointwise map.
-      const auto head = [&](int jj, int ii) {
-        return g_kirchhoff ? dischargePotentialInverse(x[jj][ii], my_fdepth[jj][ii], my_ksat[jj][ii]) + my_topo[jj][ii]
-                           : x[jj][ii];
-      };
+      // The SNES variable IS the head. Used for the flux (h_c - h_nbr) and the centre wtd (h_c - topo).
+      const auto head = [&](int jj, int ii) { return x[jj][ii]; };
       if (my_mask[j][i] == 0) {
-        // Dirichlet condition: ocean head h = 0. In head variables f = x forces x=0 (h=0). In Kirchhoff
-        // variables f = x - Φ(wtd=0) forces Φ = Φ(0) i.e. wtd=0; both give a unit Jacobian diagonal.
+        // Dirichlet condition: ocean head h = 0. f = x forces x = 0, with a unit Jacobian diagonal.
         // With -wtm_ghost_boundary this is the sea-level BC (ghost outside = 0), applied at real ocean cells.
-        f[j][i] = g_kirchhoff ? (x[j][i] - dischargePotential(0.0, my_fdepth[j][i], my_ksat[j][i])) : x[j][i];
+        f[j][i] = x[j][i];
       } else {
         // Conservative finite-volume flux, HEAD form. The volume balance is
         //   A_j*S*(h - my_rech) + dt*(net outflow) = 0; we divide by A_j*S so the residual stays in
@@ -3037,10 +2983,7 @@ static PetscErrorCode FormJacobianLocal(
       // (which did not) describe different functions. An inconsistent Jacobian is the textbook cause of
       // losing quadratic convergence and of line-search failure, which is what plain Newton did here.
       //
-      // NOT applied under -wtm_kirchhoff: there the SNES variable is the discharge potential, so the
-      // pinned residual w_c - swd = Phi^-1(x) - swd does NOT have a unit derivative in x, and the row
-      // would need 1/Phi'(wtd). Left alone rather than assembled wrong; see the guard in update().
-      if (g_active_set && !g_kirchhoff) {
+      if (g_active_set) {
         const double w_c_pin = x[j][i] - my_topo[j][i];
         const double swd_pin = my_lake_stage_J[j][i];
         if (w_c_pin - swd_pin > 0.0) {  // the max() picks the pin branch: this cell is in the active set
@@ -3053,12 +2996,8 @@ static PetscErrorCode FormJacobianLocal(
         }
       }
 
-      // wtd at centre and 4 neighbours from the SNES variable (Kirchhoff x=Φ → wtd=Φ⁻¹(x); else x−topo),
-      // matching the residual.
-      const auto wtd_of = [&](int jj, int ii) {
-        return g_kirchhoff ? dischargePotentialInverse(x[jj][ii], my_fdepth[jj][ii], my_ksat[jj][ii])
-                           : x[jj][ii] - my_topo[jj][ii];
-      };
+      // wtd at centre and 4 neighbours from the SNES variable (x is the head), matching the residual.
+      const auto wtd_of = [&](int jj, int ii) { return x[jj][ii] - my_topo[jj][ii]; };
       const double w_c = wtd_of(j, i);
 
       // w^n (ghosted) at the centre -- the "before" state for the -wtm_Tbar time-average; ignored (0)
@@ -3089,7 +3028,6 @@ static PetscErrorCode FormJacobianLocal(
       const FaceGeom faces[4] = {{0, 1, gew[j][i]}, {0, -1, gew[j][i]}, {1, 0, gn[j][i]}, {-1, 0, gs[j][i]}};
       double net_outflow = 0.0, dN_dc = 0.0;
       double J_nbr[4]   = {0.0, 0.0, 0.0, 0.0};                 // off-diagonals (unused for off-map: no column)
-      double tau_nbr[4] = {tau_c, tau_c, tau_c, tau_c};         // for the Kirchhoff column scale (off-map: unused)
       int    nbr_j[4], nbr_i[4];                                // neighbour stencil (only used when in-bounds)
       bool   nbr_inb[4];                                        // true = emit an off-diagonal column for this face
       for (int fi = 0; fi < 4; ++fi) {
@@ -3123,7 +3061,6 @@ static PetscErrorCode FormJacobianLocal(
           net_outflow += e_X * G * dX;
           dN_dc       += G * (e_X - 2.0 * taup_c / (sumX * sumX) * dX);
           J_nbr[fi]    = B * G * (-2.0 * taup_X / (sumX * sumX) * dX - e_X);
-          tau_nbr[fi]  = tau_X;
         }
       }
 
@@ -3155,12 +3092,11 @@ static PetscErrorCode FormJacobianLocal(
       for (int fi = 0; fi < 4; ++fi) {
         if (!nbr_inb[fi]) continue;
         cols[nc].j = nbr_j[fi]; cols[nc].i = nbr_i[fi]; cols[nc].c = 0;
-        // Kirchhoff chain rule: dF/dΦ = (dF/dh)/T. J_nbr is dF/dh; column-scale by dwtd_k/dΦ_k = 1/T_k = τ_k.
-        vals[nc] = g_kirchhoff ? J_nbr[fi] * tau_nbr[fi] : J_nbr[fi];
+        vals[nc] = J_nbr[fi];
         ++nc;
       }
       cols[nc].j = j; cols[nc].i = i; cols[nc].c = 0;
-      vals[nc] = g_kirchhoff ? J_center * tau_c : J_center;  // centre column scaled by τ_c in Kirchhoff form
+      vals[nc] = J_center;
       ++nc;
       MatSetValuesStencil(Jmat, 1, &row, nc, cols, vals, INSERT_VALUES);
       if (P != Jmat) MatSetValuesStencil(P, 1, &row, nc, cols, vals, INSERT_VALUES);
