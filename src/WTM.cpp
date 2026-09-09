@@ -1430,7 +1430,17 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
     << (params.initial_wt_path.empty() ? (params.supplied_wt ? "supplied" : "saturated") : params.initial_wt_path)
     << "\n";
   f << "  equilibrium_stop:\n";
-  f << "    tol: " << params.eq_tol << "\n";
+  // THE RESOLVED tolerance, not Parameters' unset sentinel. params.eq_tol is 0.0 when the key was
+  // absent, and CreateSNES then resolves it to 0.001 on an equilibrium run (uc.eq_tol). This file was
+  // emitting the sentinel, so a run that used 0.001 was recorded as having used 0 -- a WRONG value in
+  // the provenance record, which is worse than a missing one.
+  //
+  // It is not cosmetic, because `tol: 0` is not the same input as an absent tol: setting it makes
+  // eq_tol_set true, and the adaptive step tolerance's default reads that -- `equilibrium && eq_tol > 0`
+  // picks min(eq_tol, 0.5), while eq_tol == 0 falls to the never-stop branch and takes 0.5. MEASURED:
+  // feeding this file back changed error_tol from 0.001 to 0.5 on tests/xrank_growth, which changed the
+  // run. So the wrong value here did not merely misreport; it round-tripped into a different run.
+  f << "    tol: " << uc.eq_tol << "\n";
   f << "    metric: " << params.eq_metric << "\n";
   f << "    frac: " << params.eq_frac << "\n";
 
