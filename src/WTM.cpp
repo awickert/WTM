@@ -1646,13 +1646,49 @@ int main(int argc, char** argv) {
       return 0;
     }
   }
-  // if (argc != 2) {
-  //   // Make sure that the user is running the code with a configuration file.
-  //   std::cerr << "Syntax: " << argv[0] << " <Configuration File>" << std::endl;
-  //   return -1;
-  // }
+  // REFUSE AN ARGUMENT NOTHING READ. The symmetric twin of check_unconsumed_wtm_options(): the model
+  // already aborts on a -wtm_ FLAG nothing consumed, and had no equivalent for a positional ARGUMENT.
+  // It accepted any number of them silently -- `wtm.x a.yaml b.yaml` ran a.yaml and ignored b.yaml,
+  // exit 0.
+  //
+  // The old `argc != 2` check (commented out here for years) could not be restored as written, because
+  // PETSc options legitimately push argc past 2. So count only what is neither an option nor an
+  // option's VALUE: a token not starting with '-' whose predecessor also does not start with '-'.
+  // That admits `-snes_stol 1e-8` and rejects a stray.
+  //
+  // WHY IT EARNS ITS PLACE. A scripted edit of mine left `... -wtm_dtc_shrink 1.0 \ > "$log"` in a
+  // test -- an escaped space, handed to this binary as an argument. bash parsed it, the model took it,
+  // the suite passed, and it was found only by chance. With this guard it would have aborted on the
+  // first run, naming the argument. The same applies to a user's typo'd second config file.
+  if (argc > 1) {
+    std::vector<std::string> stray;
+    for (int i = 2; i < argc; ++i) {
+      const std::string a(argv[i]);
+      if (!a.empty() && a[0] == '-') continue;                       // an option
+      const std::string prev(argv[i - 1]);
+      if (!prev.empty() && prev[0] == '-') continue;                 // that option's value
+      stray.push_back(a);
+    }
+    if (!stray.empty()) {
+      std::cerr << "ERROR: " << stray.size()
+                << (stray.size() == 1 ? " argument was" : " arguments were")
+                << " given that nothing reads:\n";
+      for (const auto& a : stray) std::cerr << "  '" << a << "'\n";
+      std::cerr << "\nSyntax: " << argv[0] << " <configuration file> [-petsc/-wtm options]\n"
+                << "Exactly ONE configuration file is read (the first argument). An extra positional\n"
+                << "argument had no effect on this run, so it is refused rather than ignored -- it is\n"
+                << "usually a second config that is silently not being used, or a quoting mistake in a\n"
+                << "script (an escaped space reaches this binary as an argument)." << std::endl;
+      return -1;
+    }
+  } else {
+    std::cerr << "Syntax: " << argv[0] << " <configuration file> [-petsc/-wtm options]" << std::endl;
+    return -1;
+  }
 
-  std::cerr << "Reading configuration file '" << argv << "'..." << std::endl;
+  // argv[1], not argv: the latter printed the char** POINTER, so every run logged an address in place
+  // of the file it was about to read.
+  std::cerr << "Reading configuration file '" << argv[1] << "'..." << std::endl;
   Parameters params(argv[1]);
 
   ArrayPack arp;
