@@ -67,7 +67,7 @@ fail=0
 # default runs. That is not hypothetical: it happened while measuring the deltas quoted above, and read
 # exactly like a model defect (a config asking for `fsm_coupling: impulse` reporting `coupling=continuous`)
 # until the config file itself was looked at. Slots make it unrepresentable.
-mk() { # $1 stem ; $2 lines inside surface_water: ; $3 lines inside solver:
+mk() { # $1 stem ; $2 lines inside surface_water: ; $3 lines inside solver: ; $4 replaces the time_step line
     { echo "run: { type: equilibrium, initial_water_table: supplied, equilibrium_stop: { tol: 0 } }"
       echo 'time: { total: "3yr", report_interval: 1, save_every_n_reports: 9999 }'
       echo "transmissivity: { fdepth: { a: 200, b: 150, fmin: 2 } }"
@@ -77,7 +77,12 @@ mk() { # $1 stem ; $2 lines inside surface_water: ; $3 lines inside solver:
       echo "  infiltration_during_flow: false"
       [ -n "${2:-}" ] && printf '%s\n' "$2"
       echo "solver:"
-      echo "  time_step: { dt: 31536000 }"
+      # $4 REPLACES this line when an arm needs another key inside time_step -- a second `time_step:`
+      # mapping would be a duplicate YAML key and one of the two is dropped without a word.
+      # Held in a variable: a `}` inside a ${x:-default} closes the expansion early and leaks a literal
+      # brace into the YAML (measured: `mode: fixed }}`, which yaml-cpp then took as a flow-map end).
+      local ts_line="  time_step: { dt: 31536000 }"
+      printf '%s\n' "${4:-$ts_line}"
       [ -n "${3:-}" ] && printf '%s\n' "$3"
       echo "io: { source: '$INP', region: 'fsm_test', time_start: 't0', time_end: 't0' }"
       echo "output: { outfile_prefix: '$WORK/$1_', run_log: '$WORK/$1.txt' }"
@@ -191,12 +196,15 @@ else
 fi
 
 # ... and the documented escape hatch must still give PLAIN Newton, with a warning rather than silence.
-mk newt_off "" "$(printf '  method: newton\n  newton:\n    dt_continuation: false')"
+# NOTE the flat form: mk already emits `time_step: { dt: ... }`, and a SECOND `time_step:` key here
+# would be a duplicate mapping key -- yaml-cpp keeps one of them silently, which is how this arm first
+# came back reporting `absent -> ramp` with `mode: fixed` sitting in the file. Extend mk's own line.
+mk newt_off "" "  method: newton" "  time_step: { dt: 31536000, mode: fixed }"
 sh -c 'WTM_COVERAGE_TAG=route_equality/newt_off "$0" "$1" > "$2" 2>&1' "$WTM" "$WORK/newt_off.yaml" "$WORK/newt_off.log" 2>/dev/null
-if command grep -q "WARNING \[solver.method: newton + solver.newton.dt_continuation: false\]" "$WORK/newt_off.log"; then
-    echo "  PASS  NEWTON-OPTOUT dt_continuation: false gives plain Newton and WARNS that it will"
+if command grep -q "WARNING \[solver.method: newton + solver.time_step.mode: fixed\]" "$WORK/newt_off.log"; then
+    echo "  PASS  NEWTON-OPTOUT time_step.mode: fixed gives plain Newton and WARNS that it will"
 else
-    echo "  FAIL  NEWTON-OPTOUT dt_continuation: false did not warn. Opting out of continuation is"
+    echo "  FAIL  NEWTON-OPTOUT time_step.mode: fixed did not warn. Opting out of continuation is"
     echo "        legitimate for a warm finish but diverges from a cold start; it must not be silent."
     fail=1
 fi
