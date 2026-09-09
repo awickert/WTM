@@ -62,6 +62,7 @@ export OMP_NUM_THREADS=1
 
 mkcfg() { # $1 = stem, $2 = coupling, $3 = deltat seconds, $4 = report_interval, $5 = inputs, $6 = region
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-10
 solver_method anderson
 run_type equilibrium
 time_integration tr-bdf2
@@ -114,7 +115,7 @@ for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
     for cp in impulse continuous; do
         stem="${fxname}_${tag}_${cp}"
         mkcfg "$stem" "$cp" "$dt" "$ri" "$fxinp" "$fxregion"; rm -f "$WORK/$stem.txt"
-        if ! WTM_COVERAGE_TAG="coupling_convergence/$stem" "$WTM" "$WORK/$stem.yaml" -snes_stol 1e-10 \
+        if ! WTM_COVERAGE_TAG="coupling_convergence/$stem" "$WTM" "$WORK/$stem.yaml" \
                 > "$WORK/$stem.log" 2>&1; then
             echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1
         # This suite's ENTIRE subject is the difference between the two couplings. If one silently

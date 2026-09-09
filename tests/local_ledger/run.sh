@@ -58,13 +58,13 @@ eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
-      [ -n "${5:-}" ] && echo "runoff_collector $5"; } | ../emit_config.sh > "$WORK/$1.yaml"
+      echo "snes_stol 1e-10"; [ -n "${5:-}" ] && echo "runoff_collector $5"; } | ../emit_config.sh > "$WORK/$1.yaml"
 }
 
 run() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 ri, $7 rr, $8.. flags
     local stem="$1" region="$2" tt="$3" dt="$4" coll="$5" ri="$6" rr="$7"; shift 7
     mkcfg "$stem" "$region" "$tt" "$dt" "$coll" "$ri" "$rr"; rm -f "$WORK/$stem.txt" "$WORK/${stem}_"*.tif
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-10 > "$WORK/$stem.log" 2>&1; then
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; grep -m2 -iE "what\(\)|ERROR" "$WORK/$stem.log" | sed 's/^/        /'
         return 1
     fi

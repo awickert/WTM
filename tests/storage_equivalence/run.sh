@@ -34,6 +34,7 @@ export OMP_NUM_THREADS=1
 #     be measured under.
 emit() { # $1 stem  [env: STORAGE=volume|secant]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-10
 solver_method anderson
 time_integration backward-euler
 runoff_collector explicit
@@ -70,9 +71,9 @@ EOF
 # volume, i.e. a config against ITSELF. It still reported max|dwtd| = 0.000e+00 and still PASSED, which
 # is exactly what a vacuous arm looks like.
 STORAGE=secant emit secant; STORAGE=volume emit volume
-"$WTM" "$WORK/secant.yaml"                     -snes_stol 1e-10 > "$WORK/secant.log" 2>&1 \
+"$WTM" "$WORK/secant.yaml"                     > "$WORK/secant.log" 2>&1 \
   || { echo "RUN FAILED: secant"; tail -3 "$WORK/secant.log"; exit 2; }
-"$WTM" "$WORK/volume.yaml" -snes_stol 1e-10 > "$WORK/volume.log" 2>&1 \
+"$WTM" "$WORK/volume.yaml" > "$WORK/volume.log" 2>&1 \
   || { echo "RUN FAILED: volume"; tail -3 "$WORK/volume.log"; exit 2; }
 
 # NON-VACUITY GATE. This test compares two runs and asserts they AGREE, so it passes trivially if the

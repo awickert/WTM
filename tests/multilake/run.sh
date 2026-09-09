@@ -54,6 +54,7 @@ mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = run
 # adaptive stepping the controller re-times both dt arms and the separation vanishes: the control read
 # [6, 6] (identical), which the test itself calls out as the condition under which it proves nothing.
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-8
 solver_method anderson
 adaptive_dt false
 run_type equilibrium
@@ -81,7 +82,7 @@ EOF
 run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = solver flags
     local stem="$1" dt="$2" ri="$3" coll="$4"; shift 4
     mkcfg "$stem" "$dt" "$ri" "$coll"
-    mpirun -n "$RANKS" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+    mpirun -n "$RANKS" "$WTM" "$WORK/$stem.yaml" "$@" \
         > "$WORK/$stem.log" 2>&1 || { echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log"; return 1; }
 }
 

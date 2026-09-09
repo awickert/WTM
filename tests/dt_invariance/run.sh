@@ -44,6 +44,7 @@ export OMP_NUM_THREADS=1
 mkcfg() { # $1 = stem, $2 = runoff_ratio
     # dt_tol travels in the CONFIG now (solver.time_step.error_tol); DT_TOL= per arm.
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-8
 solver_method anderson
 run_type equilibrium
 # CONVERGE TIGHTER THAN YOU COMPARE. The FATES CANCEL assertion below is threshold-free by design: it
@@ -87,7 +88,7 @@ EOF
 run() { # $1 = stem, $2 = runoff_ratio, $3.. = extra flags
     local stem="$1" rr="$2"; shift 2
     mkcfg "$stem" "$rr"; rm -f "$WORK/$stem.txt"
-    if ! "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+    if ! "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; return 1
     fi

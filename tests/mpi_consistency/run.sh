@@ -36,6 +36,7 @@ make_work mpi_consistency
 # Base config (equilibrium, small grid). evap_mode and fsm_on are overridden per case.
 base_cfg() {
     cat <<EOF
+snes_stol 1e-8
 run_type           equilibrium
 fsm_on             __FSM__
 infiltration_on    0
@@ -65,7 +66,7 @@ run_case() { # fsm runoff_ratio nranks tag
         | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
     # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" -snes_stol 1e-8 >"$WORK/${tag}.log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" >"$WORK/${tag}.log" 2>&1 )
 }
 
 echo "=== MPI-consistency regression ==="

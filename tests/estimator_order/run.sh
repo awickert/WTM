@@ -66,6 +66,7 @@ LADDER="31536000 7884000 1971000 492750"
 
 mkcfg() { # $1 stem, $2 deltat, $3 fsm_on
     cat > "$WORK/$1.yaml.in" <<EOF
+snes_stol 1e-12
 solver_method anderson
 run_type equilibrium
 total_time ${TT:-20}yr
@@ -98,8 +99,7 @@ EOF
 probe() { # $1 stem, $2 deltat, $3 fsm_on, $4 integrator flag
     mkcfg "$1" "$2" "$3"
     WTM_COVERAGE_TAG="estimator_order/$1" "$WTM" "$WORK/$1.yaml" $4 -wtm_dt_trace \
-        -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \
-        -snes_stol 1e-12 > "$WORK/$1.log" 2>&1
+        -wtm_dtc_grow 1.0 -wtm_dtc_shrink 1.0 \ > "$WORK/$1.log" 2>&1
     # An observed ORDER is only attributable to a scheme if the run used that scheme. mkcfg emits
     # time_integration only when INTEG is set, and an absent key resolves to `auto` -> tr-bdf2 on the
     # Anderson path -- so a BDF2 arm that lost its config value would silently measure TR-BDF2's order

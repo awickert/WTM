@@ -94,6 +94,7 @@ fsm_on 1
 evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
+snes_stol 1e-10
 deltat 31536000
 total_time 10yr
 report_interval 2
@@ -127,8 +128,10 @@ outfile_prefix {prefix}
 # 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), the same signature budget_closure documents for its legacy
 # arm. The taper this study was written for hid the need: holding wtd < 0 everywhere kept the solve off
 # the crossing, where it is stiffest. Judge determinism where the algebraic error cannot masquerade as it.
-TAPER_FLAGS = [
-               "-wtm_evap_taper", "-snes_stol", "1e-10"]
+# snes_stol has moved into the CONFIG (see _cfg): a test config must state every setting its run
+# resolves to (#79), and a tolerance on the command line makes the config say one thing while the run
+# uses another. -wtm_evap_taper stays a flag for now -- it has no config key yet (task #30).
+TAPER_FLAGS = ["-wtm_evap_taper"]
 
 
 def _run(wtm, d, tag, n):
@@ -242,7 +245,7 @@ def _arid_fixture(d, ksat=1e-9):
 def _arid_cfg(d, txt, prefix, extra=""):
     # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
     return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
-            f"deltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
+            f"snes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
             # `legacy` was retired with the taper-1 band sink (fork issue #7). This is an ARID drawdown

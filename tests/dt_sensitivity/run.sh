@@ -56,6 +56,7 @@ emit() { # stem  deltat  total_cycles  collector
 # very separation under test -- including the `implicit` CONTROL arm (measured 2.25e-01 m) that proves
 # the test can detect dt-dependence at all. Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-10
 solver_method anderson
 adaptive_dt false
 run_type equilibrium
@@ -87,8 +88,8 @@ run() { # stem deltat cycles collector extra_flags
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 COARSE=31536000; FINE=7884000   # 1 yr, 0.25 yr
-run as_c  $COARSE 100 active_set "-snes_stol 1e-10"
-run as_f  $FINE   400 active_set "-snes_stol 1e-10"
+run as_c  $COARSE 100 active_set ""   # tolerance is a config key now (snes_stol in emit)
+run as_f  $FINE   400 active_set ""
 run leg_c $COARSE 100 implicit ""
 run leg_f $FINE   400 implicit ""
 

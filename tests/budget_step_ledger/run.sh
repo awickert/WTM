@@ -66,6 +66,7 @@ for integ in tr-bdf2 backward-euler bdf2; do
     # exclusion and the xfail lookup when this test was first written.
     stem="${fn}__${coupling}__${coll}__${integ}"
     ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
+snes_stol 1e-10
 solver_method anderson
 adaptive_dt false
 time_integration $integ
@@ -91,7 +92,7 @@ eq_tol 0
 textfilename $WORK/$stem.txt
 outfile_prefix $WORK/${stem}_
 EOF
-    if ! "$WTM" "$WORK/$stem.yaml" -snes_stol 1e-10 > "$WORK/$stem.log" 2>&1; then
+    if ! "$WTM" "$WORK/$stem.yaml" > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1
     fi
 done; done; done; done

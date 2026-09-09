@@ -34,6 +34,7 @@ export OMP_NUM_THREADS=1
 
 emit() { # stem cycles   [env: METHOD=, DTC=]
   ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-8
 ${METHOD:+solver_method $METHOD}
 ${INTEG:+time_integration $INTEG}
 ${DTC:+dt_continuation $DTC}
@@ -60,7 +61,7 @@ EOF
 }
 
 GB=""  # mask-aware ghost boundary is now the default (no flag needed)
-BASE="-snes_stol 1e-8"
+BASE=""  # solver.tolerance is now a CONFIG key (snes_stol in the shim), not a CLI flag
 fail=0
 
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------

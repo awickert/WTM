@@ -22,6 +22,7 @@ emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
 # cycles); a controller free to resize dt would collapse that contrast and the cross-scheme comparison
 # would no longer be AT a known dt. Pinned explicitly rather than relying on the default.
   ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
+snes_stol 1e-8
 solver_method anderson
 adaptive_dt false
 run_type transient
@@ -50,7 +51,7 @@ EOF
 # T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" )
 declare -A INTEG_CFG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" )
-BASE="-snes_anderson_restart_type none -snes_stol 1e-8"
+BASE="-snes_anderson_restart_type none"
 WK=604800
 for s in cc tr bdf2v; do
   INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $WK        8  "${s}_coarse"

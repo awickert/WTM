@@ -73,7 +73,7 @@ eq_tol 0
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
-      [ -n "$coll" ] && echo "runoff_collector $coll"; } | ../emit_config.sh > "$WORK/$1.yaml"
+      echo "snes_stol ${STOL:-1e-8}"; [ -n "$coll" ] && echo "runoff_collector $coll"; } | ../emit_config.sh > "$WORK/$1.yaml"
 }
 
 fail=0
@@ -84,8 +84,8 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, 
     # asserts; otherwise the arm measures solver noise. Default 1e-8 suits every arm here except the
     # Newton sub-stepping one, which carries the solve tolerance on every sub-step (see its note).
     local stol="${ARM_STOL:-1e-8}"
-    mkcfg "$stem" "${COLL-implicit}"
-    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol "$stol" \
+    STOL="$stol" mkcfg "$stem" "${COLL-implicit}"
+    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
@@ -138,7 +138,7 @@ PY
 check_nan() { # TR-BDF2 must report the exact residual as unavailable, not as a number
     local label="$1" stem="$2"; shift 2
     mkcfg "$stem"
-    WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 > "$WORK/$stem.log" 2>&1
+    WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" > "$WORK/$stem.log" 2>&1
     LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
 label = os.environ["LABEL"]
@@ -162,7 +162,7 @@ PY
 xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags ; XTASK names the defect
     local label="$1" stem="$2" floor="$3"; shift 3
     mkcfg "$stem" "${COLL-implicit}"
-    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+    if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
     fi
@@ -206,7 +206,7 @@ echo
 # the pin. Understand that gap before making it the default.
 echo "-- active-set exfiltration constraint --"
 # KNOWN GAP, now EXPLAINED (was an unverified hypothesis): active-set closes to ~5e-6 per cycle at
-# this suite's -snes_stol 1e-8, ~50x looser than every other arm. The cause is that the pinned cells'
+# this suite's, ~50x looser than every other arm. The cause is that the pinned cells'
 # exfiltration flux is not an integrated source term -- it is recovered POST-solve from the residual
 # itself (exfiltration_depth = max(0, -f*Sy)), so its accuracy IS the residual's accuracy. Verified by
 # scaling the solver tolerance on this fixture:

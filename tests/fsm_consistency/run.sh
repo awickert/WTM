@@ -32,6 +32,7 @@ mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml, echoes prefix
     local n="$1"
     sed "s|__TXT__|$WORK/n${n}.txt|; s|__OUT__|$WORK/n${n}_|; s|__SD__|$SD|" <<EOF | ../emit_config.sh > "$WORK/n${n}.yaml"
 run_type           equilibrium
+snes_stol          1e-8
 fsm_on             1
 evap_mode          0
 infiltration_on    0
@@ -56,7 +57,7 @@ EOF
 
 # -wtm_eq_tol 0: pin the full fixed cycle count so the cross-rank comparison is at the same cycle (the
 # equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
-run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.yaml" -snes_stol 1e-8 >"$WORK/n${n}.log" 2>&1 ); }
+run() { local n="$1"; mkcfg "$n"; ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n${n}.yaml" >"$WORK/n${n}.log" 2>&1 ); }
 
 echo "=== FillSpillMerge MPI-consistency regression ==="
 echo "binary: $WTM   rank counts vs n=1: ${RANKS[*]}"

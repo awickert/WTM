@@ -101,7 +101,7 @@ eq_tol ${EQ_TOL:-0}
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
-      [ -n "$2" ] && echo "runoff_collector $2"; } | ../emit_config.sh > "$WORK/$1.yaml"
+      echo "snes_stol 1e-10"; [ -n "$2" ] && echo "runoff_collector $2"; } | ../emit_config.sh > "$WORK/$1.yaml"
 }
 
 # PETSc prints the ratio per Jacobian evaluation; take the worst.
@@ -119,7 +119,7 @@ fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
 METHOD=newton DTC=true mkcfg pre active_set "2yr"
-"$WTM" "$WORK/pre.yaml" -snes_stol 1e-10 \
+"$WTM" "$WORK/pre.yaml" \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
 if awk -v r="$REM" 'BEGIN{exit !(r > 0)}'; then
@@ -180,8 +180,8 @@ fi
 #     Newton plain, fixed dt       max|dwtd| 4.739e-02 m   equilibrium at cycle 466, vs eq_and's 463
 EQ_TOL=1e-4 ADAPT=false mkcfg eq_and  active_set "2000yr"
 EQ_TOL=1e-4 METHOD=newton DTC=false ADAPT=false mkcfg eq_newt active_set "2000yr"
-"$WTM" "$WORK/eq_and.yaml"                  -snes_stol 1e-10 > "$WORK/eq_and.log"  2>&1
-"$WTM" "$WORK/eq_newt.yaml" -snes_stol 1e-10 > "$WORK/eq_newt.log" 2>&1
+"$WTM" "$WORK/eq_and.yaml"                  > "$WORK/eq_and.log"  2>&1
+"$WTM" "$WORK/eq_newt.yaml" > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" PHI="$INP/fsm_test_porosity.tif" TESTS="$(readlink -f ..)" \
   python3 - <<'PY' || fail=1
 import glob, os, sys
@@ -225,7 +225,7 @@ METHOD=newton DTC=false ADAPT=false mkcfg contract active_set "2yr"
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
-if sh -c '"$0" "$1" -snes_stol 1e-10' \
+if sh -c '"$0" "$1"' \
         "$WTM" "$WORK/contract.yaml" > "$WORK/contract.log" 2>&1; then
     echo "  PASS  CONTRACT/a plain Newton at FIXED dt CONVERGES (it no longer needs the ramp)"
 elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
@@ -242,7 +242,7 @@ fi
 # statement about fixed dt rather than about Newton, and it is the positive control for 4a: if 4b also
 # failed, 4a would be proving only that the fixture is hard.
 METHOD=newton DTC=false ADAPT=true mkcfg contract_adapt active_set "2yr"
-if sh -c '"$0" "$1" -snes_stol 1e-10' \
+if sh -c '"$0" "$1"' \
         "$WTM" "$WORK/contract_adapt.yaml" > "$WORK/contract_adapt.log" 2>&1; then
     echo "  PASS  CONTRACT/b the same run with adaptive stepping CONVERGES -- the ramp is not the only"
     echo "                   way to globalise plain Newton"

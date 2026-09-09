@@ -62,10 +62,12 @@ eq_tol 0
 textfilename   $WORK/n$n.txt
 outfile_prefix $WORK/n${n}_
 EOF
+      echo "snes_stol 1e-12"
+      echo "trace dt"
     } | ../emit_config.sh > "$WORK/n$n.yaml"
     # Long cycles (8 yr) so the controller is FREE to choose the step. With short cycles the step is
     # quantised by the report interval and the controller never binds -- the arm would pass vacuously.
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n$n.yaml" -snes_stol 1e-12 -wtm_dt_trace \
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n$n.yaml" \
         > "$WORK/n$n.log" 2>&1 ) || { echo "  n=$n: RUN FAILED"; tail -5 "$WORK/n$n.log" | sed 's/^/      /'; fail=1; continue; }
     grep -oE 'dt=[0-9.e+-]+ est=[0-9.e+-]+' "$WORK/n$n.log" > "$WORK/est_n$n.txt"
 done

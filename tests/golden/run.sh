@@ -129,6 +129,13 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
       echo "eq_tol 0"
       echo "textfilename   $WORK/${name}_n${n}.txt"
       echo "outfile_prefix $PREFIX"
+      # BOTH per-solve gates, in the CONFIG now rather than as CLI flags. The reasoning below is
+      # unchanged; only the channel is. Keeping them on the command line meant this suite's configs
+      # said one tolerance and its runs used another -- the declared-vs-resolved gap #79 exists to
+      # close, and the worse half of it, because a DIFFER is a config that lies rather than one that
+      # is merely silent.
+      echo "snes_stol $GOLDEN_STOL"
+      echo "convergence_water_volume_tol $GOLDEN_STOL"
     } | ../emit_config.sh > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
@@ -143,8 +150,7 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     # The principle is budget_closure's, applied here: an assertion is only meaningful if the SOLVE is
     # resolved tighter than the agreement it asserts, or the arm measures solver noise. These goldens
     # assert 1e-6..1e-5 m, so they must not be solved to a tolerance that permits 1e-1 m.
-    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" \
-        -snes_stol "$GOLDEN_STOL" -wtm_snes_vol_tol "$GOLDEN_STOL" >"$log" 2>&1 )
+    ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" >"$log" 2>&1 )
     local rc=$?
     if [[ $rc -ne 0 ]]; then
         printf "  %-14s n=%-2s : MODEL FAILED (exit %d) -- refusing to use its output\n" "$name" "$n" "$rc" >&2

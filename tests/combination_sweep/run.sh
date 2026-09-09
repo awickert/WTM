@@ -45,6 +45,7 @@ export OMP_NUM_THREADS=1
 mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume]
     local tend="ta"; [ "$2" = transient ] && tend="tb"
     ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-8
 run_type $2
 ${STORAGE:+storage $STORAGE}
 ${METHOD:+solver_method $METHOD}
@@ -97,7 +98,7 @@ REFUSALS="${WTM_COVERAGE_LOG:-$WORK/refusals.txt}"
 attempt() { # $1 stem, $2 extra flags...
     local stem="$1"; shift
     MSG=""
-    if WTM_COVERAGE_TAG="combination_sweep/$stem" sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" -snes_stol 1e-8 \
+    if WTM_COVERAGE_TAG="combination_sweep/$stem" sh -c '"$@"' _ "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         return 0
     fi
