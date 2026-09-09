@@ -1150,8 +1150,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // -- the free boundary is unmanaged and the solve limit-cycles (lakeshore flicker). For testing/diagnostics
   // only (tests/boundary_analytic uses this to reach the constant-T ponded parabola regime); it is NOT a
   // valid model configuration. See finding_surface_water_management_design.
-  PetscBool allow_aboveground = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &allow_aboveground, nullptr);
+  const PetscBool allow_aboveground = params.allow_aboveground_water_columns ? PETSC_TRUE : PETSC_FALSE;
   if (allow_aboveground == PETSC_TRUE)
     PetscPrintf(PETSC_COMM_WORLD, "WARNING [-wtm_dev_allow_aboveground_water_columns]: NONPHYSICAL developer mode "
                 "-- surface water is UNMANAGED (no clamp); the free boundary will limit-cycle. Testing/diagnostics "
@@ -2405,9 +2404,7 @@ bool extinction_on() { return g_extinction; }
 // sees the flag) AND in update() (so a standalone solve still parses it). Idempotent -- it just
 // re-reads the same PETSc options -- so the double call is harmless.
 void read_evap_taper_options(const Parameters& params) {
-  PetscBool evap_taper = PETSC_TRUE;  // taper 2 default ON (off-switch: -wtm_evap_taper 0 / false)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_evap_taper", &evap_taper, nullptr);
-  g_evap_taper = (evap_taper == PETSC_TRUE);
+  g_evap_taper = params.taper_surface_transition;   // evaporation.tapers.surface_transition
   // Config-owned (evaporation.et_sigmoid). The -wtm_evap_taper_wtdc / -wtm_evap_taper_s flags are GONE:
   // they had no callers anywhere in the repo and existed only as transport for these two YAML keys, which
   // the bridge pushed into PETSc's options DB for this line to read back. Reading Parameters directly
@@ -2417,9 +2414,7 @@ void read_evap_taper_options(const Parameters& params) {
   g_evap_taper_s    = params.evap_taper_s;
 
   // Taper 3: accessibility / extinction-depth clamp (awickert/WTM#4). Own on/off toggle plus the depth.
-  PetscBool extinction = PETSC_TRUE;  // taper 3 default ON (off-switch: -wtm_extinction 0 / false)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_extinction", &extinction, nullptr);
-  g_extinction = (extinction == PETSC_TRUE);
+  g_extinction = params.taper_depth_extinction;     // evaporation.tapers.depth_extinction
   g_extinction_depth = params.extinction_depth;  // config-owned; -wtm_extinction_depth retired
 
   // The taper works in BOTH evap_modes: evap_mode 0 also supplies open_water_evap (used for surface

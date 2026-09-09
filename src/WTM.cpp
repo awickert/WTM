@@ -1266,11 +1266,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // not in scope. BOTH VALUES are bridged, not just `false`: the C++ default is ON, so bridging only the
   // off-case would leave `true` silently doing nothing -- a key that reads as a choice and is not one,
   // which is the defect this migration exists to remove (fsm_coupling carries the same reasoning).
-  if (auto n = root["evaporation"]["tapers"]["surface_transition"])
-    set_opt_if_unset("-wtm_evap_taper", n.as<bool>() ? "true" : "false");
-  if (auto n = root["evaporation"]["tapers"]["depth_extinction"])
-    set_opt_if_unset("-wtm_extinction", n.as<bool>() ? "true" : "false");
-  if (auto n = root["dev"]["allow_aboveground_water_columns"]) { if (n.as<bool>()) set_opt_if_unset("-wtm_dev_allow_aboveground_water_columns", "true"); }
+  // (both parsed into Parameters directly; see parameters.cpp. No options-database round-trip.)
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
   // problem stated. The equilibrium fixed point is unchanged (damping vanishes there).
@@ -1423,8 +1419,6 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
     if (SNESGetTolerances(uc.snes, nullptr, nullptr, nullptr, &mi, nullptr) == 0)
       maxit = std::to_string(static_cast<long long>(mi));
   }
-  PetscBool dev_aboveground = PETSC_FALSE;
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_dev_allow_aboveground_water_columns", &dev_aboveground, nullptr);
 
   f << "# full_config.yaml -- every setting this run resolved to, written by the run itself.\n"
     << "# Re-runnable as-is. output.outfile_prefix and output.run_log are absolute here because\n"
@@ -1522,15 +1516,12 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  extinction_depth: " << params.extinction_depth << "\n";
   {
     // READ BACK from the options DB, not from Parameters. Both switches default ON in the C++ and the
-    // config bridges into a -wtm_ option with set_opt_if_unset, so a CLI flag still WINS -- and
-    // params.taper_* would then report the config's value for a run that used the flag's. Same reason
-    // max_iterations is read back above: this file must record what the run DID.
-    PetscBool st = PETSC_TRUE, de = PETSC_TRUE;
-    PetscOptionsGetBool(nullptr, nullptr, "-wtm_evap_taper", &st, nullptr);
-    PetscOptionsGetBool(nullptr, nullptr, "-wtm_extinction", &de, nullptr);
+    // params, plainly. This used to read the options database because the config bridged into a -wtm_
+    // option and a CLI flag could still WIN, so params.taper_* might report the config's value for a run
+    // that used the flag's. With the round-trip gone there is one source and no divergence to guard.
     f << "  tapers:\n";
-    f << "    surface_transition: " << (st == PETSC_TRUE) << "\n";
-    f << "    depth_extinction: " << (de == PETSC_TRUE) << "\n";
+    f << "    surface_transition: " << params.taper_surface_transition << "\n";
+    f << "    depth_extinction: " << params.taper_depth_extinction << "\n";
   }
 
   f << "\nsurface_water:\n";
@@ -1626,7 +1617,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
 
   f << "\ndev:\n";
-  f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
+  f << "  allow_aboveground_water_columns: " << params.allow_aboveground_water_columns << "\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
   // params, not g_relax: that global is assigned inside update(), which has not run when this is
   // written, so it would report the compile-time default whatever the user asked for. Reading the

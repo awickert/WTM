@@ -284,6 +284,7 @@ Parameters::Parameters(const std::string& config_file) {
     if (auto n = sm["storativity_surface"]) storativity_surface_smoothing = n.as<double>();
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
+  if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
   if (auto n = root["solver"]["time_step"]["error_tol"]) {
     refuse_auto(n, "solver.time_step.error_tol");
     dt_tol = std::stod(n.as<std::string>());

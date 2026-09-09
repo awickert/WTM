@@ -7,7 +7,7 @@
 # Fixture (make_inputs.py): a low ocean-ringed plateau with ET < P < owe, so below the surface the cell fills
 # toward wtd=0 while above it open-water evaporation drains it back -- opposite pushes across the surface. To
 # let the above-surface (owe) branch fire with FSM off, above-surface water is permitted to persist via
-# -wtm_dev_allow_aboveground_water_columns (surface clamp off), so the evaporation taper is the ONLY manager
+# dev.allow_aboveground_water_columns: true (surface clamp off), so the evaporation taper is the ONLY manager
 # of the surface crossing. Asserts:
 #   SETTLING     : with the smooth taper the run reaches equilibrium (per-cycle |Δwtd| decays; no limit cycle).
 #   NO PONDING   : despite ponding being ALLOWED, the taper drives the table back to/below the surface
@@ -70,17 +70,20 @@ surfdatadir $INP
 region flickevap
 supplied_wt 1
 eq_tol 0
+# Surface clamp OFF so the open-water-evap branch can fire (FSM is off here) -- the taper is then
+# the only thing managing surface water, which is this suite's whole subject. Was the -wtm_ flag on the
+# command line until the options-database round-trip was deleted; the config key is the only route now.
+allow_aboveground true
 textfilename $WORK/$1.txt
 outfile_prefix $WORK/${1}_
 EOF
 }
-POND="-wtm_dev_allow_aboveground_water_columns"   # surface clamp off: let the owe branch fire (FSM off)
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
 emit managed
-"$WTM" "$WORK/managed.yaml" $POND > "$WORK/managed.log" 2>&1 \
+"$WTM" "$WORK/managed.yaml" > "$WORK/managed.log" 2>&1 \
   || { echo "RUN FAILED: managed"; tail -3 "$WORK/managed.log"; exit 2; }
 TAPERS=false emit bare   # the BARE arm is the one with the tapers off -- that is its subject
-"$WTM" "$WORK/bare.yaml" $POND > "$WORK/bare.log" 2>&1 \
+"$WTM" "$WORK/bare.yaml" > "$WORK/bare.log" 2>&1 \
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.
