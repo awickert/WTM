@@ -285,11 +285,28 @@ Parameters::Parameters(const std::string& config_file) {
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
   if (auto n = root["dev"]["allow_aboveground_water_columns"]) allow_aboveground_water_columns = n.as<bool>();
+  if (auto tr = root["output"]["trace"]) {
+    if (!tr.IsSequence()) throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
+    for (const auto& e : tr) {
+      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget", "fsm"});
+      if (v == "dt")         trace_dt         = true;
+      if (v == "water_step") trace_water_step = true;
+      if (v == "budget")     trace_budget     = true;
+      if (v == "fsm")        trace_fsm        = true;
+    }
+  }
+  if (auto n = root["surface_water"]["fsm_coupling"]) {
+    fsm_coupling_continuous =
+        (require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"impulse", "continuous"}) == "continuous");
+    fsm_coupling_set = true;
+  }
   if (auto n = root["solver"]["convergence"]["metric"])
     convergence_metric_head =
         (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "volume"}) == "head");
   if (auto n = root["solver"]["convergence"]["water_volume_tol"]) water_volume_tol = std::stod(n.as<std::string>());
   if (auto sc = root["solver"]["time_step"]) {
+    if (auto n = sc["norm"])              dt_norm_rms     =
+        (require_enum(n.as<std::string>(), "solver.time_step.norm", {"rms", "max"}) == "rms");
     if (auto n = sc["grow"])              dtc_grow        = n.as<double>();
     if (auto n = sc["shrink"])            dtc_shrink      = n.as<double>();
     if (auto n = sc["grow_if_niter_leq"]) dtc_easy_iters  = n.as<int>();

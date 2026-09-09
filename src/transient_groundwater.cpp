@@ -261,7 +261,19 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_volume_storage              = true;  // dev.storage_form: volume (DEFAULT) -- BE storage folded into f, RHS b=0
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-static bool             g_fsm_continuous            = false; // -wtm_fsm_continuous: feed FSM's per-step water-table change into the NEXT step's recharge source instead of overwriting the step baseline with the post-FSM table. BUILT to remove the between-step FSM shock (a Lie-split jump that breaks 2nd-order accuracy). active_set removes that shock by itself (0.985 -> 3.6e-13), so this is no longer the way to address it -- but it is NOT superseded: it is the live alternative FSM COUPLING, covered by tests/budget_closure and tests/fsm_conservation, and its source-delivery machinery is the mechanism for decoupling FSM cadence from the GW step if the serial-FSM ceiling is ever attacked. It COMPOSES with active_set as of #40 (the obstacle reads the carried lake_stage, not the overwritten table); the old hard error is gone. See benchmark/scheme_bench/README.md.
+// surface_water.fsm_coupling: continuous (THE DEFAULT, #43) | impulse.
+// CONTINUOUS feeds FSM's per-step water-table change into the NEXT step's recharge source. IMPULSE is
+// the alternative: it overwrites the step baseline with the post-FSM table. Andy decided continuous on
+// the PHYSICAL argument alone (#43) -- FSM moved that water, so the next step should see it as a source
+// rather than as a rewritten initial condition.
+// Assigned from params every step; this initialiser is never the value a run uses.
+// History, so it is not re-litigated: continuous was BUILT to remove the between-step FSM shock (a
+// Lie-split jump that breaks 2nd-order accuracy), and active_set turned out to remove that shock by
+// itself (0.985 -> 3.6e-13). That did NOT demote it -- and the ~11% evaporation evidence originally
+// cited for it did not survive re-measurement either (#51). The decision rests on the physics.
+// It COMPOSES with active_set as of #40 (the obstacle reads the carried lake_stage, not the overwritten
+// table); the old hard error is gone. Covered by tests/budget_closure and tests/fsm_conservation.
+static bool             g_fsm_continuous            = true;
 static bool             g_active_set                  = false; // -wtm_active_set [EXPERIMENTAL]: semismooth exfiltration pinned wtd=0 INSIDE the solve
 static double           g_relax                       = 1.0;   // -wtm_relax: sub-step under-relaxation (1=off); damps free-boundary flicker
 
@@ -1257,10 +1269,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // 1.13/1.23/1.59), and its flicker benefit is already spent by active_set, which is the default collector.
   // Both couplings reach the same equilibrium, so this matters for TRANSIENTS far more than equilibrium.
   // Resolved AFTER the collector below, because `auto` has to know it. Read the request here.
-  PetscBool fsm_cont_set = PETSC_FALSE, fsm_cont = PETSC_TRUE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont_set);
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont, nullptr);
-  g_fsm_continuous = (fsm_cont == PETSC_TRUE);
+  const PetscBool fsm_cont_set = params.fsm_coupling_set ? PETSC_TRUE : PETSC_FALSE;
+  g_fsm_continuous = params.fsm_coupling_continuous;
 
   // Runoff-collection selector (config key `surface_water.collection.method`, optional; the internal
   // variable is still called runoff_collector). When set it OVERRIDES the

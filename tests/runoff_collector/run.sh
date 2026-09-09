@@ -160,7 +160,11 @@ echo "  SOLVER: explicit converged on the default Picard path (no tangent needed
 # silently ignored -- the same property the RETIRED arm of tests/config_schema pins for a removed YAML
 # key, and the reason retiring a flag is safe: a script still passing one stops instead of drifting.
 emit ret "runoff_collector active_set"
-for flag in -wtm_extended_soil -wtm_dev_active_set; do
+# -wtm_definitely_not_a_flag is not a retired alias -- it is the NAMESPACE lock (#86). Every WTM setting
+# is a config key now and nothing reads a -wtm_ option, so ANY -wtm_ must land in the unconsumed-flag
+# guard. If this one is ever accepted, something has started reading the namespace again and the command
+# line is a second route into a setting.
+for flag in -wtm_extended_soil -wtm_dev_active_set -wtm_definitely_not_a_flag; do
     OUT=$(sh -c '"$0" "$1" "$2" 2>&1' "$WTM" "$WORK/ret.yaml" "$flag" 2>/dev/null)
     if echo "$OUT" | command grep -q "nothing read"; then
         echo "  PASS  RETIRED  $flag aborts as an unconsumed flag"

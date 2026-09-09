@@ -1137,11 +1137,11 @@ static void check_unconsumed_wtm_options() {
   std::string msg = "the run was given " + std::to_string(stale.size())
                     + (stale.size() == 1 ? " -wtm_ flag that nothing read:\n" : " -wtm_ flags that nothing read:\n");
   for (const auto& s : stale) msg += s + "\n";
-  msg += "\nA flag nothing consumes had NO effect on this run. Either it is misspelled, it has been\n"
-         "retired in favour of a config key (see benchmark/CONFIG_FLAG_COVERAGE.md), or its parse site\n"
-         "is on a code path this run did not take -- for example a controller knob passed without the\n"
-         "controller enabled. This aborts rather than warns so that a swept parameter can never be\n"
-         "silently doing nothing.";
+  msg += "\nTHE -wtm_ NAMESPACE IS RETIRED. Every setting is a config key; nothing in the model reads a\n"
+         "-wtm_ option any more, so ANY -wtm_ on the command line lands here. See config.yaml for the\n"
+         "key that replaces it, and benchmark/CONFIG_FLAG_COVERAGE.md for the mapping. This aborts\n"
+         "rather than warns so that a swept parameter can never be silently doing nothing.\n"
+         "(PETSc's own options -- -snes_*, -ksp_*, -pc_* -- are unaffected and still work.)";
   throw std::runtime_error(msg);
 }
 
@@ -1190,32 +1190,14 @@ void apply_config_petsc_options(const std::string& config_file) {
   // under either. grow_if_niter_leq is the old -wtm_dtc_easy_iters: a SOLVABILITY gate on growth (grow
   // only when the solve took at most this many nonlinear iterations), distinct from the accuracy gate,
   // and inclusive -- a solve of exactly this many iterations still grows.
-  if (auto sc = root["solver"]["time_step"]) {
-    // (all four parsed into Parameters directly; see parameters.cpp.)
-    // norm: one enum replacing the -wtm_dt_norm_rms / -wtm_dt_norm_max boolean PAIR, whose both-set case
-    // was undefined at the config level. rms is the default; max is opt-in and wins if both arrive.
-    if (auto n = sc["norm"]) {
-      const std::string v = require_enum(n.as<std::string>(), "solver.time_step.norm", {"rms", "max"});
-      set_opt_if_unset(v == "max" ? "-wtm_dt_norm_max" : "-wtm_dt_norm_rms", "true");
-    }
-  }
+  // (solver.time_step.* -- including norm, the one enum that replaced the -wtm_dt_norm_rms /
+  // -wtm_dt_norm_max boolean pair -- parsed into Parameters directly; see parameters.cpp.)
 
   // output.trace -> extra machine-readable per-step lines. A LIST, so further traces can join without a
   // new key each. `dt` emits DTTRACE (dt, est, tol, factor, niter, accepted), rejected steps included --
   // they are where a mis-scaled estimate does its damage, so omitting them would hide the failure the
   // trace exists to expose. Changes only what is PRINTED, never the answer.
-  if (auto tr = root["output"]["trace"]) {
-    if (!tr.IsSequence())
-      throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
-    for (const auto& e : tr) {
-      const std::string v =
-          require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget", "fsm"});
-      if (v == "dt")         set_opt_if_unset("-wtm_dt_trace", "true");
-      if (v == "water_step") set_opt_if_unset("-wtm_snes_volume_conv", "true");
-      if (v == "budget")     set_opt_if_unset("-wtm_budget_trace", "true");
-      if (v == "fsm")        set_opt_if_unset("-wtm_fsm_trace", "true");
-    }
-  }
+  // (all four channels parsed into Parameters directly; see parameters.cpp.)
 
   // solver.newton.dt0 -> the pseudo-transient ramp's starting dt. Continuation-only: it is read inside
   // if (use_newton_continuation) and nowhere else, which is why it nests under newton rather than joining
@@ -1241,10 +1223,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // `continuous` in the config), so setting the flag only
   // for `continuous` would leave `fsm_coupling: impulse` silently doing nothing -- a config key that reads
   // as a choice and is not one, which is the exact defect this migration exists to remove.
-  if (auto n = root["surface_water"]["fsm_coupling"])
-    set_opt_if_unset("-wtm_fsm_continuous",
-                     require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"impulse", "continuous"})
-                             == "continuous" ? "true" : "false");
+  // (parsed into Parameters directly; see parameters.cpp.)
   // evaporation.tapers -> the two -wtm_ switches the solve reads (transient_groundwater.cpp). Bridged
   // rather than read directly because both are consulted deep inside the residual, where Parameters is
   // not in scope. BOTH VALUES are bridged, not just `false`: the C++ default is ON, so bridging only the
@@ -1518,9 +1497,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // request from the options database (the bridge has already put the config's value there) and apply the
   // SAME resolution the solve applies, so this line reports what actually ran rather than what was asked.
   // Kept in step with transient_groundwater.cpp: if a gate is added there, add it here.
-  PetscBool fsm_cont_req = PETSC_TRUE;  // the OPTION's default (see the read in transient_groundwater.cpp)
-  PetscOptionsGetBool(nullptr, nullptr, "-wtm_fsm_continuous", &fsm_cont_req, nullptr);
-  bool eff_continuous = (fsm_cont_req == PETSC_TRUE) && params.fsm_on;  // no FSM -> nothing to couple
+  bool eff_continuous = params.fsm_coupling_continuous && params.fsm_on;  // no FSM -> nothing to couple
   {
     std::string eff_rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
     if (eff_rc == "active_set" && !params.runoff_collector_set && uc.use_picard) eff_rc = "explicit";

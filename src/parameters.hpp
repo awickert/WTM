@@ -147,6 +147,19 @@ struct Parameters {
   bool   convergence_metric_head = false;
   double water_volume_tol        = 1e-8;
 
+  // output.trace: [dt|water_step|budget|fsm] -- PRINTING ONLY, never the answer.
+  bool trace_dt = false, trace_water_step = false, trace_budget = false, trace_fsm = false;
+
+  // surface_water.fsm_coupling. TRUE (continuous) is the DEFAULT, decided in #43 on the physical
+  // argument: FSM's per-cell volume change is delivered to the next step's source term rather than
+  // overwriting the step baseline. `impulse` is the alternative, not the norm. _set distinguishes an
+  // EXPLICIT request (refused by name where it cannot run) from the default (which yields quietly).
+  bool fsm_coupling_continuous = true;
+  bool fsm_coupling_set        = false;
+
+  // solver.time_step.norm: rms (default, robust on cold spin-up) | max (worst cell).
+  bool dt_norm_rms = true;
+
   // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
   // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
   // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp

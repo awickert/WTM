@@ -187,6 +187,27 @@ for kv in "${ENUM_OK[@]}"; do
 done
 [ $bad_ok -eq 0 ] && echo "  PASS  ENUM-OK    all ${#ENUM_OK[@]} legal values across the 5 enums are still accepted"
 
+# ---- NAMESPACE: the -wtm_ command-line namespace is RETIRED, in both directions ---------------------
+# Every WTM setting is a config key. The options-database round-trip -- YAML -> string -> PETSc options
+# DB -> re-parsed -- is gone (#86), and with it the second route into a setting: set_opt_if_unset took
+# the FIRST setter, so a -wtm_ typed on the command line silently WON over the config key it duplicated
+# and full_config.yaml recorded the winner, leaving the file the user was reading wrong.
+#
+# THE SOURCE LOCK lives here; the RUNTIME lock lives in tests/runoff_collector, which has a fixture (a
+# run started from this suite's reference config aborts in GDAL long before it reaches the guard).
+# BOTH are needed: the runtime guard fires only on an option NOTHING READ, so one
+# PetscOptionsGetReal(..., "-wtm_x", ...) would quietly make -wtm_x acceptable again and the runtime arm
+# would still pass. Only counting call sites catches that.
+NSRC=$(command grep -rc 'PetscOptions[A-Za-z]*(.*"-wtm_' "$ROOT/src" 2>/dev/null | command grep -v ':0' | wc -l)
+if [ "$NSRC" -eq 0 ]; then
+    echo "  PASS  NAMESPACE  no source file reads a -wtm_ option (0 call sites)"
+else
+    echo "  FAIL  NAMESPACE  $NSRC source file(s) read a -wtm_ option. Every setting must arrive through"
+    echo "        Parameters; a PetscOptions read of -wtm_ reopens the command-line route:"
+    command grep -rn 'PetscOptions[A-Za-z]*(.*"-wtm_' "$ROOT/src" | sed 's/^/          /'
+    fail=1
+fi
+
 # ---- RETIRED: a key that was REMOVED must abort, not drift ------------------------------------------
 # dev.active_set was a SECOND YAML route to the same enforcement as surface_water.collection.method,
 # and it silently OVERRODE an explicit method: with `method: explicit` plus `dev: {active_set: true}`

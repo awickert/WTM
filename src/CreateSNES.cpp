@@ -98,10 +98,8 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // kept as an explicit request for the default, so a config or command line that asks for volume still
   // reads correctly; when both arrive the off-switch wins, because only it can have been asked for
   // deliberately (volume needs no asking).
-  PetscBool vc = PETSC_FALSE;
-  PetscOptionsHasName(nullptr, nullptr, "-wtm_snes_volume_conv", &vc);
   user_context.snes_volume_conv_govern = !params.convergence_metric_head;
-  user_context.vol_step_trace          = (vc == PETSC_TRUE);  // INDEPENDENT of governing, see AppCtx
+  user_context.vol_step_trace          = params.trace_water_step;  // INDEPENDENT of governing, see AppCtx
   user_context.snes_volume_conv_tol    = params.water_volume_tol;
   if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
@@ -313,23 +311,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   // adaptive, continuation), so it must not be parsed inside the adaptive branch: on a fixed-dt run the
   // flag would then be set by the config bridge and read by nobody, and the unconsumed-flag guard would
   // abort the run. It did exactly that when this was first wired in.
-  {
-    PetscBool budget_trace_flag = PETSC_FALSE;
-    PetscOptionsHasName(nullptr, nullptr, "-wtm_budget_trace", &budget_trace_flag);
-    user_context.budget_trace = (budget_trace_flag == PETSC_TRUE);
-  }
-  {
-    PetscBool fsm_trace_flag = PETSC_FALSE;
-    PetscOptionsHasName(nullptr, nullptr, "-wtm_fsm_trace", &fsm_trace_flag);
-    user_context.fsm_trace = (fsm_trace_flag == PETSC_TRUE);
-  }
+  user_context.budget_trace = params.trace_budget;
+  user_context.fsm_trace    = params.trace_fsm;
   if (user_context.use_dt_adaptive) {
     // config-owned (solver.water_volume_timestep_error_tol); unset keeps the eq_tol-tracking default
     const bool dt_tol_set = params.dt_tol_set;
     if (dt_tol_set) user_context.dt_tol = params.dt_tol;
-    PetscBool dt_trace_flag = PETSC_FALSE;
-    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_trace", &dt_trace_flag);
-    user_context.dt_trace = (dt_trace_flag == PETSC_TRUE);
+    user_context.dt_trace = params.trace_dt;
     // The step-size controller's own knobs, parsed HERE as well as on the continuation path. They were
     // read ONLY inside `if (use_newton_continuation)`, yet the adaptive controller reads dtc_grow,
     // dtc_shrink, dtc_dt_max and dtc_easy_iters on EVERY adaptive step -- so on a plain
@@ -383,13 +371,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // opt-in via -wtm_dt_norm_max: under the water (volume) step-error a few surface-kink cells give a
     // dt-independent spike that the MAX norm is hostage to, stalling a cold start (GH #13). -wtm_dt_norm_rms is
     // still accepted (now the default); if BOTH are given, the explicit MAX wins.
-    PetscBool norm_rms = PETSC_FALSE, norm_max = PETSC_FALSE;
-    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_rms", &norm_rms);
-    PetscOptionsHasName(nullptr, nullptr, "-wtm_dt_norm_max", &norm_max);
-    user_context.dt_norm_rms = (norm_max != PETSC_TRUE);
-    if (norm_rms == PETSC_TRUE && norm_max == PETSC_TRUE)
-      PetscPrintf(PETSC_COMM_WORLD,
-                  "WARNING: both -wtm_dt_norm_rms and -wtm_dt_norm_max given; using MAX.\n");
+    user_context.dt_norm_rms = params.dt_norm_rms;
     const char* integ = user_context.use_tr_bdf2      ? "TR-BDF2 (2nd-order)"
                         : user_context.use_bdf2  ? "BDF2-on-V (2nd-order)"
                         : user_context.use_picard     ? "backward-Euler Picard (1st-order)"
