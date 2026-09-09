@@ -79,6 +79,8 @@ mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
           #   env: MODE=fixed|adaptive|ramp pins who sizes the step (one key; was DTC= plus ADAPT=)
     { cat <<EOF
 ${MODE:+time_step_mode $MODE}
+${KSMOOTH:+ksat_surface_smoothing $KSMOOTH}
+${KSMOOTH:+ksat_soilbottom_smoothing $KSMOOTH}
 ${METHOD:+solver_method $METHOD}
 run_type equilibrium
 total_time $3
@@ -104,9 +106,11 @@ EOF
 }
 
 # PETSc prints the ratio per Jacobian evaluation; take the worst.
+# The two ksat smoothing widths come from the CONFIG (KSMOOTH= at mkcfg time), not from -wtm_ flags:
+# those options-database entries are gone, and a -wtm_ nothing reads is an abort. -snes_test_jacobian
+# and -snes_max_it stay on the command line because they are PETSc's own options, which PETSc reads.
 fd_ratio() { # $1 = stem
     "$WTM" "$WORK/$1.yaml" \
-        -wtm_ksat_surface_smoothing_width 0.5 -wtm_ksat_soilbottom_smoothing_width 0.5 \
         -snes_test_jacobian -snes_max_it 1 2>&1 | tee "$WORK/$1.fd.log" \
       | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1
 }
@@ -137,7 +141,7 @@ fi
 # 0.00415 and 7.36e-08. (explicit is four orders BETTER than its recorded 0.000993: the volume storage
 # default, 879a188, makes the analytic Jacobian match its own residual exactly.)
 for coll in active_set explicit; do
-    METHOD=newton MODE=fixed mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
+    METHOD=newton MODE=fixed KSMOOTH=0.5 mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
     R=$(fd_ratio "j_$coll")
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
@@ -148,7 +152,7 @@ for coll in active_set explicit; do
     fi
 done
 
-METHOD=newton MODE=fixed mkcfg j_implicit implicit "2yr"
+METHOD=newton MODE=fixed KSMOOTH=0.5 mkcfg j_implicit implicit "2yr"
 R=$(fd_ratio j_implicit)
 WARNED=$(grep -c "NOT the Newton Jacobian" "$WORK/j_implicit.fd.log" || true)
 if awk -v r="${R:-0}" 'BEGIN{exit !(r+0 > 0.1)}' && [ "$WARNED" -gt 0 ]; then

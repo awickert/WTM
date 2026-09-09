@@ -1138,9 +1138,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // behind use_picard. Storativity land-surface transition (sub-grid roughness); default 0.01 m,
   // always on. The two ksat/transmissivity widths default to 0 (=> exact piecewise Fan T); any
   // positive width rounds that boundary in every path that evaluates T (residual and operator).
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &g_storativity_surface_smoothing_width, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &g_ksat_soilbottom_smoothing_width, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &g_ksat_surface_smoothing_width, nullptr);
+  g_storativity_surface_smoothing_width = params.storativity_surface_smoothing;
+  g_ksat_soilbottom_smoothing_width     = params.ksat_soilbottom_smoothing;
+  g_ksat_surface_smoothing_width        = params.ksat_surface_smoothing;
   // -wtm_extended_soil is RETIRED: `surface_water.collection.method: extended_soil` is the one way in.
   // g_extended_soil is now set ONLY by the selector below, where the mode is resolved and where its
   // NONPHYSICAL banner is printed -- warn where the mode is in force, not where a request for it is parsed.
@@ -1583,7 +1583,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // -wtm_relax: sub-step under-relaxation of the water table (w <- a*w_solve + (1-a)*w_prev). a=1 is off
   // (byte-identical). a<1 damps the period-2 flicker at pinned free boundaries (lakeshore / exfiltration). At
   // steady state w_solve=w_prev so the fixed point (equilibrium) is unchanged; only the transient is damped.
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &g_relax, nullptr);
+  g_relax = params.under_relaxation;
 
   // Everything above has resolved; record what this run actually is. Once per process.
   {

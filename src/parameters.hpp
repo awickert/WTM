@@ -114,6 +114,15 @@ struct Parameters {
   // is what makes the newton default overridable rather than sticky.
   bool t_bar = false;
 
+  // solver.smoothing.* and dev.under_relaxation: read STRAIGHT from here by the consumers in
+  // transient_groundwater.cpp. They used to travel YAML -> string -> PETSc options DB -> re-parsed,
+  // which was symmetrical back when the -wtm_ FLAG was the interface and is pure overhead now that the
+  // config is. Defaults below are the consumers' own compile-time values.
+  double ksat_surface_smoothing        = 0.0;   // eps0: surface conductivity clamp width [m]
+  double ksat_soilbottom_smoothing     = 0.0;   // eps1: -1.5 m conductivity transition width [m]
+  double storativity_surface_smoothing = 0.01;  // sub-grid roughness blend width [m]; always on
+  double under_relaxation              = 1.0;   // 1 = off
+
   // solver.time_step.mode: WHO SIZES THE STEP -- fixed | adaptive | ramp. ONE key, because these are
   // three answers to ONE question. They used to be two independent booleans, solver.adaptive_dt and
   // solver.newton.dt_continuation, which could BOTH be true; adaptive then silently won and the ramp

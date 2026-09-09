@@ -1247,11 +1247,7 @@ void apply_config_petsc_options(const std::string& config_file) {
 
   // solver.smoothing -> the coefficient-kink rounding widths. Operator-level, so they apply to whichever
   // solver runs; that is why they sit at solver: top level rather than under a method.
-  if (auto sm = root["solver"]["smoothing"]) {
-    if (auto n = sm["ksat_surface"])        set_opt_if_unset("-wtm_ksat_surface_smoothing_width", n.as<std::string>().c_str());
-    if (auto n = sm["ksat_soilbottom"])     set_opt_if_unset("-wtm_ksat_soilbottom_smoothing_width", n.as<std::string>().c_str());
-    if (auto n = sm["storativity_surface"]) set_opt_if_unset("-wtm_storativity_surface_smoothing_width", n.as<std::string>().c_str());
-  }
+  // (parsed into Parameters directly; see parameters.cpp. No options-database round-trip.)
 
   // dev
   // surface_water.fsm_coupling: how FillSpillMerge's result reaches the groundwater. Answer-changing,
@@ -1278,7 +1274,7 @@ void apply_config_petsc_options(const std::string& config_file) {
   // dev.under_relaxation: damps the COMMITTED step, w <- a*w_solve + (1-a)*w_prev, over the whole grid.
   // dev, not solver, because it voids a TRANSIENT trajectory: you step a damped surrogate rather than the
   // problem stated. The equilibrium fixed point is unchanged (damping vanishes there).
-  if (auto n = root["dev"]["under_relaxation"]) set_opt_if_unset("-wtm_relax", n.as<std::string>().c_str());
+  // (parsed into Parameters directly; see parameters.cpp.)
 
   // surface_water.collection.sink (legacy band-sink parameters; effective only with collection.method: legacy)
   if (auto s = root["surface_water"]["collection"]["sink"]) {
@@ -1611,16 +1607,10 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // from the accessor so the COMPILED default is what an unset option falls back to.
   // Found by round-tripping this file: a run with storativity_surface 0.37 emitted 0.01, and re-running
   // the emitted config gave a different trajectory (8 3 2 2 3 vs 7 5 5 3 3).
-  double sm_ksat_s = FanDarcyGroundwater::ksat_surface_smoothing_width();
-  double sm_ksat_b = FanDarcyGroundwater::ksat_soilbottom_smoothing_width();
-  double sm_stor   = g_storativity_surface_smoothing_width;
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_surface_smoothing_width", &sm_ksat_s, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_ksat_soilbottom_smoothing_width", &sm_ksat_b, nullptr);
-  PetscOptionsGetReal(nullptr, nullptr, "-wtm_storativity_surface_smoothing_width", &sm_stor, nullptr);
   f << "  smoothing:\n";
-  f << "    ksat_surface: " << cfg_num(sm_ksat_s) << "\n";
-  f << "    ksat_soilbottom: " << cfg_num(sm_ksat_b) << "\n";
-  f << "    storativity_surface: " << cfg_num(sm_stor) << "\n";
+  f << "    ksat_surface: " << cfg_num(params.ksat_surface_smoothing) << "\n";
+  f << "    ksat_soilbottom: " << cfg_num(params.ksat_soilbottom_smoothing) << "\n";
+  f << "    storativity_surface: " << cfg_num(params.storativity_surface_smoothing) << "\n";
   f << "  anderson:\n";
   f << "    restart:\n";
   f << "      enabled: " << uc.use_adaptive_restart << "\n";
@@ -1638,14 +1628,11 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "\ndev:\n";
   f << "  allow_aboveground_water_columns: " << (dev_aboveground == PETSC_TRUE) << "\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
-  // Read the OPTIONS DATABASE, not g_relax: that global is parsed inside update(), which has not run
-  // when this is written, so it would report the compile-time default whatever the user asked for.
-  // The same trap made the smoothing widths dump their defaults; see benchmark/CONFIG_SCHEMA_OPTIONS.md.
-  {
-    PetscReal relax_val = 1.0;
-    PetscOptionsGetReal(nullptr, nullptr, "-wtm_relax", &relax_val, nullptr);
-    f << "  under_relaxation: " << relax_val << "\n";
-  }
+  // params, not g_relax: that global is assigned inside update(), which has not run when this is
+  // written, so it would report the compile-time default whatever the user asked for. Reading the
+  // options database was the old workaround; parsing straight into Parameters removes the trap
+  // instead of dodging it, and the same now holds for the smoothing widths above.
+  f << "  under_relaxation: " << params.under_relaxation << "\n";
 
   f << "\nparallel:\n";
   f << "  threads_per_rank: " << params.threads_per_rank << "\n";

@@ -278,6 +278,12 @@ Parameters::Parameters(const std::string& config_file) {
     time_integration_auto = true;
   }
   if (auto n = root["solver"]["t_bar"])       t_bar       = n.as<bool>();
+  if (auto sm = root["solver"]["smoothing"]) {
+    if (auto n = sm["ksat_surface"])        ksat_surface_smoothing        = n.as<double>();
+    if (auto n = sm["ksat_soilbottom"])     ksat_soilbottom_smoothing     = n.as<double>();
+    if (auto n = sm["storativity_surface"]) storativity_surface_smoothing = n.as<double>();
+  }
+  if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
   if (auto n = root["solver"]["time_step"]["error_tol"]) {
     refuse_auto(n, "solver.time_step.error_tol");
     dt_tol = std::stod(n.as<std::string>());
