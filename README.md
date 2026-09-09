@@ -243,8 +243,7 @@ row on the active set, structurally the same as the ocean Dirichlet row), and Ne
 Anderson on lake **topology** — 4 lakes on the multi-lake fixture, where `explicit` gives 6.
 **Robustness caveat:** the `max()` kink is still non-differentiable, so plain Newton can diverge in the
 line search on some problems (it does on the boundary fixture, not on the multi-lake one).
-`solver.dt_continuation` cures it — the same treatment Newton's mode already needs for cold starts. Not
-supported together with `-wtm_kirchhoff`, where the pinned residual has no unit derivative.
+`solver.dt_continuation` cures it — the same treatment Newton's mode already needs for cold starts.
 
 **Picard uses `explicit` by design, not by limitation.** This is the one worth reading if you are
 choosing a mode, because it is easy to mistake for a gap waiting to be filled. Picard's whole advantage
@@ -463,9 +462,8 @@ convergence (the "flail"). All force the Anderson path.
 | `-wtm_storativity_surface_smoothing_width` | 0.01 m | default | Rounds the storativity jump at the land surface (sub-grid roughness); always on. |
 | `-wtm_ksat_surface_smoothing_width` | 0 (sharp) | opt-in | Rounds the **transmissivity** kink at the surface (`wtd = 0`). *(Named "ksat" for history; it smooths T, not raw conductivity.)* |
 | `-wtm_ksat_soilbottom_smoothing_width` | 0 (sharp) | opt-in | Rounds the **transmissivity** kink at the soil bottom (−1.5 m). *(Same naming note.)* |
-| `-wtm_Tbar` | off | experimental | Use each cell's step-time-averaged transmissivity (Kirchhoff-potential difference over the step) for interblock flux; damps stiff-step oscillation. Requires piecewise T (refused with the smoothing / extended-soil / Kirchhoff options). |
+| `-wtm_Tbar` | off | experimental | Use each cell's step-time-averaged transmissivity (Kirchhoff-potential difference over the step) for interblock flux; damps stiff-step oscillation. Requires piecewise T (refused with the smoothing / extended-soil options). |
 | `-wtm_T_bedrock` | 0 | opt-in | Additive background transmissivity floor (Manning–Ingebritsen); collapses the deep exponential-T range. |
-| `-wtm_kirchhoff` | off | experimental | Solve in the discharge-potential variable Φ = ∫T dwtd on the Newton path. Retained for study; it worsens conditioning in practice. |
 | `-wtm_relax` | 1.0 (off) | tuning | Post-solve under-relaxation `w ← a·w_solved + (1−a)·w_prev` (all solver paths); damps free-surface flicker. |
 
 ### Surface-water handling

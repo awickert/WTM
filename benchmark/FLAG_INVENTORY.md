@@ -179,7 +179,7 @@ convergence in water is the right production default.
 | flag | coverage | note |
 |---|---|---|
 | ~~`-wtm_bdf2`~~ | **RETIRED 2026-09-04** | head-form BDF2. Silently ignored under the default integrator, and mislabelled as BDF2-on-V when it did run; see benchmark/picard/README.md |
-| `-wtm_kirchhoff` | **dormant** | Kirchhoff variable change. NOT isolated: it gates the active-set pin in `FormJacobianLocal`, where the SNES variable is the discharge potential |
+| ~~`-wtm_kirchhoff`~~ | **RETIRED 2026-09-09** | the discharge-potential variable change. Measured 2026-08: identical equilibrium (8.7e-8 m) but WORSE conditioning, because the head-form storage term puts 1/T on the diagonal and deep cells have T ~ 1e-11. `dischargePotential` itself STAYS -- it is how `solver.t_bar` gets the exact step-average of T |
 | ~~`-wtm_aa_picard`~~ | **RETIRED 2026-09-03** | removed; the negative result it produced is kept in `benchmark/AA_PICARD.md` |
 | ~~`-wtm_predict_guess`~~ | **RETIRED 2026-09-03** | removed; measured saving was ONE solve out of 907 |
 | `-wtm_relax` | **varied** | now `dev.under_relaxation`; `tests/limit_cycle` asserts a=1.0 is byte-identical (0.000e+00) and a=0.5 differs |
@@ -239,7 +239,7 @@ happens without the taper*
 | dormant + dormant dial | **13** | **keep the mechanism or delete it** -- zero execution coverage |
 | archive-only | **1** | `-wtm_bdf2`: a modelling judgement about the head form |
 
-**14 code paths never execute** (13 dormant + `bdf2`), and **9 more run but only ever at their default.**
+**One flag path never executes** (`-wtm_dt_norm_max`), and **9 more run but only ever at their default.** (Recounted 2026-09-09 after the retirements below; the earlier "14 never execute" was a snapshot from before them.)
 Those two groups need opposite treatment, which the earlier "no caller" label hid.
 
 
@@ -248,8 +248,12 @@ Those two groups need opposite treatment, which the earlier "no caller" label hi
 1. **Which dormant mechanisms survive.** *handoff* (4 flags) and *volume-based SNES convergence* (3) are
    dormant end to end -- neither mechanism has ever run in a test. Of *alternative schemes*, four of five
    are dormant and the fifth is archive-only. If a mechanism is finished experimenting, deleting it is
-   cheaper than housing it. `-wtm_kirchhoff` is the one that cannot simply be lifted out: it gates the
-   active-set pin in the analytic Jacobian.
+   cheaper than housing it. `-wtm_kirchhoff` was called out here as the one that could not simply be
+   lifted out, because it gated the active-set pin in the analytic Jacobian. It came out on 2026-09-09
+   and the entanglement turned out to be the reverse of a reason to keep it: the pin's `!g_kirchhoff`
+   condition, its two tau-scaled Jacobian columns and the whole active_set-vs-kirchhoff refusal existed
+   ONLY because the variable change did. Removing it deleted the guard and the thing being guarded
+   against together.
 
 2. **`-wtm_bdf2` specifically.** It is the ORIGINAL head-form BDF2, distinct from `bdf2_on_V`, not a
    duplicate, and it has no config route. Superseded in practice, but that is a modelling judgement.
