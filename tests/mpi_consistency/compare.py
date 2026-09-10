@@ -118,6 +118,12 @@ DIAG_COLS = [
 ]
 
 
+# UNITS: NOT CONVERTED TO WATER VOLUME (#65), deliberately. Every comparison in this file is a
+# CROSS-RANK IDENTITY: the same configuration at 1 and N ranks must produce the SAME field. An identity
+# assertion is unit-agnostic -- if two fields are equal in head they are equal in volume, and if they
+# differ the difference is a defect in either unit. Converting would add a porosity multiply that
+# changes no verdict. The bound is tight (bit-identical or near it) precisely because it is an identity
+# rather than an accuracy claim.
 def last_tif(prefix):
     tifs = sorted(glob.glob(prefix + "*.tif"))
     if not tifs:

@@ -58,6 +58,12 @@ ok = True
 def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
+# UNITS: NOT CONVERTED TO WATER VOLUME, AND MUST NOT BE (#65). `surf()` returns (topo + w).max() --
+# a LAKE SURFACE ELEVATION ABOVE DATUM -- and the assertion compares it against the fixture's SILL
+# ELEVATIONS, 97 m and 95 m. Those are topographic heights, not water depths. "The lake filled to its
+# sill" cannot be expressed as a volume without the basin hypsometry, and a volume bound here would be
+# measuring a different claim. The other two checks need no conversion either: `rel` is already
+# dimensionless (a budget ratio), and the MPI check is an IDENTITY (n=1 == n=4), which is unit-agnostic.
 check("CHAIN LEVELS (A->97 sill, B->95 sill)", abs(sA - 97.0) < 0.2 and abs(sB - 95.0) < 0.2,
       f"pit A surface = {sA:.3f} m (sill 97), basin B surface = {sB:.3f} m (sill 95)")
 check("CONSERVATION (per-cycle balance closes)", rel < 1e-4,

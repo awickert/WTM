@@ -61,6 +61,11 @@ def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
 
+# UNITS: NOT CONVERTED TO WATER VOLUME (#65). This suite asserts a RATIO -- last/first drift, and
+# continuous/impulse at the final report -- and a ratio of two quantities in the same unit is
+# unit-agnostic: multiplying both by porosity cancels. The subject is the drift's BEHAVIOUR (flat vs
+# compounding), not its size, which is the whole reason this test exists. The printed values stay in
+# metres of head so they can be read against the numbers recorded in #39.
 drift = {}
 for c in ("continuous", "impulse"):
     a, b = series(f"{c}_n1"), series(f"{c}_n{N}")

@@ -258,6 +258,12 @@ def _arid_run(wtm, d, tag, flags, taper3, dext):
         return s.read(1)
 
 
+# UNITS: NOT CONVERTED TO WATER VOLUME (#65), for two different reasons across the three studies.
+# Study A is a CROSS-RANK IDENTITY (n=1 vs n=N to DET_RTOL) and its metric is a RELATIVE difference of
+# summed water tables -- both unit-agnostic. Study C measures the CLAMP DEPTH and asserts it sits at
+# ~ -d_ext, where d_ext is evaporation.extinction_depth: a DEPTH PARAMETER IN METRES. The assertion is
+# that a depth matches the depth that was configured, so expressing it as a volume would compare the
+# measurement against a parameter in different units, which is the error, not the fix.
 def study_c(wtm):
     """Taper 3 (evaporation.tapers.depth_extinction) clamps the arid drawdown. This is the
     regression that BITES: without taper 3, taper 2 alone has NO equilibrium in an arid cell (E_eff >

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# UNITS: NOT CONVERTED TO WATER VOLUME, AND MUST NOT BE (#65). This suite compares the computed water
+# table against a CLOSED-FORM ANALYTIC SOLUTION -- a parabola in HEAD. The reference exists only in
+# head; converting the measurement to volume would compare it against a reference in the wrong unit.
 # ANALYTICAL boundary-condition tests: validate the ocean-Dirichlet and land-Neumann BCs against CLOSED-FORM
 # solutions, not snapshot goldens. On a flat sea-level domain with uniform recharge and the water table mounded
 # above the surface (constant transmissivity T = ksat*(1.5+fdepth)), steady groundwater solves T h'' = -R, whose

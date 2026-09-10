@@ -76,8 +76,14 @@ def check(name, cond, detail):
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
 check("CONSERVATION (per-cycle balance closes)", worst < tol,
       f"max |Δbudget_residual|/Δrecharge over last 5 cycles = {worst:.3e} (< {tol})")
-check("LAKE PERSISTS (head kept)", lake > 1.0,
-      f"max wtd = {lake:.4f} m")
+# UNITS: LEFT IN HEAD, and it is EQUIVALENT here rather than an omission (#65). This asserts standing
+# water ABOVE the surface, where storedVolume() reduces to V = wtd: the porosity factor applies only
+# below ground. MEASURED against tests/wtm_volume.py at wtd = 1, 2 and 5 m for porosity 0.05, 0.25 and
+# 0.40 -- |V - wtd| <= 2.4e-05 m in every case, against a threshold of 1.0 m. Below the surface the two
+# differ by the porosity (wtd = -1.0 m gives V = -0.050 m at phi 0.05), which is why the conversion
+# matters elsewhere and not here. Converting would multiply by 1.0 and change no verdict.
+check("LAKE PERSISTS (standing water kept; V == wtd above the surface)", lake > 1.0,
+      f"max wtd = {lake:.4f} m of water volume (above-surface: V == wtd)")
 
 # EXTERNAL INPUT IS COUPLING-INDEPENDENT.
 #

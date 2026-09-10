@@ -57,6 +57,10 @@ def check(name, cond, detail):
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
 check("HIERARCHY (metadepression, not a lone leaf)", ndep >= 3,
       f"fullness walk reports {ndep} depressions (2 leaf pits + metadepression)")
+# UNITS: NOT CONVERTED TO WATER VOLUME, AND MUST NOT BE (#65). Same reason as fsm_cascade: these are
+# LAKE SURFACE ELEVATIONS against a 97 m topographic sill, and SKIM == PLAIN compares two such
+# elevations to each other. HIERARCHY is a COUNT of depressions. The MPI check is an IDENTITY.
+# Nothing here is a water-depth measurement, so there is nothing to convert.
 check("SPILL LEVEL (skim fills to the 97 m sill)", abs(sk - 97.0) < 0.2,
       f"skim lake surface = {sk:.3f} m (known outlet sill = 97.0)")
 check("SKIM == PLAIN (skim neither drains nor over-fills)", abs(sk - pl) < 0.2,
