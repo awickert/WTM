@@ -145,49 +145,15 @@ does not carry a spurious dt-dependence.
 
 ---
 
-## The open queue, in implementation order (updated 2026-09-10)
+## The open queue
 
-One ordered list; the **group** column keeps the kind visible: **C**onfig arc · **T**est integrity ·
-**M**odel defect · **P**hysics/measurement.
+**MOVED to `ROADMAP.md`**, which is now the single source of truth for what is open, in what order, and
+why. It is not duplicated here: two copies of a queue drift, and the one a reader happens to open first
+is then wrong. This file describes the STATE of the handoff; ROADMAP.md describes the WORK REMAINING.
 
-**Three constraints fix the sequence.** Schema-movers before configs are written to files. Answer-movers
-before any number is pinned. Units before tolerances. Items marked *(parallel-safe)* have no dependants.
-
-**The schema moved once more, deliberately, on 2026-09-10** — `surface_water.mode` and
-`surface_water.fsm_coupling` merged into one key, `surface_water.routing: continuous | impulse | off`
-(#89). Andy: *"I want good stability, not arbitrary stability. Let's move the schema."* The timing was
-the argument: all 408 harvested configs were about to be rewritten by #83 anyway, so the change cost
-nothing today and would have cost 36 committed files tomorrow. It also REDUCES the #83 workload —
-dt_sensitivity's undeclared-key count fell from ~10 to 2, because one key now answers what two did.
-
-**Otherwise the schema is still.** Every other schema-mover is closed (#32, #30, #38, #36), so no
-remaining item changes a config key — with ONE exception: #64 may need a knob for the sub-cycling
-bound, and it should be designed to **add one key and move none**.
-
-| n | # | grp | item | why here |
-|---|---|---|---|---|
-| 1 | 83 | C | Materialize the configs; the shim dissolves. **1 of 39 done**; hardest 3 deferred | Schema is still, so the files can settle |
-| 2 | 79 | C | Phase 5 — enforce the declared rule for every suite, delete `WTM_DECLARED_SUITES` | Enforcement FREEZES what the configs say, so it follows the authoring |
-| 3 | 80 | C | Close the stack — L3 done means all four levels are | Bookkeeping, but it is the thread's end |
-| 4 | 60 | P | **Answer-mover.** Order-aware retry — patch written and unapplied | Changes step sizes, so it moves trajectories |
-| 5 | 64 | P | **Answer-mover.** Sub-cycle the FSM coupling | **Will move the goldens.** Biggest item. A negative result is a valid outcome: try again once, then stop |
-| 6 | 54 | T | Partition budget assertions boundary-ring vs interior. Folds in **#34** | The instrument that catches #52 |
-| 7 | 52 | M | Land→ocean outflow mis-booked at pinned boundary cells | Item 6 catches it; water table unaffected, so no goldens move |
-| 8 | 48 | T | Fix the metric: normalise by cumulative recharge, assert convergence under `continuous` | The defect is the test's metric, not the model |
-| 9 | 42 | P | dt-scaling of the continuous coupling's budget lag | **Check #48 first** — it may already answer this |
-| 10 | 39 | T | Assert cross-rank difference does not *grow*, rather than pinning a threshold | The growth rate is the durable handle |
-| 11 | 65 | T | Convert the last 5 head-unit measurements to water volume | **Units before tolerances** |
-| 12 | 84 | T | Give all 24 assertion tolerances a measured basis | Only meaningful once units and answers have settled |
-| 13 | 85 | T | Self-describing golden headers | Do it *with* any regold #64 forces |
-| 14 | 53 | T | Restrict state-vs-accumulator to two-level schemes, and say why | Prevents a future false alarm on `bdf2` |
-| 15 | 73 | T | Rewrite `analyze_adapt_bench.py`; add `compare_series` | Surviving children of the #66 audit |
-| 16 | 66 | T | Promote the six themes and "what already works" into a durable doc, then close | ~9 of 13 ranked fixes already done |
-| 17 | 50 | P | Does Newton still need the ramp for cold starts from far? | Five documentation sites wait on the answer |
-| 18 | 6 | P | Re-run `scheme_bench` | *(parallel-safe)* — its live breakage was fixed in c576470 |
-| 19 | 58, 59 | P | The blind-step reject trigger | Needs 4 and 5 settled first |
-| 20 | 77, 78 | P | Recorded measurements; #78 needs a purpose-built config | *(parallel-safe)* |
-| 21 | 37 | T | Integrator coverage | **Folded into #83's authoring pass** |
-| 22 | 76 | — | The old autonomous plan | Superseded; keep only its RULES section |
+As of 2026-09-10 the configuration arc is CLOSED -- all four levels of the #80 stack. Configuration is
+YAML, defaults resolve in one dedicated module and are recorded per run, all 39 test suites read real
+config files, and `tests/emit_config.sh` is deleted.
 
 ### Closed 2026-09-09/10
 
