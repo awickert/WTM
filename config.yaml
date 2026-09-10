@@ -131,8 +131,29 @@ surface_water:
     #   extended_soil  aquifer continues above the surface. NONPHYSICAL, [WIP], diagnostics only
     method: active_set
 
+# DEFAULTS ARE SOLVER-DEPENDENT, AND THAT IS DELIBERATE (Andy, 2026-09-10). An omitted key always
+# means "the default" -- it never means a third thing -- but WHICH default applies depends on the
+# solver you chose, because the solvers do not support the same machinery. Choosing `method` therefore
+# selects a whole default SET:
+#
+#     key                              anderson        picard          newton
+#     ------------------------------   -------------   -------------   --------------
+#     solver.time_integration          tr-bdf2         backward-euler  backward-euler
+#     solver.time_step.mode            adaptive        adaptive        ramp
+#     surface_water.collection.method  active_set      explicit        active_set
+#
+# One of these also depends on the COLLECTOR rather than the solver: with
+# collection.method: implicit the step mode defaults to `fixed`, because an error controller cannot
+# drive that enforcement -- its per-step error GROWS as dt shrinks.
+#
+# Every one of these is ANNOUNCED at runtime and RECORDED in full_config.yaml, so a run always says
+# which default set it used. Setting a key explicitly always wins, and where a combination cannot
+# work the model refuses BY NAME rather than quietly substituting (see collection.method: active_set
+# on Picard, and routing: continuous with collection.method: explicit).
+
 solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton
+                               # CHOOSING THIS ALSO CHOOSES A DEFAULT SET -- see the table above.
                                # newton means the WORKING recipe: the analytic-Jacobian path WITH
                                # dt-continuation, which it needs to converge from a cold start.
   tolerance: 1e-6              # per-solve step tolerance (-> snes_stol). RELATIVE and in HEAD: stop the

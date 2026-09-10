@@ -1511,7 +1511,17 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   else f << "  runoff_ratio: 0\n";
   f << "  infiltration_during_flow: " << (params.infiltration_on != 0) << "\n";
   f << "  collection:\n";
-  f << "    method: " << params.runoff_collector << "\n";
+  // THE RESOLVED COLLECTOR, not the requested one. Defaults are solver-dependent: with the key
+  // absent, Picard's default is `explicit` (the active_set pin is absent from the Picard operator and
+  // RHS), and the run announces it. This line used to print params.runoff_collector -- the REQUEST --
+  // so a Picard run that actually enforced `explicit` recorded `active_set`, and full_config.yaml
+  // described a run that did not happen. It also let a declared-config check (#83) pass on a false
+  // statement. Same resolution as the solve applies; keep in step with transient_groundwater.cpp.
+  {
+    std::string rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
+    if (rc == "active_set" && !params.runoff_collector_set && uc.use_picard) rc = "explicit";
+    f << "    method: " << rc << "\n";
+  }
 
   f << "\nsolver:\n";
   f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";

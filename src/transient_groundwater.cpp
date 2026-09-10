@@ -1295,19 +1295,25 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // also switches every collector removal off, so those solvers would run with the constraint
   // effectively UNENFORCED. That is not a degradation but a hard failure: Newton ABORTS (verified on
   // tests/boundary_consistency, which core-dumped the moment the default flipped). A default must not
-  // crash a supported path, so on Picard/Newton the DEFAULT resolves to `explicit` -- the post-solve
-  // clamp, which is robust on every solver and is the documented remedy. An EXPLICIT
-  // surface_water.collection.method is always honoured (the warning below still fires), so this only
-  // ever changes what an unspecified config does.
+  // crash a supported path, so the PICARD DEFAULT is `explicit` -- the post-solve clamp, which is
+  // robust on every solver. This is a solver-dependent DEFAULT, not a downgrade: an omitted key means
+  // "the default", and which default applies follows from the solver, exactly as it does for
+  // solver.time_integration and solver.time_step.mode. The full set is tabulated in config.yaml.
+  // An EXPLICIT surface_water.collection.method is always honoured, so this only ever decides what an
+  // unspecified config does.
   if (rc == "active_set" && !params.runoff_collector_set && user_context.use_picard) {
     rc = "explicit";
     static bool noted_downgrade = false;
     if (!noted_downgrade) {
       noted_downgrade = true;
+      // NOT a downgrade: this IS the Picard default. Defaults are solver-dependent by design -- an
+      // omitted key always means "the default", and which default applies follows from the solver,
+      // because the solvers do not support the same machinery. See the default-set table in
+      // config.yaml. Saying "downgrade" made an ordinary default read like a silent substitution.
       PetscPrintf(PETSC_COMM_WORLD,
-                  "NOTE: the default exfiltration enforcement is active_set, but the pin is absent from the "
-                  "Picard operator/RHS. On this solver the default resolves to `explicit` (post-solve clamp) "
-                  "instead. Set surface_water.collection.method explicitly to override.\n");
+                  "NOTE: surface_water.collection.method defaults to `explicit` on the Picard solver "
+                  "(the post-solve clamp), because the active_set pin is absent from the Picard "
+                  "operator/RHS. Defaults are solver-dependent; set the key explicitly to override.\n");
     }
   }
   bool collector_wants_active_set = false;  // set by rc == "active_set"; enabling happens below
