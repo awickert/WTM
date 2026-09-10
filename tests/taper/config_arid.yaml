@@ -1,0 +1,104 @@
+# tests/taper -- THE CONFIG STUDY C RUNS (the arid drawdown).
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT STUDY C MEASURES: taper 3 (evaporation.tapers.depth_extinction) clamps an arid drawdown. This is
+# the regression that BITES: with ET = 0.5 > precip = 0.2, taper 2 ALONE has no equilibrium and the
+# table runs away; taper 3 halts it at ~ -d_ext. The suite asserts the runaway AND that the clamp depth
+# scales with d_ext -- so the taper-2-alone arm IS the pre-taper-3 behaviour, deliberately preserved.
+#
+# THREE ARMS, differing in TWO keys, substituted by run.sh into the slots marked PER-ARM:
+#     C2   depth_extinction false             -- taper 2 alone; must run away
+#     C8   depth_extinction true, d_ext 8     -- clamps at ~ -8 m
+#     C4   depth_extinction true, d_ext 4     -- clamps at ~ -4 m, proving the depth scales
+#
+# THIS IS A SEPARATE FILE FROM config.yaml (studies A and B) because the two experiments differ in
+# eight keys, including whether the FSM runs at all. They shared one generator body with an override
+# merge; a merge is what let those eight differences go unstated.
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0   # run the FULL 60-cycle count; the clamp depth is read at the end, and an
+             # auto-stop would read it before the drawdown has finished falling
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "180yr"
+  report_interval: "3"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: explicit
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; identical on every arm
+  tolerance: 1e-8   # THIS STUDY'S OWN CHOICE, not the A/B builder's 1e-10: the full 60-cycle clamp run
+                    # does not need the tighter solve, which studies A and B need only for DET_RTOL
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what `anderson` resolves to. NOTE this differs from studies A and B, which pin
+                     # `fixed` for their cross-rank floor -- Study C asserts an EQUILIBRIUM clamp depth,
+                     # which is a dt-independent quantity, so the controller is free to size the step.
+    dt: 31536000
+    error_tol: 0.5   # baseline (tests/CONFIG_BASELINE.md)
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # PARAMETERISES taper 2, which is on below and is half the subject
+    logistic_width: 0.1   # PARAMETERISES taper 2, which is on below and is half the subject
+  extinction_depth: @DEXT@   # PER-ARM: 8 and 4 on the two clamping arms; the assertion is
+                             # that the clamp depth TRACKS this, so it is the subject
+  tapers:
+    surface_transition: true
+    depth_extinction: @TAPER3@   # PER-ARM: false on C2 (the runaway control), true on C8/C4
+io:
+  source: '@INPUTS@'
+  region: 'taper_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite

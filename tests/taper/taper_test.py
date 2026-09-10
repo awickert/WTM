@@ -23,6 +23,7 @@ Run as:  taper_test.py <wtm.x> [nrank ...]        (default ranks: 4)
 Exits non-zero if any assertion fails.
 """
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -44,16 +45,32 @@ CELLS_PER_DEGREE = 10.0
 SOUTHERN_EDGE    = -45.0
 
 # Emit the nested-YAML config (config.yaml schema) from the legacy key-value bodies below.
-EMIT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "emit_config.sh")
-
-
 def _write_tif(path, data, dtype):
     _grid_write_tif(path, np.asarray(data), CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
 
 
-def _write_cfg(path, legacy_text):
+CFG_AB   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
+CFG_ARID = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_arid.yaml")
+
+
+def _write_cfg(path, template, **subs):
+    """Render a config FILE by substituting its @SLOT@ tokens (#83: no generator, no shim).
+
+    Every slot must be supplied and every supplied slot must appear -- an unfilled @SLOT@ would reach
+    the model as a literal, and a supplied-but-absent one means the caller thinks it is setting
+    something the config does not read. Both are silent-wrong, so both raise.
+    """
+    text = open(template).read()
+    for k, v in subs.items():
+        tok = f"@{k}@"
+        if tok not in text:
+            raise KeyError(f"{os.path.basename(template)} has no slot {tok} to fill")
+        text = text.replace(tok, str(v))
+    left = re.findall(r"@[A-Z0-9_]+@", text)
+    if left:
+        raise KeyError(f"{os.path.basename(template)} left unfilled: {sorted(set(left))}")
     with open(path, "w") as f:
-        subprocess.run([EMIT], input=legacy_text, text=True, stdout=f, check=True)
+        f.write(text)
 
 
 def write_fixture(d, owe, topo):
@@ -77,55 +94,14 @@ def write_fixture(d, owe, topo):
         _write_tif(os.path.join(d, fname), np.asarray(arr), dt)
 
 
-def _cfg(d, txt, prefix):
-    # STEP MODE PINNED TO fixed (was `adaptive_dt false` until #38 made one key of the two). Study A's DET_RTOL was derived from a measured FLOOR under fixed dt: the
-    # cross-rank difference tracked snes_stol and then floored at 8.63e-10 (4.18e-09 -> 8.63e-10 ->
-    # 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), which is what makes 1e-9 a principled bound rather than a
-    # fitted one. Under adaptive stepping that floor is GONE -- the difference stops being
-    # tolerance-limited and moves erratically, measured on this fixture at stol 1e-10 vs 1e-12:
-    #     owe=0.050  1.46e-09 -> 6.79e-08      owe=0.150  5.63e-10 -> 4.55e-09
-    #     owe=0.200  1.54e-09 -> 4.71e-11
-    # i.e. up to ~100x the fixed-dt floor and NOT reducible by tightening the solve. Widening DET_RTOL to
-    # accommodate that would bless a real loss of cross-rank reproducibility rather than measure the
-    # taper, which is this test's subject. See the task on adaptive + FSM cross-rank behaviour.
-    return f"""run_type equilibrium
-time_step_mode fixed
-fsm_on 1
-infiltration_on 0
-runoff_ratio_on 0
-taper_surface_transition true
-snes_stol 1e-10
-deltat 31536000
-total_time 10yr
-report_interval 2
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start t0
-time_end t0
-surfdatadir {d}
-region {REGION}
-supplied_wt 1
-save_nreport_interval 9999
-runoff_collector active_set
-solver_method anderson
-textfilename {txt}
-outfile_prefix {prefix}
-"""
-
-
+# STUDIES A AND B READ tests/taper/config.yaml; STUDY C READS tests/taper/config_arid.yaml (#83).
+# The DET_RTOL rationale that used to live here -- the measured cross-rank floor under fixed dt, and
+# why adaptive stepping destroys it -- moved INTO config.yaml, next to the `mode: fixed` it argues for.
+# What stays here is about the test rather than the config:
+#
 # Matrix-free Anderson path (forced; default is now Picard) with both tapers on. The width 1.0
 # (= qmax*dt, the marginal-stability point) is a deliberate Anderson-path stress; Picard would need
 # the dt-scaled default. Anderson is the opt-in path this test also keeps covered.
-# -wtm_eq_tol 0: run the full fixed cycle count (cross-rank determinism check; do not auto-stop).
-# qmax and width now travel in the CONFIG (surface_water.collection.sink.*); those flags are retired.
-# The width 1.0 stays the deliberate Anderson-path stress described above -- it just lives in the config
-# body now instead of on the command line.
-# snes_stol 1e-10, NOT 1e-8. Study A's cross-rank determinism check (rtol 1e-9) is tighter than the
-# solve it judges: under active_set the two rank decompositions land at different points inside a loose
-# tolerance ball, so at 1e-8 the summed water table disagreed by 4.18e-09 at owe = precip. That is
-# tolerance-limited, not nondeterminism -- it tracks snes_stol and then FLOORS (4.18e-09 -> 8.63e-10 ->
-# 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), the same signature budget_closure documents for its legacy
 # arm. The taper this study was written for hid the need: holding wtd < 0 everywhere kept the solve off
 # the crossing, where it is stiffest. Judge determinism where the algebraic error cannot masquerade as it.
 # snes_stol has moved into the CONFIG (see _cfg): a test config must state every setting its run
@@ -138,7 +114,7 @@ def _run(wtm, d, tag, n):
     """Run wtm on n ranks (leaves outputs in d); return the final-cycle summed water table (col 11)."""
     txt = os.path.join(d, f"{tag}_n{n}.txt")
     cfg = os.path.join(d, f"cfg_{tag}_n{n}.yaml")
-    _write_cfg(cfg, _cfg(d, txt, os.path.join(d, f"{tag}_n{n}_")))
+    _write_cfg(cfg, CFG_AB, INPUTS=d, WORK=d, STEM=f"{tag}_n{n}")
     env = {**os.environ, "OMP_NUM_THREADS": "1"}
     subprocess.run(["mpirun", "-n", str(n), wtm, cfg] + TAPER_FLAGS,
                    cwd=d, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -242,35 +218,24 @@ def _arid_fixture(d, ksat=1e-9):
         _write_tif(os.path.join(d, fname), np.asarray(arr), dt)
 
 
-def _merge_cfg(base, extra):
-    """base + per-arm overrides, with the overridden base lines REMOVED.
-
-    emit_config.sh refuses a key given twice (a last-wins duplicate is how an accidental override
-    hides), so an arm that re-states a base key -- Study C passes `snes_stol 1e-8` over the base's
-    1e-10 -- has to drop the base line rather than rely on ordering. Same fix as tests/golden.
-    """
-    over = {l.split()[0] for l in extra.splitlines() if l.strip()}
-    kept = [l for l in base.splitlines() if l.strip() and l.split()[0] not in over]
-    return "\n".join(kept) + "\n" + extra
-
-
-def _arid_cfg(d, txt, prefix, extra=""):
-    # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
-    base = (f"run_type equilibrium\nfsm_on 0\ninfiltration_on 0\nrunoff_ratio_on 0\n"
-            f"taper_surface_transition true\nsnes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
-            f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
-            f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
-            # `legacy` was retired with the taper-1 band sink (fork issue #7). This is an ARID drawdown
-            # with fsm_on 0: the table falls and no cell crosses the surface, so the collector is
-            # incidental here. `explicit` is the surviving half of what legacy meant (the post-solve clamp).
-            f"runoff_collector explicit\nsolver_method anderson\n"
-            f"eq_tol 0\n" f"textfilename {txt}\noutfile_prefix {prefix}\n")
-    return _merge_cfg(base, extra)
+# Study C reads tests/taper/config_arid.yaml (#83). What used to be a legacy-key body plus a
+# per-arm override merge is now a file with two PER-ARM slots -- and the merge is what had let eight
+# differences between this study and studies A/B go unstated, including whether the FSM runs at all.
+#
+# The reasons that used to sit inline here travelled to the keys they explain, in config_arid.yaml:
+#   routing: off        a pure groundwater drawdown, no lakes; 180 yr (60 reports x 3 yr)
+#   method: explicit    `legacy` was retired with the taper-1 band sink (fork issue #7). In an arid
+#                       drawdown with routing off the table FALLS and no cell crosses the surface, so
+#                       the collector is incidental; `explicit` is the surviving half of what legacy
+#                       meant (the post-solve clamp).
+#   tol: 0              run the full 60-cycle count -- the clamp depth is read at the end.
 
 
-def _arid_run(wtm, d, tag, flags, cfg_extra=""):
+def _arid_run(wtm, d, tag, flags, taper3, dext):
+    """taper3 and dext are REQUIRED, with no default: they are the two keys the three arms differ
+    in, so a default here would let an arm silently become a copy of another one (#24)."""
     cfg = os.path.join(d, f"cfg_{tag}.yaml")
-    _write_cfg(cfg, _arid_cfg(d, os.path.join(d, f"{tag}.txt"), os.path.join(d, f"{tag}_"), cfg_extra))
+    _write_cfg(cfg, CFG_ARID, INPUTS=d, WORK=d, STEM=tag, TAPER3=taper3, DEXT=dext)
     subprocess.run([wtm, cfg] + flags, cwd=d, env={**os.environ, "OMP_NUM_THREADS": "1"},
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_") and f.endswith(".tif"))
@@ -288,7 +253,7 @@ def study_c(wtm):
     # Nothing on the command line: both tapers and the tolerance are config keys, and each arm's
     # config states what it used. snes_stol 1e-8 (not the builder's 1e-10) is this study's own choice
     # for the full 60-cycle clamp run; the shim takes the LAST value for a key, so cfg_extra overrides.
-    E, STOL = [], "snes_stol 1e-8\n"
+    E = []   # nothing on the command line; snes_stol 1e-8 is stated in config_arid.yaml
     c = (NY // 2, NX // 2)  # interior cell, farthest from the ocean ring
     fails = 0
     with tempfile.TemporaryDirectory(prefix="taperC_") as d:
@@ -296,9 +261,9 @@ def study_c(wtm):
         # Both tapers are CONFIG keys now (evaporation.tapers). taper 3 is default-on, so "taper 2
         # alone" must explicitly disable it -- stated in the config rather than passed as a flag, so
         # each arm's config says which tapers its run used.
-        w2 = float(_arid_run(wtm, d, "C2", E, STOL + "taper_depth_extinction false\n")[c])
-        w8 = float(_arid_run(wtm, d, "C8", E, STOL + "taper_depth_extinction true\nextinction_depth 8\n")[c])
-        w4 = float(_arid_run(wtm, d, "C4", E, STOL + "taper_depth_extinction true\nextinction_depth 4\n")[c])
+        w2 = float(_arid_run(wtm, d, "C2", E, taper3="false", dext=8)[c])
+        w8 = float(_arid_run(wtm, d, "C8", E, taper3="true", dext=8)[c])
+        w4 = float(_arid_run(wtm, d, "C4", E, taper3="true", dext=4)[c])
         runaway = w2 < -50.0                                          # no equilibrium without taper 3
         ok8 = -8.0 <= w8 <= -6.5                                      # clamped just inside d_ext = 8
         ok4 = -4.0 <= w4 <= -3.0                                      # clamped just inside d_ext = 4
