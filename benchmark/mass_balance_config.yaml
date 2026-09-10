@@ -1,0 +1,88 @@
+# benchmark/mass_balance_test.sh -- THE CONFIG THIS BENCHMARK RUNS.
+#
+# A REAL FILE, not a generator's output. The last three callers of tests/emit_config.sh were the
+# benchmark scripts; this is one of them, migrated so the shim can be deleted (#83).
+#
+# PROVENANCE: (none) = the script chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS benchmark and owned here.
+#
+# WHAT THIS MEASURES: that the water budget agrees between 1 and N MPI ranks. BOTH ARMS RUN THIS SAME
+# FILE -- the only difference is the rank count, which is the point: a config difference between the
+# arms would make the comparison meaningless.
+#
+# run.type: test reads only topography and slope; the geometry comes from the geotransform (#124).
+# routing is on so that BOTH ocean-loss paths -- groundwater and FSM -- are exercised.
+#
+# TOKENS substituted by the script: @INPUTS@, @WORK@, @TAG@.
+
+run:
+  type: test
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: saturated
+time:
+  total: "3yr"
+  report_interval: "1"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  runoff_ratio: 0
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  tolerance: 1e-6   # THIS SCRIPT'S OWN CHOICE, not the baseline 1e-8. It used to be `-snes_stol 1e-6`
+                    # ON THE COMMAND LINE while the config said 1e-8 -- and the CLI won, because
+                    # solver.tolerance reaches PETSc through set_opt_if_unset (WTM.cpp). The config
+                    # was describing a run that did not happen (#79). It is stated here now and the
+                    # flag is off the command line.
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this measures MASS, not convergence speed
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    dt: 31536000
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # PARAMETERISES the surface-transition taper, on below
+    logistic_width: 0.1   # PARAMETERISES the surface-transition taper, on below
+  extinction_depth: 8   # gates the depth_extinction taper, on below
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing on, this taper moves water across the surface, so it is inside the mass balance being checked
+    depth_extinction: true   # SHIPPED-ON -- the shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'mb'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@TAG@_'
+  run_log: '@WORK@/@TAG@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@TAG@_prov'
+  if_exists: overwrite

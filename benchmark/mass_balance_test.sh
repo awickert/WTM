@@ -37,7 +37,14 @@ run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     tf="/tmp/${tag}.txt"
     rm -f "$tf" "/tmp/${tag}_"*.tif
     # run_type test: only topography + slope are read; geometry comes from the geotransform (#124).
-    ../tests/emit_config.sh > "$cfg" <<EOF
+    # THE CONFIG IS A FILE NOW: benchmark/mass_balance_config.yaml. The three benchmark scripts were
+    # the last callers of tests/emit_config.sh; migrating them is what lets the shim be deleted (#83).
+    # BOTH ARMS RENDER THE SAME FILE -- only the rank count differs, which is the whole point of the
+    # comparison. -snes_stol 1e-6 is no longer passed on the command line: solver.tolerance states it,
+    # and the CLI value used to win silently over the config (#79).
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|/tmp|g" -e "s|@TAG@|$tag|g" \
+        "$(dirname "${BASH_SOURCE[0]}")/mass_balance_config.yaml" > "$cfg"
+    grep -q "@[A-Z_]*@" "$cfg" && { echo "ERROR: unfilled slot in $cfg" >&2; exit 1; }
 run_type test
 fsm_on 1
 deltat 31536000
@@ -57,7 +64,7 @@ textfilename $tf
 outfile_prefix /tmp/${tag}_
 EOF
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
-    OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" -snes_stol 1e-6 >/dev/null 2>&1
+    OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" >/dev/null 2>&1
     rm -f "$cfg"
     awk 'NF>=11 && $1 ~ /^[0-9]+$/ {r=$9; o=$10} END{print r, o}' "$tf"
 }
