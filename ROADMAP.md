@@ -46,7 +46,6 @@ Group: **M**odel defect · **T**est integrity · **P**hysics/measurement · **D*
 |---|---|---|---|---|
 | - | 42 | D | **NEXT (Andy)** Stale vocabulary: `-wtm_fsm_delta_source`, "overwrite" | **Legibility.** Docs naming keys that no longer exist send a new user down dead ends |
 | - | 65 | T | **THEN (Andy)** Convert the remaining head-unit measurements to water volume | **One currency.** The model judges every criterion in water; a test measuring head can pass while water is wrong |
-| 1 | 60 | P | Order-aware retry — real speedup, exonerated; the blocker was #61 | **Speed.** Same hardware, faster run. Gain already measured |
 | 2 | 64 | M | Sub-cycle the FSM coupling to bound the delta admitted per step | **Correctness at production settings.** Bounds a per-step coupling error that has no limit today. **Moves goldens — needs explicit authorization** |
 | 3 | 54 | T | Test and guard the BUDGET at boundaries. Folds in #34 | **The largest correctness gap.** Solution-correctness at boundaries is covered; MASS-correctness is not. A water model can lose water where nobody looks |
 | 4 | 52 | M | Land→ocean outflow mis-booked at pinned cells (211 of the outer ring, corners 1.5x) | **The defect #54 fences.** Localised already. Water table unaffected, so no goldens move |
@@ -62,6 +61,7 @@ Group: **M**odel defect · **T**est integrity · **P**hysics/measurement · **D*
 | 16 | 58, 59 | P | The non-monotone bump: rate-vs-exposure; FSM activity does not predict it | **Controller understanding.** #59 is a measured NEGATIVE, kept so it is not re-walked |
 | 17 | 77, 78 | P | Storativity smoothing inert under active_set; BE residual growth at fine dt | Recorded observations; #78 needs a purpose-built config before it can be believed |
 | 18 | 37 | T | Integrator coverage — which suites DECLARE which integrator | Folded into #83's authoring pass; re-check and close |
+| last | 60 | P | Order-aware retry — **NEEDS A CASE THAT WOULD OTHERWISE ABORT** (Andy, 2026-09-11) | Idea sound (#22: observed order 0.80–1.86, PI gains assume exactly 2), but UNTESTABLE on any fixture in hand: healthy runs have 0–1 rejects, and the reject-rich regimes ABORT. Reframe as a ROBUSTNESS claim — does the measured-order retry let an aborting run complete? — not a speed one |
 
 ## Filed later, not part of the agreed order
 
