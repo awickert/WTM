@@ -1576,7 +1576,12 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   if (uc.dtc_dt0 > 0.0) f << "  newton:\n";
   // Same rule as dt_max: the ramp's starting step exists only while the ramp does, and
   // solver.time_step.mode: ramp says whether it does. Its default when in force is deltat/200.
-  if (uc.dtc_dt0 > 0.0) f << "    dt0: " << cfg_num(uc.dtc_dt0) << "\n";
+  // WITH AN EXPLICIT `s`. dt0 is parsed by parse_time_seconds, which reads a BARE number as YEARS,
+  // while this value is in SECONDS -- so emitting it bare made full_config.yaml unre-runnable: feeding
+  // it back multiplied dt0 by 31536000 and the continuation then failed to converge. Measured: unset
+  // recorded 12096, and re-declaring that same 12096 recorded 381459456000 = 12096 * 31536000.
+  // (solver.time_step.dt is a raw-seconds key and needs no suffix; dt_max already carries one.)
+  if (uc.dtc_dt0 > 0.0) f << "    dt0: \"" << cfg_num(uc.dtc_dt0) << "s\"\n";
 
   f << "\ndev:\n";
   f << "  storage_form: " << (params.volume_storage ? "volume" : "secant") << "\n";
