@@ -20,49 +20,25 @@ make_work snap
 TOL="${TOL:-0.0125}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem surfdir supplied_wt
-# adaptive_dt PINNED OFF. This test asserts the output FILENAME encodes year == cycle, which holds only
-# while deltat is a fixed 1 yr with report_interval 1. An adaptive controller breaks that identity.
-# Pinned explicitly rather than relying on the default.
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-time_step_mode fixed
-run_type equilibrium
-fsm_on 0
-# Pinned to the FORMER default collector on purpose. This test's subject is snapshot/restart
-# MECHANICS (filename format; a warm restart reaching the same equilibrium in fewer cycles), which are
-# collector-independent. Under the current default, active_set, this fixture reaches equilibrium in
-# TWO cycles at any tolerance tried (1e-3 down to 1e-6) -- so "warm restart takes fewer cycles than
-# cold" has no headroom left to be a meaningful assertion. Rather than weaken the assertion or invent
-# a harder fixture for a mechanic that does not depend on the collector, hold the collector fixed.
-# (That active_set converges here in 2 cycles against implicit's 7 is itself worth knowing; the
-# collector's own behaviour is covered by dt_sensitivity, active_set, multilake and budget_closure.)
-runoff_collector implicit
-infiltration_on 0
-runoff_ratio_on 0
-deltat 31536000
-total_time 100yr
-save_nreport_interval 1
-report_interval 1
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $2
-region snaptest
-supplied_wt $3
-eq_tol ${EQ_TOL:-0.001}
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/$1_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/snapshot_restart/config.yaml. Every setting the run resolves
+# to is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# solver.time_step.mode: fixed is PINNED in that file, and it is load-bearing: this test asserts the
+# output FILENAME encodes year == cycle, which holds only while dt is a fixed 1 yr with
+# report_interval 1. An adaptive controller breaks that identity outright.
+emit() { # $1 stem, $2 input dir, $3 initial_water_table, $4 equilibrium_stop.tol   (ALL REQUIRED)
+  local dir="${2:?emit needs an input dir}"
+  local iwt="${3:?emit needs an initial_water_table: saturated|supplied -- naming it IS the restart arm}"
+  local et="${4:?emit needs an equilibrium_stop.tol}"
+  sed -e "s|@INPUTS@|$dir|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  initial_water_table: saturated|  initial_water_table: $iwt|" \
+      -e "s|^    tol: 0.001|    tol: $et|" config.yaml > "$WORK/$1.yaml"
 }
 stop_cycle() { grep -oE "stopping at cycle [0-9]+" "$1" | grep -oE "[0-9]+$"; }
 BB=""
 
 # --- cold full run (saves every cycle) ---
-emit cold "$INP" 0
+emit cold "$INP" saturated 0.001
 "$WTM" "$WORK/cold.yaml" $BB > "$WORK/cold.log" 2>&1 || { echo "RUN FAILED: cold"; tail -3 "$WORK/cold.log"; exit 2; }
 C_COLD=$(stop_cycle "$WORK/cold.log")
 
@@ -72,7 +48,7 @@ C_COLD=$(stop_cycle "$WORK/cold.log")
 # which broke when the default collector became active_set: that converges ~3x faster (2 cycles here
 # vs 7 under implicit), so cycles 3 and 5 no longer existed. A filename-format assertion should not
 # depend on convergence speed.
-EQ_TOL=0 emit fname "$INP" 0
+emit fname "$INP" saturated 0
 sed -i "s#^  total:.*#  total: '6yr'#" "$WORK/fname.yaml"
 "$WTM" "$WORK/fname.yaml" > "$WORK/fname.log" 2>&1 \
   || { echo "RUN FAILED: fname"; tail -3 "$WORK/fname.log"; exit 2; }
@@ -94,7 +70,7 @@ MID=$(( C_COLD / 2 )); [[ "$MID" -ge 1 ]] || MID=1
 SNAP=$(printf "%s/cold_%09d_%dyr.tif" "$WORK" "$MID" "$MID")
 [[ -f "$SNAP" ]] || { echo "FAIL: mid snapshot $(basename "$SNAP") missing"; exit 1; }
 mkdir -p "$WORK/rinp"; cp "$INP"/*.tif "$WORK/rinp/"; cp "$SNAP" "$WORK/rinp/snaptest_ta_starting_wt.tif"
-emit restart "$WORK/rinp" 1
+emit restart "$WORK/rinp" supplied 0.001
 "$WTM" "$WORK/restart.yaml" $BB > "$WORK/restart.log" 2>&1 || { echo "RUN FAILED: restart"; tail -3 "$WORK/restart.log"; exit 2; }
 C_RST=$(stop_cycle "$WORK/restart.log")
 

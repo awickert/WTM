@@ -1,0 +1,103 @@
+# tests/snapshot_restart -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES, in two parts:
+#   FILENAME  output rasters are {prefix}{cycle:09}_{year}yr.tif, so with dt = 1 yr and
+#             report_interval = 1 the simulated year MUST equal the cycle number.
+#   RESTART   a warm restart from a mid-run snapshot must reach the SAME equilibrium as a cold run AND
+#             get there in FEWER cycles -- which only happens if the snapshot was actually loaded. A
+#             broken load restarts cold, reaches the same answer, and takes the SAME number of cycles,
+#             so the CYCLE COUNT is the assertion that can tell the difference.
+#
+# THAT MAKES time.report_interval AND solver.time_step.dt LOAD-BEARING for the FILENAME half: the
+# cycle == year identity holds only at report_interval 1 with a one-year step.
+#
+# ARMS, all made from this file by run.sh:
+#   cold     as written                       the reference
+#   fname    equilibrium_stop.tol 0           runs the clock out so there are cycles to name
+#   restart  initial_water_table: supplied    reads the snapshot from a rebuilt input directory
+#
+# TOKENS substituted by run.sh: @INPUTS@ (the restart arm points this at its own rebuilt dir),
+# @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  initial_water_table: saturated   # cold start. run.sh overrides to `supplied` for the restart arm,
+                                   # which is the whole point of that arm.
+  equilibrium_stop:
+    tol: 0.001   # the cold and restart arms. run.sh overrides to 0 for `fname`, which must run the
+                 # clock out rather than stop early so there are cycles to name.
+    metric: rms
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+time:
+  total: "100yr"
+  report_interval: "1"
+  save_every_n_reports: 1
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: implicit
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; identical on every arm
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed
+    dt: 31536000
+    error_tol: 0.1   # the resolved value; mode is fixed here so nothing steers on it
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'snaptest'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
