@@ -42,8 +42,27 @@ surface_water:
   runoff_ratio: 0
   infiltration_during_flow: false
   collection:
-    method: active_set   # what an absent key resolves to. INERT while routing is off:
-                         # with no surface water to collect, no collector runs
+    # off, AND THE CHOICE IS LOAD-BEARING (#34). This was active_set, with the comment "INERT while
+    # routing is off: with no surface water to collect, no collector runs". That comment is FALSE -- the
+    # collector runs whether or not routing does, and active_set was the reason this suite's fields were
+    # identically zero: it enforces wtd <= 0, so once the wedge saturated it pinned all 460 land cells at
+    # exactly 0 and held them there.
+    #
+    # It also broke check 3, and that is the sharper reason it must be off. active_set is a SEMISMOOTH
+    # obstacle -- a min-NCP built on max() -- and -snes_test_jacobian is a SMOOTH finite-difference check.
+    # A smooth FD reference cannot verify a semismooth tangent across the kink. Measured, all else equal:
+    #     collection.method: active_set -> ||J - Jfd||/||J|| = 0.208027
+    #     collection.method: off        -> 8.53363e-08
+    #     collection.method: explicit   -> 8.53363e-08
+    # The 0.208 was mistaken for a Jacobian defect until it was isolated. It is not: sweeping fdepth a
+    # from 200 to 200000 (flattening the exp-T until the problem is nearly linear) leaves it at ~0.21, so
+    # it is not the T tangent; it is invariant to -mat_fd_coloring_err across 8 orders, so it is not FD
+    # noise; and it vanishes entirely when the obstacle is off. It is the obstacle's kink.
+    #
+    # Check 3's subject is the OFF-MAP LAND-SLOPE ghost tangent, not the obstacle tangent, so the obstacle
+    # has no business being in the matrix being checked. The obstacle's own tangent is exercised where it
+    # belongs -- combination_sweep and budget_closure both carry active_set arms.
+    method: off
 boundaries:
   land: neumann_toposlope
 solver:
