@@ -1,0 +1,102 @@
+# tests/recharge_consistency -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: three TIME-INTEGRATION SCHEMES must agree as dt refines. Six arms: three
+# schemes x {coarse dt = 1 wk, fine dt = 0.25 wk}.
+#
+# A VACUOUS ARM WAS FOUND HERE BY WRITING THE KEYS DOWN (#83, 2026-09-10). The `cc` arm -- named for
+# backward-Euler, the CONTROL of the whole comparison -- left solver.time_integration ABSENT, and an
+# absent integrator resolves to tr-bdf2 on the Anderson path. Measured directly: absent -> tr-bdf2.
+# So `cc` and `tr` were the SAME SCHEME, and a three-scheme agreement test was really a two-scheme one
+# with one comparison against itself. It passed. It is now stated as backward-euler, which is what the
+# arm's name has always claimed. (#24's class, and #37's: coverage is whatever suites DECLARE.)
+#
+# THREE KEYS VARY PER ARM: solver.time_integration, solver.time_step.dt, time.save_every_n_reports
+# (the last scaled inversely so both dt cover the same simulated time).
+#
+# solver.time_step.mode: fixed IS PINNED: the arms ARE a known coarse/fine dt pair, and a controller
+# free to resize dt would collapse that contrast and leave the comparison at no particular dt.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@, @SAVE@.
+
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0   # the early stop is DISABLED: the arms are a fixed coarse/fine CYCLE COUNT, and stopping
+             # early would break the equal-simulated-time pairing the comparison rests on.
+    metric: frac   # UNSTATED: nobody chose this -- decide it for this suite
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+  initial_water_table: saturated
+time:
+  total: "241920000s"
+  save_every_n_reports: @SAVE@   # PER-ARM: scaled inversely with dt
+  report_interval: "50"
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement; identical on every arm, so the scheme comparison
+                         # is not confounded by a different surface constraint
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: @INTEG@   # PER-ARM: backward-euler | tr-bdf2 | bdf2 -- THE SUBJECT
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    dt: @DT@   # PER-ARM: coarse 1 wk vs fine 0.25 wk
+    error_tol: 0.1   # the resolved value; mode is fixed here so nothing steers on it
+    mode: fixed
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'rech_test'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

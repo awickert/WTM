@@ -16,45 +16,31 @@ make_work rechtest
 TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
 PY="${PY:-python3}"
 
-emit() { # scheme dt_seconds cycles stem   [env: INTEG=]
-  local flags="$1" dt="$2" cyc="$3" stem="$4"
-# adaptive_dt PINNED OFF. The arms are coarse dt = 1 wk (8 cycles) against fine dt = 0.25 wk (32
-# cycles); a controller free to resize dt would collapse that contrast and the cross-scheme comparison
-# would no longer be AT a known dt. Pinned explicitly rather than relying on the default.
-  ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
-snes_stol 1e-8
-solver_method anderson
-time_step_mode fixed
-run_type transient
-${INTEG:+time_integration $INTEG}
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat $dt
-total_time $(( cyc * 50 * dt ))s
-save_nreport_interval $cyc
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region rech_test
-supplied_wt 0
-textfilename $WORK/$stem.txt
-outfile_prefix $WORK/${stem}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/recharge_consistency/config.yaml. Every setting the run
+# resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
+# WTM_DECLARED_SUITES).
+#
+# THE `cc` ARM WAS VACUOUS UNTIL THIS COMMIT. It left solver.time_integration ABSENT, and an absent
+# integrator resolves to tr-bdf2 on the Anderson path -- measured directly. So `cc`, the backward-Euler
+# CONTROL of a three-scheme agreement test, was a second copy of `tr`, and one of the comparisons was
+# against itself. It passed. Every arm now NAMES its scheme.
+emit() { # $1 stem, $2 time_integration, $3 time_step.dt, $4 save_every_n_reports   (ALL REQUIRED)
+  local ti="${2:?emit needs a time_integration -- it is the subject; an absent one resolves to tr-bdf2}"
+  local dt="${3:?emit needs a dt: coarse or fine}"
+  local sv="${4:?emit needs a save_every_n_reports: it scales inversely with dt}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|@INTEG@|$ti|g" -e "s|@DT@|$dt|g" -e "s|@SAVE@|$sv|g" config.yaml > "$WORK/$1.yaml"
 }
 
 # T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" )
-declare -A INTEG_CFG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" )
+# `cc` is backward-euler EXPLICITLY. It used to be "" -- absent -- which resolved to tr-bdf2.
+declare -A INTEG_CFG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2" )
 BASE="-snes_anderson_restart_type none"
 WK=604800
 for s in cc tr bdf2v; do
-  INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $WK        8  "${s}_coarse"
-  INTEG="${INTEG_CFG[$s]}" emit "${FLAG[$s]}" $((WK/4)) 32  "${s}_fine"
+  emit "${s}_coarse" "${INTEG_CFG[$s]}" $WK        8
+  emit "${s}_fine"   "${INTEG_CFG[$s]}" $((WK/4)) 32
   for d in coarse fine; do
     "$WTM" "$WORK/${s}_${d}.yaml" $BASE ${FLAG[$s]} > "$WORK/${s}_${d}.log" 2>&1 \
       || { echo "RUN FAILED: $s $d"; tail -3 "$WORK/${s}_${d}.log"; exit 2; }
