@@ -18,6 +18,12 @@ Compares the config handed to the model against the full_config.yaml that run wr
   DIFFER   declared and resolved, but not to the same value -- the model overrode the request,
                                          which is the dev.active_set class of defect (#28).
 
+ONE KEY MAY BE DECLARED ABSENT, for the arm whose SUBJECT IS the absent key (#92). Writing
+  # DECLARED-ABSENT: <dotted.key> -- <why it must not be set, and what it is expected to resolve to>
+in the config satisfies the rule for that key: the author still names it and still says what they
+expect, they just say it in prose because setting it would delete the property under test. It is not
+an exemption from declaring -- it is a declaration of a different fact.
+
 Values are compared SEMANTICALLY, not textually: "20yr" == "630720000s" == 630720000, and
 "1e9" == "1000000000". A test may not be failed for writing a duration the way a human does.
 """
@@ -65,13 +71,33 @@ DERIVED_SECTIONS = ("derived",)
 def _settings_only(d):
     return {k: v for k, v in d.items() if not k.startswith(DERIVED_SECTIONS)}
 
+# An arm whose SUBJECT IS AN ABSENT KEY (#92). budget_closure has three: they omit
+# surface_water.collection.method precisely to assert what the model resolves an unset key TO, so
+# writing the key down would delete the property under test -- the arm would become a copy of the arm
+# that sets it explicitly. Such a config declares the absence instead, in a comment line of its own:
+#
+#     # DECLARED-ABSENT: surface_water.collection.method -- this arm's SUBJECT is the default
+#     # resolution; writing the key would delete the property under test. Expect: active_set
+#
+# That is still a DECLARATION -- the author states the key, says why it is absent, and says what they
+# expect it to resolve to -- so it satisfies the rule rather than dodging it. What it must never become
+# is a way to quieten an inconvenient MISSING, so it is deliberately narrow: the key must be named
+# exactly, and the run's own assertion (WANT_COLL in budget_closure) still checks the resolved value.
+_ABSENT_RE = re.compile(r"^#\s*DECLARED-ABSENT:\s*([A-Za-z0-9_.]+)", re.M)
+
+def declared_absent(input_path):
+    """Dotted keys this config says it deliberately does not set, with the reason it gives."""
+    with open(input_path) as f:
+        return set(_ABSENT_RE.findall(f.read()))
+
 def compare(input_path, resolved_path):
     """Returns (missing, extra, differ) as sorted lists of dotted keys."""
     with open(input_path) as f:
         declared = _settings_only(flatten(yaml.safe_load(f) or {}))
     with open(resolved_path) as f:
         resolved = _settings_only(flatten(yaml.safe_load(f) or {}))
-    missing = sorted(k for k in resolved if k not in declared)
+    absent = declared_absent(input_path)
+    missing = sorted(k for k in resolved if k not in declared and k not in absent)
     extra   = sorted(k for k in declared if k not in resolved)
     differ  = sorted(k for k in resolved if k in declared and not same(declared[k], resolved[k]))
     return missing, extra, differ, declared, resolved
