@@ -1,0 +1,105 @@
+# tests/solver_consistency -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: two matrix-BASED solvers independently corroborating the matrix-FREE one.
+# That claim only holds if the three solvers are ACTUALLY DIFFERENT -- the model downgrades some
+# combinations and says so in its log, and a silent downgrade would turn the oracle into a mirror.
+# Naming solver.method per arm is what makes the downgrade visible rather than inherited.
+#
+# solver.method: newton also requires solver.time_step.mode: ramp -- Newton does not converge from a
+# cold start without dt-continuation -- so that arm names BOTH. Another case of writing one key down
+# forcing its neighbour.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0.0001
+    metric: rms
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+  initial_water_table: saturated
+time:
+  total: "60480000000s"
+  report_interval: "50"
+  save_every_n_reports: 500
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement; identical on every arm
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  time_integration: tr-bdf2   # PER-ARM in effect: `anderson` resolves to this; picard and newton
+                              # resolve to backward-euler, so run.sh names it alongside the method
+  method: anderson   # PER-ARM: anderson (matrix-free) vs picard and newton (matrix-based oracles)
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # PER-ARM: `volume` for the agreement arms; one arm uses `head` to check the
+                     # governing metric itself (#61)
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # PER-ARM: the newton arm needs `ramp` (it does not converge from cold without
+                     # dt-continuation), which is why naming the method forces naming this too
+    dt: 2419200
+    error_tol: 0.0001   # the resolved target. TIGHT: three solvers must agree to ~1e-4, so each must
+                        # converge tighter than the tolerance the comparison uses
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md). DELETED on the ramp arm: under
+                # time_step.mode: ramp the model records no step-norm at all.
+#@RAMP@
+#@RAMPNEWTON@
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'sconsist'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  trace: []   # PER-ARM: two arms request [water_step] to inspect the per-step water trace
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

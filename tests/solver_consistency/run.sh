@@ -32,33 +32,46 @@ TOL="${TOL:-0.00025}"    # 0.25 mm of water on a ~6 m mound (was 1e-3 m of head)
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: METHOD=, MODE=]
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-run_type equilibrium
-${METHOD:+solver_method $METHOD}
-${MODE:+time_step_mode $MODE}
-${TRACE:+trace $TRACE}
-${CMETRIC:+convergence_metric $CMETRIC}
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 60480000000s
-save_nreport_interval 500
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region sconsist
-supplied_wt 0
-eq_tol 0.0001
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/solver_consistency/config.yaml. Every setting the run
+# resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
+# WTM_DECLARED_SUITES).
+#
+# NAMING THE METHOD FORCES NAMING TWO NEIGHBOURS, and both are arguments here rather than defaults:
+#   time_integration  anderson resolves to tr-bdf2, picard and newton to backward-euler
+#   time_step.mode    newton needs `ramp` -- it does not converge from a cold start without
+#                     dt-continuation -- while the others take adaptive
+#   collection.method picard needs `explicit`: active_set is REFUSED on Picard, because the pin is
+#                     absent from the Picard operator and RHS, so the constraint would silently fall
+#                     through (measured: water piles over 1440 of ~1444 land cells with FSM off)
+# That is the point of the suite: the oracle only works if the three solvers are ACTUALLY different,
+# and the model downgrades some combinations. An inherited value is how a downgrade goes unnoticed.
+emit() { # $1 stem, $2 solver.method, $3 time_integration, $4 time_step.mode, $5 convergence.metric,
+         # $6 output.trace, $7 collection.method   (ALL REQUIRED)
+  local m="${2:?emit needs a solver.method -- the whole claim is that the arms differ}"
+  local ti="${3:?emit needs a time_integration: it follows the method, so name it}"
+  local sm="${4:?emit needs a time_step.mode: newton requires ramp}"
+  local cm="${5:?emit needs a convergence.metric}"
+  local tr="${6:?emit needs an output.trace value, e.g. [] or [water_step]}"
+  local col="${7:?emit needs a collection.method: active_set is refused on Picard}"
+  # THE RAMP ARM DIFFERS STRUCTURALLY, not just in values: under time_step.mode: ramp the model
+  # records solver.newton.dt0 and solver.time_step.dt_max, records NO step norm, and resolves a
+  # different error_tol. So that arm adds two keys and drops one rather than merely setting values.
+  local ramp=(-e "/^#@RAMP@/d" -e "/^#@RAMPNEWTON@/d")
+  if [ "$sm" = ramp ]; then
+      ramp=(-e "/^    norm: rms/,+1d"
+            -e 's|^#@RAMP@|    dt_max: "2419200000s"   # ramp only: the ceiling the continuation climbs to|'
+            -e "s|^    error_tol: 0.0001.*|    error_tol: 0.1   # the value resolved under mode: ramp|"
+            -e "s|^#@RAMPNEWTON@|  newton:\n    dt0: \"12096s\"   # ramp only: the continuation start step (deltat/200). The `s` is REQUIRED:\n           #          a bare number is parsed as YEARS|")
+  fi
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  method: anderson|  method: $m|" \
+      -e "s|^  time_integration: tr-bdf2|  time_integration: $ti|" \
+      -e "s|^    mode: adaptive|    mode: $sm|" \
+      -e "s|^    metric: volume|    metric: $cm|" \
+      -e "s|^  trace: \[\]|  trace: $tr|" \
+      -e "s|^    method: active_set|    method: $col|" \
+      "${ramp[@]}" config.yaml > "$WORK/$1.yaml"
+
 }
 
 # Stop 10x TIGHTER than the agreement bound (TOL): each solver only settles to ~eq_tol of the true steady
@@ -68,7 +81,9 @@ EOF
 # three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
 # eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
 BB=""
-emit anderson; METHOD=picard emit picard; METHOD=newton MODE=ramp emit newton
+emit anderson anderson tr-bdf2        adaptive volume "[]" active_set
+emit picard   picard   backward-euler adaptive volume "[]" explicit
+emit newton   newton   backward-euler ramp     volume "[]" active_set
 # THE ORACLE IS ONLY AN ORACLE IF THE THREE SOLVERS ARE ACTUALLY DIFFERENT. This suite's whole claim
 # is that two matrix-based solvers independently corroborate the matrix-free one -- so if `picard`
 # silently downgraded to anderson (which the model DOES do in some combinations, and announces with a
@@ -92,7 +107,7 @@ run newton newton
 # FOURTH ARM: the same Anderson solve with the volume-step DIAGNOSTIC registered
 # (-wtm_snes_volume_conv, not _govern). Three things are asserted below, and the fixture is the reason
 # they can be: it is gentle and purely SUBSURFACE, so every cell sits on the porosity branch of V(wtd).
-METHOD= TRACE=water_step emit volconv
+emit volconv anderson tr-bdf2 adaptive volume "[water_step]" active_set
 run volconv anderson
 
 # FIFTH ARM: the same solve judged in HEAD (solver.convergence.metric: head) instead of water. Water is
@@ -101,7 +116,7 @@ run volconv anderson
 # arm a second copy of `anderson` and the assertion below vacuous.
 # A convergence criterion decides WHEN a solve stops, never WHERE it converges, so both metrics must land
 # on the same equilibrium. That is the whole claim, and it is what makes the default safe to change.
-METHOD= CMETRIC=head TRACE=water_step emit volgov
+emit volgov  anderson tr-bdf2 adaptive head   "[water_step]" active_set
 run volgov anderson
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
