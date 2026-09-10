@@ -37,33 +37,20 @@ export OMP_NUM_THREADS=1
 
 # Two transition settings, deliberately far apart: the shipped default, and one whose
 # half-rate depth and width are 20x larger.
-emit () { # $1 = region, $2 = tag, $3 = wtd_center, $4 = logistic_width
-  ../emit_config.sh > "$WORK/$1_$2.yaml" <<EOF
-solver_method anderson
-run_type equilibrium
-total_time 40yr
-supplied_wt 1
-deltat 31536000
-report_interval 2
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_collector active_set
-et_sigmoid_wtd_center $3
-et_sigmoid_width $4
-surfdatadir $INP
-region $1
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1_$2.txt
-outfile_prefix $WORK/$1_$2_
-EOF
-  "$WTM" "$WORK/$1_$2.yaml" > "$WORK/$1_$2.log" 2>&1 \
-    || { echo "RUN FAILED: $1 $2"; tail -5 "$WORK/$1_$2.log"; exit 2; }
+# THE CONFIG IS A FILE NOW (#83): tests/lake_evap_equals_et/config.yaml. Every setting the run
+# resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
+# WTM_DECLARED_SUITES). evaporation.et_sigmoid is THE SUBJECT and is tokenised per arm, so the file
+# says outright that the sigmoid is being varied rather than inherited.
+emit () { # $1 region, $2 tag, $3 et_sigmoid.wtd_center, $4 et_sigmoid.logistic_width  (ALL REQUIRED)
+  local rg="${1:?emit needs a region: eq (ET == owe) or neq}"
+  local tg="${2:?emit needs a tag}"
+  local wc="${3:?emit needs a wtd_center -- it is the subject, never inherit it}"
+  local lw="${4:?emit needs a logistic_width -- it is the subject, never inherit it}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|${rg}_${tg}|g" \
+      -e "s|@REGION@|$rg|g" -e "s|@WTDC@|$wc|g" -e "s|@WIDTH@|$lw|g" \
+      config.yaml > "$WORK/${rg}_${tg}.yaml"
+  "$WTM" "$WORK/${rg}_${tg}.yaml" > "$WORK/${rg}_${tg}.log" 2>&1 \
+    || { echo "RUN FAILED: $rg $tg"; tail -5 "$WORK/${rg}_${tg}.log"; exit 2; }
 }
 
 for region in eq neq; do
