@@ -18,7 +18,7 @@ PY="${PY:-python3}"
 
 # THE CONFIG IS A FILE NOW (#83): tests/recharge_consistency/config.yaml. Every setting the run
 # resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
-# WTM_DECLARED_SUITES).
+# unconditional since #79 Phase 5).
 #
 # THE `cc` ARM WAS VACUOUS UNTIL THIS COMMIT. It left solver.time_integration ABSENT, and an absent
 # integrator resolves to tr-bdf2 on the Anderson path -- measured directly. So `cc`, the backward-Euler

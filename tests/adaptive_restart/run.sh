@@ -25,7 +25,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/adaptive_restart/config.yaml, read and edited directly rather
 # than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
-# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # The restart CONSTANTS (rho, patience, max_it, max_restarts) are in that file at their shipped values,
 # and they are NOT decoration: they set how fast the restart budget is exhausted, which IS the

@@ -47,7 +47,7 @@ make_work golden
 # indistinguishable to the shim, so the override is resolved HERE, where it is intended: any base line
 # whose key an extra also sets is dropped before emitting. Same config as before, one statement per key.
 # THE CONFIG IS A FILE NOW (#83): tests/golden/config.yaml. Every setting each case resolves to is
-# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # THE REFERENCES CONSTRAIN THAT FILE: any value change there changes the answer and invalidates a
 # committed reference, so nothing in it may be "tidied" -- a setting is either what the reference was

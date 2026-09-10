@@ -44,7 +44,7 @@ fail=0
 for n in $RANKS; do
     # THE CONFIG IS A FILE NOW (#83): tests/xrank_adaptive/config.yaml, read and edited directly
     # rather than translated from legacy key/value lines. Every setting the run resolves to is stated
-    # there, and tests/config_identity.py enforces that (this suite is on WTM_DECLARED_SUITES).
+    # there, and tests/config_identity.py enforces that (this suite is on unconditional since #79 Phase 5).
     # The rank count is NOT a config setting, so all ranks run the SAME file -- only @STEM@ differs.
     sed -e "s|@INPUTS@|$TRANS|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|n$n|g" config.yaml > "$WORK/n$n.yaml"
     # Long cycles (8 yr) so the controller is FREE to choose the step. With short cycles the step is

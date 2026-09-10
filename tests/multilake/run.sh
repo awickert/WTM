@@ -49,7 +49,7 @@ RANKS="${RANKS:-4}"
 # at 400 yr. dt is the only thing that varies between arms; report_interval scales with it so the
 # reporting cadence (and therefore the FSM/coupling cadence per report) is held fixed.
 # THE CONFIG IS A FILE NOW (#83): tests/multilake/config.yaml. Every setting the run resolves to is
-# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # THREE KEYS MOVE TOGETHER PER ARM and all three are supplied here, none inherited: dt,
 # report_interval (scaled inversely so every arm covers the SAME simulated time) and the collector.

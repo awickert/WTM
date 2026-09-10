@@ -22,7 +22,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/boundary_analytic/config.yaml. Every setting the run resolves
-# to is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# to is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # solver.time_step.error_tol is 1e-08 in that file and that is deliberate: this suite compares against
 # ANALYTIC solutions, so the discretisation must not contribute to the error being judged.

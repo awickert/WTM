@@ -162,7 +162,26 @@ expect_resolved() {
 # it declared. That makes the conversion monotone -- a converted suite cannot silently drift back while
 # the rest is in flight -- and turns "gradually tighten this" into a count that only goes up instead of an
 # intention that quietly expires. When the list holds every suite, delete it and enforce unconditionally.
-WTM_DECLARED_SUITES="fsm_conservation xrank_adaptive log_schema direct_to_runoff storage_equivalence adaptive_restart fsm_consistency variable_porosity serial_recharge active_set adaptive_water snapshot_restart boundary_analytic xrank_growth limit_cycle lake_evap_equals_et dt_sensitivity multilake solver_consistency boundary_consistency dt_invariance recharge_consistency mpi_consistency fsm_cascade fsm_fullness flicker_evap local_ledger coupling_convergence estimator_order golden budget_step_ledger newton_solver ghost_boundary budget_closure combination_sweep"
+# THE DECLARED-CONFIG RULE IS UNCONDITIONAL NOW (#79 Phase 5). It used to be opt-in per suite via
+# WTM_DECLARED_SUITES, which was scaffolding for the migration: a suite joined the list once its
+# configs stated everything its runs resolved to. All 39 suites have been materialised (#83), so the
+# list has served its purpose and is gone -- every suite is enforced, and a new suite is enforced the
+# day it is written rather than the day someone remembers to add it.
+#
+# THREE SUITES ARE EXEMPT, and each exemption is STRUCTURAL rather than a to-do. They are named here,
+# in the code that would otherwise fail them, because an exemption a reader cannot see is a hole:
+#
+#   config_schema    every arm ABORTS AT PARSE -- that is its subject. No run completes, so no run
+#                    writes a full_config.yaml, so there is nothing to compare a config against.
+#   route_equality   its arms compare the FLAG route against the CONFIG route. The DIFFERENCE between
+#                    the two IS the assertion, so making both configs identical would delete the test.
+#   runoff_collector it asserts that RETIRED aliases abort rather than being silently ignored, so its
+#                    arms deliberately pass settings the schema no longer accepts.
+#                    (Its `unset` arm is NOT a reason: that one is declarable now, via the OPTIONAL
+#                    marker from #92, and states what it expects to resolve to.)
+#
+# An exempt suite still REPORTS its progress; it just cannot fail on it.
+WTM_DECLARED_EXEMPT="config_schema route_equality"
 
 _wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
     local tag="$1" tests_dir out rc=0
@@ -171,16 +190,16 @@ _wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an
     command -v python3 >/dev/null 2>&1 || return 0
     out=$("$tests_dir/config_identity.py" --summary "$WORK" 2>/dev/null) || return 0
     [ -n "$out" ] || return 0
-    case " $WTM_DECLARED_SUITES " in
-        *" $tag "*)
+    case " $WTM_DECLARED_EXEMPT " in
+        *" $tag "*) echo "  note  DECLARED  $tag is structurally exempt (see lib.sh): $out" ;;
+        *)
             if ! printf '%s' "$out" | command grep -q "all declared"; then
-                echo "  FAIL  DECLARED  $tag is on the declared list but its configs no longer say everything:" >&2
+                echo "  FAIL  DECLARED  $tag: its configs no longer state everything its runs resolve to:" >&2
                 "$tests_dir/config_identity.py" --report "$WORK" >&2
                 rc=1
             else
                 echo "  OK   DECLARED  $out"
             fi ;;
-        *) echo "  note  declared-config progress: $out" >&2 ;;
     esac
     return $rc
 }

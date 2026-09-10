@@ -41,7 +41,7 @@ MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/flicker_evap/config.yaml. Every setting the run resolves to
-# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # BOTH TAPERS ARE THE SUBJECT and both are supplied per arm. Since #88 removed evap_mode, the taper is
 # the ONLY thing that removes surface water here, so the taper-off arm is a real control rather than

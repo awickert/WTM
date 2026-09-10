@@ -34,15 +34,25 @@ export OMP_NUM_THREADS=1
 # identical, and a like-for-like adaptive comparison is impossible anyway (adaptive x implicit is
 # refused outright).
 #
-# THE `unset` ARM CANNOT BE FULLY DECLARED, BY CONSTRUCTION. Its whole point is that an ABSENT
-# collection.method resolves to active_set, so declaring the key would destroy the thing it tests.
-# That arm passes "" and the method line is DELETED from its config. It is why this suite is NOT on
-# WTM_DECLARED_SUITES -- see the task filed alongside this commit.
+# THE `unset` ARM LEAVES collection.method TO AUTOMATIC RESOLUTION -- that IS its subject: an
+# undeclared key must resolve to active_set, so SETTING it would destroy the thing under test. This
+# used to make the arm undeclarable and kept the suite off the enforced list. It no longer does: the
+# arm writes an OPTIONAL marker in place of the key (#92), stating the parameter, why it is left
+# undeclared, and what it is expected to resolve to. The parameter is optional; the VALUE is not --
+# the model resolves it either way, and the coverage check below verifies the resolved value.
 emit() { # $1 stem, $2 collection.method ("" = OMIT the key, which is the `unset` arm's subject)
   local m="${2-}"
   if [ -z "$m" ]; then
+      # The key is REPLACED BY A MARKER, not merely deleted: a deleted line says nothing, while the
+      # marker names the parameter left to resolution and what it is expected to resolve to (#92).
+      # Written via a file rather than an inline multi-line sed -- the apostrophe in an inline version
+      # broke this script once.
+      { printf '%s\n' "# OPTIONAL: surface_water.collection.method -- resolved automatically when not declared,"
+        printf '%s\n' "# and THAT RESOLUTION IS THIS ARM SUBJECT. Setting the key would delete the property under"
+        printf '%s\n' "# test. Expect: active_set"; } > "$WORK/.optmarker"
       sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-          -e "/^    method: @METHOD@/d" config.yaml > "$WORK/$1.yaml"
+          -e "/^  collection:/d" \
+          -e "/^    method: @METHOD@/{r $WORK/.optmarker" -e "d}" config.yaml > "$WORK/$1.yaml"
   else
       sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
           -e "s|@METHOD@|$m|g" config.yaml > "$WORK/$1.yaml"

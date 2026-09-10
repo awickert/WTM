@@ -62,7 +62,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/coupling_convergence/config.yaml. Every setting the run
 # resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
-# WTM_DECLARED_SUITES).
+# unconditional since #79 Phase 5).
 #
 # collection.method: active_set is stated there as LOAD-BEARING: under `explicit`, continuous YIELDS
 # to impulse, so every pair below would compare a run with itself and the convergence orders would be

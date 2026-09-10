@@ -49,6 +49,16 @@ def _write_tif(path, data, dtype):
     _grid_write_tif(path, np.asarray(data), CELLS_PER_DEGREE, SOUTHERN_EDGE, dtype=dtype)
 
 
+OUT_ROOT = os.environ.get("WTM_TAPER_WORK")   # set by run.sh; None when taper_test.py is run directly
+
+
+def _out(d):
+    """Where configs, outputs and provenance go: the shared work dir if run.sh made one, else the
+    study's own directory. Fixtures always stay in `d` -- studies A and B write different rasters
+    under the same region name, so they cannot share a directory."""
+    return OUT_ROOT or d
+
+
 CFG_AB   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")
 CFG_ARID = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config_arid.yaml")
 
@@ -111,10 +121,13 @@ TAPER_FLAGS = []   # both tapers are config keys now (evaporation.tapers); nothi
 
 
 def _run(wtm, d, tag, n):
-    """Run wtm on n ranks (leaves outputs in d); return the final-cycle summed water table (col 11)."""
-    txt = os.path.join(d, f"{tag}_n{n}.txt")
-    cfg = os.path.join(d, f"cfg_{tag}_n{n}.yaml")
-    _write_cfg(cfg, CFG_AB, INPUTS=d, WORK=d, STEM=f"{tag}_n{n}")
+    """Run wtm on n ranks; return the final-cycle summed water table (col 11).
+
+    Outputs land in _out(d) -- the shared work dir when run.sh made one -- so the declared-config
+    check can read the configs and their provenance records after the run (#79 Phase 5)."""
+    txt = os.path.join(_out(d), f"{tag}_n{n}.txt")
+    cfg = os.path.join(_out(d), f"{tag}_n{n}.yaml")   # named for the stem, beside its _prov dir
+    _write_cfg(cfg, CFG_AB, INPUTS=d, WORK=_out(d), STEM=f"{tag}_n{n}")
     env = {**os.environ, "OMP_NUM_THREADS": "1"}
     subprocess.run(["mpirun", "-n", str(n), wtm, cfg] + TAPER_FLAGS,
                    cwd=d, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -126,8 +139,9 @@ def _run(wtm, d, tag, n):
 
 def _final_wtd(d, tag, n):
     """Read the last saved water-table raster for a run (the full spatial field)."""
-    tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_n{n}_") and f.endswith(".tif"))
-    with rasterio.open(os.path.join(d, tifs[-1])) as s:
+    out = _out(d)
+    tifs = sorted(f for f in os.listdir(out) if f.startswith(f"{tag}_n{n}_") and f.endswith(".tif"))
+    with rasterio.open(os.path.join(out, tifs[-1])) as s:
         return s.read(1)
 
 
@@ -234,12 +248,13 @@ def _arid_fixture(d, ksat=1e-9):
 def _arid_run(wtm, d, tag, flags, taper3, dext):
     """taper3 and dext are REQUIRED, with no default: they are the two keys the three arms differ
     in, so a default here would let an arm silently become a copy of another one (#24)."""
-    cfg = os.path.join(d, f"cfg_{tag}.yaml")
-    _write_cfg(cfg, CFG_ARID, INPUTS=d, WORK=d, STEM=tag, TAPER3=taper3, DEXT=dext)
+    cfg = os.path.join(_out(d), f"{tag}.yaml")   # named for the stem, beside its _prov dir
+    _write_cfg(cfg, CFG_ARID, INPUTS=d, WORK=_out(d), STEM=tag, TAPER3=taper3, DEXT=dext)
     subprocess.run([wtm, cfg] + flags, cwd=d, env={**os.environ, "OMP_NUM_THREADS": "1"},
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    tifs = sorted(f for f in os.listdir(d) if f.startswith(f"{tag}_") and f.endswith(".tif"))
-    with rasterio.open(os.path.join(d, tifs[-1])) as s:
+    out = _out(d)
+    tifs = sorted(f for f in os.listdir(out) if f.startswith(f"{tag}_") and f.endswith(".tif"))
+    with rasterio.open(os.path.join(out, tifs[-1])) as s:
         return s.read(1)
 
 

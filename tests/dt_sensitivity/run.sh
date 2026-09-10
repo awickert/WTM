@@ -51,7 +51,7 @@ export OMP_NUM_THREADS=1
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
 # sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, report_interval fixed).
 # THE CONFIG IS A FILE NOW (#83): tests/dt_sensitivity/config.yaml. Every setting the run resolves to
-# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # solver.time_step.mode: fixed IS PINNED in that file, and it is the pin that makes this test possible:
 # this suite runs the SAME problem at two time steps 4x apart and asserts only dt changes. An adaptive

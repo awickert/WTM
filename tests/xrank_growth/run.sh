@@ -42,7 +42,7 @@ export OMP_NUM_THREADS=1
 for coup in continuous impulse; do for n in 1 "$NRANK"; do
   t="${coup}_n$n"
   # THE CONFIG IS A FILE NOW (#83): tests/xrank_growth/config.yaml. Every setting the run resolves to
-  # is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+  # is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
   # surface_water.routing is THE SUBJECT and the only thing that varies between arms; the rank count
   # is not a config setting.
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$t|g" \

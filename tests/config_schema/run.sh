@@ -21,9 +21,6 @@
 #   NESTED     the walk reaches nested sections, not just the top level (a top-level-only check would
 #              pass REJECT while ignoring every section key).
 #   MULTI      all offending keys are reported at once, not one abort per run.
-#   SHIM       every legacy key tests/emit_config.sh can emit still validates -- the whole test suite
-#              builds its configs through that shim, so a dictionary that disagrees with it would break
-#              every other test in the suite rather than this one.
 #
 # Also REPORTED (not asserted): keys the dictionary accepts that config.yaml never documents. Some are
 # deliberate -- `grid` is deprecated (#124), `dev` is developer-only, `sink` is legacy -- so this is a
@@ -299,171 +296,11 @@ elif [ "$ARGOK" -eq 0 ]; then
     echo "  PASS  ARGV-OPT   '-snes_stol 1e-8' is accepted (an option's value is not a stray)"
 fi
 
-# ---- SHIM: the suite's own config emitter must agree with the dictionary ---------------------------
-# Every legacy key tests/emit_config.sh maps, in one config. If the dictionary and the shim disagree,
-# this catches it HERE instead of as a mass failure across every other test in the suite.
-cat > "$WORK/shim_keys.txt" <<'EOF'
-run_type equilibrium
-supplied_wt 1
-deltat 31536000
-total_time 20yr
-report_interval 1
-save_nreport_interval 1
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 0
-runoff_ratio 0.3
-runoff_collector active_set
-surfdatadir /nonexistent
-region none
-time_start t0
-time_end t0
-textfilename /dev/null
-outfile_prefix /tmp/none_
-# The list above covered 22 of the shim's 44 keys while the comment claimed "every legacy key". That
-# overclaim is why the `trace` gating defect survived: trace was not in the list, so nothing noticed
-# the shim silently dropping it. The rest of the vocabulary follows, so SHIM and SHIM/BACK now mean
-# what they say. Values are legal ones -- the model's own validator runs over this config.
-# EVERY VALUE HERE MUST BE NON-DEFAULT. SHIM/BACK is differential -- it emits the config with and
-# without each key and requires the two to DIFFER -- and the shim now emits every setting, defaulted
-# (fc18e95). So a key set to ITS OWN DEFAULT is indistinguishable from an absent one, and six of these
-# were: dt_continuation false, storage volume, convergence_metric volume, eq_frac 0.001,
-# extinction_depth 8, et_sigmoid_width 0.1. The arm failed, correctly -- it can no longer prove those
-# keys flow through. Choosing non-default values restores the assertion AND strengthens it: it now
-# proves the key's VALUE reaches the config, not merely that some line with that name appears.
-solver_method anderson
-time_integration tr-bdf2
-time_step_mode fixed
-dt_tol 0.5
-dt_max 31536000
-under_relaxation 0.9
-t_bar true
-storage secant
-convergence_metric head
-convergence_water_volume_tol 1e-9
-eq_tol 0.002
-eq_metric rms
-eq_frac 0.002
-land_boundary dirichlet
-runoff_ratio_on 1
-extinction_depth 6
-et_sigmoid_width 0.2
-et_sigmoid_wtd_center 0.0
-trace dt
-run_dir /tmp/shim_explicit_rundir   # DISTINCT from the derived <prefix>prov, or thedifference  vanishes
-EOF
-# ---- SHIM/MERGED: fsm_on and fsm_coupling are ONE key, so they need SEPARATE probes ---------------
-# They both map onto surface_water.routing now, and the shim refuses `fsm_on 0` alongside any
-# fsm_coupling line -- that contradiction is what the merge removed. So they cannot both live in the
-# differential file above: it carries fsm_on 0 (the non-default value, the only one SHIM/BACK can see,
-# since omission now MEANS FSM-on continuous), and fsm_coupling is proved here instead.
-#
-# `impulse` and not `continuous`: continuous is the default, and an unset coupling emits NOTHING by
-# design -- the shim must not write `continuous` down, because the model refuses an explicit
-# `continuous` under infiltration_during_flow: true while resolving an absent one to impulse (#49).
-# So `continuous` in and nothing out is CORRECT here, and only the non-default value is a real probe.
-_r_set=$(printf 'fsm_coupling impulse\n' | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing: impulse")
-_r_off=$(printf 'fsm_on 0\n'             | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing: off")
-_r_bare=$(printf 'run_type equilibrium\n' | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing:")
-if [ "$_r_set" = 1 ] && [ "$_r_off" = 1 ] && [ "$_r_bare" = 0 ]; then
-    echo "  PASS  SHIM/MERGED  fsm_coupling -> routing: impulse, fsm_on 0 -> routing: off, neither -> absent"
-else
-    echo "  FAIL  SHIM/MERGED  the fsm_on/fsm_coupling -> surface_water.routing mapping is wrong"
-    echo "        (fsm_coupling impulse -> routing: impulse? $_r_set;  fsm_on 0 -> routing: off? $_r_off;"
-    echo "         neither set -> NO routing line? $((1-_r_bare)))"
-    echo "        The third is the one to think about before 'fixing': omitting routing means the"
-    echo "        default, which IS FSM-on continuous, so emitting it would be a NO-OP -- except under"
-    echo "        infiltration_during_flow: true, where an explicit continuous is REFUSED and an absent"
-    echo "        one resolves to impulse (#49). Writing it down there broke tests/serial_recharge."
-    fail=1
-fi
-
-bash ../emit_config.sh < "$WORK/shim_keys.txt" > "$WORK/shim.yaml"
-OUT=$(msg "$WORK/shim.yaml")
-if echo "$OUT" | grep -q "unrecognised key"; then
-    echo "  FAIL  SHIM       emit_config.sh emits a key the dictionary rejects:"
-    echo "$OUT" | grep -A3 "unrecognised key" | sed 's/^/        /'
-    fail=1
-else
-    echo "  PASS  SHIM       every key emit_config.sh emits validates ($(grep -cE "^[a-z]" "$WORK/shim_keys.txt") legacy keys)"
-fi
-
-# ---- SHIM/BACK: every key the shim is GIVEN must CHANGE what it emits ------------------------------
-# The arm above checks one direction only -- that the emitted YAML validates. That is exactly how the
-# `trace` defect lived: the emitted config was perfectly valid, it just silently LACKED the key it had
-# been asked for, because `trace` was gated on an output PATH key also being present. Valid and
-# complete are different properties, and only one of them was being tested.
-#
-# THE TEST IS DIFFERENTIAL, not a search for the value in the output, and that distinction was learned
-# the hard way: the first version of this arm grepped the emitted YAML for each key's VALUE, and it
-# did NOT catch the trace defect when it was deliberately reintroduced -- `trace dt` looks for "dt",
-# which already appears in `dt: 31536000` and `adaptive_dt`. A substring match on short values is
-# almost no assertion at all. So instead: emit the config WITH and WITHOUT each key and require the
-# two to DIFFER. A key that changes nothing is a key being dropped, whatever the reason.
-missing=""
-while read -r k v; do
-    [ -z "$k" ] && continue
-    case "$k" in \#*) continue ;; esac
-    # EXEMPTIONS, each for a reason the shim documents -- not a way to quieten an inconvenient result.
-    #   runoff_ratio_on  legitimately SHADOWED when a numeric runoff_ratio is present ("a numeric value
-    #                    takes precedence; else runoff_ratio_on 1 requires the raster"). Both keys stay in
-    #                    the list so SHIM still validates them; only this differential check skips the
-    #                    shadowed one. Flagged by the test on its first run, then verified against the
-    #                    shim's own documented precedence before being exempted.
-    #   solver_method / time_integration / time_step_mode
-    #                    DERIVED keys: the shim now emits each one whether or not it was given, using
-    #                    the model's own resolution rule. Removing such a key therefore changes NOTHING
-    #                    when the value supplied happens to equal the value derived -- which is the case
-    #                    here. That is not the shim dropping the key; it is this arm's PREMISE failing.
-    #                    A differential test cannot see a key whose absence is filled in.
-    #                    They are not unchecked: tests/config_identity.py compares the emitted value
-    #                    against what the MODEL resolved, on every run of every suite. That is strictly
-    #                    stronger than this arm, which only compares the shim against itself.
-    case "$k" in runoff_ratio_on|solver_method|time_integration|time_step_mode) continue ;; esac
-    grep -vE "^$k " "$WORK/shim_keys.txt" > "$WORK/without.txt"
-    bash ../emit_config.sh < "$WORK/without.txt" > "$WORK/without.yaml" 2>/dev/null
-    cmp -s "$WORK/shim.yaml" "$WORK/without.yaml" && missing="$missing $k"
-done < "$WORK/shim_keys.txt"
-if [ -n "$missing" ]; then
-    echo "  FAIL  SHIM/BACK  removing these keys changes NOTHING in the emitted config, so the shim is"
-    echo "                   silently dropping them -- every arm that sets one is VACUOUS:"
-    for k in $missing; do echo "                     $k"; done
-    fail=1
-else
-    echo "  PASS  SHIM/BACK  every legacy key fed in demonstrably changes the emitted config"
-fi
-
-# ---- SHIM/ALONE: every key must still do something when it is the ONLY key set ---------------------
-# REMOVAL FROM THE FULL SET IS NOT ENOUGH, and the trace defect is the proof. It only manifested when
-# NEITHER textfilename NOR outfile_prefix was present -- and the full key list sets both, so dropping
-# `trace` from it still left the output block emitted and the key with it. SHIM/BACK passed with the
-# defect deliberately reintroduced. A key gated on ANOTHER key can only be caught in isolation.
-alone=""
-while read -r k v; do
-    [ -z "$k" ] && continue
-    case "$k" in \#*) continue ;; esac
-    # run_type IS the baseline this compares against, so it can never differ from it. The others
-    # carry over from SHIM/BACK above, for the reasons documented there -- including the DERIVED keys,
-    # whose value the shim supplies whether or not they are given, so setting one to the value it would
-    # have been derived as cannot change the output. config_identity.py checks those against the MODEL
-    # on every run, which is a stronger test than this one.
-    case "$k" in runoff_ratio_on|run_type|solver_method|time_integration|time_step_mode) continue ;; esac
-    printf 'run_type equilibrium\n%s %s\n' "$k" "$v" > "$WORK/alone.txt"
-    printf 'run_type equilibrium\n'                    > "$WORK/bare.txt"
-    bash ../emit_config.sh < "$WORK/alone.txt" > "$WORK/alone.yaml" 2>/dev/null
-    bash ../emit_config.sh < "$WORK/bare.txt"  > "$WORK/bare.yaml"  2>/dev/null
-    cmp -s "$WORK/alone.yaml" "$WORK/bare.yaml" && alone="$alone $k"
-done < "$WORK/shim_keys.txt"
-if [ -n "$alone" ]; then
-    echo "  FAIL  SHIM/ALONE these keys emit NOTHING when set on their own, so they are gated on some"
-    echo "                   other key being present -- set one by itself and it silently does nothing:"
-    for k in $alone; do echo "                     $k"; done
-    fail=1
-else
-    echo "  PASS  SHIM/ALONE every legacy key does something even when it is the only key set"
-fi
+# THE FOUR SHIM ARMS WERE DELETED WITH THE SHIM (#83, 2026-09-10). They asserted that every key
+# tests/emit_config.sh could emit validated against this dictionary, that every key it was GIVEN
+# changed what it emitted, that each did something alone, and that fsm_on/fsm_coupling mapped onto
+# surface_water.routing. All four took the shim as their SUBJECT, so they had nothing left to test
+# once every suite read a real config file. Their history is in git, not in a stub.
 
 # ---- REPORT (not a gate): accepted keys that config.yaml does not document -------------------------
 echo

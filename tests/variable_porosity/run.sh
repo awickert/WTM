@@ -30,7 +30,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/variable_porosity/config.yaml, read and edited directly
 # rather than translated from legacy key/value lines. Every setting the run resolves to is stated
-# there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # io.region in that file is the LOAD-BEARING line: this is the suite's only spatially varying porosity
 # fixture, and the only place the head-vs-volume distinction is visible at all. The integrator is the

@@ -29,7 +29,7 @@ TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/limit_cycle/config.yaml. Every setting the run resolves to is
-# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # equilibrium_stop.tol is 0 in that file, deliberately: this suite watches the PER-CYCLE change for a
 # limit cycle, so it must run the clock out rather than stop as soon as the change looks small.

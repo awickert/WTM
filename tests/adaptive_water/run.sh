@@ -22,7 +22,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/adaptive_water/config.yaml, read and edited directly rather
 # than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
-# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # THE HISTORY THAT MAKES THIS MATTER. These keys were once emitted only when the caller set them
 # (`${INTEG:+...}`), so an unset key was ABSENT -- and absent meant `auto`, which resolved to tr-bdf2

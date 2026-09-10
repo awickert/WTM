@@ -39,7 +39,7 @@ export OMP_NUM_THREADS=1
 # half-rate depth and width are 20x larger.
 # THE CONFIG IS A FILE NOW (#83): tests/lake_evap_equals_et/config.yaml. Every setting the run
 # resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
-# WTM_DECLARED_SUITES). evaporation.et_sigmoid is THE SUBJECT and is tokenised per arm, so the file
+# unconditional since #79 Phase 5). evaporation.et_sigmoid is THE SUBJECT and is tokenised per arm, so the file
 # says outright that the sigmoid is being varied rather than inherited.
 emit () { # $1 region, $2 tag, $3 et_sigmoid.wtd_center, $4 et_sigmoid.logistic_width  (ALL REQUIRED)
   local rg="${1:?emit needs a region: eq (ET == owe) or neq}"

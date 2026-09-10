@@ -20,11 +20,10 @@
 #   tr      tr-bdf2   the cross-scheme comparison
 #   bdf2v   bdf2
 #
-# NOTE `cc` STATES tr-bdf2 AND THAT IS NOT A TYPO -- it is what the arm actually resolves to, and it
-# makes cc BYTE-IDENTICAL to the tr arm. `cc` is the old name for the backward-euler default; when the
-# resolved default for `anderson` became tr-bdf2, the arm's identity changed under its name. Measured:
-# identical resolved config, max|cc - tr| = 0.000e+00 on the output raster. Task #96 carries the fix,
-# which changes what the suite measures and so is a decision rather than a materialisation.
+# `cc` STATES backward-euler (#96, fixed). It used to leave time_integration unset, which resolved to
+# tr-bdf2 and made it a byte-identical copy of the `tr` arm -- so the four-scheme comparison ran three
+# schemes. The resolution was correct; the ARM was stale. It now names the first-order scheme its name
+# has always meant, which is the only one of the four that can show a real discretisation difference.
 run:
   type: transient
   equilibrium_stop:

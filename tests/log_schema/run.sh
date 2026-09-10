@@ -24,7 +24,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/log_schema/config.yaml, read and edited directly rather than
 # translated from legacy key/value lines. Every setting the run resolves to is stated there, and
-# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # Two of those settings are LOAD-BEARING for what this suite asserts, and were previously implicit:
 # solver.time_step.mode: adaptive (no adaptive controller, no DTTRACE lines, and the substring-proof

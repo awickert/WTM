@@ -36,7 +36,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/boundary_consistency/config.yaml. Every setting the run
 # resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
-# WTM_DECLARED_SUITES).
+# unconditional since #79 Phase 5).
 #
 # The newton arm needs mode: ramp, which in turn makes the model record solver.newton.dt0 and
 # solver.time_step.dt_max and NO step norm -- so that arm adds two keys and drops one, via the

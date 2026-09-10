@@ -67,7 +67,7 @@ for integ in tr-bdf2 backward-euler bdf2; do
     stem="${fn}__${coupling}__${coll}__${integ}"
     # THE CONFIG IS A FILE NOW (#83): tests/budget_step_ledger/config.yaml, rendered per sweep cell.
     # Every setting each run resolves to is stated there, and tests/config_identity.py enforces it
-    # (this suite is on WTM_DECLARED_SUITES). output.trace: [budget] and time_step.mode: fixed are
+    # (this suite is on unconditional since #79 Phase 5). output.trace: [budget] and time_step.mode: fixed are
     # marked LOAD-BEARING in that file: the per-step identity IS the trace, and the sweep must compare
     # cells at a KNOWN step rather than one a controller resized per cell.
     sed -e "s|@INPUTS@|$inp|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \

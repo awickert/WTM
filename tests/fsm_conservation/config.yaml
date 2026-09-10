@@ -2,7 +2,7 @@
 #
 # A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
 # is what makes tests/config_identity.py's declared == resolved check meaningful here -- this is the
-# suite the ratchet ENFORCES (tests/lib.sh WTM_DECLARED_SUITES).
+# suite the ratchet ENFORCES (tests/lib.sh; unconditional since #79 Phase 5).
 #
 # THE COMMENTS ARE THE PROVENANCE OF EACH VALUE, and there are three kinds:
 #   (none)                        the suite chose it, deliberately, for what it measures

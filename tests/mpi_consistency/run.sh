@@ -36,7 +36,7 @@ make_work mpi_consistency
 
 # Base config (equilibrium, small grid). fsm_on is overridden per case.
 # THE CONFIG IS A FILE NOW (#83): tests/mpi_consistency/config.yaml. Every setting the run resolves
-# to is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# to is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # equilibrium_stop.tol: 0 is PINNED in that file so the n=1-vs-n=N comparison is at the SAME cycle:
 # the auto-stop could otherwise fire at slightly decomposition-dependent cycles, and the comparison

@@ -42,7 +42,7 @@ PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/dt_invariance/config.yaml. Every setting the run resolves to
-# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # The FIXED arms differ STRUCTURALLY: under mode: fixed the model records no controller dials at all,
 # so those arms DELETE the dial lines rather than setting them, and error_tol takes its fixed-mode

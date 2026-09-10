@@ -71,10 +71,13 @@ emit_adaptive cc_nN tr-bdf2
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
 # newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined.
-# THE INTEGRATOR IS NAMED, NOT LEFT ABSENT. `cc` used to leave it unset and take whatever `anderson`
-# resolved to -- which is tr-bdf2, making cc a byte-identical copy of the tr arm. It still is; the
-# configs now SAY so, and #96 carries the fix.
-declare -A INTEG=([cc]="tr-bdf2" [tr]="tr-bdf2" [bdf2v]="bdf2")
+# THE INTEGRATOR IS NAMED, NOT LEFT ABSENT, and `cc` names BACKWARD-EULER (#96). It used to leave the
+# key unset and take whatever `anderson` resolved to -- which is tr-bdf2, so `cc` was a byte-identical
+# copy of the `tr` arm and this four-scheme comparison had three schemes. That was auto-resolution
+# working correctly; what was stale was the ARM, whose name has meant the first-order default since
+# before tr-bdf2 became the resolved one. Naming it restores the only arm that can show a real
+# discretisation difference.
+declare -A INTEG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2")
 for s in tr bdf2v newton; do
   if [ "$s" = newton ]; then emit_fixed "$s" 120 10000 0; else emit_adaptive "$s" "${INTEG[$s]}"; fi
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \

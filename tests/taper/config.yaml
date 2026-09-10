@@ -20,8 +20,12 @@
 run:
   type: equilibrium
   equilibrium_stop:
-    tol: 0.001   # THE MODEL DEFAULT, and NOT what this suite intends -- see the note at the foot of
-                 # this file and task #95. Stated here because it is what the run actually resolves to.
+    tol: 0   # RUN THE FULL FIXED CYCLE COUNT -- do not auto-stop (#95, fixed). Study A is a
+             # CROSS-RANK DETERMINISM check, and the auto-stop is a global reduction whose firing cycle
+             # can differ by decomposition; a determinism check that compares runs of DIFFERENT LENGTH
+             # is comparing the wrong thing. tests/mpi_consistency pins tol: 0 for the same reason.
+             # This is what the suite always intended: the `-wtm_eq_tol 0` flag it used to pass was
+             # lost when the tapers became config keys, and only the comment survived.
     metric: frac   # the auto-stop metric. See the tol note -- this suite does not intend to auto-stop at all
     frac: 0.001   # as above: a dial on an auto-stop this suite does not intend to use
   initial_water_table: supplied
@@ -96,15 +100,3 @@ output:
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite
-
-# ---------------------------------------------------------------------------------------------------
-# THE eq_tol NOTE (task #95). taper_test.py still carries the comment
-#     "-wtm_eq_tol 0: run the full fixed cycle count (cross-rank determinism check; do not auto-stop)"
-# but nothing sets it any more: the flag went when the tapers became config keys, and TAPER_FLAGS is
-# now empty. Study A therefore runs with the model default tol: 0.001 and DOES auto-stop -- measured,
-# 4 logged cycles rather than the full 5. It stopped at the SAME cycle at n=1 and n=2 on this fixture,
-# so the suite is passing, but it is passing for a reason nothing guarantees: an auto-stop is a global
-# reduction whose firing cycle can differ by decomposition, and a determinism check that compares runs
-# of DIFFERENT length is comparing the wrong thing. tests/mpi_consistency pins tol: 0 for exactly this.
-# Restoring tol: 0 CHANGES WHAT STUDY A MEASURES (5 cycles, not 4), so it is a decision, not a
-# materialisation -- this file states the value the run truly uses and #95 carries the choice.

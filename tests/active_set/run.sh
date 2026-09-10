@@ -42,7 +42,7 @@ export OMP_NUM_THREADS=1
 #
 # THE CONFIG IS A FILE NOW (#83): tests/active_set/config.yaml, read and edited directly rather than
 # translated from legacy key/value lines. Every setting the run resolves to is stated there, and
-# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # Two preconditions are now WRITTEN DOWN in that file rather than inherited: surface_water.routing
 # must be ON (the pin is defined against the FSM free surface, so with no lakes there is nothing to

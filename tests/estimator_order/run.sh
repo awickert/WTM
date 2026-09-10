@@ -65,7 +65,7 @@ export OMP_NUM_THREADS=1
 LADDER="31536000 7884000 1971000 492750"
 
 # THE CONFIG IS A FILE NOW (#83): tests/estimator_order/config.yaml. Every setting the run resolves to
-# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# is stated there, and tests/config_identity.py enforces it for every suite (#79 Phase 5).
 #
 # THREE SETTINGS IN THAT FILE ARE LOAD-BEARING, and it says so: mode: adaptive (no estimate exists
 # without it), grow/shrink 1.0 (the controller must NOT resize between steps, or the dt whose order is

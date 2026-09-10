@@ -34,7 +34,7 @@ export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/solver_consistency/config.yaml. Every setting the run
 # resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
-# WTM_DECLARED_SUITES).
+# unconditional since #79 Phase 5).
 #
 # NAMING THE METHOD FORCES NAMING TWO NEIGHBOURS, and both are arguments here rather than defaults:
 #   time_integration  anderson resolves to tr-bdf2, picard and newton to backward-euler

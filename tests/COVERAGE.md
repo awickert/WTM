@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **336** across **186** tests.
+Runs recorded: **359** across **193** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,11 +13,11 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 5 |
 | `anderson` | `active_set` | `be_volume` | 10 | **0** | 1 |
-| `anderson` | `active_set` | `tr_bdf2` | 118 | 2 | 14 |
+| `anderson` | `active_set` | `tr_bdf2` | 132 | 2 | 14 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | 1 | **0** | 2 |
 | `anderson` | `explicit` | `be_volume` | 4 | **0** | 2 |
-| `anderson` | `explicit` | `tr_bdf2` | 11 | **0** | 1 |
+| `anderson` | `explicit` | `tr_bdf2` | 14 | **0** | 1 |
 | `anderson` | `extended_soil` | `tr_bdf2` | 1 | **0** | **0** |
 | `anderson` | `implicit` | `bdf2` | 7 | **0** | 1 |
 | `anderson` | `implicit` | `be_secant` | 3 | **0** | 1 |
@@ -41,9 +41,9 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 | `picard` | `explicit` | `bdf2` | 3 | **0** | 1 |
 | `picard` | `explicit` | `be_secant` | 1 | **0** | 1 |
 | `picard` | `explicit` | `be_volume` | 2 | **0** | 1 |
-| `picard` | `implicit` | `bdf2` | 2 | **0** | 1 |
-| `picard` | `implicit` | `be_secant` | 1 | **0** | 1 |
-| `picard` | `implicit` | `be_volume` | 1 | **0** | 1 |
+| `picard` | `implicit` | `bdf2` | 3 | **0** | 2 |
+| `picard` | `implicit` | `be_secant` | 2 | **0** | 2 |
+| `picard` | `implicit` | `be_volume` | 2 | **0** | 2 |
 | `picard` | `off` | `bdf2` | 1 | **0** | 1 |
 | `picard` | `off` | `be_secant` | 1 | **0** | 1 |
 | `picard` | `off` | `be_volume` | 1 | **0** | 1 |
@@ -119,12 +119,15 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `combination_sweep/eq_newton_volume_off` | equilibrium | newton | be_volume | continuation | off | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_bdf2v_explicit` | equilibrium | picard | bdf2 | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_bdf2v_implicit` | equilibrium | picard | bdf2 | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/eq_picard_bdf2v_implicit_s` | equilibrium | picard | bdf2 | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_bdf2v_off` | equilibrium | picard | bdf2 | adaptive | off | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_be_explicit` | equilibrium | picard | be_secant | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_be_implicit` | equilibrium | picard | be_secant | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/eq_picard_be_implicit_s` | equilibrium | picard | be_secant | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_be_off` | equilibrium | picard | be_secant | adaptive | off | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_volume_explicit` | equilibrium | picard | be_volume | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_volume_implicit` | equilibrium | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/eq_picard_volume_implicit_s` | equilibrium | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/eq_picard_volume_off` | equilibrium | picard | be_volume | adaptive | off | 1 | 0 | 1 |
 | `combination_sweep/tr_anderson_bdf2v_active_set` | transient | anderson | bdf2 | adaptive | active_set | 1 | 0 | 1 |
 | `combination_sweep/tr_anderson_bdf2v_explicit` | transient | anderson | bdf2 | adaptive | explicit | 1 | 0 | 1 |
@@ -154,12 +157,15 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `combination_sweep/tr_newton_volume_off` | transient | newton | be_volume | continuation | off | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_bdf2v_explicit` | transient | picard | bdf2 | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_bdf2v_implicit` | transient | picard | bdf2 | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/tr_picard_bdf2v_implicit_s` | transient | picard | bdf2 | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_bdf2v_off` | transient | picard | bdf2 | adaptive | off | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_be_explicit` | transient | picard | be_secant | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_be_implicit` | transient | picard | be_secant | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/tr_picard_be_implicit_s` | transient | picard | be_secant | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_be_off` | transient | picard | be_secant | adaptive | off | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_volume_explicit` | transient | picard | be_volume | adaptive | explicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_volume_implicit` | transient | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
+| `combination_sweep/tr_picard_volume_implicit_s` | transient | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_volume_off` | transient | picard | be_volume | adaptive | off | 1 | 0 | 1 |
 | `coupling_convergence/cascade_025yr_continuous` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/cascade_025yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
@@ -242,6 +248,7 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `solver_consistency/volconv` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 0 | 0 | 1 |
 | `solver_consistency/volgov` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 0 | 0 | 1 |
 | `storage_secant≡volume` | transient | anderson | be_secant,be_volume | adaptive | explicit | 0 | 0 | 1 |
+| `taper_determinism+smooth` | equilibrium | anderson | tr_bdf2 | adaptive,fixed | active_set,explicit | 0,1 | 0 | 1,4 |
 | `unit:_run-log_header_+_trace_parsing` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 0 | 0 | 1 |
 | `variable_porosity/cc` | equilibrium | anderson | be_volume | adaptive | active_set | 0 | 0 | 1 |
 | `variable_porosity/tr` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 0 | 0 | 1 |
@@ -255,71 +262,70 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **anderson** | 166 | 26 | 1 | 42 | 41 |
+| **anderson** | 180 | 29 | 1 | 42 | 41 |
 | **newton** | 15 | 8 |   | 9 | 6 |
-| **picard** |   | 9 |   | 7 | 6 |
+| **picard** | by design | 9 |   | 13 | 6 |
 
 ### integrator x collector
 
 | integrator \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **bdf2** | 23 | 11 |   | 13 | 12 |
-| **be_secant** | by design | 7 |   | 8 | 6 |
-| **be_volume** | 24 | 13 |   | 17 | 12 |
-| **tr_bdf2** | 134 | 12 | 1 | 20 | 23 |
+| **bdf2** | 23 | 11 |   | 15 | 12 |
+| **be_secant** | by design | 7 |   | 10 | 6 |
+| **be_volume** | 24 | 13 |   | 19 | 12 |
+| **tr_bdf2** | 148 | 15 | 1 | 20 | 23 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **adaptive** | 110 | 24 |   |   | 28 |
+| **adaptive** | 110 | 27 |   |   | 28 |
 | **continuation** | 8 | 7 |   | 8 | 6 |
-| **fixed** | 63 | 12 | 1 | 50 | 19 |
+| **fixed** | 77 | 12 | 1 | 56 | 19 |
 
 ### run_type x collector
 
 | run_type \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **equilibrium** | 155 | 31 | 1 | 48 | 43 |
+| **equilibrium** | 169 | 34 | 1 | 51 | 43 |
 | **test** | 2 |   |   |   |   |
-| **transient** | 24 | 12 |   | 10 | 10 |
+| **transient** | 24 | 12 |   | 13 | 10 |
 
 ### solver x integrator
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 9 | 35 | 190 |
+| **anderson** | 42 | 9 | 35 | 207 |
 | **newton** | 8 | 6 | 24 |   |
-| **picard** | 9 | 6 | 7 |   |
+| **picard** | 11 | 8 | 9 |   |
 
 ### run_type x solver
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 240 | 25 | 13 |
+| **equilibrium** | 257 | 25 | 16 |
 | **test** | 2 |   |   |
-| **transient** | 34 | 13 | 9 |
+| **transient** | 34 | 13 | 12 |
 
 ### fsm x collector
 
 | fsm \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **0** | 50 | 9 | 1 | 7 | 14 |
-| **1** | 131 | 34 |   | 51 | 39 |
+| **0** | 50 | 12 | 1 | 7 | 14 |
+| **1** | 145 | 34 |   | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
-| **0** | 105 | 25 | 136 |
+| **0** | 108 | 25 | 156 |
 | **1** | 57 | 4 | 9 |
 
 ## 4. Uncovered pairwise crossings
 
-**19** combinations are reachable but exercised by nothing:
+**18** combinations are reachable but exercised by nothing:
 
 - `solver=newton` x `collector=extended_soil`
-- `solver=picard` x `collector=active_set`
 - `solver=picard` x `collector=extended_soil`
 - `integrator=bdf2` x `collector=extended_soil`
 - `integrator=be_secant` x `collector=extended_soil`
