@@ -316,7 +316,6 @@ infiltration_on 0
 fsm_on 0
 runoff_ratio 0.3
 runoff_collector active_set
-evap_mode 0
 surfdatadir /nonexistent
 region none
 time_start t0
@@ -408,7 +407,6 @@ while read -r k v; do
     [ -z "$k" ] && continue
     case "$k" in \#*) continue ;; esac
     # EXEMPTIONS, each for a reason the shim documents -- not a way to quieten an inconvenient result.
-    #   evap_mode        accepted-but-inert; it announces itself on stderr and is SUPPOSED to emit nothing.
     #   runoff_ratio_on  legitimately SHADOWED when a numeric runoff_ratio is present ("a numeric value
     #                    takes precedence; else runoff_ratio_on 1 requires the raster"). Both keys stay in
     #                    the list so SHIM still validates them; only this differential check skips the
@@ -423,7 +421,7 @@ while read -r k v; do
     #                    They are not unchecked: tests/config_identity.py compares the emitted value
     #                    against what the MODEL resolved, on every run of every suite. That is strictly
     #                    stronger than this arm, which only compares the shim against itself.
-    case "$k" in evap_mode|runoff_ratio_on|solver_method|time_integration|time_step_mode) continue ;; esac
+    case "$k" in runoff_ratio_on|solver_method|time_integration|time_step_mode) continue ;; esac
     grep -vE "^$k " "$WORK/shim_keys.txt" > "$WORK/without.txt"
     bash ../emit_config.sh < "$WORK/without.txt" > "$WORK/without.yaml" 2>/dev/null
     cmp -s "$WORK/shim.yaml" "$WORK/without.yaml" && missing="$missing $k"
@@ -451,7 +449,7 @@ while read -r k v; do
     # whose value the shim supplies whether or not they are given, so setting one to the value it would
     # have been derived as cannot change the output. config_identity.py checks those against the MODEL
     # on every run, which is a stronger test than this one.
-    case "$k" in evap_mode|runoff_ratio_on|run_type|solver_method|time_integration|time_step_mode) continue ;; esac
+    case "$k" in runoff_ratio_on|run_type|solver_method|time_integration|time_step_mode) continue ;; esac
     printf 'run_type equilibrium\n%s %s\n' "$k" "$v" > "$WORK/alone.txt"
     printf 'run_type equilibrium\n'                    > "$WORK/bare.txt"
     bash ../emit_config.sh < "$WORK/alone.txt" > "$WORK/alone.yaml" 2>/dev/null

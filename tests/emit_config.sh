@@ -52,10 +52,11 @@
 #   outfile_prefix        -> output.outfile_prefix
 #   run_dir               -> output.directory (+ output.if_exists: overwrite). OPTIONAL: when unset it
 #                            is DERIVED as '<outfile_prefix>prov' so every run records provenance.
-#   evap_mode             -> DROPPED. No longer a config key; the member is frozen at 0 and is inert
-#                            under the default evaporation taper (taper-first: evap_mode is only
-#                            consulted with -wtm_evap_taper OFF). A test that needs the legacy
-#                            hard-switch must pass -wtm_evap_taper 0 on the CLI, not set this.
+#   evap_mode             -> REMOVED FROM THE MODEL (2026-09-10, #88), and now REFUSED here. It was a
+#                            frozen, unsettable member, so an accepted-but-inert key was the very
+#                            deprecation-masking this shim is supposed to prevent. What it used to
+#                            select is now decided by evaporation.tapers.surface_transition: on, the
+#                            smooth taper governs; off, all surface water is removed.
 set -euo pipefail
 
 # HARVEST HOOK (#83, temporary). Inert unless WTM_HARVEST_DIR is set. When it is, every config this
@@ -142,14 +143,18 @@ mark_() {
 # names a literal key; there are no dynamic lookups.)
 mapfile -t KNOWN < <(grep -vE '^[[:space:]]*#' "$0" | grep -oE '\b(have|val|def_) [a-z_0-9]+' \
                      | awk '{print $2}' | sort -u)
-# Keys the shim ACCEPTS AND DELIBERATELY IGNORES. Each needs a reason in the header map above, and
-# each is announced on stderr rather than swallowed -- a test that sets one should see that it did
-# nothing, which is the whole point of this guard.
-ACCEPTED_INERT=(evap_mode)
-declare -A IS_KNOWN=(); for k in "${KNOWN[@]}" "${ACCEPTED_INERT[@]}"; do IS_KNOWN["$k"]=1; done
-for k in "${ACCEPTED_INERT[@]}"; do
-    have "$k" && printf 'emit_config.sh: note: %s is accepted but INERT (see the key map above); it sets nothing.\n' "$k" >&2
-done
+# Keys the shim ACCEPTS AND DELIBERATELY IGNORES. THE LIST IS EMPTY, and that is the point: an
+# accepted-but-inert key is exactly the deprecation-masking this shim must not do. evap_mode was the
+# last one and is now REFUSED below, with its removal, rather than announced and swallowed.
+ACCEPTED_INERT=()
+declare -A IS_KNOWN=(); for k in "${KNOWN[@]}"; do IS_KNOWN["$k"]=1; done
+if have evap_mode; then
+    printf 'emit_config.sh: evap_mode was REMOVED from the model (2026-09-10). It had been frozen at 0\n' >&2
+    printf '  and unsettable, so it selected nothing. What it used to choose is now decided by\n' >&2
+    printf '  evaporation.tapers.surface_transition: ON, the smooth taper governs evaporation; OFF, all\n' >&2
+    printf '  surface water is removed each step. Drop the line, or set the taper.\n' >&2
+    exit 2
+fi
 unknown=()
 for k in "${!V[@]}"; do [[ -n "${IS_KNOWN[$k]+x}" ]] || unknown+=("$k"); done
 if (( ${#unknown[@]} )); then
