@@ -42,22 +42,35 @@ INP="$RECH/inputs"
 make_work combo
 export OMP_NUM_THREADS=1
 
-# THE CONFIG IS A FILE NOW (#83): tests/combination_sweep/config.yaml, rendered per cell.
-#
-# THE FOUR OPTIONAL AXES are placeholders: a cell that NAMES one gets its line substituted, a cell
-# that does not gets the line DELETED, so the key is genuinely ABSENT rather than stated at its
-# default. Those are different inputs to the model, and the difference is exactly what this suite
-# observes -- which is also why it is not on WTM_DECLARED_SUITES (see the file header, and #92).
-mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE= METHOD= INTEG= MODE=]
+mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume]
     local tend="ta"; [ "$2" = transient ] && tend="tb"
-    local opt=()
-    if [ -n "${METHOD:-}" ]; then opt+=(-e "s|^#@METHOD@|  method: $METHOD|"); else opt+=(-e "/^#@METHOD@/d"); fi
-    if [ -n "${INTEG:-}"  ]; then opt+=(-e "s|^#@INTEG@|  time_integration: $INTEG|"); else opt+=(-e "/^#@INTEG@/d"); fi
-    if [ -n "${MODE:-}"   ]; then opt+=(-e "s|^#@MODE@|  time_step: { mode: $MODE }|"); else opt+=(-e "/^#@MODE@/d"); fi
-    if [ -n "${STORAGE:-}" ]; then opt+=(-e "s|^#@STORAGE@|  storage_form: $STORAGE|"); else opt+=(-e "/^#@STORAGE@/d"); fi
-    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-        -e "s|@RUNTYPE@|$2|g" -e "s|@COLLECTOR@|$3|g" -e "s|@DT@|$4|g" -e "s|@TEND@|$tend|g" \
-        "${opt[@]}" config.yaml > "$WORK/$1.yaml"
+    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
+snes_stol 1e-8
+run_type $2
+${STORAGE:+storage $STORAGE}
+${METHOD:+solver_method $METHOD}
+${INTEG:+time_integration $INTEG}
+${MODE:+time_step_mode $MODE}
+fsm_on 1
+infiltration_on 0
+runoff_ratio 0
+deltat $4
+total_time 4yr
+report_interval 2
+save_nreport_interval 9999
+fdepth_a 200
+fdepth_b 150
+fdepth_fmin 2
+time_start ta
+time_end $tend
+surfdatadir $INP
+region rech_test
+supplied_wt 1
+runoff_collector $3
+eq_tol 0
+textfilename $WORK/$1.txt
+outfile_prefix $WORK/${1}_
+EOF
 }
 
 # Solver and integrator are given as FLAG SETS; which integrator each actually resolves to is recorded
