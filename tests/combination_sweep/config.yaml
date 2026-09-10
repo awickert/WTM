@@ -1,7 +1,7 @@
 # tests/combination_sweep -- THE CONFIG EVERY CELL OF THE SWEEP RUNS.
 #
 # A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, or
-# is DECLARED-ABSENT with the reason (see the two markers further down).
+# is marked OPTIONAL with the reason (see the markers further down).
 #
 # PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
 # tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
@@ -12,18 +12,44 @@
 # table, which is why a cell that fails for a HARNESS reason must never be filed as a design refusal.
 #
 # ONE FILE, SIX PER-CELL SLOTS. Unlike the other materialised suites this needs no split by step mode,
-# because the step mode is not written here at all -- see the DECLARED-ABSENT note below.
+# because the step mode is not written here at all -- see the OPTIONAL note below.
 
-# DECLARED-ABSENT: solver.time_step.mode -- WHAT THIS RESOLVES TO IS PART OF WHAT THE SWEEP MEASURES.
+# OPTIONAL: solver.time_step.mode -- resolved automatically; WHAT IT RESOLVES TO IS PART OF WHAT
+# THIS SWEEP MEASURES.
 # The mode follows from solver x integrator x collector (newton -> ramp; the implicit collector and
 # backward-euler -> fixed; otherwise adaptive). Writing it per cell would mean encoding the model's own
 # resolution rule in the test, and a test that re-derives the policy stops testing the model and starts
 # testing its copy of it -- the mechanism behind several arms in #24. Expect: fixed | adaptive | ramp,
 # per cell, and the model's own coverage fingerprint records which.
 #
-# DECLARED-ABSENT: surface_water.routing -- same reason. An absent routing key resolves FROM THE
+# OPTIONAL: surface_water.routing -- resolved automatically, same reason. An absent routing key resolves FROM THE
 # COLLECTOR (measured: active_set -> continuous, explicit -> impulse, implicit -> continuous), and the
 # collector is one of the axes being swept. Expect: continuous | impulse, per cell.
+#
+# AND THE CONTROLLER DIALS FOLLOW THE MODE, so they are optional for the same reason. WHICH DIALS
+# EXIST AT ALL is decided by what solver.time_step.mode resolves to, and that parameter is OPTIONAL
+# above -- so a cell cannot state its dials without first stating the mode, which is the thing being
+# measured. Counted
+# across the 86 runs of one sweep, the dependency is exact:
+#     error_tol           86 cells -- every mode resolves one (0.5 adaptive, 0.1 fixed and ramp)
+#     grow, shrink, grow_if_niter_leq, max_retries   66 -- the adaptive AND ramp cells
+#     norm                42 -- the adaptive cells only
+#     dt_max, newton.dt0  24 -- the ramp cells only, which is exactly the 24 newton cells
+#
+# OPTIONAL: solver.time_step.error_tol -- resolved in every mode; the value follows the mode
+# OPTIONAL: solver.time_step.grow -- exists only under adaptive or ramp
+# OPTIONAL: solver.time_step.shrink -- exists only under adaptive or ramp
+# OPTIONAL: solver.time_step.grow_if_niter_leq -- exists only under adaptive or ramp
+# OPTIONAL: solver.time_step.max_retries -- exists only under adaptive or ramp
+# OPTIONAL: solver.time_step.norm -- exists only under adaptive
+# OPTIONAL: solver.time_step.dt_max -- exists only under ramp, i.e. only on the newton cells
+# OPTIONAL: solver.newton.dt0 -- exists only under ramp, i.e. only on the newton cells
+#
+# THE LIMIT THIS REACHES, stated plainly rather than hidden: ten optional parameters is a lot, and it
+# is the honest cost of a suite whose SUBJECT is what the model resolves. Every one of them is a
+# consequence of the two at the top. If this list ever grows to cover a key that is NOT downstream of
+# the swept axes, that is a sign the marker is being used to quieten a real MISSING, and it should be
+# challenged rather than extended.
 
 run:
   type: @RUNTYPE@   # PER-CELL: equilibrium | transient

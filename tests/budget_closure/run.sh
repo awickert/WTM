@@ -49,10 +49,10 @@ export OMP_NUM_THREADS=1
 # rule and lists the arms that run from it.
 #
 # THE COLLECTOR IS A BLOCK, NOT A VALUE, because three arms (d_and, d_ntu, d_pic) exist precisely to
-# assert what an UNSET collector resolves to. For those, mkcfg substitutes a DECLARED-ABSENT marker
-# instead of the key -- the config then states, in the author's voice, that the key is deliberately
-# absent and what it is expected to resolve to (#92). Writing the key would delete the property under
-# test: the arm would become a copy of the arm that sets it.
+# assert what an UNDECLARED collector resolves to. For those, mkcfg substitutes an OPTIONAL marker
+# instead of the key -- the config then states, in the author's voice, that the parameter is left to
+# automatic resolution and what it is expected to resolve to (#92). Writing the key would delete the
+# property under test: the arm would become a copy of the arm that sets it.
 mkcfg() { # $1 stem  $2 collector ("" = DELIBERATELY ABSENT)  $3 routing  $4 mode  $5 method
           #   $6 integrator  $7 storage  $8 snes_stol  $9 dt error_tol
     local stem="${1:?mkcfg needs a stem}" coll="${2-}" routing="${3:?mkcfg needs a routing}"
@@ -67,12 +67,13 @@ mkcfg() { # $1 stem  $2 collector ("" = DELIBERATELY ABSENT)  $3 routing  $4 mod
     if [ -n "$coll" ]; then
         block="  collection:\n    method: $coll"
     else
-        # The marker config_identity.py reads. It is a DECLARATION, not an exemption: it names the key,
-        # says why it must stay unset, and says what the run is expected to resolve it to -- and the
-        # arm's own WANT_COLL assertion checks that expectation independently.
-        block="# DECLARED-ABSENT: surface_water.collection.method -- THIS ARM'S SUBJECT IS the default\n"
-        block="$block# resolution. Setting the key would delete the property under test, turning this arm into a\n"
-        block="$block# copy of the arm that sets it. Expect: \${WANT_COLL:?an absent-collector arm must say what it expects}"
+        # The marker config_identity.py reads. The PARAMETER is optional, not the value: an undeclared
+        # key still resolves, and the marker commits to what it should resolve TO -- which the arm own
+        # WANT_COLL assertion then checks independently.
+        block="# OPTIONAL: surface_water.collection.method -- resolved automatically when not declared,\n"
+        block="$block# and THAT RESOLUTION IS THIS ARM'S SUBJECT. Setting the key would delete the property under\n"
+        block="$block# test, turning this arm into a copy of the arm that sets it.\n"
+        block="$block# Expect: \${WANT_COLL:?an arm that leaves the collector undeclared must say what it expects}"
     fi
     local src=config.yaml
     [ "$mode" = fixed ] && src=config_fixed.yaml
