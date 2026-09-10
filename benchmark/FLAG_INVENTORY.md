@@ -51,6 +51,8 @@ readable:
 | `mass_balance_test.sh` | **RUNNABLE** -- reads `mass_balance_config.yaml` (b2d994e) |
 | `scheme_bench/run.sh` | **RUNNABLE** -- reads `scheme_bench/config.yaml`; repaired 0b3f31c (#101) |
 | `picard/recharge_free_boundary.py` | **RUNNABLE** -- reads `picard/config.yaml`; repaired 3a45617 (#101) |
+| `adaptive_dt/adaptive_bench_msi.sbatch` | ORPHAN — flat legacy `.cfg`, and passes EIGHT retired names: `evap_mode`, `cells_per_degree`, `southern_edge`, `total_cycles`, `maxiter`, `-wtm_dt_adaptive`, `-wtm_dt_tol`, `-wtm_dt_norm_rms` |
+| `adaptive_dt/analyze_adapt_bench.py` | ORPHAN — analyses that runner's output. Its recorded results predate #61 and #63, and its tif paths are MSI paths (0 of 8 present locally), so they describe a model that no longer exists (#73) |
 | all others | orphaned (legacy flat `.cfg`) or analysis-only, not model drivers |
 
 **THREE runnable benchmark scripts.** The first draft of this table said ONE, derived before the two
