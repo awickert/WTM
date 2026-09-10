@@ -48,17 +48,19 @@ readable:
 
 | script | state |
 |---|---|
-| `mass_balance_test.sh` | **RUNNABLE** -- reads `mass_balance_config.yaml` |
-| `scheme_bench/run.sh` | aborts: retired vocabulary (#101) |
-| `picard/recharge_free_boundary.py` | aborts: passes `evap_mode`, removed by #88 (#101) |
+| `mass_balance_test.sh` | **RUNNABLE** -- reads `mass_balance_config.yaml` (b2d994e) |
+| `scheme_bench/run.sh` | **RUNNABLE** -- reads `scheme_bench/config.yaml`; repaired 0b3f31c (#101) |
+| `picard/recharge_free_boundary.py` | **RUNNABLE** -- reads `picard/config.yaml`; repaired 3a45617 (#101) |
 | all others | orphaned (legacy flat `.cfg`) or analysis-only, not model drivers |
 
-**ONE runnable benchmark script, not three.** Two flags lose their only non-orphan caller and drop to
-dormant: `-wtm_fsm_continuous` and `-wtm_volume_storage` (scheme_bench only), as do
-`-wtm_evap_taper`, `-wtm_extended_soil`, `-wtm_ksat_surface_smoothing_width` and
-`-wtm_storativity_surface_smoothing_width` (recharge_free_boundary only). `-wtm_eq_tol` keeps a runnable
-caller in `mass_balance_test.sh`. The earlier claims survive unchanged: `-wtm_bdf2`'s nine callers are
-still all orphaned, and so is the sole caller of `dt_norm_rms`.
+**THREE runnable benchmark scripts.** The first draft of this table said ONE, derived before the two
+repairs landed on the same day; it is corrected here rather than left to rot, which is the whole point
+of the re-derivation. All six flags that would have dropped to dormant KEEP a runnable caller:
+`-wtm_fsm_continuous` and `-wtm_volume_storage` via scheme_bench, and `-wtm_evap_taper`,
+`-wtm_extended_soil`, `-wtm_ksat_surface_smoothing_width`, `-wtm_storativity_surface_smoothing_width`
+via recharge_free_boundary -- though note those flag NAMES are themselves retired: the settings now
+reach the model as config keys, which is what the repairs did. `-wtm_bdf2`'s nine callers are still all
+orphaned, and so is the sole caller of `dt_norm_rms`.
 
 **These are BENCHMARK counts, not test counts.** The 39 test suites are the primary coverage evidence
 and none of this touches them -- every one reads a real config file and runs.
