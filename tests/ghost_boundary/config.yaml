@@ -20,10 +20,12 @@
 #   tr      tr-bdf2   the cross-scheme comparison
 #   bdf2v   bdf2
 #
-# `cc` STATES backward-euler (#96, fixed). It used to leave time_integration unset, which resolved to
-# tr-bdf2 and made it a byte-identical copy of the `tr` arm -- so the four-scheme comparison ran three
-# schemes. The resolution was correct; the ARM was stale. It now names the first-order scheme its name
-# has always meant, which is the only one of the four that can show a real discretisation difference.
+# `cc` STATES tr-bdf2 -- the value it actually resolves to, so writing it down changes no run, which
+# is what materialising a config is for. It is therefore a byte-identical copy of the `tr` arm, and
+# #96 carries whether this suite should instead exercise a first-order scheme. NOT decided here:
+# the arm never named backward-euler -- its original form was `-wtm_anderson` with NO integrator
+# flag, i.e. "whatever the default is" -- so choosing one would assert a NEW claim about what this
+# test measures rather than repair an old one.
 run:
   type: transient
   equilibrium_stop:

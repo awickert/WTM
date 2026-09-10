@@ -63,8 +63,8 @@ BASE=""  # solver.tolerance is now a CONFIG key (snes_stol in the shim), not a C
 fail=0
 
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------
-emit_adaptive cc_n1 backward-euler
-emit_adaptive cc_nN backward-euler
+emit_adaptive cc_n1 tr-bdf2
+emit_adaptive cc_nN tr-bdf2
 "$WTM" "$WORK/cc_n1.yaml" $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
   || { echo "RUN FAILED: cc n=1"; tail -3 "$WORK/cc_n1.log"; exit 2; }
 "$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.yaml" $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
@@ -73,23 +73,19 @@ emit_adaptive cc_nN backward-euler
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
 # newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined.
-# THE INTEGRATOR IS NAMED, NOT LEFT ABSENT, and `cc` names BACKWARD-EULER (#96). It used to leave the
-# key unset and take whatever `anderson` resolved to -- which is tr-bdf2, so `cc` was a byte-identical
-# copy of the `tr` arm. That was auto-resolution working correctly; what was stale was the ARM, whose
-# name has meant the first-order scheme since before tr-bdf2 became the resolved default.
+# THE INTEGRATOR IS NAMED, NOT LEFT ABSENT -- and `cc` names tr-bdf2, which is WHAT IT ACTUALLY RUNS.
+# It used to leave the key unset and take whatever `anderson` resolved to; writing that value down
+# changes nothing about the run, which is the point of materialising a config.
 #
-# NAMING IT DOES NOT MAKE SECTION 2 A CROSS-SCHEME TEST, and that is worth stating plainly rather than
-# assuming the fix worked. MEASURED after the rename: cc, tr and bdf2v STILL agree bit-for-bit at the
-# final report. They are three genuinely different schemes, and they still land on the same field --
-# because the comparison happens at a CONVERGED STEADY STATE, where every consistent integrator reaches
-# the same fixed point by construction. The schemes DO differ in the transient: rendering the same arms
-# and stopping after ONE cycle instead of 120 gives cc vs bdf2v = 1.265e-06.
-#
-# SO WHAT SECTION 2 ACTUALLY MEASURES is that the schemes agree AT EQUILIBRIUM under the ghost boundary
-# -- a real property, and the one this suite is named for, since a boundary bug would move the fixed
-# point. It is NOT evidence that the schemes agree in general. Distinguishing schemes needs a transient
-# comparison at a tolerance near 1e-6, which is a different test; #96 carries it.
-declare -A INTEG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2")
+# THAT MAKES cc A BYTE-IDENTICAL COPY OF THE tr ARM, and the copy is NOT fixed here. It could be fixed
+# by giving cc backward-euler -- `cc` denotes backward-euler in tests/variable_porosity, and the name
+# suggests it was meant as the first-order default before that default moved to tr-bdf2. But the arm's
+# OWN history does not support that: its original definition was `-wtm_anderson` with NO integrator
+# flag, i.e. "whatever the default is", and tr-bdf2 IS the default. So pinning backward-euler would
+# not restore an earlier intent -- it would ASSERT a new one, changing which scheme this suite
+# exercises. That is a decision about what the test measures, and #96 carries it rather than a cleanup
+# commit making it quietly.
+declare -A INTEG=([cc]="tr-bdf2" [tr]="tr-bdf2" [bdf2v]="bdf2")
 for s in tr bdf2v newton; do
   if [ "$s" = newton ]; then emit_fixed "$s" 120 10000 0; else emit_adaptive "$s" "${INTEG[$s]}"; fi
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
