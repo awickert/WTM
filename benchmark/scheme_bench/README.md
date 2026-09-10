@@ -80,8 +80,11 @@ was never claimed to handle.
 (`results_between/`, `results_during/`); side-by-side output in
 `COMPARISON_island_2026-08-25.txt`, produced by `compare.py`.
 
-- **between** — FillSpillMerge runs between steps and **overwrites** the water table (original).
-- **during** — FSM's per-cell ΔV enters the **next step's source term** (`-wtm_fsm_continuous`, #116).
+- **between** — `surface_water.routing: impulse`. FillSpillMerge runs between steps and **overwrites**
+  the water table (the original behaviour). `between` is this script's env value; `impulse` is the
+  config value it sets.
+- **during** — `surface_water.routing: continuous`, and **the shipped default** (#43). FSM's per-cell
+  ΔV enters the **next step's source term**. Was `-wtm_fsm_continuous`; that flag is retired (#86).
 
 ## Cost at matched settling precision (rms ≤ 1 mm-water), fixed-dt schemes
 

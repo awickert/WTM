@@ -118,11 +118,41 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > you which you have.**
 >
 > One limit stated rather than hidden: only the `impulse` arm is gated absolutely. Under
-> `fsm_coupling: continuous` FSM's volume change is handed to the NEXT step's source term, so at a report
-> boundary there is water FSM has already moved — present in `stored_volume` — whose source term has
-> not yet been applied. That lag makes the source arm's closure large early and decay with run length
-> (7.37e-01 at 24 yr against 1.4e-04 at 120 yr, same fixture). That it is exactly one step, and hence
-> O(dt), is a HYPOTHESIS nobody has measured.
+> `surface_water.routing: continuous` FSM's volume change is handed to the NEXT step's source term, so at
+> a report boundary there is water FSM has already moved — present in `stored_volume` — whose source term
+> has not yet been applied. That lag makes the source arm's closure large early and decay with run length
+> (7.37e-01 at 24 yr against 1.4e-04 at 120 yr, same fixture).
+>
+> **THE ONE-STEP-LAG HYPOTHESIS IS REFUTED, MEASURED 2026-09-11 (#42).** It predicted `budget_residual`
+> ~ O(dt): halve dt at fixed total time and the ABSOLUTE residual should halve. It grows. Same fixture,
+> 24 yr, backward-euler, fixed dt, `active_set`:
+>
+> | routing | dt = 1 yr | dt = 0.5 yr | dt = 0.25 yr | as a fraction of recharge |
+> |---|---|---|---|---|
+> | `off` | 1.649e+02 | 7.432e+02 | 2.137e+02 | ~1e-8, no trend — noise |
+> | `impulse` | 3.396686e+08 | 5.067426e+08 | 7.433966e+08 | 1.16e-2 → 1.74e-2 → 2.55e-2 |
+> | `continuous` | 3.396682e+08 | 5.067417e+08 | 7.433976e+08 | 1.16e-2 → 1.74e-2 → 2.55e-2 |
+>
+> Three conclusions, and the second is the one that matters:
+> 1. **FSM is necessary.** With routing off the residual is six orders of magnitude smaller and shows no
+>    trend at all.
+> 2. **THE COUPLING IS IRRELEVANT.** `impulse` and `continuous` agree to seven significant figures at
+>    every dt. So this is NOT the continuous coupling's lag — it is present, identically, under the
+>    coupling that has no lag by construction. The limitation above is correctly placed, but its stated
+>    CAUSE is wrong.
+> 3. **It worsens under refinement**, and still does after normalising by cumulative recharge — so it is
+>    not an artifact of a shrinking denominator (the trap [[#48]] documents).
+>
+> **Consequence for the gate this limitation describes:** the `impulse` arm that IS gated absolutely
+> carries the same residual, so that green gate may hold only at the dt it runs. Do not read it as
+> evidence that the absolute closure is dt-robust. Behaviour matching [[#78]], which now has the clean
+> reproduction it asked for.
+>
+> **And do not write the continuous gate.** #42 proposed extending the absolute check to the continuous
+> arm once the lag was understood. The measurement makes the quantity LESS explained, not more, and it
+> is not a coupling property — gating it would pin exactly the unexplained number this section warns
+> against. The continuous coupling's EXACT budget is already gated on twelve arms in
+> `tests/budget_closure`, across every integrator, storage form, step mode and collector.
 
 With the *physical* storage change `\Delta S = \sum storedVolume(w^{\text{now}}) - \sum
 storedVolume(w^{0})`, the residual is small (≈0.04% once spun up; up to ≈2% on a cold start) but not

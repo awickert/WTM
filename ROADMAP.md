@@ -31,6 +31,10 @@ one of the 39 test suites reads a real config file a human wrote.
 | 79 | **The declared-config rule is unconditional**; `WTM_DECLARED_SUITES` gone; 37 of 39 enforced | 45a2820 |
 | 92 | A parameter may be marked `OPTIONAL` where automatic resolution IS the subject | bcdb1c7 |
 
+## Andy's stated next priorities
+
+**#42, then #65** (recorded 2026-09-11). Take these before resuming the numbered order below.
+
 ## The open queue, in implementation order
 
 **Three constraints fix the sequence.** Answer-movers before any number is pinned. Units before
@@ -40,14 +44,14 @@ Group: **M**odel defect · **T**est integrity · **P**hysics/measurement · **D*
 
 | n | # | grp | step | how it serves the goal |
 |---|---|---|---|---|
+| - | 42 | D | **NEXT (Andy)** Stale vocabulary: `-wtm_fsm_delta_source`, "overwrite" | **Legibility.** Docs naming keys that no longer exist send a new user down dead ends |
+| - | 65 | T | **THEN (Andy)** Convert the remaining head-unit measurements to water volume | **One currency.** The model judges every criterion in water; a test measuring head can pass while water is wrong |
 | 1 | 60 | P | Order-aware retry — real speedup, exonerated; the blocker was #61 | **Speed.** Same hardware, faster run. Gain already measured |
 | 2 | 64 | M | Sub-cycle the FSM coupling to bound the delta admitted per step | **Correctness at production settings.** Bounds a per-step coupling error that has no limit today. **Moves goldens — needs explicit authorization** |
 | 3 | 54 | T | Test and guard the BUDGET at boundaries. Folds in #34 | **The largest correctness gap.** Solution-correctness at boundaries is covered; MASS-correctness is not. A water model can lose water where nobody looks |
 | 4 | 52 | M | Land→ocean outflow mis-booked at pinned cells (211 of the outer ring, corners 1.5x) | **The defect #54 fences.** Localised already. Water table unaffected, so no goldens move |
 | 5 | 48 | T | `continuous` is first-order in dt — fix the TEST's metric | **Trust in the shipped default.** Its convergence test measures the wrong thing, so the default is unverified |
-| 6 | 42 | D | Stale vocabulary: `-wtm_fsm_delta_source`, "overwrite" | **Legibility.** Docs naming keys that no longer exist send a new user down dead ends. Check #48 first — it may answer this |
 | 7 | 39 | T | impulse resets cross-rank drift; continuous compounds | **Parallel trustworthiness.** Instrument built and green (`xrank_growth`); the confirmatory experiment remains. EVERY cross-rank tolerance was calibrated under `impulse`, i.e. on a resynchronised system |
-| 8 | 65 | T | Convert the remaining head-unit measurements to water volume | **One currency.** The model judges every criterion in water; a test measuring head can pass while water is wrong. *Units before tolerances* |
 | 9 | 84 | T | 24 laundered assertion tolerances across 19 suites | **Provenance.** A tolerance that says what it IS but not where it CAME FROM cannot be re-derived by a new maintainer |
 | 10 | 85 | T | Golden references carry no in-file provenance | **Reproducibility.** Do it *with* any regold #64 forces |
 | 11 | 53 | T | State-vs-accumulator is valid only for 3-level schemes | **Test validity.** Prevents a future false alarm on `bdf2` |
