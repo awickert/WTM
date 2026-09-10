@@ -84,12 +84,18 @@ evaporation:
                                # drawing down instead of running away.
 
 surface_water:
-  fsm_coupling: continuous     # continuous | impulse -- how FillSpillMerge's result reaches the groundwater.
+  routing: continuous          # continuous | impulse | off -- ONE key for what happens to above-ground water:
+                               # whether FillSpillMerge routes it, and when it does, how FSM's result reaches
+                               # the groundwater.
                                # continuous: the table is left alone and FSM's per-cell VOLUME CHANGE is fed
                                #             into the next step's recharge source, so the solver never sees a
                                #             between-step jump in its state. The DEFAULT.
                                # impulse:    FSM's post-routing water table REPLACES the step baseline.
                                #             What the model has always done, and what v2.0.1 does.
+                               # off:        FillSpillMerge does not run; above-ground water is not routed.
+                               #             `off` is a REAL STATE, not an absence -- with no routing there is
+                               #             no coupling, so a run records `off` rather than naming a
+                               #             mechanism it never used.
                                # THE REASON IS PHYSICAL. FSM is instantaneous by construction, so under
                                # `impulse` the state always carries a FULLY EQUILIBRATED lake -- a depression
                                # is full from the instant there is water to fill it, and evaporates at the
@@ -105,7 +111,12 @@ surface_water:
                                # implicit. Its budget is also not invariant to the solve count -- same water,
                                # different partition -- which is real and is the physics, not an error.
                                # CHANGES THE ANSWER.
-  mode: routed                 # routed (Fill-Spill-Merge) | ponded | removed (groundwater-only)
+                               # THIS KEY REPLACED `mode` AND `fsm_coupling` (2026-09-10). They were two keys
+                               # answering one question, and the split let you write a contradiction:
+                               # `mode: ponded` with `fsm_coupling: continuous` asked for a coupling that
+                               # cannot happen. An old config is refused by name, with the translation.
+                               # (`mode: ponded` and `mode: removed` both become `off`: they were already
+                               # indistinguishable -- the default taper never consults the old evap_mode.)
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false
   collection:
