@@ -41,28 +41,12 @@ export OMP_NUM_THREADS=1
 
 for coup in continuous impulse; do for n in 1 "$NRANK"; do
   t="${coup}_n$n"
-  cat <<EOF | ../emit_config.sh > "$WORK/$t.yaml"
-solver_method anderson
-run_type equilibrium
-fsm_on 1
-infiltration_on 0
-runoff_ratio_on 1
-deltat 31536000
-total_time 6yr
-report_interval 2
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start t0
-time_end t0
-surfdatadir $INP
-region runoff_test
-supplied_wt 1
-save_nreport_interval 1
-fsm_coupling $coup
-textfilename $WORK/$t.txt
-outfile_prefix $WORK/${t}_
-EOF
+  # THE CONFIG IS A FILE NOW (#83): tests/xrank_growth/config.yaml. Every setting the run resolves to
+  # is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+  # surface_water.routing is THE SUBJECT and the only thing that varies between arms; the rank count
+  # is not a config setting.
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$t|g" \
+      -e "s|^  routing: continuous|  routing: $coup|" config.yaml > "$WORK/$t.yaml"
   mpirun -n "$n" "$WTM" "$WORK/$t.yaml" > "$WORK/$t.log" 2>&1 \
     || { echo "RUN FAILED: $t"; tail -5 "$WORK/$t.log"; exit 2; }
 done; done
