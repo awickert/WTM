@@ -20,9 +20,12 @@
 # rank counts. That is the quantity that was wrong, and asserting it directly means a regression is
 # reported as "the controller disagreed" rather than as an unexplained field difference.
 #
-# Everything here is left at its DEFAULT (adaptive_dt auto -> true, fsm_coupling continuous,
-# collection.method active_set) because the defaults are what production runs, and the defect lived
-# only in that combination.
+# This suite runs the PRODUCTION COMBINATION -- time_step.mode adaptive, fsm_coupling continuous,
+# collection.method active_set -- because that is what production runs, and the defect lived only in
+# that combination. Those used to be left implicit and taken from the defaults; since #83 they are
+# STATED in config.yaml, so the suite cannot silently start testing something else when a default
+# moves. (It also no longer says "adaptive_dt auto": `auto` was abolished and the key is
+# solver.time_step.mode.)
 set -uo pipefail
 cd "$(dirname "$0")"
 . ../lib.sh                            # make_work: keeps the work dir when a test FAILS
@@ -33,38 +36,17 @@ RANKS="${*:2}"; RANKS="${RANKS:-1 2 4 6}"
 TRANS=$(readlink -f ../golden/inputs)
 make_work xrank_adaptive
 
-echo "=== cross-rank determinism under adaptive dt (defaults: adaptive, continuous, active_set) ==="
+echo "=== cross-rank determinism under adaptive dt (adaptive, continuous, active_set) ==="
 echo "WTM binary: $WTM"
 echo
 
 fail=0
 for n in $RANKS; do
-    { cat <<EOF
-solver_method anderson
-run_type           transient
-fsm_on             1
-evap_mode          0
-infiltration_on    0
-runoff_ratio_on    0
-deltat             252288000
-report_interval    1
-total_time         32yr
-fdepth_a           200
-fdepth_b           150
-fdepth_fmin        2
-time_start         ta
-time_end           tb
-surfdatadir        $TRANS
-region             transient_test
-supplied_wt        0
-save_nreport_interval 9999
-eq_tol 0
-textfilename   $WORK/n$n.txt
-outfile_prefix $WORK/n${n}_
-EOF
-      echo "snes_stol 1e-12"
-      echo "trace dt"
-    } | ../emit_config.sh > "$WORK/n$n.yaml"
+    # THE CONFIG IS A FILE NOW (#83): tests/xrank_adaptive/config.yaml, read and edited directly
+    # rather than translated from legacy key/value lines. Every setting the run resolves to is stated
+    # there, and tests/config_identity.py enforces that (this suite is on WTM_DECLARED_SUITES).
+    # The rank count is NOT a config setting, so all ranks run the SAME file -- only @STEM@ differs.
+    sed -e "s|@INPUTS@|$TRANS|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|n$n|g" config.yaml > "$WORK/n$n.yaml"
     # Long cycles (8 yr) so the controller is FREE to choose the step. With short cycles the step is
     # quantised by the report interval and the controller never binds -- the arm would pass vacuously.
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "n$n.yaml" \

@@ -1,0 +1,105 @@
+# tests/xrank_adaptive -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# THIS SUITE IS A SPECIAL CASE, AND IT DECIDES THE PROVENANCE BELOW. Its subject is the PRODUCTION
+# COMBINATION: adaptive stepping, continuous coupling, active-set collection, on the Anderson/TR-BDF2
+# path. The defect it guards (#56) lived ONLY in that combination. So the values here are not "the
+# defaults, unexamined" -- taking the production default IS the deliberate choice, and the suite's own
+# header has always said so. What changed with #83 is that they are now WRITTEN DOWN, so the suite
+# cannot silently start testing a different combination when a default moves. That has happened before:
+# budget_closure's `impulse` arm became a second `continuous` arm exactly that way.
+#
+# ONE ARM, MANY RANKS. run.sh runs this same config at n = 1, 2, 4, 6 and compares the DTTRACE
+# sequences, so there are no per-arm overrides -- the rank count is not a config setting.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@ (the stem is n<rank>).
+
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT here: eq_tol 0 disables the equilibrium stop, so nothing reads this
+    frac: 0.001   # INERT here: see metric above
+  initial_water_table: saturated
+time:
+  total: "32yr"
+  report_interval: "1"   # LOAD-BEARING: 8 yr cycles, long enough that the controller is FREE to
+  save_every_n_reports: 9999   # choose the step. Short cycles quantise dt and the arm goes vacuous.
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  mode: routed
+  fsm_coupling: continuous   # the production coupling (#43), and part of the combination #56 lived in
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: active_set   # the production enforcement -- and the one whose pinned cells sat 4 ULPs
+                         # above their constraint, which is what made the estimator's divisor
+                         # decomposition-dependent. Naming it here is the point of the suite.
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson   # the production solver, and the only path TR-BDF2 runs on
+  time_integration: tr-bdf2   # what `anderson` RESOLVES to. Stated because omitting it makes the
+                              # integrator a function of the method, and #56 was an interaction
+                              # between TR-BDF2's embedded estimate and the FSM delta mask
+  tolerance: 1e-12   # TIGHT ON PURPOSE: this suite compares runs across decompositions, so the solve
+                     # must be converged far below the 1e-4 relative margin the DTTRACE check applies
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # the production default. #56 did not involve step-averaged transmissivity
+  convergence:
+    metric: volume   # the production default (#61), and the metric the controller's error estimate uses
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # THE SUBJECT OF THIS SUITE. Resolved rather than stated until #83; the whole
+                     # defect is that the CONTROLLER's decisions could differ between decompositions,
+                     # so a suite that did not say `adaptive` could have stopped testing it silently
+    dt: 252288000
+    error_tol: 0.1   # the shipped adaptive target, as resolved by the model for this combination
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md) -- and the RMS whose DIVISOR was the #56 defect
+dev:
+  storage_form: volume   # the production default; the exact dV form
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. FSM is on here and evaporation shapes which cells
+    logistic_width: 0.1   # carry an FSM delta -- and the estimator excludes exactly those cells, so
+  extinction_depth: 8   # this shape is part of the combination #56 lived in. Production values.
+  tapers:
+    surface_transition: true   # both tapers as SHIPPED -- again, the production combination
+    depth_extinction: true
+io:
+  source: '@INPUTS@'
+  region: 'transient_test'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: [dt]   # LOAD-BEARING: the DTTRACE lines ARE the quantity this suite asserts
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
