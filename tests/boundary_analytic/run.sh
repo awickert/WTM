@@ -21,33 +21,15 @@ FIT_TOL="${FIT_TOL:-1e-6}"   # metres; max deviation of the water table from the
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem region
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-taper_surface_transition false
-taper_depth_extinction false
-solver_method anderson
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 2419200000000s
-save_nreport_interval 20000
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region $2
-supplied_wt 0
-runoff_collector off
-eq_tol 1e-8
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/boundary_analytic/config.yaml. Every setting the run resolves
+# to is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# solver.time_step.error_tol is 1e-08 in that file and that is deliberate: this suite compares against
+# ANALYTIC solutions, so the discretisation must not contribute to the error being judged.
+emit() { # $1 stem, $2 io.region (REQUIRED -- the region IS the arm here)
+  local rg="${2:?emit needs an io.region: each arm names its own analytic fixture}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" -e "s|@REGION@|$rg|g" \
+      config.yaml > "$WORK/$1.yaml"
 }
 # constant-T regime: flat sea-level topo + uniform recharge mounded above the surface (ponding via
 # runoff_collector=off, ALL wtd-dependent removals off) -> only constant-T diffusion + uniform source -> exact
