@@ -50,36 +50,21 @@ export OMP_NUM_THREADS=1
 
 # The band sink's dt-dependence scales with ABSOLUTE dt (band = 2*qmax*dt), so use YEAR-scale steps to make it
 # sharp: coarse = 1 yr x 100 cycles; fine = 0.25 yr x 400 cycles (same total simulated time, report_interval fixed).
-emit() { # stem  deltat  total_cycles  collector
-# adaptive_dt PINNED OFF. This test runs the same problem at two time steps 4x apart and asserts that
-# only dt changes. An adaptive controller would resize dt away from both starting values and erase the
-# very separation under test -- including the `implicit` CONTROL arm (measured 2.25e-01 m) that proves
-# the test can detect dt-dependence at all. Pinned explicitly rather than relying on the default.
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-10
-solver_method anderson
-time_step_mode fixed
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-runoff_collector $4
-deltat $2
-total_time $(( $3 * 20 * $2 ))s
-save_nreport_interval $3
-report_interval 20
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region dtsens
-supplied_wt 1
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/dt_sensitivity/config.yaml. Every setting the run resolves to
+# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# solver.time_step.mode: fixed IS PINNED in that file, and it is the pin that makes this test possible:
+# this suite runs the SAME problem at two time steps 4x apart and asserts only dt changes. An adaptive
+# controller would resize dt away from both starting values and erase the very separation under test,
+# including the `implicit` CONTROL arm (measured 2.25e-01 m) that proves the test can detect
+# dt-dependence at all.
+emit() { # $1 stem, $2 time_step.dt, $3 save_every_n_reports, $4 collection.method  (ALL REQUIRED)
+  local dt="${2:?emit needs a dt -- it is the subject, never inherit it}"
+  local sv="${3:?emit needs a save_every_n_reports: it scales inversely with dt}"
+  local cm="${4:?emit needs a collection.method: active_set or the implicit control}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|@DT@|$dt|g" -e "s|@SAVE@|$sv|g" \
+      -e "s|^    method: active_set|    method: $cm|" config.yaml > "$WORK/$1.yaml"
 }
 run() { # stem deltat cycles collector extra_flags
   emit "$1" "$2" "$3" "$4"
