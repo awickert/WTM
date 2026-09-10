@@ -9,13 +9,34 @@ SAME steady water table, so it is a clean cross-check that:
 Regenerate with:  python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
 
 NX, NY = 12, 8
 REGION = "adwater"
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
-tr = from_bounds(0, 0, NX, NY, NX, NY)
+# CELL SIZE IS PHYSICS, NOT BOOKKEEPING (#34). This was `from_bounds(0, 0, NX, NY, NX, NY)`, the
+# arbitrary placeholder from before WTM derived cell geometry from the geotransform (#124) -- it means
+# ONE DEGREE per cell, ~111 km. At that size, lateral drainage to the ocean strip is negligible against
+# the recharge, so this plateau simply filled up and every compared field went identically constant.
+# tests/nonvacuous.py caught it: 3 of 3 final fields identically 0, while the suite reported
+# "max|dV| = 0.0000 m water" twice and PASSED.
+#
+# 64 cells/degree = ~1.74 km, and it is NOT the ~111 m that the other converted fixtures use. This one
+# has a window, measured by sweeping the cc arm:
+#     cpd     4  -> constant field (still vacuous)
+#     cpd    16  -> 17 distinct values, wtd -41.18 .. 0.00
+#     cpd    64  -> 81 distinct values, wtd -81.78 .. 0.00     <- chosen
+#     cpd   256  -> 88 distinct values, wtd -98.71 .. -90.84   (whole plateau drained to depth)
+#     cpd  1000  -> DIVERGED_MAX_IT at 10000 nonlinear iterations
+# 64 is the deepest structure that still spans surface to depth: the water table meets the ocean strip
+# at 0 and reaches -81.8 m in the interior, so the three arms must agree across the whole range this
+# suite's stop metrics care about. 256 pushes every cell into the exponential-T dead zone and 1000 does
+# not converge at all, so "as fine as possible" is the wrong instinct here.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 64, 0
+tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
 
 def w(name, data, dt="float32"):
     with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
