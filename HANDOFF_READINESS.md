@@ -153,9 +153,16 @@ One ordered list; the **group** column keeps the kind visible: **C**onfig arc ·
 **Three constraints fix the sequence.** Schema-movers before configs are written to files. Answer-movers
 before any number is pinned. Units before tolerances. Items marked *(parallel-safe)* have no dependants.
 
-**The schema has stopped moving.** Every schema-mover is closed (#32, #30, #38, #36), so no remaining
-item changes a config key — with ONE exception: #64 may need a knob for the sub-cycling bound, and it
-should be designed to **add one key and move none**.
+**The schema moved once more, deliberately, on 2026-09-10** — `surface_water.mode` and
+`surface_water.fsm_coupling` merged into one key, `surface_water.routing: continuous | impulse | off`
+(#89). Andy: *"I want good stability, not arbitrary stability. Let's move the schema."* The timing was
+the argument: all 408 harvested configs were about to be rewritten by #83 anyway, so the change cost
+nothing today and would have cost 36 committed files tomorrow. It also REDUCES the #83 workload —
+dt_sensitivity's undeclared-key count fell from ~10 to 2, because one key now answers what two did.
+
+**Otherwise the schema is still.** Every other schema-mover is closed (#32, #30, #38, #36), so no
+remaining item changes a config key — with ONE exception: #64 may need a knob for the sub-cycling
+bound, and it should be designed to **add one key and move none**.
 
 | n | # | grp | item | why here |
 |---|---|---|---|---|
