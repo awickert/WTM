@@ -1,3 +1,5 @@
+#include "resolved_config.hpp"
+#include "resolve_defaults.hpp"
 #include "fill_spill_merge.hpp"
 #include "git_version.hpp"  // baked-in git commit + clean/dirty state (provenance)
 #include "irf.hpp"
@@ -64,6 +66,7 @@ std::string get_current_time_and_date_as_str() {
 static constexpr char help[] = "trying petsc method to solve the problem using Newton";
 
 void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
+  resolve_defaults(params);
   std::ofstream textfile(params.textfilename, std::ios_base::app);
   // Text file to save outputs of how much is changing and
   // min and max wtd at various times
@@ -1498,14 +1501,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // coupling runs, so naming one is a false specific. It also mattered for the declared-config rule --
   // 72 of the harvested test configs are FSM-off, and every one of them would have had to write down a
   // mechanism it never used.
-  bool eff_continuous = params.fsm_coupling_continuous;
-  {
-    std::string eff_rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
-    if (eff_rc == "active_set" && !params.runoff_collector_set && uc.use_picard) eff_rc = "explicit";
-    if (eff_rc == "explicit") eff_continuous = false;   // continuous x explicit is refused / auto-yields
-    if (params.infiltration_on) eff_continuous = false; // serial recharge carries no FSM-delta source
-  }
-  f << "  routing: " << (!params.fsm_on ? "off" : (eff_continuous ? "continuous" : "impulse")) << "\n";
+  f << "  routing: " << resolved_config::resolved_or_die("surface_water.routing") << "\n";
   if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
   else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
   else f << "  runoff_ratio: 0\n";
@@ -1517,11 +1513,10 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // so a Picard run that actually enforced `explicit` recorded `active_set`, and full_config.yaml
   // described a run that did not happen. It also let a declared-config check (#83) pass on a false
   // statement. Same resolution as the solve applies; keep in step with transient_groundwater.cpp.
-  {
-    std::string rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
-    if (rc == "active_set" && !params.runoff_collector_set && uc.use_picard) rc = "explicit";
-    f << "    method: " << rc << "\n";
-  }
+  // PRINT THE RECORD, never re-derive: resolved_or_die() throws if no code path recorded this, so the
+  // writer cannot become a second implementation of the resolution policy -- which is how it came to
+  // record `active_set` for Picard runs that enforced `explicit`.
+  f << "    method: " << resolved_config::resolved_or_die("surface_water.collection.method") << "\n";
 
   f << "\nsolver:\n";
   f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";

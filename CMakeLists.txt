@@ -73,6 +73,7 @@ add_library(wtm
   src/grid_geometry.cpp
   src/irf.cpp
   src/parameters.cpp
+  src/resolve_defaults.cpp
   src/transient_groundwater.cpp
   src/update_effective_storativity.cpp
 )
