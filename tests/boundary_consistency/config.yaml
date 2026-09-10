@@ -1,0 +1,102 @@
+# tests/boundary_consistency -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: that the boundary treatment is CONSISTENT -- a padded grid and an
+# unpadded one must agree on their shared interior cells, and the two land boundary conditions must
+# each behave as advertised. Three keys vary per arm and run.sh supplies all three:
+#   boundaries.land   dirichlet_sea_level vs neumann_toposlope
+#   solver.method     anderson, plus one newton arm (the same boundary, a different solver)
+#   io.region         `bcons` vs the padded `bconspad`
+#
+# The padded arm ALSO shifts derived.southern_edge one cell south, so the shared interior cells sit at
+# identical latitudes. That is a fixture property travelling with the region, not a free choice.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @REGION@, @LANDBC@, @METHOD@, @SEDGE@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 1e-8
+    metric: rms
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+  initial_water_table: saturated
+time:
+  total: "96768000000s"
+  report_interval: "50"
+  save_every_n_reports: 800
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: explicit
+boundaries:
+  land: @LANDBC@   # PER-ARM: dirichlet_sea_level or neumann_toposlope
+solver:
+  method: @METHOD@   # PER-ARM: anderson for three arms, newton for the fourth
+  time_integration: @INTEG@   # PER-ARM in effect: anderson resolves tr-bdf2, newton backward-euler
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-12
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: @STEPMODE@   # PER-ARM: newton needs `ramp`; the anderson arms take adaptive
+    dt: 2419200
+    error_tol: 1e-08   # the resolved target. TIGHT because this suite compares two grids cell by
+                       # cell, so the solve must not contribute to the difference being judged
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md). DELETED on the ramp arm.
+#@RAMP@
+#@RAMPNEWTON@
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: '@REGION@'   # PER-ARM: `bcons` or the padded `bconspad`
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

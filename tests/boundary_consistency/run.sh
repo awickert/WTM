@@ -34,55 +34,38 @@ PY="${PY:-python3}"
 CPD=100
 export OMP_NUM_THREADS=1
 
-emit() { # stem region surfdir southern_edge   [env: LAND_BC=dirichlet for the Dirichlet arms]
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-run_type equilibrium
-land_boundary ${LAND_BC:-neumann_toposlope}
-# CONVERGE TIGHTER THAN YOU COMPARE. Assertion (1) below says two spellings of the SAME boundary
-# condition land on the same interior, so what actually bounds their agreement is how far each solve
-# was driven -- not the boundary condition, which is identical by construction. At the default water
-# tolerance (1e-8, #61) they agree to 3.6e-08 m, which is looser than the 1e-8 m the test compares at.
-# Measured here: vol_tol 1e-8 -> 3.606e-08 m, 1e-10 -> 6.038e-09 m, 1e-12 -> 2.179e-11 m -- a clean
-# convergence-level artifact, so drive the solves three decades past the comparison instead of
-# loosening the comparison. (Under the OLD head-judged default these happened to agree to ~7e-12,
-# which is why no such setting was needed before.)
-convergence_water_volume_tol 1e-12
-${METHOD:+solver_method $METHOD}
-${MODE:+time_step_mode $MODE}
-fsm_on 0
-# Pinned to 'explicit' on purpose. This test's subject is the land-edge BOUNDARY CONDITION, not the
-# exfiltration enforcement. Its Newton arm uses PLAIN Newton deliberately (the comment below explains
-# why dt-continuation is avoided here), and plain Newton + active_set diverges in the line search on
-# this fixture -- the semismooth kink, which dt-continuation cures but which would make this test slow.
-# Holding the enforcement fixed keeps the boundary comparison clean. (Newton + active_set IS supported;
-# it converges on tests/multilake with or without continuation. See the README solution-mode table.)
-runoff_collector explicit
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 96768000000s
-save_nreport_interval 800
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $3
-region $2
-supplied_wt 0
-eq_tol 1e-8
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/boundary_consistency/config.yaml. Every setting the run
+# resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
+# WTM_DECLARED_SUITES).
+#
+# The newton arm needs mode: ramp, which in turn makes the model record solver.newton.dt0 and
+# solver.time_step.dt_max and NO step norm -- so that arm adds two keys and drops one, via the
+# #@RAMP@ / #@RAMPNEWTON@ placeholders that sit at the right nesting level.
+emit() { # $1 stem, $2 io.region, $3 boundaries.land, $4 solver.method, $5 time_integration,
+         # $6 time_step.mode   (ALL REQUIRED)
+  local rg="${2:?emit needs an io.region: bcons or bconspad}"
+  local bc="${3:?emit needs a boundaries.land}"
+  local m="${4:?emit needs a solver.method}"
+  local ti="${5:?emit needs a time_integration: it follows the method}"
+  local sm="${6:?emit needs a time_step.mode: newton requires ramp}"
+  local ramp=(-e "/^#@RAMP@/d" -e "/^#@RAMPNEWTON@/d")
+  if [ "$sm" = ramp ]; then
+      ramp=(-e "/^    norm: rms/d"
+            -e 's|^#@RAMP@|    dt_max: "2419200000s"   # ramp only|'
+            -e "s|^    error_tol: 1e-08.*|    error_tol: 0.1   # the value resolved under mode: ramp|"
+            -e "s|^#@RAMPNEWTON@|  newton:\n    dt0: \"12096s\"   # ramp only; the `s` is required, a bare number is YEARS|")
+  fi
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|@REGION@|$rg|g" -e "s|@LANDBC@|$bc|g" -e "s|@METHOD@|$m|g" \
+      -e "s|@INTEG@|$ti|g" -e "s|@STEPMODE@|$sm|g" \
+      "${ramp[@]}" config.yaml > "$WORK/$1.yaml"
 }
 BB=""   # solver.method: anderson now travels in the config (METHOD=)
 SE_PAD=$("$PY" -c "print(-1.0/$CPD)")   # padded grid one cell further south
 
-LAND_BC=dirichlet METHOD=anderson emit dir bcons    "$INP" 0       ; "$WTM" "$WORK/dir.yaml" $BB         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }
-emit pad bconspad "$INP" "$SE_PAD"; "$WTM" "$WORK/pad.yaml" $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
-METHOD=anderson emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" $BB > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
+emit dir bcons    dirichlet_sea_level anderson tr-bdf2        adaptive ; "$WTM" "$WORK/dir.yaml" $BB         > "$WORK/dir.log" 2>&1 || { echo "RUN FAILED: dirichlet(anderson)"; tail -3 "$WORK/dir.log"; exit 2; }
+emit pad bconspad neumann_toposlope   anderson tr-bdf2        adaptive ; "$WTM" "$WORK/pad.yaml" $BB                                     > "$WORK/pad.log" 2>&1 || { echo "RUN FAILED: padding";   tail -3 "$WORK/pad.log"; exit 2; }
+emit neu bcons    neumann_toposlope   anderson tr-bdf2        adaptive ; "$WTM" "$WORK/neu.yaml" $BB > "$WORK/neu.log" 2>&1 || { echo "RUN FAILED: neumann";   tail -3 "$WORK/neu.log"; exit 2; }
 # Newton (analytic Jacobian) must reach the SAME land-Dirichlet water table -> its off-map Dirichlet Jacobian
 # tangent is consistent with the residual (FD-verified separately in tests/ghost_boundary).
 #
@@ -93,7 +76,7 @@ METHOD=anderson emit neu bcons    "$INP" 0       ; "$WTM" "$WORK/neu.yaml" $BB >
 # and plain Newton now DIVERGED_LINE_SEARCH after 3 iterations on this fixture. The arm runs the WORKING
 # recipe instead -- solver.method: newton implies dt_continuation -- so it also tests what a user gets.
 # Measured after the change: equilibrium at cycle 3, 1.0 s. The feared grind does not happen.
-LAND_BC=dirichlet METHOD=newton emit nwt bcons    "$INP" 0       ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
+emit nwt bcons    dirichlet_sea_level newton   backward-euler ramp     ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" PHI="$INP/bcons_porosity.tif" TESTS="$(readlink -f ..)" \
