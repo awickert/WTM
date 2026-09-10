@@ -1,0 +1,97 @@
+# tests/budget_step_ledger -- THE CONFIG EVERY SWEEP CELL RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting each run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the water identity PER STEP, not per cycle. A cycle is many steps, so a
+# defect confined to ONE step is diluted by every other step in the sum -- #52 is exactly that shape:
+# the ledger over-books by up to 2.8% of a step's recharge on the single step where surface water
+# first appears, while the CYCLE-level number for the same run is 1.8e-05.
+#
+# FOUR AXES SWEPT, 63 cells: fixture x routing x collector x integrator. run.sh supplies all four.
+# One combination is SKIPPED rather than expected to fail -- continuous x explicit is refused by the
+# model (#44), and running it here would test the guard rather than the ledger.
+#
+# TWO SETTINGS ARE LOAD-BEARING:
+#   output.trace: [budget]       the per-step identity IS the trace; without it there is nothing to read
+#   solver.time_step.mode: fixed the sweep compares cells at a KNOWN step; a controller would resize dt
+#                                per cell and the comparison would be across different steps
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @ROUTING@, @COLLECTOR@, @INTEG@, @REGION@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "8yr"
+  report_interval: "2"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@   # PER-ARM: impulse | continuous -- half the sweep
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: @COLLECTOR@   # PER-ARM: active_set | off | implicit | explicit
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: @INTEG@   # PER-ARM: tr-bdf2 | backward-euler | bdf2
+  tolerance: 1e-10
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed
+    dt: 31536000
+    error_tol: 0.1   # the resolved value; mode is fixed here so nothing steers on it
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. Evaporation is a TERM IN THE LEDGER being checked,
+    logistic_width: 0.1   # so this shape is part of the identity under test -- shipped values, examined
+  extinction_depth: 8   # and owned, identical across every sweep cell so the cells stay comparable
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: '@REGION@'   # PER-ARM: three fixtures
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: [budget]
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite

@@ -65,33 +65,14 @@ for integ in tr-bdf2 backward-euler bdf2; do
     # a single-underscore stem shreds the fields -- it silently defeated both the bdf2
     # exclusion and the xfail lookup when this test was first written.
     stem="${fn}__${coupling}__${coll}__${integ}"
-    ../emit_config.sh > "$WORK/$stem.yaml" <<EOF
-snes_stol 1e-10
-solver_method anderson
-time_step_mode fixed
-time_integration $integ
-run_type equilibrium
-total_time 8yr
-supplied_wt 1
-deltat 31536000
-report_interval 2
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-fsm_coupling $coupling
-runoff_collector $coll
-trace budget
-surfdatadir $inp
-region $reg
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$stem.txt
-outfile_prefix $WORK/${stem}_
-EOF
+    # THE CONFIG IS A FILE NOW (#83): tests/budget_step_ledger/config.yaml, rendered per sweep cell.
+    # Every setting each run resolves to is stated there, and tests/config_identity.py enforces it
+    # (this suite is on WTM_DECLARED_SUITES). output.trace: [budget] and time_step.mode: fixed are
+    # marked LOAD-BEARING in that file: the per-step identity IS the trace, and the sweep must compare
+    # cells at a KNOWN step rather than one a controller resized per cell.
+    sed -e "s|@INPUTS@|$inp|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
+        -e "s|@ROUTING@|$coupling|g" -e "s|@COLLECTOR@|$coll|g" -e "s|@INTEG@|$integ|g" \
+        -e "s|@REGION@|$reg|g" config.yaml > "$WORK/$stem.yaml"
     if ! "$WTM" "$WORK/$stem.yaml" > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1
     fi
