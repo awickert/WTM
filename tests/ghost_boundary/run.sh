@@ -26,7 +26,9 @@ make_work ghostbc
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-3 head bound x0.25 exactly -- the same strictness, correctly labelled.
-TOL="${TOL:-2.5e-4}"      # cross-scheme + MPI agreement under the ghost boundary
+TOL="${TOL:-2.5e-4}"      # STEADY-STATE + MPI agreement under the ghost boundary. NOT a
+                          # cross-scheme bound: at the fixed point the schemes agree to 0.00e+00
+                          # by construction, so this tolerance is never the binding constraint (#96).
 JTOL="${JTOL:-1e-2}"      # Newton ||J-Jfd||/||J|| ceiling (smooth-T tangent; piecewise kink keeps it >1e-8)
 PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
@@ -61,8 +63,8 @@ BASE=""  # solver.tolerance is now a CONFIG key (snes_stol in the shim), not a C
 fail=0
 
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------
-emit_adaptive cc_n1 tr-bdf2
-emit_adaptive cc_nN tr-bdf2
+emit_adaptive cc_n1 backward-euler
+emit_adaptive cc_nN backward-euler
 "$WTM" "$WORK/cc_n1.yaml" $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
   || { echo "RUN FAILED: cc n=1"; tail -3 "$WORK/cc_n1.log"; exit 2; }
 "$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.yaml" $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
@@ -73,10 +75,20 @@ declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
 # newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined.
 # THE INTEGRATOR IS NAMED, NOT LEFT ABSENT, and `cc` names BACKWARD-EULER (#96). It used to leave the
 # key unset and take whatever `anderson` resolved to -- which is tr-bdf2, so `cc` was a byte-identical
-# copy of the `tr` arm and this four-scheme comparison had three schemes. That was auto-resolution
-# working correctly; what was stale was the ARM, whose name has meant the first-order default since
-# before tr-bdf2 became the resolved one. Naming it restores the only arm that can show a real
-# discretisation difference.
+# copy of the `tr` arm. That was auto-resolution working correctly; what was stale was the ARM, whose
+# name has meant the first-order scheme since before tr-bdf2 became the resolved default.
+#
+# NAMING IT DOES NOT MAKE SECTION 2 A CROSS-SCHEME TEST, and that is worth stating plainly rather than
+# assuming the fix worked. MEASURED after the rename: cc, tr and bdf2v STILL agree bit-for-bit at the
+# final report. They are three genuinely different schemes, and they still land on the same field --
+# because the comparison happens at a CONVERGED STEADY STATE, where every consistent integrator reaches
+# the same fixed point by construction. The schemes DO differ in the transient: rendering the same arms
+# and stopping after ONE cycle instead of 120 gives cc vs bdf2v = 1.265e-06.
+#
+# SO WHAT SECTION 2 ACTUALLY MEASURES is that the schemes agree AT EQUILIBRIUM under the ghost boundary
+# -- a real property, and the one this suite is named for, since a boundary bug would move the fixed
+# point. It is NOT evidence that the schemes agree in general. Distinguishing schemes needs a transient
+# comparison at a tolerance near 1e-6, which is a different test; #96 carries it.
 declare -A INTEG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2")
 for s in tr bdf2v newton; do
   if [ "$s" = newton ]; then emit_fixed "$s" 120 10000 0; else emit_adaptive "$s" "${INTEG[$s]}"; fi
@@ -104,9 +116,9 @@ tol = float(os.environ["TOL"]); n = os.environ["NPROCS"]
 d_mpi = mx(cc1, ccn); d_tr = mx(cc1, tr); d_bv = mx(cc1, bv); d_nw = mx(cc1, nw)
 print(f"  cc steady wtd: min {cc1[m].min():.3f} max {cc1[m].max():.3f} m (land, incl. edges)")
 print(f"  1. MPI determinism  cc n=1 vs n={n}: max|d| = {d_mpi:.2e} m")
-print(f"  2. cross-scheme vs cc:  tr={d_tr:.2e}  bdf2v={d_bv:.2e}  newton={d_nw:.2e} m")
+print(f"  2. steady-state agreement vs cc:  tr={d_tr:.2e}  bdf2v={d_bv:.2e}  newton={d_nw:.2e} m")
 ok = (d_mpi <= 1e-9) and max(d_tr, d_bv, d_nw) <= tol
-print("PASS" if ok else "FAIL", "(cross-scheme / MPI agreement under the ghost boundary)")
+print("PASS" if ok else "FAIL", "(steady-state / MPI agreement under the ghost boundary)")
 sys.exit(0 if ok else 1)
 PY
 [ $? -ne 0 ] && fail=1
