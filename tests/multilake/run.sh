@@ -48,35 +48,20 @@ RANKS="${RANKS:-4}"
 # 150 yr is ample: the lakes reach a per-cycle rms of ~1e-4 mm-water and their stages are unchanged
 # at 400 yr. dt is the only thing that varies between arms; report_interval scales with it so the
 # reporting cadence (and therefore the FSM/coupling cadence per report) is held fixed.
-mkcfg() { # $1 = stem, $2 = deltat seconds, $3 = report_interval steps, $4 = runoff_collector
-# adaptive_dt PINNED OFF, for EVERY arm. This test's BITES control asserts that the implicit collector's
-# lake COUNT changes with dt -- it is the proof that active-set is what removes the dt-dependence. Under
-# adaptive stepping the controller re-times both dt arms and the separation vanishes: the control read
-# [6, 6] (identical), which the test itself calls out as the condition under which it proves nothing.
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-8
-solver_method anderson
-time_step_mode fixed
-run_type equilibrium
-total_time 150yr
-supplied_wt 1
-deltat $2
-report_interval $3
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_collector $4
-surfdatadir $INP
-region multilake
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/multilake/config.yaml. Every setting the run resolves to is
+# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THREE KEYS MOVE TOGETHER PER ARM and all three are supplied here, none inherited: dt,
+# report_interval (scaled inversely so every arm covers the SAME simulated time) and the collector.
+# Holding total simulated time fixed while dt changes is what makes the comparison about dt rather
+# than about how long the runs went.
+mkcfg() { # $1 stem, $2 time_step.dt, $3 time.report_interval, $4 collection.method  (ALL REQUIRED)
+    local dt="${2:?mkcfg needs a dt -- it is the subject, never inherit it}"
+    local ri="${3:?mkcfg needs a report_interval: it scales inversely with dt}"
+    local cm="${4:?mkcfg needs a collection.method: active_set or the implicit control}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" \
+        -e "s|^    method: active_set|    method: $cm|" config.yaml > "$WORK/$1.yaml"
 }
 
 run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = solver flags
