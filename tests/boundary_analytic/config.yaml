@@ -77,12 +77,25 @@ parallel:
   threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
 evaporation:
   et_sigmoid:
-    wtd_center: 0.05   # INERT here: both tapers are OFF (below), and these two parameterise the
-    logistic_width: 0.1   # surface-transition taper -- nothing reads them when it is not applied
+    wtd_center: 0.05   # LIVE: these two parameterise the surface_transition taper, which is ON below
+    logistic_width: 0.1   # (see the taper note) -- they shape the removal near wtd = 0
   extinction_depth: 8   # INERT here: it gates the depth_extinction taper, which is off
   tapers:
-    surface_transition: false
-    depth_extinction: false
+    # LOAD-BEARING, AND THE WHOLE SUITE DEPENDS ON IT. This was `false`, and with it off the model
+    # takes the GW-alone branch in irf.cpp -- `if (wtd > 0) wtd = 0`, executed EVERY step, printed in
+    # the run log as "p removing all surface water". These fixtures are flat and at sea level and the
+    # water table starts AT the surface, so that clamp held every arm at wtd == 0 for the entire run:
+    # 0 of 66 cells nonzero in every output raster. The parabola fit then fit a zero field, reported a
+    # residual of 0.000e+00, and PASSED. The suite validated nothing for as long as that line said false.
+    #
+    # The taper is what permits a persistent above-ground column, which is precisely what the analytic
+    # solution here IS (a mound above a flat sea-level surface). With it on, the arms measure again:
+    # Dirichlet residual 3.548e-10 m, Neumann 1.026e-09 m, sloped 3.479e-08 m -- and 3e-10 is the value
+    # this suite's own header has always claimed to observe, so this restores the test rather than
+    # re-tuning it. Never turn this off here without re-reading the note above.
+    surface_transition: true
+    depth_extinction: false   # off deliberately: evaporation is zero on these fixtures, so a
+                              # depth-dependent ET sink would have nothing to act on
 io:
   source: '@INPUTS@'
   region: '@REGION@'   # PER-ARM: each arm names a different analytic fixture (anbcD Dirichlet,
