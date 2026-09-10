@@ -50,6 +50,40 @@ def main():
         sys.exit(f"no configs harvested for {suite}")
     arms = [open(os.path.join(d, f)).read().splitlines() for f in files]
 
+    # TRANSLATE THE HARVEST INTO THE CURRENT SCHEMA. The captures predate the 2026-09-10 merge of
+    # surface_water.mode + surface_water.fsm_coupling into surface_water.routing (#89), and the model
+    # now REFUSES both old keys. Translating here keeps a 471-config harvest usable instead of
+    # re-running the whole suite to recapture it.
+    #   mode: ponded|removed          -> routing: off
+    #   mode: routed + fsm_coupling X -> routing: X
+    #   mode: routed, coupling unset  -> DROP BOTH. Omitted means the default, which IS FSM-on
+    #                                    continuous, so the run is unchanged -- and writing
+    #                                    `continuous` down is not the same input (#49). declare_probe
+    #                                    then reports what the model resolved, and that value is what
+    #                                    gets stated. The value comes from the model, never from here.
+    # Match on the DOTTED PATH, never on the bare key. `solver.time_step.mode: fixed` also ends in
+    # "mode:" once stripped, so a prefix test reads the step-mode as the surface-water mode -- caught
+    # by checking the output, and it would have silently mis-translated every suite.
+    def to_routing(lines):
+        paths = leaf_path(lines)
+        mode = coup = None
+        for pth, ln in zip(paths, lines):
+            if pth == "surface_water.mode":         mode = value_of(ln)
+            if pth == "surface_water.fsm_coupling": coup = value_of(ln)
+        out = []
+        for pth, ln in zip(paths, lines):
+            if pth == "surface_water.fsm_coupling":
+                continue
+            if pth == "surface_water.mode":
+                if mode in ("ponded", "removed"):
+                    out.append("  routing: off")
+                elif coup:
+                    out.append(f"  routing: {coup}")
+                continue
+            out.append(ln)
+        return out
+    arms = [to_routing(a) for a in arms]
+
     # Tokenise per-arm before comparing, so path differences do not masquerade as real overrides.
     toks = []
     for a in arms:
