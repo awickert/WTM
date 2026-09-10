@@ -24,28 +24,12 @@ INP=$(readlink -f inputs)
 make_work ff
 PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-run_type equilibrium
-total_time 100yr
-supplied_wt 1
-deltat 31536000
-report_interval 5
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_collector active_set  # was: implicit + the retired -wtm_active_set flag
-surfdatadir $INP
-region fsm_fullness
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/fsm_fullness/config.yaml. Every setting the run resolves to is
+# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+# surface_water.routing: continuous is stated as the PRECONDITION it is -- with no routing there are
+# no lakes, nothing spills, and every assertion here is about where spilled water ends up.
+emit() { # $1 stem -- ONE arm, run at several rank counts; the rank count is not a config setting
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" config.yaml > "$WORK/$1.yaml"
 }
 run() { emit "$1"; "$WTM" "$WORK/$1.yaml" $2 > "$WORK/$1.err" 2>&1 \
         || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.err"; exit 2; }; }
