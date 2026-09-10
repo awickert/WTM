@@ -1,0 +1,101 @@
+# tests/direct_to_runoff -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES, and what that makes load-bearing: with the in-residual exfiltration
+# constraint on, above-ground water has somewhere to GO, so the table is held AT the surface instead
+# of piling up and sloshing. The collector is therefore the SUBJECT, and it is the one setting that
+# differs between the arms -- so it lives in run.sh, not here.
+#   routing: off        FSM is not involved. This is the routing-success view WITHOUT lake routing;
+#                       the water leaves through the runoff array, not through FillSpillMerge.
+#   type: equilibrium   the SETTLING claim is that a steady state is reached at all.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT here: eq_tol 0 disables the equilibrium stop, so nothing reads this
+    frac: 0.001   # INERT here: see metric above
+  initial_water_table: supplied
+time:
+  total: "9676800000s"
+  report_interval: "50"
+  save_every_n_reports: 80
+transmissivity:
+  fdepth:
+    a: 100
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: implicit   # THE SUBJECT. The in-residual exfiltration constraint routes max(0,wtd)/dt into
+                       # the runoff array, holding the table AT the surface. run.sh's BITE arm overrides
+                       # this one key to `off`, which is the failure the routing prevents.
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; stated so the settling claim is pinned
+                              # to a known integrator rather than following a default
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # shipped default. Step-averaged transmissivity is not part of the gathering claim
+  convergence:
+    metric: volume   # shipped default (#61); the solve is judged in water, the units the mass balance uses
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed   # RESOLVED BY THE COLLECTOR, not chosen freely: `adaptive` x `implicit` is REFUSED
+                  # by name, because the implicit siphon removes at rate max(0,wtd)/dt so its per-step
+                  # error GROWS as the controller shrinks dt and no step is ever accepted. Stating
+                  # `implicit` above therefore fixes this line too.
+    dt: 2419200
+    error_tol: 0.1   # the resolved value. INERT under mode: fixed -- nothing steers on it here
+dev:
+  storage_form: volume   # the exact dV form -- the right one to assert a MASS BALANCE against
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. This suite asserts recharge = surface_removed +
+    logistic_width: 0.1   # ocean_outflow with NO evaporation term (see the header), so the taper
+  extinction_depth: 8   # shape is not part of the claim -- shipped values, examined and left alone
+  tapers:
+    surface_transition: true   # both tapers as SHIPPED. The taper governs surface-water removal, and
+    depth_extinction: true   # turning it off would remove the very water this suite watches gather
+io:
+  source: '@INPUTS@'
+  region: 'runoffgather'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

@@ -9,7 +9,7 @@
 #                  complementarity: wherever water is gathered to runoff the table is pinned at 0, none piled).
 #   MASS BALANCE : at steady state the per-cycle recharge input equals what leaves via the runoff array + ocean
 #                  outflow:  Δrecharge = Δtotal_surface_removed + Δtotal_ocean_outflow  (no evap).
-#   BITE         : the SAME fixture with NO gathering (-wtm_dev_allow_aboveground_water_columns) piles the water
+#   BITE         : the SAME fixture with NO gathering (collection.method: off) piles the water
 #                  far above the surface (max wtd >> 0) -- the failure the routing prevents. Proves the test
 #                  fails without the fix.
 set -uo pipefail
@@ -27,29 +27,20 @@ PILE_MIN="${PILE_MIN:-1.0}" # metres; without gathering the table piles far abov
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 9676800000s
-save_nreport_interval 80
-report_interval 50
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region runoffgather
-supplied_wt 1
-runoff_collector $2
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/direct_to_runoff/config.yaml, read and edited directly rather
+# than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# The COLLECTOR is the only thing that differs between the arms, so it is the only thing overridden
+# here -- the base file runs as the `gathered` arm.
+#
+# NOTE while reading config.yaml: solver.time_step.mode: fixed is NOT a free choice there. `adaptive`
+# with collection.method: implicit is REFUSED by name, because the implicit siphon removes at rate
+# max(0,wtd)/dt so its per-step error GROWS as the controller shrinks dt. Stating the collector fixes
+# the step mode too -- which is why both are written down rather than resolved.
+emit() { # $1 stem, $2 collection.method
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|^    method: implicit|    method: $2|" config.yaml > "$WORK/$1.yaml"
 }
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
 # gathered = implicit (in-residual exfiltration; pins wtd~0 to the SNES tolerance); piled = off (no collection).
