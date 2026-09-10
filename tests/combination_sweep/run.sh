@@ -42,35 +42,23 @@ INP="$RECH/inputs"
 make_work combo
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: STORAGE=volume]
+# THE CONFIG IS A FILE NOW (#83): tests/combination_sweep/config.yaml, one file with six per-cell
+# slots. EVERY SLOT SUBSTITUTES A VALUE; none removes a line. That is not stylistic -- the first
+# attempt at this used a deletable placeholder for dev.storage_form, and deleting the line let the
+# model default apply, silently turning all 24 `be` cells into `volume` cells. Every one then hit a
+# refusal, and the classifier of the day filed all 96 under "refused by design" and printed ALL PASSED
+# with `ran: 0` (#94, now fixed -- which is what makes this materialisation checkable at all).
+mkcfg() { # $1 stem, $2 run_type, $3 collector, $4 deltat   [env: METHOD, INTEG, STORAGE per cell]
     local tend="ta"; [ "$2" = transient ] && tend="tb"
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-8
-run_type $2
-${STORAGE:+storage $STORAGE}
-${METHOD:+solver_method $METHOD}
-${INTEG:+time_integration $INTEG}
-${MODE:+time_step_mode $MODE}
-fsm_on 1
-infiltration_on 0
-runoff_ratio 0
-deltat $4
-total_time 4yr
-report_interval 2
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end $tend
-surfdatadir $INP
-region rech_test
-supplied_wt 1
-runoff_collector $3
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|@RUNTYPE@|$2|g" -e "s|@TEND@|$tend|g" -e "s|@COLLECTOR@|$3|g" -e "s|@DT@|$4|g" \
+        -e "s|@METHOD@|${METHOD:?mkcfg needs a solver method}|g" \
+        -e "s|@INTEG@|${INTEG:?mkcfg needs a time_integration}|g" \
+        -e "s|@STORAGE@|${STORAGE:?mkcfg needs a storage form: an EMPTY one renders a valueless key, and
+                                  the model reports that as null several layers from the cause}|g" \
+        config.yaml > "$WORK/$1.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$1.yaml" && { echo "ERROR: $1.yaml has an unfilled slot"; exit 1; }
+    return 0
 }
 
 # Solver and integrator are given as FLAG SETS; which integrator each actually resolves to is recorded
@@ -159,8 +147,10 @@ for rt in "${RUNTYPES[@]}"; do
         case "$ig" in
             be)     INTEG=backward-euler; STORAGE=secant ;;
             volume) INTEG=backward-euler; STORAGE=volume ;;
-            bdf2v)  INTEG=bdf2;           STORAGE= ;;
-            trbdf2) INTEG=tr-bdf2;        STORAGE= ;;
+            # These two left STORAGE empty and the shim filled in the model default. The config
+            # states the key, so the value is NAMED here -- an empty slot is not a default.
+            bdf2v)  INTEG=bdf2;           STORAGE=volume ;;
+            trbdf2) INTEG=tr-bdf2;        STORAGE=volume ;;
         esac
         mkcfg "$stem" "$rt" "$cl" 31536000
         if attempt "$stem" ${SOLVERS[$sv]} ${INTEGS[$ig]}; then
