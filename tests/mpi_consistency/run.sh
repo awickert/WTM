@@ -33,7 +33,7 @@ fi
 
 make_work mpi_consistency
 
-# Base config (equilibrium, small grid). evap_mode and fsm_on are overridden per case.
+# Base config (equilibrium, small grid). fsm_on is overridden per case.
 base_cfg() {
     cat <<EOF
 snes_stol 1e-8
@@ -73,7 +73,7 @@ echo "=== MPI-consistency regression ==="
 echo "binary: $WTM_ABS   rank counts vs n=1: ${RANKS[*]}"
 echo
 
-# evap_mode was dropped from the schema (inert under the default evaporation taper), so the old
+# evap_mode is GONE (2026-09-10): the member was frozen at 0 and unsettable, so the old
 # evap 0/1 dimension is gone -- it would now produce identical configs. Left: FSM off/on.
 # The runoff_ratio arm exists because the ROUTED input channel (col 20) is accumulated separately from
 # the direct one, and with runoff_ratio 0 it is identically zero -- so without this case its MPI

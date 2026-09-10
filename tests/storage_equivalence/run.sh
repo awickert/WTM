@@ -41,7 +41,6 @@ runoff_collector explicit
 run_type transient
 ${STORAGE:+storage $STORAGE}
 fsm_on 0
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200

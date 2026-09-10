@@ -34,7 +34,6 @@ mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml, echoes prefix
 run_type           equilibrium
 snes_stol          1e-8
 fsm_on             1
-evap_mode          0
 infiltration_on    0
 runoff_ratio_on    0
 deltat             31536000

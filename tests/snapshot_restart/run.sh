@@ -38,7 +38,6 @@ fsm_on 0
 # (That active_set converges here in 2 cycles against implicit's 7 is itself worth knowing; the
 # collector's own behaviour is covered by dt_sensitivity, active_set, multilake and budget_closure.)
 runoff_collector implicit
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat 31536000

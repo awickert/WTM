@@ -28,7 +28,6 @@ taper_depth_extinction false
 solver_method anderson
 run_type equilibrium
 fsm_on 0
-evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200

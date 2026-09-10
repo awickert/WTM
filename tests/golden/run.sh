@@ -54,7 +54,6 @@ emit_cfg() { # sdir region extra... -> stdout config
     { cat <<EOF
 solver_method anderson
 run_type           equilibrium
-evap_mode          0
 infiltration_on    0
 runoff_ratio_on    0
 deltat             31536000
@@ -86,10 +85,10 @@ case_cfg() {
     RUNOFF=$(readlink -f inputs_runoff)
     case "$1" in
       below_ground)  emit_cfg "$GHOST" ghost_cell_test "fsm_on 0" ;;
-      fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 0" ;;
-      fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
-      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
-      fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;
+      fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" ;;
+      fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" ;;
+      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "runoff_ratio_on 1" ;;
+      fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "runoff_ratio_on 1" ;;
       # adaptive_dt: DEFAULT (auto -> true). It was pinned FALSE here between 6ee7840 and the fix
       # below, and the reason is worth keeping rather than deleting. With adaptive dt on, this case
       # failed across MPI rank counts because the embedded error estimate was DECOMPOSITION-DEPENDENT:
@@ -108,7 +107,7 @@ case_cfg() {
       # fsm_impulse: the SAME case as fsm_evap1 under the non-default coupling. It exists because
       # surface_water.fsm_coupling now defaults to `continuous`, which would leave `impulse`
       # unexercised by every arm here -- and an alternative nobody runs is one that rots quietly.
-      fsm_impulse)   emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" "fsm_coupling impulse" ;;
+      fsm_impulse)   emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "fsm_coupling impulse" ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
 }

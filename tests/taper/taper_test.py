@@ -91,7 +91,6 @@ def _cfg(d, txt, prefix):
     return f"""run_type equilibrium
 time_step_mode fixed
 fsm_on 1
-evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
 taper_surface_transition true
@@ -257,7 +256,7 @@ def _merge_cfg(base, extra):
 
 def _arid_cfg(d, txt, prefix, extra=""):
     # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
-    base = (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
+    base = (f"run_type equilibrium\nfsm_on 0\ninfiltration_on 0\nrunoff_ratio_on 0\n"
             f"taper_surface_transition true\nsnes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"

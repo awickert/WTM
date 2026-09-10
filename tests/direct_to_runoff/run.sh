@@ -8,7 +8,7 @@
 #   GATHERING    : the table is held at the surface -- max wtd = 0 and wtd <= 0 everywhere (the exfiltration
 #                  complementarity: wherever water is gathered to runoff the table is pinned at 0, none piled).
 #   MASS BALANCE : at steady state the per-cycle recharge input equals what leaves via the runoff array + ocean
-#                  outflow:  Δrecharge = Δtotal_surface_removed + Δtotal_ocean_outflow  (evap_mode 0, no evap).
+#                  outflow:  Δrecharge = Δtotal_surface_removed + Δtotal_ocean_outflow  (no evap).
 #   BITE         : the SAME fixture with NO gathering (-wtm_dev_allow_aboveground_water_columns) piles the water
 #                  far above the surface (max wtd >> 0) -- the failure the routing prevents. Proves the test
 #                  fails without the fix.
@@ -31,7 +31,6 @@ emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
 solver_method anderson
 run_type equilibrium
 fsm_on 0
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200

@@ -14,7 +14,7 @@
 #                  (wtd <= 0 everywhere) -- the discontinuity is removed, not merely tolerated.
 #   MASS BALANCE : at steady state the per-cycle recharge input equals what leaves via evaporation + the
 #                  runoff array + ocean outflow:  Δrecharge = Δevap + Δsurface_removed + Δocean_outflow.
-#   BITE         : the SAME fixture with the taper OFF (legacy hard evap_mode-1 switch) does NOT settle -- the
+#   BITE         : the SAME fixture with the taper OFF (the legacy hard wtd=0 switch) does NOT settle -- the
 #                  per-cycle change stays large (period-2 limit cycle). Proves the fixture genuinely flickers
 #                  and that taper 2 is the fix (a regression that fails without it).
 set -uo pipefail
@@ -62,7 +62,6 @@ fsm_on 0
 # taper from the collector. (The arm ALSO set dev.allow_aboveground_water_columns: true, which read as
 # "clamp off" but was overwritten by the collector selector and did nothing at all -- #35.)
 runoff_collector off
-evap_mode 1
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200

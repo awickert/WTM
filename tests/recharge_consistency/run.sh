@@ -28,7 +28,6 @@ time_step_mode fixed
 run_type transient
 ${INTEG:+time_integration $INTEG}
 fsm_on 0
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat $dt

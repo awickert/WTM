@@ -45,7 +45,6 @@ for coup in continuous impulse; do for n in 1 "$NRANK"; do
 solver_method anderson
 run_type equilibrium
 fsm_on 1
-evap_mode 1
 infiltration_on 0
 runoff_ratio_on 1
 deltat 31536000

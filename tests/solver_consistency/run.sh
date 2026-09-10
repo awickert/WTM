@@ -40,7 +40,6 @@ ${MODE:+time_step_mode $MODE}
 ${TRACE:+trace $TRACE}
 ${CMETRIC:+convergence_metric $CMETRIC}
 fsm_on 0
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200

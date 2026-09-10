@@ -11,7 +11,7 @@ Both are band-limited (smooth gradients -> deterministic FillSpillMerge routing 
 cross-rank reproducible) and share the same forcing. The recharge is split by a large
 runoff_ratio so most of it becomes runoff, which FSM routes into the depressions; the
 water table starts deep and ksat is low, so groundwater stays below the surface and the
-runoff is the dominant signal. Run with evap_mode 1 (keeps surface water). See
+runoff is the dominant signal. Run with the evaporation taper on, which keeps surface water. See
 tests/spectral_terrain.py and the golden fsm_runoff / fsm_runoff_hi cases.
 """
 import numpy as np

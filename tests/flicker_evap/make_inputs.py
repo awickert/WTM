@@ -5,7 +5,7 @@ See benchmark/FREE_SURFACE_FLICKER.md. A low plateau ringed by ocean with strong
 surface (P - ET > 0, the table is driven UP to the surface) but a net DEFICIT above it (P - owe < 0, open
 water evaporates faster than it is supplied). The two sides of wtd = 0 therefore push in OPPOSITE
 directions: below the surface the cell fills toward the surface; above it, open-water evaporation drains it
-back down. Under the LEGACY hard evap_mode-1 switch the recharge forcing jumps discontinuously at wtd = 0
+back down. Under the LEGACY hard wtd=0 switch the recharge forcing jumps discontinuously at wtd = 0
 (P - owe vs max(0, P - ET); WTM.cpp), so the per-cycle iteration overshoots the surface each cycle and
 settles into a period-2 LIMIT CYCLE. The smooth evaporation taper (taper 2, -wtm_evap_taper, default on)
 replaces that jump with a single C1 transition, so the same fixture SETTLES at the surface instead.

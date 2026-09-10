@@ -57,7 +57,6 @@ fsm_on 0
 # Holding the enforcement fixed keeps the boundary comparison clean. (Newton + active_set IS supported;
 # it converges on tests/multilake with or without continuation. See the README solution-mode table.)
 runoff_collector explicit
-evap_mode 0
 infiltration_on 0
 runoff_ratio_on 0
 deltat 2419200
