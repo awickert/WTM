@@ -22,26 +22,14 @@ GHOST=$(readlink -f ../ghost_cell/inputs)
 make_work logschema
 export OMP_NUM_THREADS=1
 
-../emit_config.sh > "$WORK/pin.yaml" <<CFG
-run_type equilibrium
-eq_tol 0
-supplied_wt 0
-fsm_on 0
-deltat 2419200
-total_time 4838400s
-report_interval 1
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start t0
-time_end t0
-surfdatadir $GHOST
-region ghost_cell_test
-trace dt
-textfilename $WORK/pin.txt
-outfile_prefix $WORK/pin_
-CFG
+# THE CONFIG IS A FILE NOW (#83): tests/log_schema/config.yaml, read and edited directly rather than
+# translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# Two of those settings are LOAD-BEARING for what this suite asserts, and were previously implicit:
+# solver.time_step.mode: adaptive (no adaptive controller, no DTTRACE lines, and the substring-proof
+# check below has nothing to parse) and output.trace: [dt] (the trace itself).
+sed -e "s|@INPUTS@|$GHOST|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|pin|g" config.yaml > "$WORK/pin.yaml"
 "$WTM" "$WORK/pin.yaml" > "$WORK/pin.log" 2>&1 \
   || { echo "FAIL: the pin run did not complete"; tail -5 "$WORK/pin.log"; exit 2; }
 

@@ -1,0 +1,102 @@
+# tests/log_schema -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE OF EACH VALUE, in three kinds:
+#   (none)                        the suite chose it, deliberately, for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES, and why that decides the provenance below: it pins the run log's COLUMN
+# NAMES and proves the trace parser reads `est` independently of `nest`. It asserts the log's SHAPE,
+# never a physical VALUE -- so the physics settings here are not load-bearing, and they are marked as
+# examined rather than chosen. The two that ARE load-bearing are `trace: [dt]` (no trace, nothing to
+# parse) and `report_interval: 1` (the log needs rows).
+#
+# TOKENS substituted by run.sh: @INPUTS@ (ghost_cell's fixture, borrowed), @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT here: eq_tol 0 disables the equilibrium stop, so nothing reads this
+    frac: 0.001   # INERT here: see metric above
+  initial_water_table: saturated
+time:
+  total: "4838400s"
+  report_interval: "1"   # LOAD-BEARING: report every cycle, so the log has rows to pin
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off   # FSM does not run. One key since 2026-09-10 (#89): with no routing there is no
+                 # coupling, so `off` is the whole answer rather than a mode plus a coupling nobody used.
+  runoff_ratio: 0
+  infiltration_during_flow: false   # no infiltration path; this suite forces nothing through it
+  collection:
+    method: active_set   # the shipped enforcement. No surface water arises here (routing off, runoff 0),
+                         # so this cannot bind -- stated because the run resolves it, not because it acts.
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` RESOLVES to. Stated so the pinned log header cannot
+                              # silently start describing a different integrator's run.
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # shipped default; this suite asserts log SHAPE, not values, so T-averaging cannot matter
+  convergence:
+    metric: volume   # shipped default (#61). Not load-bearing: no value here is asserted
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance; see metric above
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves here, and LOAD-BEARING: the DTTRACE lines this suite
+                     # parses for `est` vs `nest` are the adaptive controller's output. Under `fixed`
+                     # there is no estimate to parse and the substring-proof check loses its subject.
+    dt: 2419200
+    error_tol: 0.5   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # shipped default; the exact dV form. No budget VALUE is asserted here
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the shipped ET sigmoid. fsm off and runoff_ratio 0 here, and no evaporation
+    logistic_width: 0.1   # value is asserted -- these shape the run without shaping the claim
+  extinction_depth: 8   # shipped extinction depth; see above
+  tapers:
+    surface_transition: true   # both tapers as SHIPPED. This suite does not vary them
+    depth_extinction: true   # (tests/taper and tests/flicker_evap are where they are the subject)
+io:
+  source: '@INPUTS@'
+  region: 'ghost_cell_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: [dt]   # LOAD-BEARING: the DTTRACE lines are what the substring-proof check parses
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
