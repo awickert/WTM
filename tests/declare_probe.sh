@@ -33,7 +33,9 @@ sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$W|g" -e "s|@STEM@|probe|g" "$@" "$suite
 
 if ! "$WTM" "$W/probe.yaml" > "$W/probe.log" 2>&1; then
     echo "== the model REFUSED or FAILED on $suite/config.yaml =="
-    tail -25 "$W/probe.log"; echo "== kept: $W =="; exit 1
+    # strip the progress bars -- they bury the error in thousands of columns of ANSI
+    sed 's/\x1b\[[0-9;]*[A-Za-z]//g' "$W/probe.log" | grep -v "^\[" | grep -vE "^\(|threads\)" | tail -12
+    echo "== kept: $W =="; exit 1
 fi
 echo "== $suite: what the config did not say =="
 ./config_identity.py --summary "$W" 2>&1

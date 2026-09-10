@@ -1,0 +1,116 @@
+# tests/serial_recharge -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES: the SERIAL rank-0 recharge loop -- the branch nothing else in the suite
+# executes. Which loop runs is DERIVED, not chosen:
+#
+#     distribute_recharge = !fsm_on || !infiltration_on        (WTM.cpp)
+#
+# so reaching the serial path needs routing ON *and* infiltration_during_flow ON, together. Neither
+# key is a preference here; each is half of a precondition, and the suite has a PRECONDITION check
+# that reads the model's own log to confirm the branch it claims to test is the branch that ran.
+#
+# ARMS. The file runs as the serial arm. run.sh overrides infiltration_during_flow to false for the
+# distributed reference arm, and runs the serial config at two rank counts; the rank count is not a
+# config setting.
+#
+# NOTE surface_water.routing is stated but NOT overridden per arm, and that is deliberate: turning
+# routing off would ALSO leave the serial path, so the two keys must not both move or the arms stop
+# isolating infiltration.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "10yr"
+  report_interval: "5"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: impulse   # HALF OF THE PRECONDITION (FSM must be ON to reach the serial loop) -- and it
+                     # must be `impulse`, not the `continuous` default: continuous x
+                     # infiltration_during_flow: true is REFUSED by name, because continuous hands
+                     # FSM's volume change to the next step through the DISTRIBUTED recharge carrier
+                     # and the serial rank-0 loop has no such carrier (#49). This suite is the reason
+                     # the shim must NOT write `continuous` down when the key is merely absent.
+  infiltration_during_flow: true   # THE OTHER HALF, and THE SUBJECT. run.sh overrides this one key to
+                                   # false for the distributed reference arm.
+  runoff_ratio: 0.3
+  collection:
+    method: active_set   # the shipped enforcement; stated because the run resolves it
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; the same on every arm
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves. All three arms share it, so the serial-vs-distributed
+                     # comparison is not confounded by different step sequences
+    dt: 31536000
+    error_tol: 0.5   # the resolved adaptive target for this combination
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

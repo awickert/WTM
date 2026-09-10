@@ -51,30 +51,20 @@ make_work serialrech
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = infiltration_on
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-8
-solver_method anderson
-run_type equilibrium
-total_time 10yr
-supplied_wt 1
-deltat 31536000
-report_interval 5
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on $2
-fsm_on 1
-runoff_ratio 0.3
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/serial_recharge/config.yaml, read and edited directly rather
+# than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THE ONE THING TO KNOW BEFORE EDITING THAT FILE: it states surface_water.routing: impulse, and that
+# is FORCED, not preferred. `continuous` with infiltration_during_flow: true is REFUSED by name --
+# continuous hands FSM's volume change to the next step through the DISTRIBUTED recharge carrier, and
+# the serial rank-0 loop this suite exists to exercise has no such carrier (#49). This suite is
+# precisely why the shim must not write `continuous` down when the key is merely absent.
+mkcfg() { # $1 = stem, $2 = infiltration_during_flow (REQUIRED: true|false)
+    local infil="${2:?mkcfg needs infiltration_during_flow: name the value for this arm}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|^  infiltration_during_flow: true|  infiltration_during_flow: $infil|" \
+        config.yaml > "$WORK/$1.yaml"
 }
 
 run() { # $1 = stem, $2 = infiltration_on, $3 = ranks
@@ -91,9 +81,9 @@ echo "=== serial (rank-0) recharge path ==="
 echo "WTM binary: $WTM   ranks: 1 vs $NRANKS"
 echo
 fail=0
-run ser_n1 1 1        || fail=1
-run ser_nN 1 "$NRANKS" || fail=1
-run dist_n1 0 1       || fail=1
+run ser_n1 true 1        || fail=1
+run ser_nN true "$NRANKS" || fail=1
+run dist_n1 false 1       || fail=1
 [[ $fail -eq 0 ]] || { echo "SERIAL RECHARGE: FAILED (a run did not complete)"; exit 1; }
 
 # 1. PRECONDITION: confirm the branch under test is the branch that ran. The model emits a warning when
