@@ -19,6 +19,7 @@ RANKS=("$@")
 if [[ ${#RANKS[@]} -eq 0 ]]; then RANKS=(2 4); fi
 
 WTM_ABS=$(readlink -f "$WTM")
+INP_ABS=$(readlink -f ../ghost_cell/inputs)
 if [[ ! -x "$WTM_ABS" ]]; then
     echo "ERROR: WTM binary not found at $WTM" >&2
     exit 1
@@ -34,36 +35,20 @@ fi
 make_work mpi_consistency
 
 # Base config (equilibrium, small grid). fsm_on is overridden per case.
-base_cfg() {
-    cat <<EOF
-snes_stol 1e-8
-run_type           equilibrium
-fsm_on             __FSM__
-infiltration_on    0
-runoff_ratio       __RR__
-deltat             31536000
-total_time       8yr
-report_interval            2
-fdepth_a           200
-fdepth_b           150
-fdepth_fmin        2
-time_start         t0
-time_end           t0
-surfdatadir        $(readlink -f "$INPUTS")
-region             ghost_cell_test
-supplied_wt        0
-eq_tol 0
-textfilename       __TXT__
-outfile_prefix     __OUT__
-save_nreport_interval     9999
-EOF
-}
+# THE CONFIG IS A FILE NOW (#83): tests/mpi_consistency/config.yaml. Every setting the run resolves
+# to is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# equilibrium_stop.tol: 0 is PINNED in that file so the n=1-vs-n=N comparison is at the SAME cycle:
+# the auto-stop could otherwise fire at slightly decomposition-dependent cycles, and the comparison
+# would be between runs of different length.
 
 run_case() { # fsm runoff_ratio nranks tag
     local fsm="$1" rr="$2" n="$3" tag="$4"
     local cfg="$WORK/${tag}.yaml"
-    base_cfg | sed "s|__FSM__|$fsm|; s|__RR__|$rr|; s|__TXT__|$WORK/${tag}.txt|; s|__OUT__|$WORK/${tag}_|" \
-        | ../emit_config.sh > "$cfg"
+    # fsm 0/1 became surface_water.routing off/continuous when the two keys merged (#89).
+    local routing=off; [ "$fsm" = 1 ] && routing=continuous
+    sed -e "s|@INPUTS@|$INP_ABS|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$tag|g" \
+        -e "s|@ROUTING@|$routing|g" -e "s|@RR@|$rr|g" config.yaml > "$cfg"
     # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
     # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" >"$WORK/${tag}.log" 2>&1 )

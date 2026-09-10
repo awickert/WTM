@@ -1,0 +1,104 @@
+# tests/mpi_consistency -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the answer must not depend on the MPI decomposition. Three cases, each run
+# at n=1 and at several rank counts:
+#   routing off                the plain groundwater path
+#   routing on, runoff_ratio 0 FSM in play
+#   routing on, runoff_ratio 0.3   the ROUTED input channel (run-log column 20) is accumulated
+#                              separately from the direct one, and with runoff_ratio 0 it is
+#                              identically zero -- so without this case its MPI reduction is never
+#                              exercised at all. That is how it went untested when the channel was added.
+#
+# equilibrium_stop.tol: 0 is PINNED so the n=1-vs-n=N comparison is at the SAME cycle. The auto-stop
+# could otherwise fire at slightly decomposition-dependent cycles and the comparison would be between
+# runs of different length.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @ROUTING@, @RR@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: saturated
+time:
+  total: "8yr"
+  report_interval: "2"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@   # PER-ARM: off, or continuous (FSM in play)
+  runoff_ratio: @RR@   # PER-ARM: 0, or 0.3 to exercise the ROUTED channel's MPI reduction
+  collection:
+    method: active_set   # the shipped enforcement; identical on every arm and every rank count
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; identical on every arm
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves. IDENTICAL on both sides of every comparison, which
+                     # is what a cross-rank test needs: see tests/xrank_adaptive for the case where
+                     # the controller's own global reduction is the thing under test
+    dt: 31536000
+    error_tol: 0.5   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'ghost_cell_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
