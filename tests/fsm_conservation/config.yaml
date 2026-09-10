@@ -13,7 +13,7 @@
 #
 # TOKENS substituted by run.sh: @INPUTS@ (fixture dir), @WORK@ (this run's work dir), @STEM@ (arm name).
 #
-# ARMS. The `c` arm runs as written -- fsm_coupling: impulse. The `s` arm overrides that one key to
+# ARMS. The `c` arm runs as written -- routing: impulse. The `s` arm overrides that one key to
 # `continuous`; comparing the two couplings is the whole subject, so the override lives in run.sh where
 # that reasoning is.
 
@@ -35,8 +35,9 @@ transmissivity:
     fmin: 2
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
-  mode: routed
-  fsm_coupling: impulse
+  routing: impulse   # THE SUBJECT of the `c` arm. One key since 2026-09-10: `mode` and `fsm_coupling`
+                     # merged into surface_water.routing, because with FSM off there is no coupling to
+                     # name and the split let that contradiction be written down.
   runoff_ratio: 0
   infiltration_during_flow: false
   collection:

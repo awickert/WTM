@@ -34,8 +34,8 @@ transmissivity:
     fmin: 2
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
-  mode: routed
-  fsm_coupling: continuous   # the production coupling (#43), and part of the combination #56 lived in
+  routing: continuous   # the production routing and coupling (#43), and part of the combination #56
+                        # lived in. One key since 2026-09-10 (was mode: routed + fsm_coupling).
   runoff_ratio: 0
   infiltration_during_flow: false
   collection:
