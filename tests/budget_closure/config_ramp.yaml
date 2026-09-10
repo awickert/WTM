@@ -1,0 +1,111 @@
+# tests/budget_closure -- THE CONFIG THE NEWTON ARMS RUN.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: that the EXACT WATER BUDGET closes, to TOL relative to the run's own solver
+# recharge, across every combination of solver, integrator, storage form, coupling and collector the
+# model offers. It is the suite that turns "the model conserves water" into an assertion, so its arms
+# deliberately span the matrix rather than picking one representative point.
+#
+# THREE FILES, ONE PER RESOLVED STEP MODE, because the three resolve DIFFERENT KEY SETS and a config
+# must state what its run resolves to rather than a superset:
+#     config.yaml         mode: adaptive  -- 11 arms; carries error_tol and the grow/shrink/norm dials
+#     config_fixed.yaml   mode: fixed     --  6 arms; no controller dials at all
+#     config_ramp.yaml    mode: ramp      --  2 arms; the newton arms, which carry solver.newton.dt0
+#
+# WHICH MODE AN ARM GETS IS NOT A FREE CHOICE. It follows from the solver, the integrator AND the
+# collector -- measured across all 19 arms, not assumed:
+#     solver.method: newton              -> ramp
+#     collection.method: implicit        -> fixed
+#     time_integration: backward-euler   -> fixed
+#     otherwise (tr-bdf2, or bdf2 asked adaptive explicitly) -> adaptive
+# That is why arms which look alike in run.sh land in different files here.
+#
+# TWO ARMS run from this file, both on newton, which is what resolves the step mode to ramp:
+#   d_nt    collection.method: implicit, routing impulse
+#   d_ntu   the collector key ABSENT -- asserts that newton resolves it to active_set
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "20yr"
+  report_interval: "1"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@   # PER-ARM, and it RESOLVES from the collector rather than being free:
+                       # `explicit` cannot take the continuous coupling, so those arms get impulse
+  runoff_ratio: 0.3
+  infiltration_during_flow: false
+@COLLECTION@
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: newton   # both arms; it is what makes the step mode `ramp`
+  time_integration: backward-euler   # what `newton` resolves to; the same on both arms
+  tolerance: @STOL@   # PER-ARM: 1e-8 on d_nt, 1e-10 on d_ntu, whose Newton comparison
+                      # needs the tighter solve to separate the answer from the solve
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- step-averaged transmissivity would change the operator whose budget is being closed
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61). LOAD-BEARING: this suite closes a WATER budget, so the solve must converge in the same currency
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: ramp   # what `newton` resolves to
+    dt: 31536000
+    error_tol: 0.1   # the resolved value. INERT under mode: ramp -- the ramp sizes the step
+    dt_max: "31536000000s"   # the ramp ceiling
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+  newton:
+    dt0: "157680s"   # where the ramp starts
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # PARAMETERISES the surface-transition taper, on below
+    logistic_width: 0.1   # PARAMETERISES the surface-transition taper, on below
+  extinction_depth: 8   # gates the depth_extinction taper, on below
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing on, this taper moves water across the surface, so it is inside the budget being closed
+    depth_extinction: true   # SHIPPED-ON -- the shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite

@@ -43,36 +43,71 @@ TOL="${TOL:-1e-6}"      # relative to the run's solver recharge
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = runoff_collector ("" = OMIT the key entirely -> default resolution)
-    local coll="${2-implicit}"
-    { cat <<EOF
-run_type equilibrium
-total_time 20yr
-supplied_wt 1
-deltat 31536000
-report_interval 1
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_ratio 0.3
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-${DT_TOL:+dt_tol $DT_TOL}
-${ADAPT:+time_step_mode adaptive}
-${STORAGE:+storage $STORAGE}
-${COUPLING:+fsm_coupling $COUPLING}
-solver_method ${METHOD:-anderson}
-${INTEG:+time_integration $INTEG}
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
-      echo "snes_stol ${STOL:-1e-8}"; [ -n "$coll" ] && echo "runoff_collector $coll"; } | ../emit_config.sh > "$WORK/$1.yaml"
+# THE CONFIGS ARE FILES NOW (#83): config.yaml (adaptive), config_fixed.yaml, config_ramp.yaml.
+# THREE files because the three step modes resolve DIFFERENT KEY SETS, and which mode an arm gets is
+# NOT a free choice -- it follows from solver x integrator x collector. Each file's header states the
+# rule and lists the arms that run from it.
+#
+# THE COLLECTOR IS A BLOCK, NOT A VALUE, because three arms (d_and, d_ntu, d_pic) exist precisely to
+# assert what an UNSET collector resolves to. For those, mkcfg substitutes a DECLARED-ABSENT marker
+# instead of the key -- the config then states, in the author's voice, that the key is deliberately
+# absent and what it is expected to resolve to (#92). Writing the key would delete the property under
+# test: the arm would become a copy of the arm that sets it.
+mkcfg() { # $1 stem  $2 collector ("" = DELIBERATELY ABSENT)  $3 routing  $4 mode  $5 method
+          #   $6 integrator  $7 storage  $8 snes_stol  $9 dt error_tol
+    local stem="${1:?mkcfg needs a stem}" coll="${2-}" routing="${3:?mkcfg needs a routing}"
+    local mode="${4:?mkcfg needs a step mode: it RESOLVES from solver x integrator x collector, so name
+                     the one this arm gets rather than letting the file choose}"
+    local method="${5:?mkcfg needs a solver method}" integ="${6-}" storage="${7-}"
+    local stol="${8:?mkcfg needs a snes_stol}" dttol="${9-}"
+    # An EMPTY slot is not a default -- it renders `key:` with no value, which the model then reports
+    # as `null` or a stod failure. Refuse it HERE, where the arm that caused it can still be named,
+    # rather than letting a half-rendered config reach the model.
+    local block
+    if [ -n "$coll" ]; then
+        block="  collection:\n    method: $coll"
+    else
+        # The marker config_identity.py reads. It is a DECLARATION, not an exemption: it names the key,
+        # says why it must stay unset, and says what the run is expected to resolve it to -- and the
+        # arm's own WANT_COLL assertion checks that expectation independently.
+        block="# DECLARED-ABSENT: surface_water.collection.method -- THIS ARM'S SUBJECT IS the default\n"
+        block="$block# resolution. Setting the key would delete the property under test, turning this arm into a\n"
+        block="$block# copy of the arm that sets it. Expect: \${WANT_COLL:?an absent-collector arm must say what it expects}"
+    fi
+    local src=config.yaml
+    [ "$mode" = fixed ] && src=config_fixed.yaml
+    [ "$mode" = ramp  ] && src=config_ramp.yaml
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
+        -e "s|@ROUTING@|$routing|g" -e "s|@METHOD@|$method|g" -e "s|@STOL@|$stol|g" \
+        -e "s|@INTEG@|$integ|g" -e "s|@STORAGE@|$storage|g" -e "s|@DT_TOL@|$dttol|g" \
+        -e "s|@COLLECTION@|$block|" \
+        "$src" > "$WORK/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$stem.yaml" && { echo "ERROR: $stem.yaml has an unfilled slot"; exit 1; }
+    # A key with NO VALUE means a slot was filled with "". The model then reports it as `null` (an
+    # enum) or dies in stod (a number), several layers away from the arm that caused it -- which is
+    # exactly how twelve arms broke at once. Catch it here, where the arm can still be named.
+    #
+    # THE VALUE IS WHAT IS LEFT AFTER THE COMMENT IS STRIPPED. Every slot in these files carries a
+    # trailing `# PER-ARM: ...` note, so an unfilled one renders as `key:    # PER-ARM: ...` and any
+    # check anchored at end-of-line sees a comment and passes. That is the first version of this guard,
+    # and it missed the very bug it was written for.
+    #
+    # A section header legitimately has no value; it is told apart by the next content line being MORE
+    # indented than it is.
+    local empty
+    empty=$(sed 's/#.*//' "$WORK/$stem.yaml" | awk '
+        /^[[:space:]]*$/ { next }
+        { ind = match($0, /[^ ]/) - 1
+          if (pn && ind <= pind) printf "line %d: %s\n", pn, ptxt
+          if ($0 ~ /^[[:space:]]*[a-zA-Z_]+:[[:space:]]*$/) { pn = NR; pind = ind; ptxt = $0; sub(/[[:space:]]+$/, "", ptxt) }
+          else pn = 0 }
+        END { if (pn) printf "line %d: %s\n", pn, ptxt }')
+    if [ -n "$empty" ]; then
+        echo "ERROR: $stem.yaml has a key with an EMPTY value -- a slot was filled with nothing:"
+        printf '%s\n' "$empty" | sed 's/^/        /'
+        exit 1
+    fi
+    return 0
 }
 
 fail=0
@@ -83,7 +118,11 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, 
     # asserts; otherwise the arm measures solver noise. Default 1e-8 suits every arm here except the
     # Newton sub-stepping one, which carries the solve tolerance on every sub-step (see its note).
     local stol="${ARM_STOL:-1e-8}"
-    STOL="$stol" mkcfg "$stem" "${COLL-implicit}"
+    mkcfg "$stem" "${COLL-implicit}" "${ROUTING:?each arm must NAME the routing it resolves to}" \
+          "${MODE:?each arm must NAME its step mode: it resolves from solver x integrator x collector,
+                   and RE-DERIVING that rule here is how a test stops testing the model and starts
+                   testing its own copy of the policy}" \
+          "${METHOD:-anderson}" "${INTEG-}" "${STORAGE-}" "$stol" "${DT_TOL-}"
     if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
@@ -103,9 +142,12 @@ check() { # $1 = label, $2 = stem, $3.. = solver flags ; ARM_TOL overrides TOL, 
         bdf2)           want+=("integrator=bdf2") ;;
         backward-euler) want+=("integrator=$([ "${STORAGE:-volume}" = secant ] && echo be_secant || echo be_volume)") ;;
     esac
-    [ -n "${METHOD:-}" ]   && want+=("solver=$METHOD")
-    [ -n "${COUPLING:-}" ] && want+=("coupling=$COUPLING")
-    [ -n "${ADAPT:-}" ]    && want+=("dtctl=adaptive")
+    [ -n "${METHOD:-}" ]  && want+=("solver=$METHOD")
+    # ROUTING and MODE replaced COUPLING= and ADAPT= when the arms started NAMING what they resolve to
+    # (#83). Both are REQUIRED on every arm, so unlike the old optional vars they cannot go empty and
+    # silently drop out of the fingerprint -- which is how a check stops checking.
+    want+=("coupling=${ROUTING:?the fingerprint needs the routing this arm resolves to}")
+    [ "${MODE:?the fingerprint needs the step mode this arm resolves to}" = adaptive ] && want+=("dtctl=adaptive")
     expect_resolved "$WTM_COVERAGE_LOG" "${want[@]}" || fail=1
     TOL="$tol" LABEL="$label" TESTS="$(readlink -f ..)" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
@@ -136,7 +178,12 @@ PY
 
 check_nan() { # TR-BDF2 must report the exact residual as unavailable, not as a number
     local label="$1" stem="$2"; shift 2
-    mkcfg "$stem"
+    local stol="${ARM_STOL:-1e-8}"
+    mkcfg "$stem" "${COLL-implicit}" "${ROUTING:?each arm must NAME the routing it resolves to}" \
+          "${MODE:?each arm must NAME its step mode: it resolves from solver x integrator x collector,
+                   and RE-DERIVING that rule here is how a test stops testing the model and starts
+                   testing its own copy of the policy}" \
+          "${METHOD:-anderson}" "${INTEG-}" "${STORAGE-}" "$stol" "${DT_TOL-}"
     WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" > "$WORK/$stem.log" 2>&1
     LABEL="$label" "$PY" - "$WORK/$stem.txt" <<'PY' || fail=1
 import os, sys, math
@@ -160,7 +207,12 @@ PY
 # passing is how a fixed bug loses its test.
 xfail_broken() { # $1 = label, $2 = stem, $3 = floor, $4.. = solver flags ; XTASK names the defect
     local label="$1" stem="$2" floor="$3"; shift 3
-    mkcfg "$stem" "${COLL-implicit}"
+    local stol="${ARM_STOL:-1e-8}"
+    mkcfg "$stem" "${COLL-implicit}" "${ROUTING:?each arm must NAME the routing it resolves to}" \
+          "${MODE:?each arm must NAME its step mode: it resolves from solver x integrator x collector,
+                   and RE-DERIVING that rule here is how a test stops testing the model and starts
+                   testing its own copy of the policy}" \
+          "${METHOD:-anderson}" "${INTEG-}" "${STORAGE-}" "$stol" "${DT_TOL-}"
     if ! WTM_COVERAGE_TAG="budget_closure/$stem" "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  $label -- run failed"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1; return
@@ -189,13 +241,13 @@ echo
 # tell was in the output all along, the two blocks reporting bit-identical cumulative=5.67e-09 and
 # worst-per-cycle=6.94e-07. An arm that names its configuration cannot be repurposed by a default.
 echo "-- impulse coupling --"
-COUPLING=impulse INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       s_and
-COUPLING=impulse INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" s_vol
-COUPLING=impulse METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
+ROUTING=impulse MODE=fixed INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       s_and
+ROUTING=impulse MODE=fixed INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" s_vol
+STORAGE=volume ROUTING=impulse MODE=fixed METHOD=picard INTEG=bdf2 check "Picard BDF2-on-V" s_pic
 echo
 echo "-- continuous coupling (the default; #116) --"
-COUPLING=continuous INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       f_and
-COUPLING=continuous INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" f_vol
+ROUTING=continuous MODE=fixed INTEG=backward-euler STORAGE=secant check "Anderson BE (secant)"       f_and
+ROUTING=continuous MODE=fixed INTEG=backward-euler STORAGE=volume check "Anderson BE (volume dV)" f_vol
 echo
 # Active-set is the candidate replacement for the `implicit` collector: it is the only enforcement
 # measured to give a dt-INDEPENDENT equilibrium (see SURFACE_WATER_ROUTING.md). Gate its conservation
@@ -234,7 +286,7 @@ echo "-- active-set exfiltration constraint --"
 # run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # fsm_coupling: continuous exists to address.
-COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as
 echo
 # TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
 # reported the exact residual as `nan`. That was true and worth pinning while the two stages' balances
@@ -249,12 +301,12 @@ echo
 # (unused) because the guard it tests is still in the code as a backstop for a future scheme that
 # genuinely has no per-step identity.
 echo "-- TR-BDF2 (two stages, telescoped) --"
-INTEG=tr-bdf2 check "TR-BDF2" s_tr
+STORAGE=volume ROUTING=continuous MODE=fixed INTEG=tr-bdf2 check "TR-BDF2" s_tr
 # The combination that was leaking, and the reason this arm exists: active-set puts a multiplier in
 # BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
 # the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
 # the residual, so it carries the solve's tolerance, not a conservation defect.
-COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as
 echo
 # ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
 # it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
@@ -315,8 +367,8 @@ echo
 # least part of that backwards behaviour was an artifact of solves stopping at a tolerance-dependent
 # point rather than at the solution. Not claimed as fully explained; recorded as no longer visible.
 echo "-- adaptive dt (controller must not resize until accounting is done) --"
-COLL=active_set INTEG=tr-bdf2 ADAPT=1 DT_TOL=0.01 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad
-COLL=active_set INTEG=bdf2 ADAPT=1 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad
+ROUTING=continuous MODE=adaptive COLL=active_set INTEG=tr-bdf2 DT_TOL=0.01 ARM_TOL=1e-5 check "TR-BDF2 + active-set, adaptive" tr_as_ad
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive COLL=active_set INTEG=bdf2 ARM_TOL=1e-5 check "BDF2-on-V + active-set, adaptive" bdf2v_ad
 echo
 
 
@@ -334,10 +386,10 @@ echo
 # These were xfail_broken arms until then, and the guards are what reported the fix
 # ("NOW CLOSES: promote to check()").
 echo "-- collector sweep (conservation must not depend on the enforcement) --"
-COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as 
-COLL=implicit                check "Anderson x implicit"        c_im 
-COLL=off                     check "Anderson x off"             c_off
-COLL=explicit                check "Anderson x explicit"        c_ex 
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as 
+STORAGE=volume ROUTING=continuous MODE=fixed INTEG=tr-bdf2 COLL=implicit                check "Anderson x implicit"        c_im 
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=off                     check "Anderson x off"             c_off
+DT_TOL=0.5 ROUTING=impulse MODE=adaptive INTEG=tr-bdf2 COLL=explicit                check "Anderson x explicit"        c_ex 
 # `legacy` on Anderson keeps the band sink AND the clamp, and its per-cycle residual is
 # TOLERANCE-LIMITED rather than defective -- the same signature as the active-set arm above. Verified
 # by scaling the solve on this fixture:
@@ -348,7 +400,7 @@ COLL=explicit                check "Anderson x explicit"        c_ex
 # It tracks snes_stol and then floors, which is what a tolerance-limited quantity does and what a
 # conservation defect does not. Per-ARM tolerance rather than a tighter snes_stol, so this arm's
 # numbers stay comparable with the others.
-COLL=explicit METHOD=picard INTEG=bdf2 check "Picard x explicit" c_pex
+DT_TOL=0.5 ROUTING=impulse MODE=adaptive COLL=explicit METHOD=picard INTEG=bdf2 check "Picard x explicit" c_pex
 echo
 # EACH SOLVER AT ITS OWN RESOLVED DEFAULT. Every other arm in this file names its collector explicitly,
 # which is right for discrimination but means the DEFAULT-RESOLUTION path itself was never exercised --
@@ -364,7 +416,7 @@ echo
 # Newton needs -wtm_dt_continuation to converge on this fixture; without it every collector aborts with
 # "The SNES solver has not converged".
 echo "-- each solver at its OWN resolved default (collector key UNSET) --"
-COLL="" WANT_COLL=active_set ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
+DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL="" WANT_COLL=active_set ARM_TOL=1e-5 check "Anderson, unset -> active_set"       d_and
 # Newton's per-cycle residual is looser than Anderson's on the same collector because
 # -wtm_dt_continuation SUB-STEPS, and the active-set multiplier carries the solve tolerance on every
 # sub-step. TOLERANCE-LIMITED, verified by scaling the solve. RE-MEASURED 2026-09-04, after the FSM
@@ -379,8 +431,8 @@ COLL="" WANT_COLL=active_set ARM_TOL=1e-5 check "Anderson, unset -> active_set" 
 # inside ARM_TOL. What broke this arm is that at snes_stol 1e-8 the solver noise (1.780e-04) now
 # EXCEEDS the closure being asserted (1e-4), so the arm was measuring the solver, not the budget.
 # Resolve the solve past the assertion instead of loosening the assertion.
-COLL="" WANT_COLL=active_set METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
-COLL="" WANT_COLL=explicit METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
+ROUTING=continuous MODE=ramp INTEG=backward-euler COLL="" WANT_COLL=active_set METHOD=newton ARM_TOL=1e-4 ARM_STOL=1e-10 check "Newton, unset -> active_set [tight solve, see note]" d_ntu
+DT_TOL=0.5 ROUTING=impulse MODE=adaptive COLL="" WANT_COLL=explicit METHOD=picard INTEG=bdf2 check "Picard, unset -> explicit" d_pic
 # THE COUPLING IS WHAT BREAKS THIS ARM, and it is worth two arms rather than one. `implicit` closes
 # perfectly well under impulse; under continuous it does not. Measured at snes_stol 1e-10 (past the
 # solver floor, so this is the model and not the solve):
@@ -392,14 +444,33 @@ COLL="" WANT_COLL=explicit METHOD=picard INTEG=bdf2 check "Picard, unset -> expl
 # same incompatibility, and the only one that fails QUIETLY -- the budget simply stops closing.
 # So: keep the closure assertion on the coupling that closes, and hold the broken pairing as an
 # EXPECTED failure so it keeps a regression test instead of vanishing from the suite.
-COLL=implicit METHOD=newton COUPLING=impulse check "Newton + continuation x implicit (impulse)" d_nt
-COLL=implicit METHOD=newton COUPLING=continuous XTASK="#48 (continuous composes only with active_set)" \
+ROUTING=impulse MODE=ramp INTEG=backward-euler COLL=implicit METHOD=newton check "Newton + continuation x implicit (impulse)" d_nt
+ROUTING=continuous MODE=ramp INTEG=backward-euler COLL=implicit METHOD=newton XTASK="#48 (continuous composes only with active_set)" \
     xfail_broken "Newton + continuation x implicit (continuous)" d_ntc 2e-6
 # Pin WHICH collector each unset run actually resolved to. The Picard downgrade prints a NOTE; the
 # other two must NOT print it, or they have silently stopped testing the active-set default.
+#
+# THE PATTERN WENT STALE ONCE ALREADY. It read "default resolves to \`explicit\`"; the model has said
+# "surface_water.collection.method defaults to \`explicit\` on the Picard solver" since d437dee moved
+# the message, so the grep matched NOTHING and reported the note ABSENT on the one arm that must
+# print it. A grep against another program's prose is a fragile joint, and this one failed in the
+# quiet direction -- "not found" and "not printed" look identical.
+#
+# So the pattern is now the STABLE part of the sentence (key + verb), and a stale pattern is made
+# distinguishable from a real absence: the Picard arm MUST match, and if it does not, the check says
+# the pattern is the suspect rather than blaming the model.
+NOTE_RE="surface_water.collection.method defaults to"
+if ! grep -q "$NOTE_RE" "$WORK/d_pic.log"; then
+    echo "  FAIL  RESOLUTION  the NOTE pattern matched nothing even on the Picard arm, which prints it"
+    echo "                    by construction -- so the PATTERN is stale, not the model. It looks for:"
+    echo "                      $NOTE_RE"
+    echo "                    and the model actually said:"
+    grep -iE "^NOTE:" "$WORK/d_pic.log" | sed 's/^/                      /' | head -2
+    fail=1
+fi
 for arm in d_and:absent d_ntu:absent d_pic:present; do
     stem="${arm%%:*}"; want="${arm##*:}"
-    if grep -q "default resolves to \`explicit\`" "$WORK/$stem.log"; then got=present; else got=absent; fi
+    if grep -q "$NOTE_RE" "$WORK/$stem.log"; then got=present; else got=absent; fi
     if [[ "$got" == "$want" ]]; then
         echo "  PASS  RESOLUTION  $stem: Picard-downgrade NOTE $got (expected $want)"
     else
