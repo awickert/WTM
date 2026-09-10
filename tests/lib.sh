@@ -186,18 +186,19 @@ WTM_DECLARED_EXEMPT="config_schema route_equality"
 # NON-VACUITY: a compared field must HAVE STRUCTURE. See tests/nonvacuous.py for the mechanism and for
 # the three suites that were simultaneously green while comparing identically-zero fields (#34).
 #
-# EXEMPT SUITES, each STRUCTURAL and each named here in the code that would otherwise fail it -- the same
-# rule as WTM_DECLARED_EXEMPT above, for the same reason: an exemption a reader cannot see is a hole.
+# THE EXEMPTION LIST IS EMPTY, AND THAT WAS ESTABLISHED BY RUNNING THE SUITES, NOT BY REASONING ABOUT
+# THEM. It was first written as "direct_to_runoff flicker_evap config_schema", on the argument that the
+# first two assert the water table is HELD flat and the third aborts at parse. All three were wrong:
+#     direct_to_runoff   2 final fields, all have structure
+#     flicker_evap       2 final fields, all have structure
+#     config_schema      emits no STRUCTURE line at all -- no run completes, so no snapshot exists, and
+#                        the check returns silently rather than needing to be excused
+# Holding wtd at 0 does not make the OUTPUT RASTER constant: the ocean ring, the unsaturated cells and
+# the approach to the surface all carry structure. Guessing which suites would need excusing produced
+# three false exemptions -- exactly the hole an exemption list is meant to avoid.
 #
-#   direct_to_runoff  its SUBJECT is that runoff gathering HOLDS wtd == 0. A flat zero field is the
-#                     assertion, not a failure of it.
-#   flicker_evap      likewise: the taper is the only surface-water manager and the pass condition is
-#                     that the water table is pinned flat at the surface without flickering.
-#   config_schema     every arm aborts at parse. No run completes, so no run writes a snapshot.
-#
-# A suite that merely HAPPENS to be flat today is not a candidate. Add one only after establishing that a
-# structureless field is what it is asserting, and write the reason here.
-WTM_VACUITY_EXEMPT="direct_to_runoff flicker_evap config_schema"
+# So: add a suite here only after SEEING it fail the check, and write the measurement, not the argument.
+WTM_VACUITY_EXEMPT=""
 
 _wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
     local tag="$1" tests_dir out rc=0
