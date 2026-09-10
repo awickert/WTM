@@ -148,7 +148,7 @@ struct Parameters {
   // output.trace: [dt|water_step|budget|fsm] -- PRINTING ONLY, never the answer.
   bool trace_dt = false, trace_water_step = false, trace_budget = false, trace_fsm = false;
 
-  // surface_water.fsm_coupling. TRUE (continuous) is the DEFAULT, decided in #43 on the physical
+  // surface_water.routing. TRUE (continuous) is the DEFAULT, decided in #43 on the physical
   // argument: FSM's per-cell volume change is delivered to the next step's source term rather than
   // overwriting the step baseline. `impulse` is the alternative, not the norm. _set distinguishes an
   // EXPLICIT request (refused by name where it cannot run) from the default (which yields quietly).
@@ -216,7 +216,7 @@ struct Parameters {
   int32_t infiltration_on = 0;   // surface_water.infiltration_during_flow: false
   int32_t supplied_wt     = 0;   // run.initial_water_table: omit -> saturated (wtd = 0)   [TODO: folder auto-detect]
   int32_t evap_mode       = 0;   // dropped from the config (vestigial when the ET sigmoid is on = default); 0 = remove
-  int32_t fsm_on          = 1;   // surface_water.mode: routed
+  int32_t fsm_on          = 1;   // surface_water.routing: continuous|impulse (off -> 0)
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file

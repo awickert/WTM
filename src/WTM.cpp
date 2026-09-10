@@ -1216,7 +1216,8 @@ void apply_config_petsc_options(const std::string& config_file) {
   // (parsed into Parameters directly; see parameters.cpp. No options-database round-trip.)
 
   // dev
-  // surface_water.fsm_coupling: how FillSpillMerge's result reaches the groundwater. Answer-changing,
+  // surface_water.routing: whether FillSpillMerge routes above-ground water and, when it does, how its
+  // result reaches the groundwater. Answer-changing,
   // so it belongs in the config -- a run using `continuous` could not otherwise be reproduced from its
   // archived resolved config.
   // BOTH values are bridged, not just `continuous`. The C++ default is the source coupling (spelled
@@ -1495,23 +1496,24 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   }
 
   f << "\nsurface_water:\n";
-  // mode: the parser collapses ponded and removed onto fsm_on = 0, so a run that was given `removed`
-  // reports `ponded`. Recorded rather than papered over; the distinction is a TODO in parameters.cpp.
-  f << "  mode: " << (params.fsm_on ? "routed" : "ponded") << "\n";
-  // fsm_coupling is resolved inside the SOLVE too, so fsm_continuous_on() still holds its compile-time
-  // default here -- the SAME trap the smoothing widths below document, missed when this key was added.
-  // MEASURED: a config asking for `continuous`, which ran as continuous, emitted `impulse` here. Read the
-  // request from the options database (the bridge has already put the config's value there) and apply the
-  // SAME resolution the solve applies, so this line reports what actually ran rather than what was asked.
+  // routing: ONE key, and it reports what actually ran. This line is resolved rather than echoed because
+  // the coupling is settled inside the SOLVE, so fsm_continuous_on() still holds its compile-time default
+  // here -- the SAME trap the smoothing widths below document. MEASURED before the fix: a config asking
+  // for `continuous`, which ran as continuous, emitted `impulse`.
   // Kept in step with transient_groundwater.cpp: if a gate is added there, add it here.
-  bool eff_continuous = params.fsm_coupling_continuous && params.fsm_on;  // no FSM -> nothing to couple
+  //
+  // WITH FSM OFF THE ANSWER IS `off`, NOT `impulse`. That is the whole reason the two keys merged: no
+  // coupling runs, so naming one is a false specific. It also mattered for the declared-config rule --
+  // 72 of the harvested test configs are FSM-off, and every one of them would have had to write down a
+  // mechanism it never used.
+  bool eff_continuous = params.fsm_coupling_continuous;
   {
     std::string eff_rc = params.runoff_collector.empty() ? "active_set" : params.runoff_collector;
     if (eff_rc == "active_set" && !params.runoff_collector_set && uc.use_picard) eff_rc = "explicit";
     if (eff_rc == "explicit") eff_continuous = false;   // continuous x explicit is refused / auto-yields
     if (params.infiltration_on) eff_continuous = false; // serial recharge carries no FSM-delta source
   }
-  f << "  fsm_coupling: " << (eff_continuous ? "continuous" : "impulse") << "\n";
+  f << "  routing: " << (!params.fsm_on ? "off" : (eff_continuous ? "continuous" : "impulse")) << "\n";
   if (params.runoff_ratio_on && params.runoff_ratio_uniform < 0.0) f << "  runoff_ratio: raster\n";
   else if (params.runoff_ratio_uniform >= 0.0) f << "  runoff_ratio: " << params.runoff_ratio_uniform << "\n";
   else f << "  runoff_ratio: 0\n";
@@ -1747,7 +1749,7 @@ static int wtm_main(int argc, char** argv) {
 // a batch log it is indistinguishable from a real crash -- the thing most likely to send someone
 // hunting a defect that does not exist.
 //
-// Reproduce the case that prompted this: surface_water.fsm_coupling: continuous with
+// Reproduce the case that prompted this: surface_water.routing: continuous with
 // surface_water.collection.method: explicit.
 //
 // The message is printed ONCE (rank 0) because every rank reaches the same deterministic config check

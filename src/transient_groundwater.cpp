@@ -261,7 +261,7 @@ static constexpr double SECONDS_IN_A_YEAR  = 31536000.0;
 // huge step -> water piles). See benchmark/SURFACE_WATER_ROUTING.md / BDF2_ADAPTIVE_DESIGN.md.
 static bool             g_volume_storage              = true;  // dev.storage_form: volume (DEFAULT) -- BE storage folded into f, RHS b=0
 static bool             g_direct_to_runoff            = false; // -wtm_direct_to_runoff: in-residual exfiltration removal
-// surface_water.fsm_coupling: continuous (THE DEFAULT, #43) | impulse.
+// surface_water.routing: continuous (THE DEFAULT, #43) | impulse | off.
 // CONTINUOUS feeds FSM's per-step water-table change into the NEXT step's recharge source. IMPULSE is
 // the alternative: it overwrites the step baseline with the post-FSM table. Andy decided continuous on
 // the PHYSICAL argument alone (#43) -- FSM moved that water, so the next step should see it as a source
@@ -1219,7 +1219,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // surface_water.collection.method: implicit is the route (verified byte-identical). Set by the selector.
   g_direct_to_runoff = false;
 
-  // surface_water.fsm_coupling, DEFAULT continuous (Andy, 2026-09-04, reaffirmed after review).
+  // surface_water.routing, DEFAULT continuous (Andy, 2026-09-04, reaffirmed after review).
   //
   // THE PHYSICAL ARGUMENT IS THE ARGUMENT. FSM is instantaneous by construction, so under `impulse` the
   // state always carries a FULLY EQUILIBRATED lake -- a depression is full from the instant there is
@@ -1431,7 +1431,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // The check does not exclude the b=0 integrators (bdf2 / tr-bdf2): on those the storage branch is never
   // reached, so an explicit `secant` would be silently void rather than honoured, which is the same
   // failure by a quieter route.
-  // surface_water.fsm_coupling, resolved when the key is ABSENT (the enum itself is impulse|continuous;
+  // surface_water.routing, resolved when the key is ABSENT (the enum itself is continuous|impulse|off;
   // there is no `auto` value). `continuous` is what we want everywhere it is valid, but it is
   // REFUSED with collection.method: explicit (below), and `explicit` is what solver.method: picard
   // resolves to when the collector is unset. A constant `continuous` default therefore made plain
@@ -1445,7 +1445,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     if (!noted_auto_impulse) {
       noted_auto_impulse = true;
       PetscPrintf(PETSC_COMM_WORLD,
-                  "surface_water.fsm_coupling: absent -> impulse (collection.method: explicit cannot take "
+                  "surface_water.routing: absent -> impulse (collection.method: explicit cannot take "
                   "the continuous coupling).\n");
     }
   }
@@ -1466,18 +1466,18 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   if (g_fsm_continuous && params.fsm_on && params.infiltration_on) {
     if (fsm_cont_set == PETSC_TRUE)
       throw std::runtime_error(
-          "config: surface_water.fsm_coupling: continuous cannot be used with "
+          "config: surface_water.routing: continuous cannot be used with "
           "surface_water.infiltration_during_flow: true. The continuous coupling hands FillSpillMerge's "
           "per-cell volume change to the next step through the DISTRIBUTED recharge carrier, but "
           "infiltration_during_flow routes recharge through the serial rank-0 loop, which has no such "
-          "carrier -- so the coupling would be silently inert. Use fsm_coupling: impulse, or "
+          "carrier -- so the coupling would be silently inert. Use routing: impulse, or "
           "infiltration_during_flow: false.");
     g_fsm_continuous = false;
     static bool noted_infil_impulse = false;
     if (!noted_infil_impulse) {
       noted_infil_impulse = true;
       PetscPrintf(PETSC_COMM_WORLD,
-                  "surface_water.fsm_coupling: absent -> impulse (infiltration_during_flow: true routes "
+                  "surface_water.routing: absent -> impulse (infiltration_during_flow: true routes "
                   "recharge serially, which carries no FSM-delta source).\n");
     }
   }
@@ -1491,7 +1491,7 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // reachable now that source is the default. See task #44.
   if (g_fsm_continuous && rc == "explicit")
     throw std::runtime_error(
-        "config: surface_water.fsm_coupling: continuous cannot be used with "
+        "config: surface_water.routing: continuous cannot be used with "
         "surface_water.collection.method: explicit -- the pair does not converge (measured: observed order "
         "goes negative under dt refinement, error stalls at ~1.1 m). `explicit` clamps above-surface water "
         "AFTER the solve, while `continuous` feeds it back in as a source term, so the two fight and the run "

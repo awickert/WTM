@@ -60,7 +60,14 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
                    "ncells_x", "ncells_y"}},
       {"transmissivity", {"fdepth", "additive_background_transmissivity"}},
       {"transmissivity.fdepth", {"a", "b", "fmin"}},
-      {"surface_water", {"mode", "runoff_ratio", "infiltration_during_flow", "collection", "fsm_coupling"}},
+      // surface_water.routing REPLACED surface_water.mode + surface_water.fsm_coupling (2026-09-10).
+      // They were two keys answering ONE question -- what happens to above-ground water -- and the split
+      // made a contradiction representable: `mode: ponded` with `fsm_coupling: continuous` asked for a
+      // coupling that cannot happen, and the model resolved it silently. Worse, full_config.yaml then
+      // RECORDED `impulse` for a run in which no coupling ran at all, so an FSM-off config had to declare
+      // a mechanism it never used. One key, three values, and the contradiction is unrepresentable rather
+      // than merely refused -- the same move as extended_soil joining collection.method (#26).
+      {"surface_water", {"routing", "runoff_ratio", "infiltration_during_flow", "collection"}},
       {"surface_water.collection", {"method"}},
       {"evaporation", {"et_sigmoid", "extinction_depth", "tapers"}},
       {"evaporation.tapers", {"surface_transition", "depth_extinction"}},
@@ -248,6 +255,22 @@ Parameters::Parameters(const std::string& config_file) {
                              "surface_water / solver / ...) -- see config.yaml. (A legacy 'key value' .cfg "
                              "will trip this.)");
   }
+  // The two keys surface_water.routing replaced are refused BY NAME, before the generic unknown-key
+  // check below -- a merge that also remaps the VALUES is not something "did you mean routing?" can
+  // explain. Without this an old config gets a suggestion that would produce a different run.
+  if (root["surface_water"]["mode"] || root["surface_water"]["fsm_coupling"]) {
+    throw std::runtime_error(
+        "config: surface_water.mode and surface_water.fsm_coupling were REPLACED by the single key "
+        "surface_water.routing (2026-09-10), because they answered one question between them: what "
+        "happens to above-ground water. Translate:\n"
+        "    mode: routed  + fsm_coupling: continuous  (or absent)  ->  routing: continuous\n"
+        "    mode: routed  + fsm_coupling: impulse                  ->  routing: impulse\n"
+        "    mode: ponded  (or removed)                             ->  routing: off\n"
+        "`continuous` stays the default, so an old config that set neither key becomes routing: continuous. "
+        "`ponded` and `removed` both become `off`: they were already indistinguishable from a config -- the "
+        "default evaporation taper never consults evap_mode, and with the taper off evap_mode is frozen at "
+        "0, so surface water was removed either way.");
+  }
   // Before reading anything: reject keys the model does not understand, so a typo or a retired key can
   // never sit in a config quietly doing nothing. See validate_config_keys.
   validate_config_keys(root, config_file);
@@ -343,10 +366,18 @@ Parameters::Parameters(const std::string& config_file) {
       if (v == "fsm")        trace_fsm        = true;
     }
   }
-  if (auto n = root["surface_water"]["fsm_coupling"]) {
-    fsm_coupling_continuous =
-        (require_enum(n.as<std::string>(), "surface_water.fsm_coupling", {"impulse", "continuous"}) == "continuous");
-    fsm_coupling_set = true;
+  // surface_water.routing: continuous | impulse | off -- ONE key for whether FillSpillMerge routes
+  // above-ground water AND, when it does, how its result reaches the groundwater. `off` is a real state
+  // (nothing is routed), not an absence, which is what lets an FSM-off run RECORD what it did instead of
+  // naming a coupling that never happened. Absent -> continuous, the default (#43).
+  // fsm_coupling_set means "the user stated this", and the two absent -> impulse resolutions in
+  // transient_groundwater.cpp still turn on it: stating `routing` at all is the explicit case.
+  if (auto n = root["surface_water"]["routing"]) {
+    const std::string r =
+        require_enum(n.as<std::string>(), "surface_water.routing", {"continuous", "impulse", "off"});
+    fsm_on                  = (r == "off") ? 0 : 1;
+    fsm_coupling_continuous = (r == "continuous");
+    fsm_coupling_set        = true;
   }
   if (auto n = root["solver"]["convergence"]["metric"])
     convergence_metric_head =
@@ -442,14 +473,9 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["transmissivity"]["fdepth"]["fmin"]) fdepth_fmin = n.as<double>();
 
   // -------- surface_water --------
-  // mode: routed = FillSpillMerge routes above-ground water; ponded/removed do not route it. (The ponded-vs-
-  // removed distinction is a dev-flag detail -- TODO.) Replaces the old fsm bool.
-  if (auto n = root["surface_water"]["mode"]) {
-    const std::string m = n.as<std::string>();
-    if (m == "routed")                        fsm_on = 1;
-    else if (m == "ponded" || m == "removed") fsm_on = 0;
-    else throw std::runtime_error("config: surface_water.mode must be 'routed', 'ponded', or 'removed', got '" + m + "'");
-  }
+  // mode was folded into surface_water.routing above; see the schema note and the migration refusal.
+  // The ponded-vs-removed TODO that lived here is CLOSED rather than carried: the two were already
+  // indistinguishable from any config, so `off` loses nothing.
   // runoff_ratio: a number in [0,1] = a uniform ratio everywhere; the string "raster" = require the
   // runoff_ratio raster from io.source; omitted = off. (TODO: omit -> auto-detect the raster if present.)
   if (auto n = root["surface_water"]["runoff_ratio"]) {
