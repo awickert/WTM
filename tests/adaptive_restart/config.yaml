@@ -1,0 +1,109 @@
+# tests/adaptive_restart -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES: that the rho-triggered proactive Anderson restart controller runs an
+# equilibrium spin-up TO COMPLETION and lands on the same water table as a plain Anderson solve. The
+# bug it guards is a robust FINISH: near equilibrium the Anderson step floors just above the relative
+# step tolerance, the controller exhausts its restart budget, and it used to throw rather than return
+# the tracked best iterate.
+#
+# THE ARMS DIFFER IN ONE KEY -- solver.anderson.restart.enabled -- and that override lives in run.sh.
+# The restart CONSTANTS below (rho, patience, max_it, max_restarts) are baseline values and are NOT
+# inert: they set how quickly the budget is exhausted, which is the regime the bug lived in. They are
+# marked baseline because they are the shipped controller, not because they do nothing.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0.001
+    metric: rms
+    frac: 0.001   # the fraction metric is not selected (metric: rms above), so this is INERT here
+  initial_water_table: saturated
+time:
+  total: "60480000000s"
+  report_interval: "50"
+  save_every_n_reports: 500
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement. routing: off and runoff_ratio 0, so no surface
+                         # water arises and this cannot bind -- stated because the run resolves it
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; stated so the spin-up this test drives
+                              # to completion is pinned to a known integrator
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: true   # THE SUBJECT. The rho-triggered proactive restart controller. run.sh overrides
+                      # this one key to `false` for the plain-Anderson reference arm; the claim is that
+                      # both COMPLETE and land on the same water table.
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves here. The bug guarded is a robust FINISH near
+                     # equilibrium, and the controller's step choices are part of how that regime
+                     # is reached -- so who sizes the step is stated, not left to a default
+    dt: 2419200
+    error_tol: 0.1   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. With routing: off the taper is what removes surface
+    logistic_width: 0.1   # water at all, so it shapes the spin-up -- and the spin-up REACHING the
+  extinction_depth: 8   # near-equilibrium regime within ~13 cycles is what makes this test bite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'arestart'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

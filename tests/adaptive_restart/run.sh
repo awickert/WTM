@@ -23,37 +23,29 @@ TOL="${TOL:-0.00025}"     # 0.25 mm of water; adaptive-restart vs plain-Anderson
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-${AR_ON:+ar_enabled $AR_ON}
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 60480000000s
-save_nreport_interval 500
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region arestart
-supplied_wt 0
-eq_tol 0.001
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/adaptive_restart/config.yaml, read and edited directly rather
+# than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# The restart CONSTANTS (rho, patience, max_it, max_restarts) are in that file at their shipped values,
+# and they are NOT decoration: they set how fast the restart budget is exhausted, which IS the
+# near-equilibrium regime the guarded bug lived in. Change one and this test is measuring something
+# else -- which is the argument for having them written down rather than inherited.
+# AR_ON IS REQUIRED, WITH NO DEFAULT, and that is deliberate. A default here makes an unset value
+# silently pick a side: with `:-true` both arms run the restart controller, the test compares a config
+# against ITSELF, reports max|dV| = 0.000e+00 and PASSES. That is what a vacuous arm looks like (#24),
+# and it is the same way this suite's sibling storage_equivalence went vacuous when a default moved.
+emit() { # $1 stem, $2 restart.enabled (REQUIRED: true|false)
+  local on="${2:?emit needs restart.enabled: name the value for this arm, do not inherit it}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^      enabled: true|      enabled: $on|" config.yaml > "$WORK/$1.yaml"
 }
 
 BB=""
 # The restart loop is a CONFIG key now (solver.anderson.restart.enabled); the -wtm_adaptive_restart
 # options-database entry is gone, and a -wtm_ nothing reads aborts. Only the `ar` arm enables it --
 # `base` is the plain-Anderson control it must match.
-AR_ON=true emit ar; emit base
+emit ar true; emit base false
 # (1) adaptive-restart must run to equilibrium WITHOUT aborting (the robustness claim)
 "$WTM" "$WORK/ar.yaml" $BB > "$WORK/ar.log" 2>&1 \
   || { echo "FAIL: solver.anderson.restart.enabled aborted (robust-finish regression):"; tail -4 "$WORK/ar.log"; exit 1; }
