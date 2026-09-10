@@ -6,9 +6,38 @@
 # is the exact secant, S·Δh ≡ ΔV identically (even across the surface where dV/dh jumps porosity→~1). So on
 # a well-behaved (non-oscillating) domain the two must agree to MACHINE PRECISION.
 #
-# This guards that identity: it bites if updateEffectiveStorativity ever stops being the exact secant (e.g.
-# a tangent or endpoint storativity), which would make the default BE storage inconsistent with the volume
-# schemes. See finding on the (retracted) "secant storage inconsistency" -- there is none, and this proves it.
+# THIS SUITE DOES NOT CURRENTLY PROVE THAT, AND SAYING SO IS THE POINT (#34, 2026-09-11). It used to end
+# "-- there is none, and this proves it". It proved nothing: its fixture carried the placeholder
+# geotransform, cells were ~111 km, the plateau saturated, and BOTH compared fields were identically zero.
+# tests/nonvacuous.py caught it. max|dV| = 0.000e+00 against a 2.5e-07 target, PASS, for as long as it has
+# existed.
+#
+# WHAT THE LIVE MEASUREMENTS SAY. Sweeping cell size (the only knob that moves the field relative to the
+# surface), max|dV| in water and how much of the domain is at wtd = 0:
+#     cpd     1 / 4 / 16  ->  0.000e+00   88/88 saturated -- vacuous, the old state
+#     cpd    64           ->  2.386e-03   56/88 at the surface  <- the S != Sy regime this test is FOR
+#     cpd   256           ->  6.121e-05    0/88, wtd -93.6 .. -57.9
+#     cpd  1000           ->  5.689e-07    0/88, wtd -99.6 .. -97.0
+# The disagreement is largest exactly where the specific yield jumps, and falls off monotonically as the
+# field drains away from the surface. It does NOT scale with the solver tolerance -- 2.39e-03, 4.46e-03,
+# 2.47e-03 at tol 1e-8, 1e-10, 1e-12 -- so it is not convergence noise. It sits in the 32 UNCLAMPED
+# drawdown cells (wtd -62.9 .. -2.8), not the 56 clamped ones, so it is not the collector's clamp either.
+#
+# WHY IT IS AN XFAIL RATHER THAN A DECLARED DEFECT. The claim above excludes one case: a surface limit
+# cycle. At cpd 64 the domain IS in one -- within-cycle max|dw| = 0.0048 m across 56 cells still at cycle
+# 30 (460 simulated years), with a non-monotone per-cycle change. So the precondition fails and the
+# identity is UNVERIFIED, not disproven. The fixture's docstring asks for "coastal cells cross wtd=0 ...
+# but the table does not flicker", and measurement says those two are not simultaneously reachable here:
+#     collection.method: explicit    crosses the surface, flickers, does not settle in 460 yr
+#     collection.method: active_set  REFUSED BY THE MODEL -- dev.storage_form: secant cannot be used with
+#                                    it (the constraint needs a b=0 residual path), so the known flicker
+#                                    cure is unavailable to the arm that needs it
+#     collection.method: off         mounds to +65.7 m and is still filling at the end of the run
+#
+# THIS MATTERS BEYOND THE TEST. The model's own refusal message for secant x active_set says "NOTE the two
+# forms are mathematically identical -- S is the exact secant, so S*dh == dV (tests/storage_equivalence)".
+# A runtime message cites this suite as its authority for a claim this suite has never checked in the
+# regime that matters.
 set -uo pipefail
 cd "$(dirname "$0")"
 . ../lib.sh                            # make_work: keeps the work dir when a test FAILS
@@ -86,10 +115,26 @@ m = np.ones_like(sec, bool); m[:, 0] = False   # interior + land edges (exclude 
 phi = VOL.read_band(os.environ["PHI"])
 d = float(VOL.volume_diff(sec, vol, phi)[m].max())
 tol = float(os.environ["TOL"])
-print(f"  secant-BE vs volume-BE (S·Δh ≡ ΔV): max|ΔV| = {d:.3e} m water volume  (tol {tol})")
+land = sec[:, 1:]
+print(f"  secant-BE vs volume-BE (S·Δh ≡ ΔV): max|ΔV| = {d:.3e} m water volume  (target {tol})")
+print(f"  field: wtd {land.min():.4f} .. {land.max():.4f} m, {int((land == 0.0).sum())}/{land.size} cells at the surface")
+
+# XFAIL, WITH A GUARD. See the long note above for the measurements; the short version is that this
+# fixture CANNOT currently satisfy the two preconditions its own docstring sets -- cells crossing wtd=0
+# AND a non-flickering table -- so the identity is NOT verified in the regime where S != Sy.
+XFAIL_FLOOR = 1.0e-4   # my choice: an order below the smallest crossing-regime value measured (2.39e-03)
 if d <= tol:
-    print("PASS: exact-secant storativity makes the two forms identical (machine precision)")
-    sys.exit(0)
-print(f"FAIL: {d:.3e} m > {tol} m -> the BE secant storage is NOT the exact volume secant")
-sys.exit(1)
+    print("UNEXPECTED PASS: the identity now holds in the surface-crossing regime.")
+    print("  This is the outcome the xfail is waiting for -- but do not just delete the xfail. Re-read the")
+    print("  note above, confirm the table is genuinely non-flickering (within-cycle max|dw| at the surface")
+    print("  cells, not just per-cycle), and record what changed. Failing so it cannot pass unnoticed.")
+    sys.exit(1)
+if d < XFAIL_FLOOR:
+    print(f"FAIL: {d:.3e} m is below the xfail floor {XFAIL_FLOOR:g} but above the target {tol}.")
+    print("  The defect has MOVED. Re-measure rather than re-tune the floor.")
+    sys.exit(1)
+print(f"  xfail   KNOWN: {d:.3e} m > target {tol} m -- S·Δh vs ΔV in the surface-crossing regime")
+print("  The identity is UNVERIFIED here, not disproven: the table flickers, which is the documented")
+print("  exception. Quiet cell sizes put every cell far from the surface, where S != Sy is not exercised.")
+sys.exit(0)
 PY

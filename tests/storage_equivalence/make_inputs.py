@@ -15,13 +15,21 @@ cross wtd=0 (so S ≠ Sy pointwise, the meaningful case) but the table does not 
     python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
 
 NX, NY = 12, 8
 REGION = "storeq"
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
-tr = from_bounds(0, 0, NX, NY, NX, NY)
+# CELL SIZE IS PHYSICS, NOT BOOKKEEPING (#34). This was `from_bounds(0, 0, NX, NY, NX, NY)`, the
+# arbitrary placeholder from before WTM derived cell geometry from the geotransform (#124) -- it means
+# ONE DEGREE per cell, ~111 km. At that size, lateral drainage to the ocean strip is negligible against
+# the recharge, so this plateau simply filled up and every compared field went identically constant.
+# tests/nonvacuous.py caught it. 1000 cells/degree = ~111 m, matching the suites already converted.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 64, 0
+tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
 
 def w(name, data, dt="float32"):
     with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
