@@ -5,6 +5,8 @@ The **running list** — the single source of truth for what is open, in what or
 
 **Rewritten 2026-09-11 after a staleness sweep over all 25 open items**, four agents verifying each
 claim against the tree rather than against task prose. **Twelve closed as already-done or obsolete.**
+**Updated later the same day:** `#34` closed, taking `#91` and `#96` with it; `#102` opened by the guard
+that closing it produced. Fourteen closed, one new. 13 open → 12.
 
 ## The goal
 
@@ -22,6 +24,7 @@ stopped existing, or a general guard made its class unreachable.
 | general mechanism | class it dissolved |
 |---|---|
 | declared-config rule + `full_config.yaml` | every "this test does not state X" item |
+| `tests/nonvacuous.py` (structure guard) | every "this suite compares identical/empty fields" item (#34, #91, #96) |
 | `src/resolve_defaults.cpp` | every per-key "what does an absent key mean" question |
 | `tests/emit_config.sh` **deleted** | the shim's entire failure surface (#99) |
 | `tests/wtm_volume.py` + fatal `lint_norms.sh` | head-vs-volume items, **and prevents recurrence** |
@@ -38,24 +41,44 @@ item, verify its claim against the tree first.
 shipped · `#53` both prescriptions implemented, 456 step-checks · `#97` sweep performed, negative ·
 `#99` moot, shim deleted · `#66` the doc it targets **does not exist in the repo** · `#76` every
 Phase-A item closed · `#80` all four levels closed · `#39` `xrank_growth` ships and asserts the growth
-rate · plus `#42`, `#65`, `#73` closed earlier today.
+rate · plus `#42`, `#65`, `#73` closed earlier today · and `#34` / `#91` / `#96` closed by the work in
+section 1 below.
 
 ## THE OPEN LIST
 
-### 1 — A defect our general guards cannot see
+### 1 — Done since the rewrite
 
-| # | item | why it is first |
-|---|---|---|
-| **34** | **THREE SUITES ARE GREEN WHILE COMPARING FIELDS THAT ARE IDENTICALLY ZERO.** Verified by direct raster read: `boundary_analytic` **0/66** nonzero, `ghost_boundary` **0/480**, `recharge_consistency` **0/256**. Consolidates #34 + #91 + #96. | A **sixth vacuity mechanism**, outside the five in memory: *the run completes, resolves exactly what it configured, and produces no answer.* `expect_resolved` passes, `config_identity` passes, `make_work` keeps evidence of success. **Nothing checks the output has structure.** One guard fixes all three: assert the compared field is not identically zero. `boundary_analytic` is the suite that validates boundary conditions against closed-form solutions — it has never measured anything. |
+`#34` is **CLOSED** (2026-09-11, `bc67220..de70f4e`), and it took `#91` and `#96` with it.
 
-*Note:* `ghost_boundary` is nonzero after 1 cycle (min −1.93 m) and drains to exactly zero by cycle 120.
-A short probe looks healthy; the suite's real settings do not. Every cross-scheme conclusion drawn from
-that suite — including #96's — rests on an empty field.
+All three filed suites were repaired and each printed number is now a live measurement. The general
+deliverable is `tests/nonvacuous.py`, wired into `lib.sh` at exit 4: a suite fails if its last snapshot
+per stem is identically constant. It was **shown to bite on a suite every other check calls healthy** --
+restore `recharge_consistency`'s 400-week window and the suite still prints `PASS` and `DECLARED` still
+says `OK`, and the guard fails the run anyway.
 
+On its first sweep it found **two more**: `adaptive_water` (3 of 3 zero, fixed) and `storage_equivalence`
+(2 of 2 zero, now a guarded xfail — see `#102`).
+
+**Two corrections worth carrying.** The vacuity exemption list I seeded with three suites was wrong in
+all three: `direct_to_runoff`, `flicker_evap` and `config_schema` all measured fine, because holding
+`wtd` at 0 does not make the output raster constant. It is empty, and the rule is now "add a suite only
+after seeing it fail". And two failures that surfaced in `ghost_boundary` looked like model defects and
+were **not** — the Jacobian's 0.208 was `active_set`'s semismooth `max()` being verified by a *smooth*
+finite-difference reference, and "bit-for-bit MPI" was reduction order tracking the solver tolerance.
+
+**A general mechanism, found on the way:** the `#124` geotransform migration converted **10 of 15**
+fixture generators. The rest keep `from_bounds(0, 0, NX, NY, NX, NY)` — the placeholder meaning **one
+degree per cell, ~111 km** — which is why those domains saturate. Three of the four unconverted suites
+were vacuous because of it; `snapshot_restart` was the only one that was fine. `recharge_consistency`
+still carries the placeholder and now measures correctly anyway, so converting it is optional and would
+change its physics.
+
+### 2 — Correctness of the model
 ### 2 — Correctness of the model
 
 | # | item | state |
 |---|---|---|
+| **102** | `S·Δh ≡ ΔV` is **UNVERIFIED** where `S ≠ Sy` — the suite that asserts it was comparing two zero fields, and the model's own `secant × active_set` refusal message *cites that suite* as its authority. Live: 2.386e-03 m water where cells sit at the surface, not scaling with solver tolerance, not the clamp. | Held as a guarded **xfail**, not a declared defect: the table is in a surface limit cycle there, which is the claim's one documented exception. The fixture cannot meet its own two preconditions under any collector available to `secant`. **Andy's call** between three options in the task. |
 | **78** | Budget residual grows as dt shrinks. **CONFIRMED, and worse than filed:** it is *not* backward-euler-specific — at fixed dt tr-bdf2 is worse at every step (3.08e-01 / 4.87e-02 / 5.01e-02). Reaches ~1-30% of recharge. | **UNRESOLVED DISCREPANCY:** my `fsm_consistency` run shows 1.16e-2 → 2.55e-2 growth (reproduced at `runoff_ratio` 0 **and** 0.3); an independent purpose-written config showed 1e-8 with no growth. **The discriminator is unidentified.** Find it before acting. |
 | **52** | Land→ocean outflow mis-booked at pinned cells | Reproduces unchanged at **1.802e-05**; encoded as an xfail. Two stale pointers: `CreateSNES.hpp:40` now says the opposite (#40 moved it to `WTM.cpp:715`), and its probe patch no longer applies. |
 | **54** | Test and guard the budget at boundaries | Valid, but **item 1 is costed wrong**: `BUDGETTRACE` emits eight *domain scalars*, so this needs model-side machinery, not a mask split. |
