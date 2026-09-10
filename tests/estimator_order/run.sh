@@ -64,43 +64,29 @@ export OMP_NUM_THREADS=1
 # constant is equally unmistakable.
 LADDER="31536000 7884000 1971000 492750"
 
-mkcfg() { # $1 stem, $2 deltat, $3 fsm_on
-    cat > "$WORK/$1.yaml.in" <<EOF
-snes_stol 1e-12
-dtc_grow 1.0
-dtc_shrink 1.0
-trace dt
-solver_method anderson
-run_type equilibrium
-total_time ${TT:-20}yr
-supplied_wt 1
-deltat $2
-report_interval 1
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on $3
-runoff_ratio 0.3
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/$1_
-runoff_collector active_set
-time_step_mode adaptive
-dt_tol 1e9
-${INTEG:+time_integration $INTEG}
-EOF
-    ../emit_config.sh < "$WORK/$1.yaml.in" > "$WORK/$1.yaml"
+# THE CONFIG IS A FILE NOW (#83): tests/estimator_order/config.yaml. Every setting the run resolves to
+# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THREE SETTINGS IN THAT FILE ARE LOAD-BEARING, and it says so: mode: adaptive (no estimate exists
+# without it), grow/shrink 1.0 (the controller must NOT resize between steps, or the dt whose order is
+# measured is not the dt that ran), and error_tol 1e9 (deliberately unreachable, so no step is ever
+# rejected and every arm completes at the dt it was given).
+mkcfg() { # $1 stem, $2 time_step.dt, $3 routing, $4 time_integration, $5 time.total  (ALL REQUIRED)
+    local dt="${2:?mkcfg needs a dt}"
+    local rt="${3:?mkcfg needs a routing: off or continuous}"
+    local ti="${4:?mkcfg needs a time_integration -- an ABSENT one resolves to tr-bdf2, whose order is
+                   also 2.0, so it would agree with the expectation for the wrong reason}"
+    local tt="${5:?mkcfg needs a time.total}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|@DT@|$dt|g" -e "s|@ROUTING@|$rt|g" -e "s|@INTEG@|$ti|g" -e "s|@TOTAL@|$tt|g" \
+        config.yaml > "$WORK/$1.yaml"
 }
 
 # One frozen-controller run; echoes "dt est" from the FIRST traced step, or nothing on failure.
-probe() { # $1 stem, $2 deltat, $3 fsm_on, $4 integrator flag
-    mkcfg "$1" "$2" "$3"
+probe() { # $1 stem, $2 deltat, $3 fsm_on (0|1), $4 extra CLI flags
+    # fsm_on 0/1 became surface_water.routing off/continuous when the two keys merged (#89).
+    local _rt=off; [ "$3" = 1 ] && _rt=continuous
+    mkcfg "$1" "$2" "$_rt" "${INTEG:?probe needs INTEG: name the integrator, never inherit it}" "${TT:-20}yr"
     WTM_COVERAGE_TAG="estimator_order/$1" "$WTM" "$WORK/$1.yaml" $4 > "$WORK/$1.log" 2>&1
     # An observed ORDER is only attributable to a scheme if the run used that scheme. mkcfg emits
     # time_integration only when INTEG is set, and an absent key resolves to `auto` -> tr-bdf2 on the

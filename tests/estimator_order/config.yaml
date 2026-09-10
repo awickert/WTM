@@ -1,0 +1,107 @@
+# tests/estimator_order -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: whether the adaptive controller's local-error estimate `est` actually
+# RESPONDS TO dt. That estimate is the single quantity steering the integration, and until the dt
+# trace existed it was computed every step and reported NOWHERE -- so nothing could notice that on the
+# generic (non-TR) path it did not respond to dt at all. A controller reading a constant is not a
+# controller.
+#
+# THREE SETTINGS ARE LOAD-BEARING AND ARE PINNED HERE, not defaults taken idly:
+#   time_step.mode: adaptive     there is no estimate at all without it
+#   time_step.grow / shrink: 1.0 the controller must NOT resize between steps, or the dt whose order
+#                                is being measured is not the dt that ran
+#   time_step.error_tol: 1e9     deliberately unreachable, so no step is ever rejected and every arm
+#                                completes at the dt it was given
+#
+# PER-ARM (run.sh): solver.time_integration, solver.time_step.dt, surface_water.routing, time.total.
+# The INTEGRATOR is named per arm because an observed ORDER is only attributable to a scheme if the run
+# actually used that scheme -- an absent key resolves to tr-bdf2, whose order is also 2.0, and would
+# agree with the expectation FOR THE WRONG REASON (#24, #37).
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@, @ROUTING@, @TOTAL@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "@TOTAL@"   # PER-ARM
+  report_interval: "1"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@   # PER-ARM: FSM off vs on
+  runoff_ratio: 0.3
+  infiltration_during_flow: false
+  collection:
+    method: active_set
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: @INTEG@   # PER-ARM: named, never inherited -- see the header
+  tolerance: 1e-12
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    dt: @DT@   # PER-ARM: the step whose estimate order is measured
+    mode: adaptive
+    error_tol: "1e9"
+    grow: 1.0
+    shrink: 1.0
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: [dt]
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
