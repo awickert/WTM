@@ -41,12 +41,19 @@ make_work golden
 
 # Each case: name | surfdatadir | region | extra config lines (key value; ...)
 # The extra lines override the defaults in emit_cfg.
+# BASE + PER-CASE OVERRIDES. The extras genuinely override the base -- that is the point of the
+# function -- but emit_config.sh now REFUSES a key given twice, because last-wins is how an ACCIDENTAL
+# duplicate hides (tests/flicker_evap ran a collector it did not appear to ask for; #87). The two are
+# indistinguishable to the shim, so the override is resolved HERE, where it is intended: any base line
+# whose key an extra also sets is dropped before emitting. Same config as before, one statement per key.
 emit_cfg() { # sdir region extra... -> stdout config
     local sdir="$1" region="$2"; shift 2
-    cat <<EOF
+    local overridden=" "
+    local kv
+    for kv in "$@"; do overridden+="${kv%% *} "; done
+    { cat <<EOF
 solver_method anderson
 run_type           equilibrium
-fsm_on             0
 evap_mode          0
 infiltration_on    0
 runoff_ratio_on    0
@@ -63,6 +70,10 @@ region             $region
 supplied_wt        0
 save_nreport_interval     9999
 EOF
+    } | while IFS= read -r line; do
+        local k="${line%% *}"
+        case "$overridden" in *" $k "*) ;; *) printf '%s\n' "$line" ;; esac
+      done
     for kv in "$@"; do echo "$kv"; done
 }
 
@@ -74,7 +85,7 @@ case_cfg() {
     TRANS=$(readlink -f inputs)
     RUNOFF=$(readlink -f inputs_runoff)
     case "$1" in
-      below_ground)  emit_cfg "$GHOST" ghost_cell_test ;;
+      below_ground)  emit_cfg "$GHOST" ghost_cell_test "fsm_on 0" ;;
       fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 0" ;;
       fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "evap_mode 1" ;;
       fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "evap_mode 1" "runoff_ratio_on 1" ;;

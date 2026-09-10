@@ -8,6 +8,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <fstream>
 #include <map>
 #include <set>
 #include <string>
@@ -185,8 +186,56 @@ const std::string& require_enum(const std::string& value, const char* key,
   throw std::runtime_error("config: " + std::string(key) + " must be " + list + ", got '" + value + "'");
 }
 
+// REFUSE A DUPLICATE KEY. yaml-cpp keeps ONE of them and discards the other WITHOUT A WORD, so a
+// setting can be written down and silently dropped -- the exact defect class the config work exists to
+// remove, arriving through the parser instead of through a second route.
+//
+// It is not hypothetical. Twice on 2026-09-10: tests/route_equality emitted `time_step:` twice under
+// `solver:` and its `mode: fixed` vanished (the run reported `absent -> ramp` while the file said
+// otherwise), and tests/flicker_evap got a second `runoff_collector` line whose last-wins assignment
+// overrode the first. Both were invisible until the resulting BEHAVIOUR looked wrong.
+//
+// SCOPE, stated because it is not total: this scans BLOCK style -- `  key:` at a fixed indent under a
+// section -- which is what every generated and hand-written config here uses. A duplicate inside a
+// one-line flow map (`{a: 1, a: 2}`) is not caught. Better to catch the realistic case loudly than to
+// catch nothing while appearing thorough.
+static void refuse_duplicate_keys(const std::string& config_file) {
+  std::ifstream in(config_file);
+  if (!in) return;  // the loader below reports an unreadable file with a better message
+  std::string line, section;
+  std::map<std::string, std::vector<int>> seen;   // "section.key" -> line numbers
+  int lineno = 0;
+  while (std::getline(in, line)) {
+    ++lineno;
+    const auto hash = line.find('#');
+    if (hash != std::string::npos) line = line.substr(0, hash);
+    if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+    const auto colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    const size_t indent = line.find_first_not_of(' ');
+    if (indent == std::string::npos || indent > colon) continue;
+    const std::string key = line.substr(indent, colon - indent);
+    if (key.empty() || key.find_first_of(" \t{}[]\"'") != std::string::npos) continue;
+    if (indent == 0) { section = key; continue; }     // a new top-level section
+    if (indent != 2) continue;                        // only the section's own keys; nested maps are theirs
+    seen[section + "." + key].push_back(lineno);
+  }
+  std::string msg;
+  for (const auto& kv : seen)
+    if (kv.second.size() > 1) {
+      msg += "  " + kv.first + "  (lines";
+      for (int l : kv.second) msg += " " + std::to_string(l);
+      msg += ")\n";
+    }
+  if (!msg.empty())
+    throw std::runtime_error("config file '" + config_file + "' sets the same key more than once:\n" + msg +
+                             "\nYAML keeps only one of them, silently, so one of your settings would be "
+                             "discarded without a word. Delete the duplicate and state the value once.");
+}
+
 // Real initializer
 Parameters::Parameters(const std::string& config_file) {
+  refuse_duplicate_keys(config_file);
   YAML::Node root;
   try {
     root = YAML::LoadFile(config_file);

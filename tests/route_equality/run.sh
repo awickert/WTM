@@ -1,52 +1,46 @@
 #!/usr/bin/env bash
-# ROUTE EQUALITY: a config key and the -wtm_ flag it abstracts must produce the SAME RUN.
+# CONFIG ARRIVAL: a config key must REACH the model and change what it is supposed to change.
 #
-# WHY THIS EXISTS. WTM has two ways to say some things -- a nested-YAML key and a `-wtm_` flag -- and
-# a flag classified ABSTRACTED means "the config expresses this; the flag is the primitive underneath".
-# That is a CLAIM about behaviour, and nothing else tests it. Every other suite covers each mechanism;
-# only this one covers the EQUIVALENCE of the two routes to it.
-#
-# The claim is not idle. Two channels to one setting is where this repo's config bugs live:
+# WHAT THIS FILE USED TO BE, and why it changed. It was ROUTE EQUALITY: WTM had two ways to say some
+# things -- a nested-YAML key and a `-wtm_` flag -- and this suite asserted that the two produced the
+# SAME RUN, byte for byte. That claim mattered because two channels to one setting is where this repo's
+# config bugs lived:
 #   - dev.active_set silently OVERRODE an explicit surface_water.collection.method. A config asking for
-#     `explicit` ran active_set instead -- 54 of 256 cells, max 0.127 m, no log line. (Removed; the
-#     RETIRED arm of tests/config_schema pins it.)
+#     `explicit` ran active_set instead -- 54 of 256 cells, max 0.127 m, no log line.
 #   - -wtm_extended_soil and the post-solve truncation keyed off the same global, each masking the other.
-# Both were invisible because every individual mechanism worked. Only comparing ROUTES exposes them.
+#   - a -wtm_ flag on the command line beat the config key it duplicated, because the bridge used
+#     set_opt_if_unset and took the FIRST setter (#86).
 #
-# WHAT IS ASSERTED, per setting, over its two values:
-#   1. config(v1) == flag(v1)   byte-identical water table
-#   2. config(v2) == flag(v2)   byte-identical water table
-#   3. config(v1) != config(v2) THE CONTROL -- the setting must actually change the answer
-# Equality is byte-exact, not "close": these are the same computation reached two ways, so anything but
-# 0.000e+00 is a defect, and a tolerance would hide exactly the small-but-real divergence dev.active_set
-# produced. Assertion 3 is what makes 1 and 2 mean anything. WITHOUT IT, A SETTING THAT REACHED THE
-# MODEL BY NEITHER ROUTE WOULD SATISFY BOTH EQUALITIES AND PASS -- two no-ops agree perfectly. That is
-# the vacuous-arm failure (#24) in the form this particular suite is prone to, and the reason the
-# measured deltas are recorded next to each arm below: an arm whose control goes quiet has stopped
-# testing, and says so.
+# THE SECOND ROUTE IS GONE (#86, 2026-09-10). Nothing in the model reads a -wtm_ option; the namespace
+# is retired and any -wtm_ aborts. So route equality has no second route to compare against -- the
+# suite's subject ceased to exist, which is NOT the same as the suite being wrong.
 #
-# WHY THIS FILE WAS REBUILT (2026-09-06). It had FOUR arms when written, all for solver-path flags --
-# -wtm_newton, -wtm_anderson, -wtm_tr_bdf2, -wtm_bdf2_on_V. The flag-retirement work (#30) removed every
-# one of them: `grep -c '"-wtm_newton"' src/` is 0, and so are the other three. Each retirement correctly
-# deleted its arm, and when the last one went the suite was left with a helper nothing called (`arm()`),
-# a header still describing eight ABSTRACTED flags, and a banner still printing "does the config key
-# reach the same run as the flag it abstracts?" above two Newton checks that answer no such question.
-# It passed, in the suite, claiming coverage it no longer had. That is the same shape as the defect this
-# file exists to catch, one level up: the MECHANISM (flag retirement) worked every time, and the loss
-# only shows when you ask what the suite as a whole still asserts.
+# WHAT SURVIVES IS THE HALF THAT MADE FLAG REMOVAL SAFE. A single-route interface has exactly one new
+# failure mode: a key that PARSES and never ARRIVES. Nothing else checks that directly. So each arm
+# below runs ONE setting at TWO values, both from the config, and requires the water tables to DIFFER.
+# If they do not, either the key stopped reaching the model or this fixture stopped discriminating it --
+# and both make every other assertion here meaningless.
 #
-# The property is not dead -- 29 flags survive and the bridge in WTM.cpp still translates config keys
-# into them. The three arms below are the ANSWER-CHANGING ones, each measured to move this fixture
-# before being written (that measurement is assertion 3, now permanent).
+# WHY "DIFFER" IS THE RIGHT ASSERTION AND NOT A WEAKER ONE. It is the old suite's CONTROL, promoted to
+# be the whole test. That control was always the part that gave the equalities meaning: WITHOUT IT, A
+# SETTING THAT REACHED THE MODEL BY NEITHER ROUTE WOULD SATISFY BOTH EQUALITIES AND PASS -- two no-ops
+# agree perfectly. The measured deltas are printed next to each arm so an arm whose discrimination goes
+# quiet says so rather than passing.
 #
-# THE NEWTON ARMS ARE NOT ROUTE-EQUALITY and never were: -wtm_newton is retired, so there is no second
-# route to compare. They are CONFIG CONTRACT checks -- `solver.method: newton` must be usable from YAML
-# alone, because Newton does not converge from a cold start without dt-continuation (measured:
-# DIVERGED_LINE_SEARCH after 4 iterations, rc 134), so a config value that meant plain Newton would be a
-# documented setting that crashes. They stay here because this is where the abstraction is tested; they
-# are labelled NEWTON- rather than ROUTE- so the distinction survives in the output.
+# THIS FILE HAS BEEN EMPTIED ONCE BEFORE, AND THAT IS THE REASON FOR THE PARAGRAPHS ABOVE. It had four
+# arms for solver-path flags -- -wtm_newton, -wtm_anderson, -wtm_tr_bdf2, -wtm_bdf2_on_V. Flag
+# retirement (#30) removed every one, each retirement correctly deleting its arm, and when the last one
+# went the suite was left with a helper nothing called, a header describing eight flags, and a banner
+# asking a question no remaining check answered. It PASSED, claiming coverage it no longer had. The
+# mechanism worked every time; what no step owned was the question of what the suite still asserted.
+# So: when the last instance of a category is removed, ask what the test covering that category tests.
 #
-# Usage:  tests/route_equality/run.sh [path/to/wtm.x]
+# THE NEWTON ARMS ARE NOT ARRIVAL CHECKS and never were route-equality either. They are CONFIG CONTRACT
+# checks -- `solver.method: newton` must be usable from YAML alone, because Newton does not converge
+# from a cold start without its continuation ramp (measured: DIVERGED_LINE_SEARCH after 4 iterations,
+# rc 134), so a config value that meant plain Newton would be a documented setting that crashes. They
+# are labelled NEWTON- so the distinction survives in the output.
+
 set -uo pipefail
 cd "$(dirname "$0")"
 . ../lib.sh                            # make_work: keeps the work dir when a test FAILS

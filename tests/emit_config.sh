@@ -66,6 +66,16 @@ while IFS= read -r line; do
     rest="${line#"$key"}"                 # everything after the key
     rest="${rest#"${rest%%[![:space:]]*}"}"   # ltrim
     rest="${rest%"${rest##*[![:space:]]}"}"   # rtrim
+    # REFUSE A DUPLICATE. The assignment below is LAST-WINS, so a key given twice silently discards the
+    # first value -- the same defect the model now refuses for duplicate YAML keys (parameters.cpp).
+    # It bit tests/flicker_evap on 2026-09-10: a second `runoff_collector` line overrode the first and
+    # the suite ran a collector it did not appear to ask for.
+    if [[ -n "${V[$key]+x}" ]]; then
+        printf 'emit_config.sh: %s is set twice ("%s" then "%s"). The second silently wins, so one of\n' \
+               "$key" "${V[$key]}" "$rest" >&2
+        printf '  them would do nothing. State it once.\n' >&2
+        exit 2
+    fi
     V["$key"]="$rest"
 done
 
