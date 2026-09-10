@@ -61,12 +61,18 @@ fail=0
 # default runs. That is not hypothetical: it happened while measuring the deltas quoted above, and read
 # exactly like a model defect (a config asking for `fsm_coupling: impulse` reporting `coupling=continuous`)
 # until the config file itself was looked at. Slots make it unrepresentable.
-mk() { # $1 stem ; $2 lines inside surface_water: ; $3 lines inside solver: ; $4 replaces the time_step line
+mk() { # $1 stem ; $2 lines inside surface_water: ; $3 lines inside solver: ; $4 replaces time_step ; $5 replaces routing
     { echo "run: { type: equilibrium, initial_water_table: supplied, equilibrium_stop: { tol: 0 } }"
       echo 'time: { total: "3yr", report_interval: 1, save_every_n_reports: 9999 }'
       echo "transmissivity: { fdepth: { a: 200, b: 150, fmin: 2 } }"
       echo "surface_water:"
-      echo "  mode: routed"
+      # routing (not the retired `mode` + `fsm_coupling` pair -- they merged 2026-09-10, #89).
+      # The base states `continuous`; the fsm-coupling arm below overrides this same key, which is now
+      # the ONLY way to express the coupling and therefore cannot drift out of step with a second key.
+      # `sw_replace` arms substitute this line instead of adding one: since #89 the coupling is a
+      # VALUE of routing, so a second line would be a DUPLICATE KEY -- silently dropped by yaml-cpp,
+      # which is exactly the failure the slot design exists to prevent.
+      printf '%s\n' "${5:-  routing: continuous}"
       echo "  runoff_ratio: 0.3"
       echo "  infiltration_during_flow: false"
       [ -n "${2:-}" ] && printf '%s\n' "$2"
@@ -109,13 +115,17 @@ PY
 }
 
 # One setting, two values, two runs -- both from the CONFIG, because there is no longer a second route.
-arrives() { # $1 label ; $2 slot(sw|solver) ; $3 v1-yaml ; $4 v2-yaml
+arrives() { # $1 label ; $2 slot(sw|sw_replace|solver) ; $3 v1-yaml ; $4 v2-yaml
     local label="$1" slot="$2" tag
     tag=$(echo "$label" | tr -c 'a-zA-Z0-9' '_')
     local i sy
     for i in 1 2; do
         if [ "$i" = 1 ]; then sy="$3"; else sy="$4"; fi
-        if [ "$slot" = sw ]; then mk "${tag}_v${i}" "$sy" ""; else mk "${tag}_v${i}" "" "$sy"; fi
+        case "$slot" in
+            sw)         mk "${tag}_v${i}" "$sy" "" ;;
+            sw_replace) mk "${tag}_v${i}" ""   "" "" "$sy" ;;   # REPLACES the routing line (#89)
+            *)          mk "${tag}_v${i}" ""   "$sy" ;;
+        esac
         go "${tag}_v${i}" || { echo "  FAIL  $label -- value $i did not complete"; sed -n -e 's/^ERROR: /        /p' -e 's/.*what():/        /p' "$WORK/${tag}_v${i}.log" | head -1; fail=1; return; }
     done
 
@@ -149,13 +159,15 @@ arrives "volume-tol" solver \
      "$(printf '  convergence:\n    water_volume_tol: 1e-6')" \
      "$(printf '  convergence:\n    water_volume_tol: 1e-11')"
 
-# surface_water.fsm_coupling -> -wtm_fsm_continuous. How FillSpillMerge's result reaches the
-# groundwater. BOTH values are bridged deliberately: the C++ default is continuous, so bridging only
-# `continuous` would leave `fsm_coupling: impulse` silently doing nothing -- a config key that reads as
-# a choice and is not one. This arm is what holds that open.
-arrives "fsm-coupling" sw \
-     "$(printf '  fsm_coupling: impulse')" \
-     "$(printf '  fsm_coupling: continuous')"
+# surface_water.routing: how FillSpillMerge's result reaches the groundwater. BOTH values matter
+# deliberately: the C++ default is continuous, so a mechanism that only carried `continuous` would
+# leave `impulse` silently doing nothing -- a key that reads as a choice and is not one. This arm holds
+# that open. Since #89 the coupling is a VALUE of `routing` rather than a second key, so the base
+# line is REPLACED rather than added to -- a duplicate would be dropped by yaml-cpp without a word,
+# which is the failure this suite's slot design exists to make unrepresentable.
+arrives "fsm-coupling" sw_replace \
+     "$(printf '  routing: impulse')" \
+     "$(printf '  routing: continuous')"
 
 # NEWTON COLD-START CONTRACT, from the config side (see the header: not a route equality). `solver.method:
 # newton` must be USABLE FROM YAML ALONE. Before dt-continuation was wired into the abstraction this
