@@ -58,6 +58,22 @@
 #                            hard-switch must pass -wtm_evap_taper 0 on the CLI, not set this.
 set -euo pipefail
 
+# HARVEST HOOK (#83, temporary). Inert unless WTM_HARVEST_DIR is set. When it is, every config this
+# shim emits is copied to $WTM_HARVEST_DIR/<suite>/NNN.yaml as well as going to the caller on stdout.
+# The point: materialising 36 suites by hand needs each suite's RESOLVED config for each arm, and one
+# full suite run in harvest mode produces all of them at once -- rather than 36 separate runs.
+# Output is buffered to a temp file and released on EXIT so the caller sees byte-identical stdout.
+# DELETE THIS BLOCK WITH THE SHIM.
+if [[ -n "${WTM_HARVEST_DIR:-}" ]]; then
+    _hdst="$WTM_HARVEST_DIR/$(basename "$PWD")"
+    mkdir -p "$_hdst"
+    _hout=$(mktemp)
+    exec 3>&1 >"$_hout"
+    trap '_hn=$(find "$_hdst" -maxdepth 1 -name "*.yaml" | wc -l);
+          cp "$_hout" "$_hdst/$(printf "%03d" "$_hn").yaml";
+          cat "$_hout" >&3; rm -f "$_hout"' EXIT
+fi
+
 declare -A V
 while IFS= read -r line; do
     line="${line%%#*}"                    # strip trailing comments
