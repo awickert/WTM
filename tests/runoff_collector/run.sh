@@ -29,38 +29,24 @@ make_work rc
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem  collector-line
-# adaptive_dt PINNED OFF, for EVERY arm. The subject here is the runoff collector, so everything else
-# must be held identical -- an adaptive arm would vary a second mechanism and confound the comparison.
-# Concretely: the AGREE assertion is only true at a dt small enough that implicit's max(0,wtd)/dt siphon
-# has not diverged from explicit's clamp, and once adaptive_dt: auto became the default it resolved to
-# TRUE for explicit and FALSE for implicit (implicit cannot be driven by an error controller at all) --
-# so the two arms were being stepped differently and AGREE failed at 2.499e-01 m, which is just
-# implicit's known dt-dependence. A like-for-like adaptive comparison is impossible by construction.
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-time_step_mode fixed
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-$2
-deltat 2419200
-total_time 14515200000s
-save_nreport_interval 120
-report_interval 50
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region rcoll
-supplied_wt 1
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/runoff_collector/config.yaml. solver.time_step.mode: fixed is
+# pinned there for EVERY arm -- the collector is the subject, so every other mechanism is held
+# identical, and a like-for-like adaptive comparison is impossible anyway (adaptive x implicit is
+# refused outright).
+#
+# THE `unset` ARM CANNOT BE FULLY DECLARED, BY CONSTRUCTION. Its whole point is that an ABSENT
+# collection.method resolves to active_set, so declaring the key would destroy the thing it tests.
+# That arm passes "" and the method line is DELETED from its config. It is why this suite is NOT on
+# WTM_DECLARED_SUITES -- see the task filed alongside this commit.
+emit() { # $1 stem, $2 collection.method ("" = OMIT the key, which is the `unset` arm's subject)
+  local m="${2-}"
+  if [ -z "$m" ]; then
+      sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+          -e "/^    method: @METHOD@/d" config.yaml > "$WORK/$1.yaml"
+  else
+      sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+          -e "s|@METHOD@|$m|g" config.yaml > "$WORK/$1.yaml"
+  fi
 }
 # ASSERT THE RUN USED THE COLLECTOR THE ARM ASKED FOR. This suite is the one whose arms went vacuous:
 # every arm ran the DEFAULT because the tests said `collection_method` while the shim only knows
@@ -76,17 +62,17 @@ run() { # stem  collector-line  extra-flags  [expected resolved collector]
   [ -n "${4:-}" ] && { expect_resolved "$WTM_COVERAGE_LOG" "collector=$4" || exit 3; }
   return 0
 }
-run implicit "runoff_collector implicit"   "" implicit
-run explicit "runoff_collector explicit"   "" explicit
-run off      "runoff_collector off"        "" off
-run aset     "runoff_collector active_set" "" active_set
-run unset    ""                            "" active_set
+run implicit implicit   "" implicit
+run explicit explicit   "" explicit
+run off      off        "" off
+run aset     active_set "" active_set
+run unset    ""         "" active_set
 # extended_soil, reachable only as a MODE. The legacy alias -wtm_extended_soil and its supersession
 # warning were retired 2026-09-01 with the rest of the alias flags; the RETIRED arm below replaces the
 # two arms that covered them, asserting the flag now aborts rather than silently doing nothing.
-run xsoil_mode "runoff_collector extended_soil" ""
+run xsoil_mode extended_soil ""
 # explicit on the DEFAULT Picard path (no): must converge (no tangent needed)
-emit picard "runoff_collector explicit"
+emit picard explicit
 "$WTM" "$WORK/picard.yaml" > "$WORK/picard.log" 2>&1 \
   || { echo "RUN FAILED: explicit on Picard"; tail -3 "$WORK/picard.log"; exit 2; }
 # grep -F: the banner names the CONFIG KEY (surface_water.collection.method), whose dots would
@@ -158,7 +144,7 @@ echo "  SOLVER: explicit converged on the default Picard path (no tangent needed
 # replaces the two that used to test the alias route. It asserts the flags ABORT rather than being
 # silently ignored -- the same property the RETIRED arm of tests/config_schema pins for a removed YAML
 # key, and the reason retiring a flag is safe: a script still passing one stops instead of drifting.
-emit ret "runoff_collector active_set"
+emit ret active_set
 # -wtm_definitely_not_a_flag is not a retired alias -- it is the NAMESPACE lock (#86). Every WTM setting
 # is a config key now and nothing reads a -wtm_ option, so ANY -wtm_ must land in the unconsumed-flag
 # guard. If this one is ever accepted, something has started reading the namespace again and the command
