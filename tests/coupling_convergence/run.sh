@@ -60,33 +60,22 @@ make_work cconv
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = coupling, $3 = deltat seconds, $4 = report_interval, $5 = inputs, $6 = region
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-10
-solver_method anderson
-run_type equilibrium
-time_integration tr-bdf2
-total_time 8yr
-supplied_wt 1
-deltat $3
-report_interval $4
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-fsm_coupling $2
-runoff_ratio 0
-time_step_mode fixed
-surfdatadir $5
-region $6
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/coupling_convergence/config.yaml. Every setting the run
+# resolves to is stated there, and tests/config_identity.py enforces it (this suite is on
+# WTM_DECLARED_SUITES).
+#
+# collection.method: active_set is stated there as LOAD-BEARING: under `explicit`, continuous YIELDS
+# to impulse, so every pair below would compare a run with itself and the convergence orders would be
+# measuring nothing.
+mkcfg() { # $1 stem, $2 routing, $3 dt, $4 report_interval, $5 inputs, $6 region   (ALL REQUIRED)
+    local rt="${2:?mkcfg needs a routing: impulse or continuous -- it is the subject}"
+    local dt="${3:?mkcfg needs a dt}"
+    local ri="${4:?mkcfg needs a report_interval: it scales inversely with dt}"
+    local inp="${5:?mkcfg needs an inputs dir}"
+    local rg="${6:?mkcfg needs a region}"
+    sed -e "s|@INPUTS@|$inp|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|@ROUTING@|$rt|g" -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" -e "s|@REGION@|$rg|g" \
+        config.yaml > "$WORK/$1.yaml"
 }
 
 echo "=== coupling convergence: impulse and continuous must agree as dt -> 0 ==="
