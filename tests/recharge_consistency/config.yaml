@@ -15,13 +15,21 @@
 # with one comparison against itself. It passed. It is now stated as backward-euler, which is what the
 # arm's name has always claimed. (#24's class, and #37's: coverage is whatever suites DECLARE.)
 #
-# THREE KEYS VARY PER ARM: solver.time_integration, solver.time_step.dt, time.save_every_n_reports
-# (the last scaled inversely so both dt cover the same simulated time).
+# TWO KEYS VARY PER ARM: solver.time_integration and solver.time_step.dt. save_every_n_reports used to
+# vary too, "scaled inversely so both dt cover the same simulated time" -- a hand-computed trick that was
+# WRONG, and is now unnecessary because report_interval is stated as a TIME (see the time: block).
+#
+# THE SUITE WAS VACUOUS A SECOND WAY (#34, 2026-09-11), and this one survived the key-writing pass above.
+# time.total was 241920000s = 400 WEEKS, while run.sh's comment claimed "T_end = 8 weeks" -- the "8 cyc /
+# 32 cyc" in that comment are REPORTS, not weeks. The interior saturates around week 18, after which
+# collection.method: active_set pinned all 196 interior cells at EXACTLY wtd = 0 and held them there for
+# 380 more weeks. The comparison was taken at week 400, between three bit-identical zero fields: measured
+# 0 of 256 cells nonzero in every final raster, cc-tr = cc-bdf2v = tr-bdf2v = 0.0000 m, PASS.
 #
 # solver.time_step.mode: fixed IS PINNED: the arms ARE a known coarse/fine dt pair, and a controller
 # free to resize dt would collapse that contrast and leave the comparison at no particular dt.
 #
-# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@, @SAVE@.
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@.
 
 run:
   type: transient
@@ -32,9 +40,26 @@ run:
     frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
   initial_water_table: saturated
 time:
-  total: "241920000s"
-  save_every_n_reports: @SAVE@   # PER-ARM: scaled inversely with dt
-  report_interval: "50"
+  # 20 WEEKS, AND THE NUMBER IS THE POINT. The interior starts at wtd = -2 m and rises under uniform
+  # recharge; measured report by report, it reaches the land surface between week 17 and week 18. The run
+  # ends at week 20, so the surface CROSSING IS STRICTLY INSIDE the integrated interval and every interior
+  # cell has passed through it. That is the regime this suite exists to pin -- the storativity that scales
+  # recharge changes across wtd = 0, and it is where backward-Euler (secant) and TR-BDF2/BDF2-on-V
+  # (tangent) used to land ~3.7 m apart.
+  #
+  # Why not 17: measured, the field at week 17 is -0.055 to -0.045 m, entirely BELOW the surface. Stopping
+  # there integrates a purely sub-surface transient and never touches the discontinuity. Why not 400 (what
+  # it was): by then the domain has saturated and gone still, and there is nothing left to compare.
+  #
+  # The whole domain crosses within about a tenth of a week, so no report straddles the surface; the choice
+  # is before or after, and after is the one that exercises the subject. |cc - tr| by week, in head:
+  #   wk 8 = 5.35e-04   wk 16 = 1.08e-03   [crossing]   wk 18 = 3.30e-04   wk 20 = 3.43e-04   wk 26 = 4.48e-04
+  total: "12096000s"
+  # A TIME, NOT A STEP COUNT. Stated as a duration, both dt arms report at the SAME simulated times by
+  # construction. It was "50" (steps), which made a report 50 wk on the coarse arm and 12.5 wk on the
+  # fine one, and forced save_every_n_reports to be hand-scaled per arm to compensate.
+  report_interval: "604800s"
+  save_every_n_reports: 20   # the last report is the comparison point; 20 reports of 1 wk = the 20 wk above
 transmissivity:
   fdepth:
     a: 200
@@ -45,8 +70,22 @@ surface_water:
   routing: off
   runoff_ratio: 0
   collection:
-    method: active_set   # the shipped enforcement; identical on every arm, so the scheme comparison
-                         # is not confounded by a different surface constraint
+    # off, AND THE CHOICE IS LOAD-BEARING. This was active_set. active_set enforces wtd <= 0, so a cell
+    # that would rise above the land surface is PINNED there -- which means the surface crossing this
+    # suite exists to test is UNREACHABLE under it. Measured: over 25 reports, `n cells with wtd > 0`
+    # was 0 at every single report; all 196 interior cells crossed together over weeks 17-20 and landed
+    # on exactly 0. There was nothing left for three integrators to disagree about.
+    #
+    # The old comment's rationale -- "identical on every arm, so the scheme comparison is not confounded
+    # by a different surface constraint" -- is satisfied by ANY constant collector, and `off` satisfies
+    # it while leaving the subject reachable. With `off` the interior crosses at week 17-18 and the
+    # schemes separate (see the time: block for the measured |cc - tr| by week).
+    #
+    # This does NOT drop active_set coverage of the scheme question: tests/combination_sweep runs all
+    # four collectors x four integrators x two run types (86 arms), and budget_closure carries
+    # active_set arms directly. What is not covered anywhere else is the surface crossing, which is why
+    # this suite takes it.
+    method: off
   infiltration_during_flow: false
 boundaries:
   land: neumann_toposlope

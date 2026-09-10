@@ -14,6 +14,11 @@ make_work rechtest
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 0.05 head bound x0.25 exactly -- the same strictness, correctly labelled.
 TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
+# WHERE 0.0125 COMES FROM, and what it is against (#84). It is a REGRESSION PIN, not a precision claim:
+# before the volume-based recharge fix, cc and tr landed ~3.7 m apart on this fixture, and the bound only
+# has to sit far below that. Observed at the week-20 comparison point on this fixture, in water:
+#   cc-tr = 0.0004    cc-bdf2v = 0.0000    tr-bdf2v = 0.0003    cc coarse-vs-fine = 0.0000
+# so the pin has ~30x headroom over the live signal and ~300x margin under the defect it guards.
 PY="${PY:-python3}"
 
 # THE CONFIG IS A FILE NOW (#83): tests/recharge_consistency/config.yaml. Every setting the run
@@ -24,23 +29,29 @@ PY="${PY:-python3}"
 # integrator resolves to tr-bdf2 on the Anderson path -- measured directly. So `cc`, the backward-Euler
 # CONTROL of a three-scheme agreement test, was a second copy of `tr`, and one of the comparisons was
 # against itself. It passed. Every arm now NAMES its scheme.
-emit() { # $1 stem, $2 time_integration, $3 time_step.dt, $4 save_every_n_reports   (ALL REQUIRED)
+emit() { # $1 stem, $2 time_integration, $3 time_step.dt   (BOTH REQUIRED)
   local ti="${2:?emit needs a time_integration -- it is the subject; an absent one resolves to tr-bdf2}"
   local dt="${3:?emit needs a dt: coarse or fine}"
-  local sv="${4:?emit needs a save_every_n_reports: it scales inversely with dt}"
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-      -e "s|@INTEG@|$ti|g" -e "s|@DT@|$dt|g" -e "s|@SAVE@|$sv|g" config.yaml > "$WORK/$1.yaml"
+      -e "s|@INTEG@|$ti|g" -e "s|@DT@|$dt|g" config.yaml > "$WORK/$1.yaml"
 }
 
-# T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc).
+# T_end = 20 WEEKS, with the surface crossing (weeks 17->18) strictly INSIDE the interval -- see the
+# time: block in config.yaml for why that week and not another. Coarse dt = 1 wk, fine dt = 0.25 wk. Both
+# arms report every week and stop at week 20, because report_interval is stated as a TIME; no per-arm
+# save scaling is needed any more.
+#
+# The comment here used to say "T_end = 8 weeks. Coarse dt=1wk (8 cyc), fine dt=0.25wk (32 cyc)". Those
+# counts are REPORTS, not weeks: time.total was 400 weeks, and the comparison was taken 380 weeks after
+# the domain had saturated and gone still. See the #34 note in config.yaml.
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" )
 # `cc` is backward-euler EXPLICITLY. It used to be "" -- absent -- which resolved to tr-bdf2.
 declare -A INTEG_CFG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2" )
 BASE="-snes_anderson_restart_type none"
 WK=604800
 for s in cc tr bdf2v; do
-  emit "${s}_coarse" "${INTEG_CFG[$s]}" $WK        8
-  emit "${s}_fine"   "${INTEG_CFG[$s]}" $((WK/4)) 32
+  emit "${s}_coarse" "${INTEG_CFG[$s]}" $WK
+  emit "${s}_fine"   "${INTEG_CFG[$s]}" $((WK/4))
   for d in coarse fine; do
     "$WTM" "$WORK/${s}_${d}.yaml" $BASE ${FLAG[$s]} > "$WORK/${s}_${d}.log" 2>&1 \
       || { echo "RUN FAILED: $s $d"; tail -3 "$WORK/${s}_${d}.log"; exit 2; }
