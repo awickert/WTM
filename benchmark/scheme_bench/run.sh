@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 # PRECISION-MATCHED speed comparison across WTM's time-integration / solver schemes.
 #
 # THE RULE THIS ENFORCES. Never compare wall time or iteration counts across schemes at their own
@@ -39,13 +40,15 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 RANKS="${2:-4}"
 CYCLES="${3:-120}"
 COUPLING="${COUPLING:-between}"
-# The coupling is a CONFIG key (surface_water.fsm_coupling), reaching mkcfg as a legacy shim line.
-# It was `-wtm_fsm_continuous` until the -wtm_ namespace was retired; the flag would now abort the run
-# as an unconsumed option. `during` == continuous == THE DEFAULT (#43); `between` == impulse.
+# The coupling is a CONFIG key, and its NAME changed too: surface_water.fsm_coupling and
+# surface_water.mode merged into surface_water.routing (#89). It was `-wtm_fsm_continuous` until the
+# -wtm_ namespace was retired; that flag would now abort the run as an unconsumed option.
+# `during` == continuous == THE DEFAULT (#43); `between` == impulse.
 case "$COUPLING" in
-  between) COUPLING_CFG="fsm_coupling impulse" ;;
-  during)  COUPLING_CFG="fsm_coupling continuous" ;;
-  *) echo "ERROR: COUPLING must be 'between' or 'during' (got '$COUPLING')"; exit 1 ;;
+  between) COUPLING="impulse" ;;
+  during)  COUPLING="continuous" ;;
+  impulse|continuous) ;;   # already in schema spelling
+  *) echo "ERROR: COUPLING must be between|during (or impulse|continuous), got '$COUPLING'"; exit 1 ;;
 esac
 # COLLECTOR (env, default `implicit`) selects how the wtd<=0 exfiltration constraint is ENFORCED:
 #   implicit   -- in-residual siphon max(0,wtd)/dt. Measured dt-DEPENDENT: retained head ~ linear in dt,
@@ -57,7 +60,7 @@ esac
 #                 inconsistent here, exactly as Newton is under `implicit`. Reported, not hidden.
 COLLECTOR="${COLLECTOR:-implicit}"
 case "$COLLECTOR" in
-  implicit|active_set) COLLECTOR_FLAGS="" ;;  # the collector is a CONFIG value; see runoff_collector below
+  implicit|active_set) ;;   # a CONFIG value, reaching the file through mkcfg's @COLLECTOR@ slot
   *) echo "ERROR: COLLECTOR must be 'implicit' or 'active_set' (got '$COLLECTOR')"; exit 1 ;;
 esac
 [ -x "$WTM" ] || { echo "ERROR: WTM binary not found at $WTM"; exit 1; }
@@ -70,31 +73,19 @@ export OMP_NUM_THREADS=1     # pure MPI: OpenMP x MPI oversubscription hangs thi
 # Cold start from a saturated table (supplied_wt 0) -- the spin-up regime, where the schemes actually
 # differ. deltat 1 week matches production. eq_tol 0 disables the auto-stop so every arm runs the
 # same budget and we see each one's floor rather than where it chose to quit.
-mkcfg() {  # $1 = stem, $2 = extra legacy config lines, ';'-separated (may be empty)
-    { cat <<EOF
-run_type equilibrium
-total_time $((604800 * CYCLES))s
-deltat 604800
-report_interval 1
-save_nreport_interval 9999
-supplied_wt 0
-cells_per_degree 900
-southern_edge 55.3839465761
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2.5
-fsm_on 1
-infiltration_on 0
-runoff_collector $COLLECTOR
-surfdatadir $DOM
-region Esquibel
-time_start 010000
-time_end 010000
-eq_tol 0
-textfilename $OUT/$1.txt
-outfile_prefix $OUT/${1}_
-EOF
-      [ -n "${2:-}" ] && printf '%s\n' "$2" | tr ';' '\n'; } | ../../tests/emit_config.sh > "$OUT/$1.yaml"
+# THE CONFIG IS A FILE NOW: benchmark/scheme_bench/config.yaml. Migrating off the deleted shim (#83)
+# also REPAIRED this script, which carried four retired vocabularies and could not run (#101): the
+# grid-geometry keys L4 removed, `adaptive_dt` / `dt_continuation` retired by #38, and `-wtm_anderson`
+# dead since #86. Each was translated to its documented successor; the header of config.yaml lists them.
+mkcfg() {  # $1 stem  $2 method  $3 integrator  $4 step mode  $5 storage form  $6 t_bar
+    local stem="${1:?}" method="${2:?}" integ="${3:?}" mode="${4:?}" storage="${5:?}" tbar="${6:?}"
+    sed -e "s|@INPUTS@|$DOM|g" -e "s|@OUT@|$OUT|g" -e "s|@STEM@|$stem|g" \
+        -e "s|@TOTAL@|$((604800 * CYCLES))s|g" -e "s|@COLLECTOR@|$COLLECTOR|g" \
+        -e "s|@ROUTING@|$COUPLING|g" -e "s|@METHOD@|$method|g" -e "s|@INTEG@|$integ|g" \
+        -e "s|@MODE@|$mode|g" -e "s|@STORAGE@|$storage|g" -e "s|@TBAR@|$tbar|g" \
+        "$(dirname "${BASH_SOURCE[0]}")/config.yaml" > "$OUT/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$OUT/$stem.yaml" && { echo "ERROR: unfilled slot in $stem.yaml" >&2; exit 1; }
+    return 0
 }
 
 # stem | human label | solver flags | config lines (settings that are config keys, not flags)
@@ -103,15 +94,34 @@ EOF
 # solver.t_bar and solver.adaptive_dt in the config, so a per-arm value has to reach mkcfg rather
 # than the command line. Keeping them in this table means each arm still declares its own setup in
 # one place, which is what makes the rows comparable.
+# stem | label | method | integrator | step mode | storage | t_bar
+#
+# EVERY ARM NAMES ALL SIX SCHEME KEYS. Nothing is left to a flag and nothing is inherited: these rows
+# exist to be COMPARED, so an arm that quietly took a default would be comparing something nobody
+# chose. The step mode is where the repair shows -- `adaptive_dt true` became `adaptive`, and
+# `dt_continuation false` became `fixed`, which is what plain Newton means (#38).
+#
+# ONE ARM IS REFUSED UNDER THE DEFAULT COLLECTOR, by design and with the reason given. Verified on the
+# island domain, all eight arms, 2 cycles:
+#     5 run                and_be  and_vol  picard_tbar  tr_fixed  newton_cont
+#     1 REFUSED            tr_adapt, under COLLECTOR=implicit only:
+#                          "solver.time_step.mode: adaptive cannot be used with collection.method:
+#                          implicit. The implicit siphon removes above-surface water at rate
+#                          max(0,wtd)/dt, so its per-step error GROWS as the controller shrinks dt."
+#                          The SAME arm RUNS under COLLECTOR=active_set -- confirmed. It is a real
+#                          incompatibility, not a translation error, and it applied to the pre-repair
+#                          arm too; the run records rc and the table below keeps the row.
+#     2 do not converge    picard and newton, plain, at 2 cycles. That is a MEASUREMENT, which is what
+#                          this benchmark is for -- rc lands in summary.csv rather than being hidden.
 SCHEMES=(
-  "and_be|Anderson BE (secant)|-wtm_anderson|"
-  "and_vol|Anderson BE (volume dV)|-wtm_anderson|storage volume"
-  "picard|Picard BDF2-on-V (plain)||solver_method picard;time_integration bdf2"
-  "picard_tbar|Picard BDF2-on-V + Tbar||solver_method picard;time_integration bdf2;t_bar true"
-  "tr_fixed|TR-BDF2 (fixed dt)|-wtm_anderson|time_integration tr-bdf2"
-  "tr_adapt|TR-BDF2 + adaptive dt|-wtm_anderson|time_integration tr-bdf2;adaptive_dt true"
-  "newton|Newton (plain)||solver_method newton;dt_continuation false"
-  "newton_cont|Newton + dt-continuation||solver_method newton;eq_tol 0.001"
+  "and_be|Anderson BE (secant)|anderson|backward-euler|fixed|secant|false"
+  "and_vol|Anderson BE (volume dV)|anderson|backward-euler|fixed|volume|false"
+  "picard|Picard BDF2-on-V (plain)|picard|bdf2|fixed|volume|false"
+  "picard_tbar|Picard BDF2-on-V + Tbar|picard|bdf2|fixed|volume|true"
+  "tr_fixed|TR-BDF2 (fixed dt)|anderson|tr-bdf2|fixed|volume|false"
+  "tr_adapt|TR-BDF2 + adaptive dt|anderson|tr-bdf2|adaptive|volume|false"
+  "newton|Newton (plain)|newton|backward-euler|fixed|volume|false"
+  "newton_cont|Newton + dt-continuation|newton|backward-euler|ramp|volume|false"
 )
 # NOTE on fairness: Picard and Newton are known to fail from a COLD start at production dt -- plain
 # arms are kept so that is visible, but each also gets its documented working recipe (log-mean
@@ -129,18 +139,19 @@ SCHEMES=(
 
 echo "=== scheme benchmark: island (117x75 = 8775 cells), cold start, dt = 1 week ==="
 echo "binary: $WTM   ranks: $RANKS   cycle budget: $CYCLES   auto-stop: DISABLED (eq_tol 0)"
-echo "FSM coupling: $COUPLING  ($COUPLING_CFG)   collector: $COLLECTOR${COLLECTOR_FLAGS:+  ($COLLECTOR_FLAGS)}"
+echo "surface_water.routing: $COUPLING   collection.method: $COLLECTOR"
 echo
 printf "%-28s %10s %12s %12s\n" "scheme" "rc" "wall_s" "SNES_iters"
 : > "$OUT/summary.csv"
 echo "stem,label,rc,wall_s,iters,cycles_run" >> "$OUT/summary.csv"
 for entry in "${SCHEMES[@]}"; do
-    IFS='|' read -r stem label flags cfgextra <<< "$entry"
-    mkcfg "$stem" "${cfgextra:+$cfgextra;}$COUPLING_CFG"; rm -f "$OUT/$stem.txt"
+    IFS='|' read -r stem label method integ mode storage tbar <<< "$entry"
+    mkcfg "$stem" "$method" "$integ" "$mode" "$storage" "$tbar"; rm -f "$OUT/$stem.txt"
     t0=$(date +%s.%N)
-    # shellcheck disable=SC2086
-    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" $flags $COLLECTOR_FLAGS -snes_stol 1e-8 \
-        > "$OUT/$stem.log" 2>&1
+    # NOTHING ON THE COMMAND LINE. The scheme keys are in the config, and solver.tolerance states the
+    # 1e-8 that used to be `-snes_stol 1e-8` -- which would have SILENTLY WON over the config anyway
+    # (set_opt_if_unset, WTM.cpp), the same #79 defect fixed in newton_solver and mass_balance_test.
+    mpirun -n "$RANKS" "$WTM" "$OUT/$stem.yaml" > "$OUT/$stem.log" 2>&1
     rc=$?
     t1=$(date +%s.%N)
     wall=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.2f", b-a}')

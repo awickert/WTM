@@ -1,0 +1,92 @@
+# benchmark/scheme_bench -- THE CONFIG EVERY ARM OF THE SCHEME BENCHMARK RUNS.
+#
+# A REAL FILE. This benchmark used to build its configs through tests/emit_config.sh, which was deleted
+# once every test suite read a real config (#83). Migrating it also REPAIRED it: it had accumulated
+# four separate retired vocabularies and could not run at all (#101).
+#
+# WHAT WAS TRANSLATED, each to its documented successor -- none of these is a judgement call:
+#   adaptive_dt true       -> solver.time_step.mode: adaptive     (#38 replaced the key)
+#   dt_continuation false  -> solver.time_step.mode: fixed        (#38, same replacement)
+#   -wtm_anderson          -> solver.method: anderson             (#86 closed the -wtm_ namespace)
+#   cells_per_degree 900   -> DELETED, with southern_edge: grid geometry is DERIVED from the input
+#   southern_edge 55.38... raster's geotransform now (L4 / #124), not supplied by the config
+#
+# WHAT THIS MEASURES: wall time and iteration count to a fixed cycle count, across solver x integrator
+# schemes, on one domain with everything else held. eq_tol 0 disables the auto-stop so every arm runs
+# the SAME number of cycles -- an arm that stopped early would look fast for the wrong reason.
+#
+# SLOTS: @INPUTS@ @OUT@ @STEM@ @TOTAL@ @COLLECTOR@ @ROUTING@ and the four per-arm scheme keys.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0   # no auto-stop: every arm must run the same cycle count for the timings to compare
+    metric: frac   # INERT while tol is 0
+    frac: 0.001   # INERT while tol is 0
+  initial_water_table: saturated
+time:
+  total: "@TOTAL@"
+  report_interval: "1"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 100
+    b: 150
+    fmin: 2.5
+  additive_background_transmissivity: 0
+surface_water:
+  routing: @ROUTING@
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: @COLLECTOR@
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: @METHOD@   # PER-ARM: anderson | picard | newton
+  time_integration: @INTEG@   # PER-ARM: backward-euler | bdf2 | tr-bdf2
+  tolerance: 1e-8
+  max_iterations: 10000
+  t_bar: @TBAR@   # PER-ARM: the Tbar arms are the point of two of the rows
+  convergence:
+    metric: volume
+    water_volume_tol: 1e-08
+  smoothing:
+    ksat_surface: 0
+    ksat_soilbottom: 0
+    storativity_surface: 0.01
+  anderson:
+    restart:
+      enabled: false
+      rho: 0.9
+      patience: 2
+      max_it: 40
+      max_restarts: 30
+  time_step:
+    mode: @MODE@   # PER-ARM: fixed | adaptive | ramp -- see the translation note in the header
+    dt: 604800   # one week, matching production
+dev:
+  storage_form: @STORAGE@   # PER-ARM: secant | volume
+  under_relaxation: 1
+parallel:
+  threads_per_rank: 1
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05
+    logistic_width: 0.1
+  extinction_depth: 8
+  tapers:
+    surface_transition: true
+    depth_extinction: true
+io:
+  source: '@INPUTS@'
+  region: 'Esquibel'
+  time_start: '010000'
+  time_end: '010000'
+output:
+  outfile_prefix: '@OUT@/@STEM@_'
+  run_log: '@OUT@/@STEM@.txt'
+  trace: []
+  verbosity: normal
+  directory: '@OUT@/@STEM@_prov'
+  if_exists: overwrite
