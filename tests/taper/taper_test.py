@@ -78,7 +78,7 @@ def write_fixture(d, owe, topo):
 
 
 def _cfg(d, txt, prefix):
-    # adaptive_dt PINNED OFF. Study A's DET_RTOL was derived from a measured FLOOR under fixed dt: the
+    # STEP MODE PINNED TO fixed (was `adaptive_dt false` until #38 made one key of the two). Study A's DET_RTOL was derived from a measured FLOOR under fixed dt: the
     # cross-rank difference tracked snes_stol and then floored at 8.63e-10 (4.18e-09 -> 8.63e-10 ->
     # 8.63e-10 at stol 1e-8 / 1e-10 / 1e-12), which is what makes 1e-9 a principled bound rather than a
     # fitted one. Under adaptive stepping that floor is GONE -- the difference stops being
@@ -89,7 +89,7 @@ def _cfg(d, txt, prefix):
     # accommodate that would bless a real loss of cross-rank reproducibility rather than measure the
     # taper, which is this test's subject. See the task on adaptive + FSM cross-rank behaviour.
     return f"""run_type equilibrium
-adaptive_dt false
+time_step_mode fixed
 fsm_on 1
 evap_mode 1
 infiltration_on 0
@@ -243,9 +243,21 @@ def _arid_fixture(d, ksat=1e-9):
         _write_tif(os.path.join(d, fname), np.asarray(arr), dt)
 
 
+def _merge_cfg(base, extra):
+    """base + per-arm overrides, with the overridden base lines REMOVED.
+
+    emit_config.sh refuses a key given twice (a last-wins duplicate is how an accidental override
+    hides), so an arm that re-states a base key -- Study C passes `snes_stol 1e-8` over the base's
+    1e-10 -- has to drop the base line rather than rely on ordering. Same fix as tests/golden.
+    """
+    over = {l.split()[0] for l in extra.splitlines() if l.strip()}
+    kept = [l for l in base.splitlines() if l.strip() and l.split()[0] not in over]
+    return "\n".join(kept) + "\n" + extra
+
+
 def _arid_cfg(d, txt, prefix, extra=""):
     # fsm_on 0: a pure groundwater drawdown test (no lakes). 180 yr to equilibrium (60 reports x 3 yr).
-    return (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
+    base = (f"run_type equilibrium\nfsm_on 0\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 0\n"
             f"taper_surface_transition true\nsnes_stol 1e-10\ndeltat 31536000\ntotal_time 180yr\nreport_interval 3\n"
             f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
             f"surfdatadir {d}\nregion {REGION}\nsupplied_wt 1\nsave_nreport_interval 9999\n"
@@ -253,7 +265,8 @@ def _arid_cfg(d, txt, prefix, extra=""):
             # with fsm_on 0: the table falls and no cell crosses the surface, so the collector is
             # incidental here. `explicit` is the surviving half of what legacy meant (the post-solve clamp).
             f"runoff_collector explicit\nsolver_method anderson\n"
-            f"eq_tol 0\n" f"textfilename {txt}\noutfile_prefix {prefix}\n" + extra)
+            f"eq_tol 0\n" f"textfilename {txt}\noutfile_prefix {prefix}\n")
+    return _merge_cfg(base, extra)
 
 
 def _arid_run(wtm, d, tag, flags, cfg_extra=""):

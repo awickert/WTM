@@ -116,7 +116,7 @@ arrives() { # $1 label ; $2 slot(sw|solver) ; $3 v1-yaml ; $4 v2-yaml
     for i in 1 2; do
         if [ "$i" = 1 ]; then sy="$3"; else sy="$4"; fi
         if [ "$slot" = sw ]; then mk "${tag}_v${i}" "$sy" ""; else mk "${tag}_v${i}" "" "$sy"; fi
-        go "${tag}_v${i}" || { echo "  FAIL  $label -- value $i did not complete"; sed -n 's/.*what():/        /p' "$WORK/${tag}_v${i}.log" | head -1; fail=1; return; }
+        go "${tag}_v${i}" || { echo "  FAIL  $label -- value $i did not complete"; sed -n -e 's/^ERROR: /        /p' -e 's/.*what():/        /p' "$WORK/${tag}_v${i}.log" | head -1; fail=1; return; }
     done
 
     local mx n

@@ -237,7 +237,7 @@ elif grep -q "The SNES solver has not converged" "$WORK/contract.log"; then
     fail=1
 else
     echo "  FAIL  CONTRACT/a plain Newton at fixed dt failed for an UNEXPECTED reason:"
-    grep -m1 "what():" "$WORK/contract.log" | sed 's/^/        /'
+    grep -m1 -E "^ERROR: |what\(\):" "$WORK/contract.log" | sed 's/^/        /'
     fail=1
 fi
 
@@ -252,7 +252,7 @@ if sh -c '"$0" "$1"' \
 else
     echo "  FAIL  CONTRACT/b plain Newton + adaptive did NOT converge, so CONTRACT/a shows only that"
     echo "                   this fixture is hard, not that fixed dt is what defeats plain Newton:"
-    grep -m1 "what():" "$WORK/contract_adapt.log" | sed 's/^/        /'
+    grep -m1 -E "^ERROR: |what\(\):" "$WORK/contract_adapt.log" | sed 's/^/        /'
     fail=1
 fi
 

@@ -102,7 +102,12 @@ attempt() { # $1 stem, $2 extra flags...
             > "$WORK/$stem.log" 2>&1; then
         return 0
     fi
-    MSG=$(grep -m1 "what():" "$WORK/$stem.log" || true); MSG="${MSG#*what():  }"
+    # The model PRINTS its refusal as `ERROR: <msg>` and exits 1 (#57). It used to escape as an
+    # uncaught exception, and this line read the crash artifact `what():` -- which vanished the moment
+    # refusals stopped crashing, turning every documented refusal into "ABORTED WITH NO MESSAGE".
+    # Prefer the designed message; fall back to the crash text so a REAL crash is still captured.
+    MSG=$(grep -m1 "^ERROR: " "$WORK/$stem.log" || true); MSG="${MSG#ERROR: }"
+    [ -n "$MSG" ] || { MSG=$(grep -m1 "what():" "$WORK/$stem.log" || true); MSG="${MSG#*what():  }"; }
     return 1
 }
 
