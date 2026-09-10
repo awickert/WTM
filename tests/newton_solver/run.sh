@@ -75,43 +75,51 @@ JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it
 AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER VOLUME
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = collector, $3 = total_time
-          #   env: MODE=fixed|adaptive|ramp pins who sizes the step (one key; was DTC= plus ADAPT=)
-    { cat <<EOF
-${MODE:+time_step_mode $MODE}
-${KSMOOTH:+ksat_surface_smoothing $KSMOOTH}
-${KSMOOTH:+ksat_soilbottom_smoothing $KSMOOTH}
-${METHOD:+solver_method $METHOD}
-run_type equilibrium
-total_time $3
-supplied_wt 1
-deltat 31536000
-report_interval 1
-save_nreport_interval 1
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_ratio 0
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-eq_tol ${EQ_TOL:-0}
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
-      echo "snes_stol 1e-10"; [ -n "$2" ] && echo "runoff_collector $2"; } | ../emit_config.sh > "$WORK/$1.yaml"
+# THE CONFIGS ARE FILES NOW (#83): config.yaml (mode: fixed), config_ramp.yaml, config_adaptive.yaml.
+# THREE files because the three step modes resolve DIFFERENT KEY SETS -- ramp alone carries dt_max and
+# solver.newton.dt0, adaptive alone carries norm, fixed carries no controller dials at all -- and a
+# config must state what its run resolves to, not a superset.
+#
+# mkcfg RENDERS one; every per-arm value is REQUIRED, with no default. That is deliberate: these arms
+# differ from each other in exactly these keys, and a default is how an arm silently becomes a copy of
+# another one (#24). ROUTING is among them because an ABSENT routing key resolves PER COLLECTOR --
+# measured: active_set -> continuous, explicit -> impulse, implicit -> continuous -- so the three
+# Jacobian arms were each getting a different coupling with nothing saying so.
+mkcfg() { # $1 stem  $2 collector  $3 total_time  $4 routing  $5 method  $6 ksmooth  $7 eq_tol  $8 maxit
+    local stem="${1:?mkcfg needs a stem}"        coll="${2:?mkcfg needs a collector}"
+    local total="${3:?mkcfg needs total_time}"   routing="${4:?mkcfg needs a routing: it resolves PER COLLECTOR, so name it}"
+    local method="${5:?mkcfg needs a solver method}" ksm="${6:?mkcfg needs a ksat smoothing width}"
+    local eqt="${7:?mkcfg needs an eq_tol}"   maxit="${8:?mkcfg needs a max_iterations}"
+    # time_integration FOLLOWS FROM the solver -- it is not an independent choice, so it is
+    # derived here rather than passed in, and the config states the value the run resolves to.
+    local integ=backward-euler; [ "$method" = anderson ] && integ=tr-bdf2
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
+        -e "s|@COLLECTOR@|$coll|g" -e "s|@TOTAL@|$total|g" -e "s|@ROUTING@|$routing|g" \
+        -e "s|@METHOD@|$method|g" -e "s|@KSMOOTH@|$ksm|g" -e "s|@EQ_TOL@|$eqt|g" \
+        -e "s|@INTEG@|$integ|g" -e "s|@MAXIT@|$maxit|g" \
+        config.yaml > "$WORK/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$stem.yaml" && { echo "ERROR: unfilled slot in $stem.yaml"; exit 1; }
+    return 0
+}
+
+mkcfg_mode() { # $1 stem  $2 ramp|adaptive -- the single-arm files; no per-arm slots but the paths
+    local stem="${1:?}" mode="${2:?}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
+        "config_${mode}.yaml" > "$WORK/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$stem.yaml" && { echo "ERROR: unfilled slot in $stem.yaml"; exit 1; }
+    return 0
 }
 
 # PETSc prints the ratio per Jacobian evaluation; take the worst.
-# The two ksat smoothing widths come from the CONFIG (KSMOOTH= at mkcfg time), not from -wtm_ flags:
-# those options-database entries are gone, and a -wtm_ nothing reads is an abort. -snes_test_jacobian
-# and -snes_max_it stay on the command line because they are PETSc's own options, which PETSc reads.
+# The two ksat smoothing widths come from the CONFIG (the mkcfg ksmooth argument), not from -wtm_ flags:
+# those options-database entries are gone, and a -wtm_ nothing reads is an abort.
+# -snes_test_jacobian stays on the command line because it is PETSc's own diagnostic with no config
+# key. -snes_max_it does NOT: solver.max_iterations sets it (WTM.cpp), and because that uses
+# set_opt_if_unset the CLI value SILENTLY WON -- the config said 10000 while the run used 1. The
+# Jacobian arms now declare max_iterations: 1 and nothing overrides it (#79).
 fd_ratio() { # $1 = stem
     "$WTM" "$WORK/$1.yaml" \
-        -snes_test_jacobian -snes_max_it 1 2>&1 | tee "$WORK/$1.fd.log" \
+        -snes_test_jacobian 2>&1 | tee "$WORK/$1.fd.log" \
       | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1
 }
 
@@ -121,7 +129,7 @@ echo
 fail=0
 
 # ---- 1. PRECONDITION: the pin actually fires on this fixture -------------------------------------
-METHOD=newton MODE=ramp mkcfg pre active_set "2yr"
+mkcfg_mode pre ramp
 "$WTM" "$WORK/pre.yaml" \
     > "$WORK/pre.log" 2>&1
 REM=$(awk '$1 ~ /^[0-9]+$/ && NF>=23 {s=$12} END{print s+0}' "$WORK/pre.txt" 2>/dev/null || echo 0)
@@ -141,7 +149,9 @@ fi
 # 0.00415 and 7.36e-08. (explicit is four orders BETTER than its recorded 0.000993: the volume storage
 # default, 879a188, makes the analytic Jacobian match its own residual exactly.)
 for coll in active_set explicit; do
-    METHOD=newton MODE=fixed KSMOOTH=0.5 mkcfg "j_$coll" "$coll" "2yr"   # raw Jacobian: PLAIN Newton, as the bare flag gave
+    # an absent routing key resolves per collector (measured); state the one this arm gets
+    routing=continuous; [ "$coll" = explicit ] && routing=impulse
+    mkcfg "j_$coll" "$coll" "2yr" "$routing" newton 0.5 0 1   # raw Jacobian: PLAIN Newton, as the bare flag gave
     R=$(fd_ratio "j_$coll")
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
@@ -152,7 +162,7 @@ for coll in active_set explicit; do
     fi
 done
 
-METHOD=newton MODE=fixed KSMOOTH=0.5 mkcfg j_implicit implicit "2yr"
+mkcfg j_implicit implicit "2yr" continuous newton 0.5 0 1
 R=$(fd_ratio j_implicit)
 WARNED=$(grep -c "NOT the Newton Jacobian" "$WORK/j_implicit.fd.log" || true)
 if awk -v r="${R:-0}" 'BEGIN{exit !(r+0 > 0.1)}' && [ "$WARNED" -gt 0 ]; then
@@ -181,8 +191,8 @@ fi
 # which is what makes matching the stepping possible:
 #     Newton + continuation ramp   max|dwtd| 2.537e-01 m   (never reached equilibrium)
 #     Newton plain, fixed dt       max|dwtd| 4.739e-02 m   equilibrium at cycle 466, vs eq_and's 463
-EQ_TOL=1e-4 MODE=fixed mkcfg eq_and  active_set "2000yr"
-EQ_TOL=1e-4 METHOD=newton MODE=fixed mkcfg eq_newt active_set "2000yr"
+mkcfg eq_and  active_set "2000yr" continuous anderson 0 1e-4 10000
+mkcfg eq_newt active_set "2000yr" continuous newton   0 1e-4 10000
 "$WTM" "$WORK/eq_and.yaml"                  > "$WORK/eq_and.log"  2>&1
 "$WTM" "$WORK/eq_newt.yaml" > "$WORK/eq_newt.log" 2>&1
 WORK="$WORK" AGREE_TOL="$AGREE_TOL" PHI="$INP/fsm_test_porosity.tif" TESTS="$(readlink -f ..)" \
@@ -224,7 +234,7 @@ PY
 # Assert the NEW behaviour rather than delete the arm, so a regression back to needing the ramp is still
 # caught. ADAPT=false remains load-bearing: without it adaptive_dt: auto resolves TRUE here and the arm
 # would not be testing fixed dt at all.
-METHOD=newton MODE=fixed mkcfg contract active_set "2yr"
+mkcfg contract active_set "2yr" continuous newton 0 0 10000
 # Run through an inner shell so that IT owns the child: this arm is EXPECTED to abort, and the
 # reporting shell's "Aborted (core dumped)" notice then goes to the inner shell's stderr -- which is
 # redirected into the log -- instead of surfacing in the suite output looking like a real crash.
@@ -244,7 +254,7 @@ fi
 # 4b. the SAME configuration with adaptive stepping must SUCCEED. This is the half that makes 4a a
 # statement about fixed dt rather than about Newton, and it is the positive control for 4a: if 4b also
 # failed, 4a would be proving only that the fixture is hard.
-METHOD=newton MODE=adaptive mkcfg contract_adapt active_set "2yr"
+mkcfg_mode contract_adapt adaptive
 if sh -c '"$0" "$1"' \
         "$WTM" "$WORK/contract_adapt.yaml" > "$WORK/contract_adapt.log" 2>&1; then
     echo "  PASS  CONTRACT/b the same run with adaptive stepping CONVERGES -- the ramp is not the only"

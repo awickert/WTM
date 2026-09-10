@@ -1,0 +1,112 @@
+# tests/newton_solver -- THE CONFIG THE FIXED-STEP ARMS RUN.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the analytic Newton Jacobian and the contract for using it -- that
+# ||J - Jfd||_F/||J||_F stays under JTOL for each collector whose tangent is implemented, that a
+# collector without one WARNS rather than silently handing back a wrong tangent, that Newton and
+# Anderson reach the same equilibrium, and that the documented refusals fire.
+#
+# THREE FILES, ONE PER STEP MODE, because the three resolve DIFFERENT KEY SETS and a config must state
+# what its run actually resolves to:
+#     config.yaml            mode: fixed     -- no controller dials at all
+#     config_ramp.yaml       mode: ramp      -- dt_max, the grow/shrink dials, AND solver.newton.dt0
+#     config_adaptive.yaml   mode: adaptive  -- the grow/shrink dials AND norm, but no dt0
+# Collapsing them behind one template would mean writing keys that the run does not read, which is the
+# same laundering the declared-config rule exists to stop.
+#
+# SIX ARMS run from this file, differing only in the slots marked PER-ARM below:
+#   j_active_set  newton  ksmooth 0.5  active_set  2yr     routing continuous   the Jacobian check
+#   j_explicit    newton  ksmooth 0.5  explicit    2yr     routing impulse      "
+#   j_implicit    newton  ksmooth 0.5  implicit    2yr     routing continuous   the NO-TANGENT warning
+#   eq_and        ANDERSON ksmooth 0   active_set  2000yr  routing continuous   the equilibrium pair,
+#   eq_newt       newton  ksmooth 0    active_set  2000yr  routing continuous   which must agree
+#   contract      newton  ksmooth 0    active_set  2yr     routing continuous   the refusal contract
+#
+# ROUTING IS A SLOT because an ABSENT routing key resolves DIFFERENTLY PER COLLECTOR -- measured, not
+# assumed: active_set -> continuous, explicit -> impulse (the model says so by name: "collection.method:
+# explicit cannot take the continuous coupling"), implicit -> continuous. The shim omitted the key and
+# each arm silently got its own answer; each arm now states the one it gets.
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: @EQ_TOL@   # PER-ARM: 0 pins the full cycle count; the two 2000yr arms use 1e-4
+    metric: frac   # INERT on every arm that pins tol: 0; the two 2000yr arms set tol: 1e-4 and DO read it
+    frac: 0.001   # INERT: nothing reads this while metric is `frac`'s companion and tol gates the check
+  initial_water_table: supplied
+time:
+  total: "@TOTAL@"   # PER-ARM: 2yr for the Jacobian/contract arms, 2000yr to equilibrium
+  report_interval: "1"
+  save_every_n_reports: 1
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@   # PER-ARM, and NOT decoration -- see the note in the header
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: @COLLECTOR@   # PER-ARM: active_set | explicit | implicit
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: @METHOD@   # PER-ARM: newton on five arms, anderson on eq_and (the agreement reference)
+  time_integration: @INTEG@   # PER-ARM, and it FOLLOWS FROM method: newton -> backward-euler,
+                              # anderson -> tr-bdf2. Measured, not assumed; stated because a
+                              # config must say what its run resolves to, not what it asked for
+  tolerance: 1e-10
+  max_iterations: @MAXIT@   # PER-ARM: 1 on the three Jacobian arms, which need exactly one
+                            # Jacobian evaluation, and 10000 elsewhere. This used to be
+                            # `-snes_max_it 1` ON THE COMMAND LINE while the config said 10000 --
+                            # and the CLI won (WTM.cpp set_opt_if_unset), so the config was
+                            # describing a run that did not happen. #79 is exactly that
+  t_bar: false   # off -- this suite tests the JACOBIAN, and step-averaged transmissivity would change the operator it is differentiating
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: @KSMOOTH@   # PER-ARM: 0.5 on the Jacobian arms, 0 elsewhere. The RAW Jacobian
+    ksat_soilbottom: @KSMOOTH@   # is what the bare flag used to give, and these two widths are it
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed
+    dt: 31536000
+    error_tol: 0.1   # the resolved value. INERT under mode: fixed -- nothing steers on it here
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # PARAMETERISES THE KINK the Jacobian must capture: the surface-transition sigmoid centre
+    logistic_width: 0.1   # PARAMETERISES THE KINK, as above -- this is why JTOL sits at 1e-2 and not 1e-8
+  extinction_depth: 8   # gates the depth_extinction taper, on below
+  tapers:
+    surface_transition: true   # SHIPPED-ON, and load-bearing: this taper IS the piecewise kink in the tangent
+    depth_extinction: true   # SHIPPED-ON -- the shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
