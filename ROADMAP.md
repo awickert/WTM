@@ -1,88 +1,92 @@
 # WTM: the road to a finalized, usable model
 
-The **running list**. This file is the single source of truth for what is open, in what order, and why
-each item earns its place. `HANDOFF_READINESS.md` describes the *state* of the handoff; this file
-describes the *work remaining*. Update it as items close — do not keep a second copy elsewhere.
+The **running list** — the single source of truth for what is open, in what order, and why.
+`HANDOFF_READINESS.md` describes the *state* of the handoff; this file describes the *work remaining*.
 
-**Last updated: 2026-09-10.**
+**Rewritten 2026-09-11 after a staleness sweep over all 25 open items**, four agents verifying each
+claim against the tree rather than against task prose. **Twelve closed as already-done or obsolete.**
 
 ## The goal
 
-A model someone else can run, trust and reproduce without the person who built it. That splits into
-three things, and most of the list below serves the third:
+A model someone else can run, trust and reproduce without the person who built it.
 
-1. **It computes the right answer** — mass conserved, boundaries correct, defaults defensible.
-2. **It can be driven** — one configuration surface, YAML, defaults resolved by the model and recorded.
-3. **Its numbers can be re-derived** — every tolerance, golden and benchmark traceable to how it was
-   measured, by someone who was not there.
+## Why this list keeps going stale — read before adding to it
 
-## Closed: the configuration arc
+Andy, 2026-09-11: *"I open one, you create a huge task list to bring our code base in line with it…
+and in the end, that request is because the code is now far past the numbered to-do item."*
 
-The whole L1–L4 stack of `#80` is closed. Configuration is YAML, defaults resolve in one dedicated
-module (`src/resolve_defaults.cpp`), every run records what it resolved (`full_config.yaml`), and every
-one of the 39 test suites reads a real config file a human wrote.
+The fixes here have been **mechanism-level**, and each dissolved a whole class of numbered items at
+once. An item can be obsolete without its claim ever having been wrong: the mechanism it depended on
+stopped existing, or a general guard made its class unreachable.
 
-| # | what closed | evidence |
+| general mechanism | class it dissolved |
+|---|---|
+| declared-config rule + `full_config.yaml` | every "this test does not state X" item |
+| `src/resolve_defaults.cpp` | every per-key "what does an absent key mean" question |
+| `tests/emit_config.sh` **deleted** | the shim's entire failure surface (#99) |
+| `tests/wtm_volume.py` + fatal `lint_norms.sh` | head-vs-volume items, **and prevents recurrence** |
+| `tests/wtm_log.py` (columns by name) | hardcoded-column-index items (#53's class) |
+| `make_work`, `expect_resolved` | lost-evidence and did-this-arm-run-what-it-configured items |
+| `-wtm_` namespace closed to **0** call sites | every flag-named item |
+
+**So: re-read this list after each general fix, not before each individual one.** Before working an
+item, verify its claim against the tree first.
+
+## Closed by the sweep (verified, not assumed)
+
+`#37` 37 of 37 configs state `time_integration` (claimed 8 of 39) · `#48` all four metric items
+shipped · `#53` both prescriptions implemented, 456 step-checks · `#97` sweep performed, negative ·
+`#99` moot, shim deleted · `#66` the doc it targets **does not exist in the repo** · `#76` every
+Phase-A item closed · `#80` all four levels closed · `#39` `xrank_growth` ships and asserts the growth
+rate · plus `#42`, `#65`, `#73` closed earlier today.
+
+## THE OPEN LIST
+
+### 1 — A defect our general guards cannot see
+
+| # | item | why it is first |
 |---|---|---|
-| 32, 30, 86 | The `-wtm_` namespace: 23 round-trips to zero, locked at runtime and in source | `config_schema` NAMESPACE arm |
-| 38, 89 | One key sizes the step (`solver.time_step.mode`); routing merged into one key | schema is still |
-| 45181ae | Geometry has ONE source: the input geotransform. The `grid:` block is gone | L4 |
-| 83 | **All 39 suites materialized; `tests/emit_config.sh` DELETED** | 2c5330b |
-| 79 | **The declared-config rule is unconditional**; `WTM_DECLARED_SUITES` gone; 37 of 39 enforced | 45a2820 |
-| 92 | A parameter may be marked `OPTIONAL` where automatic resolution IS the subject | bcdb1c7 |
+| **34** | **THREE SUITES ARE GREEN WHILE COMPARING FIELDS THAT ARE IDENTICALLY ZERO.** Verified by direct raster read: `boundary_analytic` **0/66** nonzero, `ghost_boundary` **0/480**, `recharge_consistency` **0/256**. Consolidates #34 + #91 + #96. | A **sixth vacuity mechanism**, outside the five in memory: *the run completes, resolves exactly what it configured, and produces no answer.* `expect_resolved` passes, `config_identity` passes, `make_work` keeps evidence of success. **Nothing checks the output has structure.** One guard fixes all three: assert the compared field is not identically zero. `boundary_analytic` is the suite that validates boundary conditions against closed-form solutions — it has never measured anything. |
 
-## Andy's stated next priorities
+*Note:* `ghost_boundary` is nonzero after 1 cycle (min −1.93 m) and drains to exactly zero by cycle 120.
+A short probe looks healthy; the suite's real settings do not. Every cross-scheme conclusion drawn from
+that suite — including #96's — rests on an empty field.
 
-**#42, then #65** (recorded 2026-09-11). Take these before resuming the numbered order below.
+### 2 — Correctness of the model
 
-## The open queue, in implementation order
-
-**Three constraints fix the sequence.** Answer-movers before any number is pinned. Units before
-tolerances. Measurement instruments before the defects they catch.
-
-Group: **M**odel defect · **T**est integrity · **P**hysics/measurement · **D**ocumentation
-
-| n | # | grp | step | how it serves the goal |
-|---|---|---|---|---|
-| - | 42 | D | **NEXT (Andy)** Stale vocabulary: `-wtm_fsm_delta_source`, "overwrite" | **Legibility.** Docs naming keys that no longer exist send a new user down dead ends |
-| - | 65 | T | **THEN (Andy)** Convert the remaining head-unit measurements to water volume | **One currency.** The model judges every criterion in water; a test measuring head can pass while water is wrong |
-| 2 | 64 | M | Sub-cycle the FSM coupling to bound the delta admitted per step | **Correctness at production settings.** Bounds a per-step coupling error that has no limit today. **Moves goldens — needs explicit authorization** |
-| 3 | 54 | T | Test and guard the BUDGET at boundaries. Folds in #34 | **The largest correctness gap.** Solution-correctness at boundaries is covered; MASS-correctness is not. A water model can lose water where nobody looks |
-| 4 | 52 | M | Land→ocean outflow mis-booked at pinned cells (211 of the outer ring, corners 1.5x) | **The defect #54 fences.** Localised already. Water table unaffected, so no goldens move |
-| 5 | 48 | T | `continuous` is first-order in dt — fix the TEST's metric | **Trust in the shipped default.** Its convergence test measures the wrong thing, so the default is unverified |
-| 7 | 39 | T | impulse resets cross-rank drift; continuous compounds | **Parallel trustworthiness.** Instrument built and green (`xrank_growth`); the confirmatory experiment remains. EVERY cross-rank tolerance was calibrated under `impulse`, i.e. on a resynchronised system |
-| 9 | 84 | T | 24 laundered assertion tolerances across 19 suites | **Provenance.** A tolerance that says what it IS but not where it CAME FROM cannot be re-derived by a new maintainer |
-| 10 | 85 | T | Golden references carry no in-file provenance | **Reproducibility.** Do it *with* any regold #64 forces |
-| 11 | 53 | T | State-vs-accumulator is valid only for 3-level schemes | **Test validity.** Prevents a future false alarm on `bdf2` |
-| 12 | 73 | T | Fix the measurement scripts: `analyze_adapt_bench.py`, `compare_series()`, norm lint | **The tools that produce the numbers** |
-| 13 | 66 | D | Stale count in the ranked-fixes doc (~9 of 13 done, not 2 of 15) | **Accurate handoff state.** A doc overstating open work misdirects whoever picks this up |
-| 14 | 50 | P | Does Newton still need the ramp for cold starts from far? | **Solver guidance.** Five documentation sites wait on the answer |
-| 15 | 6 | P | Re-run `scheme_bench` | **The performance table users read.** Unblocked 2026-09-10: the script runs again |
-| 16 | 58, 59 | P | The non-monotone bump: rate-vs-exposure; FSM activity does not predict it | **Controller understanding.** #59 is a measured NEGATIVE, kept so it is not re-walked |
-| 17 | 77, 78 | P | Storativity smoothing inert under active_set; BE residual growth at fine dt | Recorded observations; #78 needs a purpose-built config before it can be believed |
-| 18 | 37 | T | Integrator coverage — which suites DECLARE which integrator | Folded into #83's authoring pass; re-check and close |
-| last | 60 | P | Order-aware retry — **NEEDS A CASE THAT WOULD OTHERWISE ABORT** (Andy, 2026-09-11) | Idea sound (#22: observed order 0.80–1.86, PI gains assume exactly 2), but UNTESTABLE on any fixture in hand: healthy runs have 0–1 rejects, and the reject-rich regimes ABORT. Reframe as a ROBUSTNESS claim — does the measured-order retry let an aborting run complete? — not a speed one |
-
-## Filed later, not part of the agreed order
-
-| # | item | note |
+| # | item | state |
 |---|---|---|
-| 96 | ghost_boundary compares schemes at a converged steady state, where the integrator cannot matter | The `cc` arm's identity is an open DECISION, deliberately not taken |
-| 97 | Tests that grep the model's PROSE go stale silently | One instance fixed in budget_closure; the sweep remains |
-| 90 | active_set's three arms differ in coupling as well as collector | |
-| 91 | recharge_consistency compares integrators that produce bit-identical fields | Same shape as #96 |
-| 34 | boundary_analytic's Neumann vertex assertion is defeated by nan | Folds into #54 |
-| 98 | budget_closure's `a_as` and `c_as` are the same run at the same tolerance | Low stakes |
+| **78** | Budget residual grows as dt shrinks. **CONFIRMED, and worse than filed:** it is *not* backward-euler-specific — at fixed dt tr-bdf2 is worse at every step (3.08e-01 / 4.87e-02 / 5.01e-02). Reaches ~1-30% of recharge. | **UNRESOLVED DISCREPANCY:** my `fsm_consistency` run shows 1.16e-2 → 2.55e-2 growth (reproduced at `runoff_ratio` 0 **and** 0.3); an independent purpose-written config showed 1e-8 with no growth. **The discriminator is unidentified.** Find it before acting. |
+| **52** | Land→ocean outflow mis-booked at pinned cells | Reproduces unchanged at **1.802e-05**; encoded as an xfail. Two stale pointers: `CreateSNES.hpp:40` now says the opposite (#40 moved it to `WTM.cpp:715`), and its probe patch no longer applies. |
+| **54** | Test and guard the budget at boundaries | Valid, but **item 1 is costed wrong**: `BUDGETTRACE` emits eight *domain scalars*, so this needs model-side machinery, not a mask split. |
+| **64** | Sub-cycle the FSM coupling | Untouched; **moves goldens, needs explicit authorization**. Its sub-item — say in `tests/golden/run.sh` that references are regression *pins*, not accuracy statements — is undone. |
 
-## Audit items — changes made to TESTS that alter what they run
+### 3 — Provenance: no general mechanism exists yet
 
-Neither touches `src/` or the shipped `config.yaml`; the model and its defaults are unchanged. Both are
-one-line reverts if unwanted.
-
-| where | change | basis |
+| # | item | state |
 |---|---|---|
-| `tests/taper` config | Study A `equilibrium_stop.tol` 0.001 → **0** | The arm's own comment documented `eq_tol 0`, lost when the flag was retired. Study A now runs 5 cycles, not 4 |
-| `benchmark/picard/recharge_free_boundary.py` | collector now **pinned** to `active_set` in the signature | Same value the model resolves today, but it no longer TRACKS the default if that default moves |
+| **84** | 24 tolerances across 19 suites | Count exact. **17 of 24 have no recorded origin; 8 have no comment at all.** |
+| **85** | Goldens carry no in-file provenance | `golden.py:54` writes only shape. Loader skips `#` lines, so provenance is backward-compatible. |
+
+### 4 — Documentation that misleads
+
+| # | item |
+|---|---|
+| **90** | `active_set`'s header still claims collector-independence that was retracted, still lists a deleted assertion as asserted, and calls active_set "EXPERIMENTAL and OFF BY DEFAULT" — it is **the default**. |
+| **50** | Newton cold-start claim: 4 sites, not 5. `parameters.cpp:365/372` no longer contain it; it moved to `CreateSNES.cpp:255` and became a *warning*. |
+| **58 / 59** | Keep the findings; **strike the "not implemented" sections** — `78d7188` made the blind step visible (measured `est = 4.34e-01` where the tasks record `0.0`), and #63 deliberately forbids the reject-trigger form. |
+| **6** | `scheme_bench` re-run: its "active_set × during is a hard error" premise is **false** (that is the default pair); new blocker — `and_be` (secant) now throws under active_set. |
+| **98** | `budget_closure` `a_as` ≡ `c_as`, character-identical. Andy's (a)/(b)/(c) call. |
+| **77** | Storativity smoothing inert under active_set — a record; no action was claimed. |
+
+## Known repo-hygiene items found by the sweep
+
+- `tests/lib.sh` **contradicts itself**: line 171 says three suites are exempt and names
+  `runoff_collector`; line 184 lists two. The variable is right, the prose is stale.
+- `tests/lib.sh:155-164` still carries the **pre-#79 ratchet paragraph** ("494 of 494 runs currently
+  leave at least one key implicit") directly above the paragraph saying the rule is unconditional.
+- `#52`, `#58`, `#59` cite `scratchpad/*.patch` reproduction routes. **That directory is not in the
+  repo**, and 3 of 4 patches no longer apply — those routes are unusable by the next session.
 
 ## Standing
 
