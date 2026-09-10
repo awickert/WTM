@@ -1,0 +1,98 @@
+# tests/ghost_boundary -- THE CONFIG THE NEWTON ARMS RUN.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the mask-aware ghost boundary -- that the answer is identical at 1 and N
+# MPI ranks, that the time-integration schemes agree under it to TOL, and that the Newton tangent
+# is right at the boundary.
+#
+# TWO FILES, because the two step modes resolve DIFFERENT KEY SETS and a config must state what its
+# run resolves to rather than a superset:
+#     config.yaml         mode: adaptive  -- the anderson arms (cc, cc_nN, tr, bdf2v): grow/shrink/norm
+#     config_fixed.yaml   mode: fixed     -- the newton arms (newton, jac): no controller dials at all
+#
+# TWO ARMS run from this file, differing in the slots marked PER-ARM:
+#   newton   cycles 120, max_iterations 10000, ksat smoothing 0   the cross-scheme arm
+#   jac      cycles 1,   max_iterations 1,     ksat smoothing 0.5 the Jacobian check (one evaluation)
+#
+# `newton` here is PLAIN Newton at fixed dt: it was a bare flag before the config owned it, so the
+# dt-continuation ramp is declined rather than inherited.
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0   # a `transient` run: it stops at total_time, never on an equilibrium test
+    metric: frac   # INERT: this is a `transient` run with equilibrium_stop.tol 0 -- nothing auto-stops
+    frac: 0.001   # INERT, as above
+  initial_water_table: saturated
+time:
+  total: "@TOTAL@"   # PER-ARM: cycles x 50 x dt
+  report_interval: "50"
+  save_every_n_reports: @SAVE@   # PER-ARM: the cycle count, so only the final field is written
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: active_set   # what an absent key resolves to. INERT while routing is off:
+                         # with no surface water to collect, no collector runs
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: newton
+  time_integration: backward-euler   # what `newton` resolves to; the same on both arms
+  tolerance: 1e-8
+  max_iterations: @MAXIT@   # PER-ARM: 10000 on the scheme arm, 1 on jac, which needs exactly one
+                            # Jacobian evaluation and nothing more
+  t_bar: false   # off -- this suite tests the BOUNDARY, and step-averaged transmissivity would change the operator being compared across schemes
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: @KSMOOTH@   # PER-ARM: 0 on the scheme arm, 0.5 on jac -- the RAW Jacobian, which
+    ksat_soilbottom: @KSMOOTH@   # is what the bare flag used to give
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed
+    dt: 2419200
+    error_tol: 0.1   # the resolved value. INERT under mode: fixed -- nothing steers on it here
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # INERT: routing is off and both tapers are off below
+    logistic_width: 0.1   # INERT, as above
+  extinction_depth: 8   # INERT: it gates the depth_extinction taper, which is off
+  tapers:
+    surface_transition: true   # INERT here: routing: off and no cell is driven across the surface on this fixture
+    depth_extinction: true   # SHIPPED-ON; see the note on surface_transition
+io:
+  source: '@INPUTS@'
+  region: 'ghostbc'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite

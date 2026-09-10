@@ -1,0 +1,109 @@
+# tests/ghost_boundary -- THE CONFIG THE ANDERSON ARMS RUN.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the mask-aware ghost boundary -- that the answer is identical at 1 and N
+# MPI ranks, that the time-integration schemes agree under it to TOL, and that the Newton tangent
+# is right at the boundary.
+#
+# TWO FILES, because the two step modes resolve DIFFERENT KEY SETS and a config must state what its
+# run resolves to rather than a superset:
+#     config.yaml         mode: adaptive  -- the anderson arms (cc, cc_nN, tr, bdf2v): grow/shrink/norm
+#     config_fixed.yaml   mode: fixed     -- the newton arms (newton, jac): no controller dials at all
+#
+# FOUR ARMS run from this file, differing only in the slots marked PER-ARM:
+#   cc_n1   tr-bdf2   the MPI determinism pair: identical config, run at 1 and at N ranks
+#   cc_nN   tr-bdf2
+#   tr      tr-bdf2   the cross-scheme comparison
+#   bdf2v   bdf2
+#
+# NOTE `cc` STATES tr-bdf2 AND THAT IS NOT A TYPO -- it is what the arm actually resolves to, and it
+# makes cc BYTE-IDENTICAL to the tr arm. `cc` is the old name for the backward-euler default; when the
+# resolved default for `anderson` became tr-bdf2, the arm's identity changed under its name. Measured:
+# identical resolved config, max|cc - tr| = 0.000e+00 on the output raster. Task #96 carries the fix,
+# which changes what the suite measures and so is a decision rather than a materialisation.
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0   # a `transient` run: it stops at total_time, never on an equilibrium test
+    metric: frac   # INERT: this is a `transient` run with equilibrium_stop.tol 0 -- nothing auto-stops
+    frac: 0.001   # INERT, as above
+  initial_water_table: saturated
+time:
+  total: "14515200000s"
+  report_interval: "50"
+  save_every_n_reports: 120
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: active_set   # what an absent key resolves to. INERT while routing is off:
+                         # with no surface water to collect, no collector runs
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: @INTEG@   # PER-ARM: tr-bdf2 on cc/cc_nN/tr, bdf2 on bdf2v. See the cc note above
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite tests the BOUNDARY, and step-averaged transmissivity would change the operator being compared across schemes
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what `anderson` resolves to
+    dt: 2419200
+    error_tol: 0.1   # THE RESOLVED VALUE. The controller's default TRACKS equilibrium_stop.tol
+                     # (CreateSNES.cpp), which is 0 here; 0.1 is what that yields. Stated rather
+                     # than inherited, and VERIFIED to be the same input -- see the commit message
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # INERT: routing is off and both tapers are off below
+    logistic_width: 0.1   # INERT, as above
+  extinction_depth: 8   # INERT: it gates the depth_extinction taper, which is off
+  tapers:
+    surface_transition: true   # INERT here: routing: off and no cell is driven across the surface on this fixture
+    depth_extinction: true   # SHIPPED-ON; see the note on surface_transition
+io:
+  source: '@INPUTS@'
+  region: 'ghostbc'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite

@@ -32,34 +32,28 @@ PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem cycles   [env: METHOD=, MODE=, MAXIT=, KSMOOTH=]
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-8
-${MAXIT:+max_iterations $MAXIT}
-${KSMOOTH:+ksat_surface_smoothing $KSMOOTH}
-${KSMOOTH:+ksat_soilbottom_smoothing $KSMOOTH}
-${METHOD:+solver_method $METHOD}
-${INTEG:+time_integration $INTEG}
-${MODE:+time_step_mode $MODE}
-run_type transient
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time $(( ${2} * 50 * 2419200 ))s
-save_nreport_interval ${2}
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region ghostbc
-supplied_wt 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIGS ARE FILES NOW (#83): config.yaml (mode: adaptive, the anderson arms) and
+# config_fixed.yaml (mode: fixed, the newton arms). TWO files because the two modes resolve different
+# key sets -- adaptive carries grow/shrink/norm, fixed carries no controller dials at all -- and a
+# config must state what its run resolves to rather than a superset.
+emit_adaptive() { # $1 stem  $2 time_integration (REQUIRED: it is what distinguishes these arms)
+    local stem="${1:?emit_adaptive needs a stem}"
+    local integ="${2:?emit_adaptive needs a time_integration: it is the only thing that differs between
+                      these arms, so name it rather than inherit it}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" -e "s|@INTEG@|$integ|g" \
+        config.yaml > "$WORK/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$stem.yaml" && { echo "ERROR: unfilled slot in $stem.yaml"; exit 1; }
+    return 0
+}
+
+emit_fixed() { # $1 stem  $2 cycles  $3 max_iterations  $4 ksat smoothing width
+    local stem="${1:?}" cyc="${2:?}" maxit="${3:?}" ksm="${4:?emit_fixed needs a smoothing width}"
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
+        -e "s|@TOTAL@|$(( cyc * 50 * 2419200 ))s|g" -e "s|@SAVE@|$cyc|g" \
+        -e "s|@MAXIT@|$maxit|g" -e "s|@KSMOOTH@|$ksm|g" \
+        config_fixed.yaml > "$WORK/$stem.yaml"
+    grep -q "@[A-Z_]*@" "$WORK/$stem.yaml" && { echo "ERROR: unfilled slot in $stem.yaml"; exit 1; }
+    return 0
 }
 
 GB=""  # mask-aware ghost boundary is now the default (no flag needed)
@@ -67,8 +61,8 @@ BASE=""  # solver.tolerance is now a CONFIG key (snes_stol in the shim), not a C
 fail=0
 
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------
-METHOD=anderson emit cc_n1 120
-METHOD=anderson emit cc_nN 120
+emit_adaptive cc_n1 tr-bdf2
+emit_adaptive cc_nN tr-bdf2
 "$WTM" "$WORK/cc_n1.yaml" $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
   || { echo "RUN FAILED: cc n=1"; tail -3 "$WORK/cc_n1.log"; exit 2; }
 "$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.yaml" $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
@@ -76,11 +70,13 @@ METHOD=anderson emit cc_nN 120
 
 # ---- 2. Cross-scheme agreement (all serial, ghost boundary) -----------------------------------------
 declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
-# newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined
-declare -A CFG=(  [cc]="anderson" [tr]="anderson" [bdf2v]="anderson" [newton]="newton" )
-declare -A INTEG=([cc]="" [tr]="tr-bdf2" [bdf2v]="bdf2" [newton]="")
+# newton is config-owned; it was a BARE flag here, i.e. PLAIN Newton, so continuation is declined.
+# THE INTEGRATOR IS NAMED, NOT LEFT ABSENT. `cc` used to leave it unset and take whatever `anderson`
+# resolved to -- which is tr-bdf2, making cc a byte-identical copy of the tr arm. It still is; the
+# configs now SAY so, and #96 carries the fix.
+declare -A INTEG=([cc]="tr-bdf2" [tr]="tr-bdf2" [bdf2v]="bdf2")
 for s in tr bdf2v newton; do
-  METHOD="${CFG[$s]}" INTEG="${INTEG[$s]}" MODE=$([ "${CFG[$s]}" = newton ] && echo fixed) emit "$s" 120
+  if [ "$s" = newton ]; then emit_fixed "$s" 120 10000 0; else emit_adaptive "$s" "${INTEG[$s]}"; fi
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
     || { echo "RUN FAILED: $s"; tail -3 "$WORK/$s.log"; exit 2; }
 done
@@ -119,7 +115,7 @@ PY
 # config claimed the defaults (max_iterations 10000, smoothing 0) while the run used 1 and 0.5 -- a
 # config that stated three values its own run did not use. -snes_test_jacobian stays on the command
 # line: it is a PETSc diagnostic, not a WTM setting, and PETSc's flags keep their CLI surface.
-METHOD=newton MODE=fixed MAXIT=1 KSMOOTH=0.5 emit jac 1
+emit_fixed jac 1 1 0.5
 JR=$("$WTM" "$WORK/jac.yaml" $GB -snes_test_jacobian 2>&1 \
      | grep -oE '\|\|J - Jfd\|\|_F/\|\|J\|\|_F = [0-9.eE+-]+' | grep -oE '[0-9.eE+-]+$' | sort -g | tail -1)
 if [ -z "$JR" ]; then
