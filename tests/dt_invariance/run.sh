@@ -41,53 +41,29 @@ make_work dtinv
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 = stem, $2 = runoff_ratio
-    # dt_tol travels in the CONFIG now (solver.time_step.error_tol); DT_TOL= per arm.
-    ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-8
-solver_method anderson
-run_type equilibrium
-# CONVERGE TIGHTER THAN YOU COMPARE. The FATES CANCEL assertion below is threshold-free by design: it
-# says the total moves LESS than its largest single part. That only means anything once the per-arm
-# solver noise is smaller than the fate differences being compared. At the default water tolerance
-# (1e-8, #61) the routed-ON block gave 0.9x -- no cancellation visible -- because the noise WAS the
-# signal. Measured (cancellation factor, routed-off / routed-on):
-#     vol_tol 1e-8   9.4x / 0.9x       <- fails
-#     vol_tol 1e-10  19.4x / 1.3x
-#     vol_tol 1e-12  19.4x / 1.3x      <- IDENTICAL to 1e-10
-# 1e-10 and 1e-12 agree to every digit printed, which is the proof that 1e-10 is already converged:
-# what is left is the documented BDF2-startup gap the comment below describes, not solver noise.
-# NOTE the routed-ON margin is only 1.3x even converged. That arm is thin, and it is thin about a REAL
-# residual gap, not about tolerance -- see task #48.
-convergence_water_volume_tol 1e-10
-time_integration tr-bdf2
-total_time 20yr
-supplied_wt 1
-deltat 31536000
-report_interval 5
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-fsm_coupling impulse
-runoff_ratio $2
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-${DT_TOL:+dt_tol $DT_TOL}
-time_step_mode $([ -n "${ADAPT:-}" ] && echo adaptive || echo fixed)
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/dt_invariance/config.yaml. Every setting the run resolves to
+# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# The FIXED arms differ STRUCTURALLY: under mode: fixed the model records no controller dials at all,
+# so those arms DELETE the dial lines rather than setting them, and error_tol takes its fixed-mode
+# resolved value.
+mkcfg() { # $1 stem, $2 runoff_ratio, $3 time_step.mode, $4 error_tol   (ALL REQUIRED)
+    local rr="${2:?mkcfg needs a runoff_ratio: 0 or 0.3}"
+    local sm="${3:?mkcfg needs a time_step.mode: fixed or adaptive}"
+    local et="${4:?mkcfg needs an error_tol -- the two adaptive tolerances ARE the solve-count axis}"
+    local dials=()
+    if [ "$sm" = fixed ]; then
+        dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
+               -e "/^    max_retries:/d" -e "/^    norm:/d")
+    fi
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+        -e "s|@RR@|$rr|g" -e "s|@STEPMODE@|$sm|g" -e "s|@ERRTOL@|$et|g" \
+        "${dials[@]}" config.yaml > "$WORK/$1.yaml"
 }
 
-run() { # $1 = stem, $2 = runoff_ratio, $3.. = extra flags
-    local stem="$1" rr="$2"; shift 2
-    mkcfg "$stem" "$rr"; rm -f "$WORK/$stem.txt"
+run() { # $1 = stem, $2 = runoff_ratio, $3 = time_step.mode, $4 = error_tol, $5.. = extra flags
+    local stem="$1" rr="$2" sm="$3" et="$4"; shift 4
+    mkcfg "$stem" "$rr" "$sm" "$et"; rm -f "$WORK/$stem.txt"
     if ! "$WTM" "$WORK/$stem.yaml" "$@" \
             > "$WORK/$stem.log" 2>&1; then
         echo "  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; return 1
@@ -101,9 +77,9 @@ fail=0
 # Three solve counts per block: fixed dt, and adaptive at a loose and a tight step tolerance.
 for rr_tag in "0:z" "0.3:r"; do
     rr="${rr_tag%%:*}"; p="${rr_tag##*:}"
-    run "${p}fx"    "$rr"                                    || fail=1
-    ADAPT=1 DT_TOL=0.5  run "${p}ad_lo" "$rr" || fail=1
-    ADAPT=1 DT_TOL=0.02 run "${p}ad_hi" "$rr" || fail=1
+    run "${p}fx"    "$rr" fixed    0.1     || fail=1
+    run "${p}ad_lo" "$rr" adaptive "0.5"   || fail=1
+    run "${p}ad_hi" "$rr" adaptive "0.02"  || fail=1
 done
 [[ $fail -eq 0 ]] || { echo "DT INVARIANCE: FAILED (a run did not complete)"; exit 1; }
 

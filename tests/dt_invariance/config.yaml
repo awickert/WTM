@@ -1,0 +1,104 @@
+# tests/dt_invariance -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the answer must not depend on HOW MANY SOLVES were taken to reach it.
+# Six arms, in two blocks of three: with the routed runoff channel OFF (runoff_ratio 0) and ON (0.3).
+# Each block runs a fixed step, then adaptive at a loose and a tight step tolerance -- three different
+# solve counts on the same problem.
+#
+# THREE KEYS VARY PER ARM and run.sh supplies all three:
+#   surface_water.runoff_ratio    0 (channel off) vs 0.3 (routed channel on)
+#   solver.time_step.mode         fixed vs adaptive
+#   solver.time_step.error_tol    0.5 (loose) vs 0.02 (tight) -- adaptive arms only
+#
+# THE FIXED ARMS DIFFER STRUCTURALLY: under mode: fixed the model records no controller dials, so
+# those arms DELETE the dial lines rather than setting them.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @RR@, @STEPMODE@, @ERRTOL@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "20yr"
+  report_interval: "5"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  runoff_ratio: @RR@   # PER-ARM: 0 (routed channel off) or 0.3 (on)
+  collection:
+    method: active_set   # the shipped enforcement; identical on every arm, so the solve-count
+                         # invariance is not confounded by a different constraint
+  routing: impulse
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; identical on every arm
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-10
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: @STEPMODE@   # PER-ARM: fixed, or adaptive at two step tolerances
+    dt: 31536000
+    error_tol: @ERRTOL@   # PER-ARM: the adaptive target. 0.5 loose, 0.02 tight -- the two give
+                          # different solve COUNTS, which is the variable this suite is invariant to
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md). DELETED on the fixed arms.
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
