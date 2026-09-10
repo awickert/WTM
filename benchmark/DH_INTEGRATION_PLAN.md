@@ -88,3 +88,53 @@ In `~/dataanalysis/Barnes2019-DepressionHierarchy` (on a branch):
 Phase 0 baseline (Corsica output) + DH-repo 107-fixture oracle + WTM full suite + before/after output
 diff. Serial must stay bit-identical to the vendored path except where a determinism fix explains the
 change.
+
+
+## Which upstream owns this code today (settled 2026-09-10, #82b/c)
+
+**WTM's `src/dephier.hpp` is a VENDORED COPY**, not the `common/richdem` submodule. Its ancestor is
+richdem's `include/richdem/depressions/depression_hierarchy.hpp`, fork point `0ffc4c2` (2022-05-14),
+established by normalised-diff bisect (see the provenance header in the file itself).
+
+**A correction worth recording, because it is an easy wrong turn.** The file is ABSENT at the richdem
+commit WTM pins (`4308687`) -- but it was never removed upstream. `4308687` is on awickert's
+`submodule-gdal-pin` line, which is NOT a descendant of the fork point; `origin/master` still carries
+the file. "Absent at the pinned HEAD" is not "deleted upstream", and reading it that way would have
+retired a live upstream.
+
+### The ten upstream commits since the fork point, checked BY CONTENT
+
+Commit counts are an upper bound on divergence, not a defect list. Each commit's newly-introduced
+identifiers were checked for presence in WTM's copy:
+
+| commit | subject | new identifiers present in WTM |
+|---|---|---|
+| `91ded4a` | Fix logging | 100% of 24 |
+| `5520625` | Add more fine-grained timing info to DH | 100% of 6 |
+| `e821e7a` | Remove extraneous newlines | 100% of 6 |
+| `67230b3` | Add some brackets | 100% of 3 |
+| `12e6f1b` | Use pair as the basis for OutletLink | 88% of 9 |
+| `c98ac96` | Rename outlet hashing class for clarity | 81% of 11 |
+| `5ac329e` | BUGFIX: Stop MV search at ocean link | 72% of 29 -- **already present**, reached independently (the `ocean_parent -> clabel = OCEAN` early exit) |
+| `2bfde4a` | Simplify `Array2D::iToxy()` | touches Array2D, not DH content |
+| **`c5a183a`** | **Adds CachingOutletChecker** | **57% of 73 -- GENUINELY ABSENT** |
+| **`4b491a1`** | **Start of serialization** | **66% of 33 -- GENUINELY ABSENT** |
+
+Verified directly: `CachingOutletChecker`, `serialize` and `cereal` appear **zero** times in
+`src/dephier.hpp`; `OutletLink` (8) and `ocean_parent` (6) do appear.
+
+### So only two upstream changes are actually missing, and neither is a defect
+
+**`CachingOutletChecker` (`c5a183a`) is a PERFORMANCE cache**, by its own comment: "Accelerates marginal
+volume calculations by caching previous DH lookups" -- when consecutive cells belong to the same leaf
+depression, the same outlet set applies, so it avoids revisiting the DH. It changes no answer.
+NOTE THE COLLISION RISK BEFORE PORTING IT: `CalculateMarginalVolumes` is exactly where WTM's
+area-weighted volumes live (its one correctness-bearing local change, DH_INTEGRATION gap 3 / ENH-4).
+A cache over that function must be reconciled with the area weighting, not dropped on top of it.
+
+**`4b491a1` "Start of serialization"** adds cereal-based serialization. WTM does not serialize the DH,
+so this is unused surface.
+
+CONCLUSION: the vendored copy is not behind on anything that changes a result. The divergence that
+matters runs the OTHER way -- WTM's local additions (area-weighted volumes, the FSM fields, `is_full`),
+which upstream does not have and which any replacement must preserve.
