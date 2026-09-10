@@ -55,7 +55,8 @@ NOTE: a benchmark diagnostic, NOT a unit test. It runs ~30 full model solves
 
 Usage:   python3 recharge_free_boundary.py      # self-contained; builds its own fixture
 """
-import glob, os, subprocess, sys
+import glob, os, re, subprocess, sys
+
 import numpy as np, rasterio
 import paths  # noqa: F401
 from paths import WTM, WORK
@@ -82,32 +83,35 @@ def set_precip(P):
         d.write(np.full((128, 128), P, np.float32), 1)
 
 
-# The config emitter the test suite uses: legacy "key value" lines in, nested YAML out. Going
-# through it rather than hand-writing YAML here means this script rides along with any further
-# schema change instead of being orphaned by the next one -- which is exactly what happened:
-# this script wrote a flat .cfg, the config format migrated to nested YAML, and every model run
-# began failing. See the note on check-the-run below for why that was invisible for so long.
-EMIT = os.path.join(os.path.dirname(__file__), "..", "..", "tests", "emit_config.sh")
+# THE CONFIG IS A FILE NOW: benchmark/picard/config.yaml. The comment that used to sit here said
+# going through tests/emit_config.sh meant this script would ride along with any further schema
+# change instead of being orphaned by the next one. It did not: the shim refused evap_mode once
+# #88 removed the member, and this script sat broken until #101. Reading a real config file is
+# what actually keeps it honest -- the model validates every key in it, on every run.
 
 
-def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
+def run(dt_yr, tag, supplied_wt, integ, collector, smooth):
+    """Render benchmark/picard/config.yaml for one arm and run it.
+
+    `evap_mode` USED TO BE A PARAMETER HERE AND IS GONE (#88 / #101). The member was frozen at 0 and
+    unsettable, so it selected nothing; every arm passed 0 except E, and this script's own note records
+    that `evap_mode 1` was unreachable -- so E's 1 was inert too, and its real setting is
+    collection.method: extended_soil, which it already passes.
+
+    Every per-arm value is REQUIRED. These arms exist to be compared as an order study, so an arm that
+    silently took a default would be comparing something nobody chose.
+    """
     steps = int(round(T / dt_yr))
     cfg = os.path.join(PRIV, f"{tag}.yaml")
-    # total_time, not total_cycles: with report_interval 1 the cycle count is T/dt, and the schema
-    # takes the window directly. Same run, current vocabulary.
-    flat = (
-        f"run_type equilibrium\nfsm_on 0\nevap_mode {evap_mode}\ninfiltration_on 0\nrunoff_ratio 0\n"
-        f"{f'runoff_collector {collector}' + chr(10) if collector else ''}"
-        f"cells_per_degree 10\nsouthern_edge -45\ndeltat {int(dt_yr*YEAR)}\n"
-        f"total_time {T}yr\nreport_interval 1\nfdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\n"
-        f"time_start t0\ntime_end t0\nsurfdatadir {INP}\nregion equil128\nsupplied_wt {supplied_wt}\n"
-        # save_nreport_interval huge: WTM writes the first and LAST report regardless (verified: 80
-        # reports -> 2 tifs, index 0 and index 80), so the final state is always available. Do not set
-        # this to 1 "to be safe" -- at dt = 0.25 yr over 1000 yr that is 4000 tifs per run and ~120k
-        # across the sweep, which is pure I/O for one field we actually read.
-        f"eq_tol 0\n" f"textfilename {PRIV}/{tag}_log.txt\noutfile_prefix {PRIV}/{tag}_out_\nsave_nreport_interval 9999999\n")
-    emitted = subprocess.run(["bash", EMIT], input=flat, capture_output=True, text=True, check=True)
-    open(cfg, "w").write(emitted.stdout)
+    text = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.yaml")).read()
+    for k, v in {"INPUTS": INP, "PRIV": PRIV, "TAG": tag, "DT": int(dt_yr * YEAR),
+                 "TOTAL": f"{T}yr", "INITIAL": "supplied" if supplied_wt else "saturated",
+                 "COLLECTOR": collector, "INTEG": integ, "SMOOTH": smooth}.items():
+        text = text.replace(f"@{k}@", str(v))
+    left = re.findall(r"@[A-Z_]+@", text)
+    if left:
+        raise KeyError(f"config.yaml left unfilled: {sorted(set(left))}")
+    open(cfg, "w").write(text)
     # -wtm_eq_tol 0 DISABLES the equilibrium early-stop, and it is load-bearing for an order study.
     # An order is only meaningful between runs that cover the SAME model time. With the stop live, the
     # dt = 0.25 yr reference converged by the equilibrium metric and halted at 374.5 yr while every
@@ -115,7 +119,8 @@ def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
     # error. It read as ~5000 mm, identical at every dt (order 0.00) in EVERY arm, including the
     # control that must show order 2. A flat error is the signature: truncation error grows with dt,
     # a time offset does not.
-    r = subprocess.run(["mpiexec", "-n", "1", WTM, cfg, *extra],
+    # NOTHING ON THE COMMAND LINE: every setting is in the config file the model validates.
+    r = subprocess.run(["mpiexec", "-n", "1", WTM, cfg],
                        capture_output=True, text=True, env=env)
     # CHECK THE RUN, LOUDLY. This used to swallow the model's exit status and return None when the
     # output was missing, so a failing model surfaced ~80 lines later as an AttributeError on a
@@ -125,26 +130,27 @@ def run(dt_yr, tag, supplied_wt, evap_mode, extra, collector=None):
     outs = sorted(glob.glob(os.path.join(PRIV, f"{tag}_out_*.tif")))
     if not outs:
         raise RuntimeError(
-            f"model run '{tag}' produced no output (dt={dt_yr} yr, flags={' '.join(extra)}).\n"
+            f"model run '{tag}' produced no output (dt={dt_yr} yr, integrator={integ}, "
+            f"collector={collector}, smoothing={smooth}).\n"
             f"  exit={r.returncode}\n  config: {cfg}\n"
             f"  stderr tail: {(r.stderr or '').strip().splitlines()[-3:]}\n"
             f"  stdout tail: {(r.stdout or '').strip().splitlines()[-3:]}")
     return rasterio.open(outs[-1]).read(1)
 
 
-def order_study(P, evap_mode, extra, label, note, collector=None):
+def order_study(P, integ, label, note, collector="active_set", smooth=0):
     """One controlled order sweep: fine-dt reference then coarser dt, all identical
     but for dt. Prints mean|err| over land and the observed convergence order."""
     set_precip(P)
-    ref = run(0.25, f"rfb_ref_{label}", 1, evap_mode, extra, collector)
+    ref = run(0.25, f"rfb_ref_{label}", 1, integ, collector, smooth)
     lo, hi = ref[mask].min(), ref[mask].max()
     print(f"\n=== {label}: {note} ===")
-    print(f"    P={P} m/yr, evap_mode={evap_mode}, flags={' '.join(extra)}")
+    print(f"    P={P} m/yr, integrator={integ}, collector={collector}, smoothing={smooth}")
     print(f"    reference land wtd range [{lo:.2f}, {hi:.2f}] m  (0 => at the surface)")
     print(f"    {'dt(yr)':>7}{'mean|err|_mm':>14}{'order':>8}")
     prev = prevdt = None
     for dt in DTS:
-        f = run(dt, f"rfb_{label}_{dt}", 1, evap_mode, extra, collector)
+        f = run(dt, f"rfb_{label}_{dt}", 1, integ, collector, smooth)
         m = np.abs(f - ref)[mask].mean()
         o = f"{np.log(m/prev)/np.log(dt/prevdt):.2f}" if prev else ""
         print(f"    {dt:>7}{m*1000:>14.4g}{o:>8}")
@@ -155,7 +161,7 @@ def order_study(P, evap_mode, extra, label, note, collector=None):
 #     freeze it as supplied_wt. Every experiment below starts from this same field;
 #     only the recharge and the solver flags differ. ---
 set_precip(0.0)
-smooth = run(0.25, "rfb_genIC", 0, 0, ["-wtm_bdf2_on_V"])
+smooth = run(0.25, "rfb_genIC", 0, "bdf2", "active_set", 0)   # V is defined below; literal here
 with rasterio.open(os.path.join(INP, "equil128_t0_topography.tif")) as t:
     prof = t.profile
 prof.update(dtype="float64")
@@ -163,15 +169,16 @@ with rasterio.open(os.path.join(INP, "equil128_t0_starting_wt.tif"), "w", **prof
     d.write(smooth.astype("float64"), 1)
 print(f"deep smooth IC: land wtd range [{smooth[mask].min():.2f}, {smooth[mask].max():.2f}] m")
 
-V = ["-wtm_bdf2_on_V"]
-SURF_SMOOTH = ["-wtm_ksat_surface_smoothing_width", "0.5",
-               "-wtm_storativity_surface_smoothing_width", "0.5"]
+# BDF2-on-V is a CONFIG value now (solver.time_integration: bdf2), not -wtm_bdf2_on_V (#86).
+V = "bdf2"
+# The smoothing widths are config keys too (solver.smoothing.*); arm D is the only user.
+SURF_SMOOTH = 0.5   # was -wtm_ksat_surface_smoothing_width / -wtm_storativity_surface_smoothing_width
 
 # A. Recharge ON but sub-surface everywhere -> 2nd order (recharge itself is fine).
-order_study(0.002, 0, V, "A_no_crossing",
+order_study(0.002, V, "A_no_crossing",
             "recharge ON, water table stays below the surface -> expect order ~2")
 # B/C. Recharge large enough to reach the surface -> 1st order, both disposal modes.
-order_study(0.01, 0, V, "B_crossing_removed",
+order_study(0.01, V, "B_crossing_removed",
             "cells reach the surface, surface water REMOVED -> expect order ~1")
 # C USED TO BE `evap_mode 1` AND IS NOW EXPRESSED WITH THE COLLECTOR. evap_mode is retired: the member
 # is frozen at 0, the config shim DROPS the key (tests/emit_config.sh), and it is consulted only with
@@ -188,12 +195,13 @@ order_study(0.01, 0, V, "B_crossing_removed",
 # candidate is 777326d (2026-08-14, volume-based recharge), which fixed surface-crossing recharge
 # being re-scaled inconsistently per scheme. Consequence: the free-boundary order loss now appears
 # tied to REMOVAL holding cells at wtd=0, not to crossing per se.
-order_study(0.01, 0, V, "C_crossing_not_removed",
+order_study(0.01, V, "C_crossing_not_removed",
             "cells reach the surface, surface water ACCUMULATES -> was ~1 in 2026-07, now ~2",
             collector="off")
 # D. Smoothing the surface coefficient kinks does not help (not a smoothable kink).
-order_study(0.01, 0, V + SURF_SMOOTH, "D_kink_smoothing",
-            "round the ksat & storativity kinks at wtd=0 -> expect NO help, order ~1")
+order_study(0.01, V, "D_kink_smoothing",
+            "round the ksat & storativity kinks at wtd=0 -> expect NO help, order ~1",
+            smooth=SURF_SMOOTH)
 # E. Extended soil removes the free boundary -> 2nd order restored (the fix).
 # Extended soil is SELECTED AS A MODE, not layered on top of one. It is a member of
 # surface_water.collection.method -- the same enumeration as active_set/implicit/explicit/off -- because
@@ -208,7 +216,7 @@ order_study(0.01, 0, V + SURF_SMOOTH, "D_kink_smoothing",
 # holds cells AT wtd=0 and creates the moving free boundary whose kink costs them the order. Give A-D
 # collector=off too and all four rise to order ~2 (measured: B 2.05/1.97/1.93, D 2.06/2.02/2.01) --
 # the arms stop testing anything and E's order 2 proves nothing, since everything is order 2.
-order_study(0.01, 1, V, "E_extended_soil",
+order_study(0.01, V, "E_extended_soil",
             "continue the aquifer above the surface, no free boundary -> order ~2 RESTORED",
             collector="extended_soil")
 

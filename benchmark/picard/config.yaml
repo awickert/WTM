@@ -1,0 +1,98 @@
+# benchmark/picard/recharge_free_boundary -- THE CONFIG EVERY ARM OF THE ORDER STUDY RUNS.
+#
+# A REAL FILE. This script used to emit through tests/emit_config.sh, deleted once every test suite
+# read a real config (#83). Migrating it also REPAIRED it (#101):
+#
+#   evap_mode              REMOVED. #88 deleted the member -- it was frozen at 0 and unsettable, so it
+#                          selected nothing. Every arm here already passed 0 except E, which passed 1;
+#                          this script's OWN comment records that `evap_mode 1` was unreachable, so
+#                          E's 1 was inert too and its real setting is collection.method: extended_soil.
+#   cells_per_degree 10    DELETED, with southern_edge: grid geometry is DERIVED from the input
+#   southern_edge -45      raster's geotransform (L4 / #124), not supplied by a config.
+#
+# WHAT THIS MEASURES: the observed order of accuracy in dt, at a free surface. eq_tol 0 is LOAD-BEARING
+# and not decoration -- an order is only meaningful between runs covering the SAME model time. With the
+# auto-stop live, the dt = 0.25 yr reference halted at 374.5 yr while coarser runs went the full 1000,
+# so "mean|err|" measured a 626-year time gap rather than truncation error: flat at every dt, order
+# 0.00 in every arm including the control that must show order 2.
+#
+# SLOTS: @INPUTS@ @PRIV@ @TAG@ @DT@ @TOTAL@ @INITIAL@ @COLLECTOR@ @INTEG@ @SMOOTH@
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0   # LOAD-BEARING: no auto-stop, so every dt covers the same model time (see the header)
+    metric: frac   # INERT while tol is 0
+    frac: 0.001   # INERT while tol is 0
+  initial_water_table: @INITIAL@   # PER-ARM: `supplied` for the study runs, `saturated` to generate the IC
+time:
+  total: "@TOTAL@"
+  report_interval: "1"
+  # save_every_n_reports huge: WTM writes the first and LAST report regardless (verified: 80 reports ->
+  # 2 tifs, index 0 and 80), so the final state is always available. Do NOT set this to 1 "to be safe" --
+  # at dt = 0.25 yr over 1000 yr that is 4000 tifs per run, ~120k across the sweep, for one field.
+  save_every_n_reports: 9999999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0
+surface_water:
+  routing: off   # a pure groundwater order study: no lakes, no routing
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: @COLLECTOR@   # PER-ARM and THE SUBJECT of arms C and E: the default removes surface water,
+                          # `off` lets it accumulate, `extended_soil` continues the aquifer upward
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: @INTEG@   # PER-ARM: bdf2 (BDF2-on-V) is what this study measures the order of
+  tolerance: 1e-8
+  max_iterations: 10000
+  t_bar: false
+  convergence:
+    metric: volume
+    water_volume_tol: 1e-08
+  smoothing:
+    ksat_surface: @SMOOTH@   # PER-ARM: arm D raises these to test whether the order loss is a
+    ksat_soilbottom: @SMOOTH@   # smoothable kink. It is not -- D stays at order ~1.
+    storativity_surface: 0.01
+  anderson:
+    restart:
+      enabled: false
+      rho: 0.9
+      patience: 2
+      max_it: 40
+      max_restarts: 30
+  time_step:
+    mode: fixed   # THE SUBJECT IS dt, so the controller must not resize it
+    dt: @DT@
+    error_tol: 0.1   # INERT under mode: fixed
+dev:
+  storage_form: volume
+  under_relaxation: 1
+parallel:
+  threads_per_rank: 1
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05
+    logistic_width: 0.1
+  extinction_depth: 8
+  tapers:
+    surface_transition: true
+    depth_extinction: true
+io:
+  source: '@INPUTS@'
+  region: 'equil128'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@PRIV@/@TAG@_out_'
+  run_log: '@PRIV@/@TAG@_log.txt'
+  trace: []
+  verbosity: normal
+  directory: '@PRIV@/@TAG@_prov'
+  if_exists: overwrite

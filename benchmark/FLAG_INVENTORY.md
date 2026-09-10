@@ -31,10 +31,37 @@ was covering three different situations that need opposite treatment, so it has 
 | **dormant dial** | a constant belonging to a dormant switch -- a knob on a switch that is never thrown |
 | **archive-only** | its only callers are orphaned benchmark scripts that emit the legacy flat `.cfg` and cannot run |
 
-**"Runnable" excludes the orphaned benchmark scripts.** A benchmark script is counted as runnable only if
-it calls `tests/emit_config.sh`; the rest still write the pre-migration flat `.cfg` and abort. That
-exclusion is why some counts fell against the earlier version: `-wtm_bdf2`'s nine callers are all
-orphaned, and so is the sole caller of `storativity_surface_smoothing_width` and of `dt_norm_rms`.
+**"Runnable" excludes the orphaned benchmark scripts**, and the definition was RE-DERIVED on 2026-09-10
+(#100) because the old one stopped working. It used to be `grep -q emit_config "$script"` -- a script
+counted as runnable if it called the config shim. That shim was deleted when the last test suite stopped
+needing it (#83), so the old test now matches NOTHING and would classify every benchmark as an orphan,
+silently zeroing every flag's coverage.
+
+Worse, the old test was already wrong before the deletion: `scheme_bench/run.sh` called the shim and so
+counted as runnable, while being **unable to run** -- three of its arms pass `adaptive_dt` /
+`dt_continuation`, retired by #38, and four pass `-wtm_anderson`, dead since #86 closed the namespace.
+A grep standing in for a real check is the same fragile joint as #97.
+
+**The definition now**: a benchmark script is runnable if it reads a real `config.yaml` and does not
+abort. Enumerated rather than grepped, because the population is small and the answer should be
+readable:
+
+| script | state |
+|---|---|
+| `mass_balance_test.sh` | **RUNNABLE** -- reads `mass_balance_config.yaml` |
+| `scheme_bench/run.sh` | aborts: retired vocabulary (#101) |
+| `picard/recharge_free_boundary.py` | aborts: passes `evap_mode`, removed by #88 (#101) |
+| all others | orphaned (legacy flat `.cfg`) or analysis-only, not model drivers |
+
+**ONE runnable benchmark script, not three.** Two flags lose their only non-orphan caller and drop to
+dormant: `-wtm_fsm_continuous` and `-wtm_volume_storage` (scheme_bench only), as do
+`-wtm_evap_taper`, `-wtm_extended_soil`, `-wtm_ksat_surface_smoothing_width` and
+`-wtm_storativity_surface_smoothing_width` (recharge_free_boundary only). `-wtm_eq_tol` keeps a runnable
+caller in `mass_balance_test.sh`. The earlier claims survive unchanged: `-wtm_bdf2`'s nine callers are
+still all orphaned, and so is the sole caller of `dt_norm_rms`.
+
+**These are BENCHMARK counts, not test counts.** The 39 test suites are the primary coverage evidence
+and none of this touches them -- every one reads a real config file and runs.
 
 **Why the distinction matters.** For a *default-only* flag, deletion is not on the table -- the mechanism
 is load-bearing and runs constantly; the only question is expose-or-hard-code, and a hard-coded constant
@@ -51,7 +78,8 @@ Reproduce with:
 ```sh
 grep -rhoE '"-wtm_[a-z0-9_]+"' src/ | tr -d '"' | sort -u          # the 34
 grep -rl --include='*.sh' --include='*.py' --include='*.yaml' --include='*.cfg' -- "$flag" tests/
-grep -q emit_config "$script"                                       # runnable vs orphan
+# runnable vs orphan: see the enumerated table above -- do NOT re-introduce a grep proxy,
+# which is what went stale (#100). A script is runnable if it reads a real config.yaml and runs.
 ```
 
 Note the `--include` filters must not follow a `--` end-of-options marker; doing so silently disables
