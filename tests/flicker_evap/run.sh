@@ -40,52 +40,22 @@ BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cy
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-taper_surface_transition ${TAPERS:-true}
-taper_depth_extinction ${TAPERS:-true}
-solver_method anderson
-run_type equilibrium
-fsm_on 0
-# Pinned to the FORMER default collector on purpose. This test's subject is the EVAPORATION
-# discontinuity taper: it needs a fixture that visibly flickers with the taper OFF, so the taper can be
-# shown to remove it. Under the current default, active_set, the bare (taper-off) arm SETTLES -- the
-# semismooth pin removes that flicker by itself -- so the negative control stops discriminating and the
-# test reports "does not bite". Hold the collector fixed so the taper remains testable.
-# (That active_set alone also kills the evaporation-discontinuity flicker is a real finding, recorded
-# in benchmark/scheme_bench/README.md; it is not something this test can demonstrate.)
-# collection.method: off -- above-surface water is genuinely UNMANAGED, so the evaporation taper is the
-# ONLY thing that can bring the table back down. That is what this suite's header has always claimed,
-# and what NO PONDING needs in order to mean anything.
+# THE CONFIG IS A FILE NOW (#83): tests/flicker_evap/config.yaml. Every setting the run resolves to
+# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
 #
-# IT WAS `implicit` UNTIL 2026-09-10 (#87). The in-residual siphon removes above-surface water by
-# itself, so `wtd <= 0` held whichever mechanism did the work and the assertion could not tell the
-# taper from the collector. (The arm ALSO set dev.allow_aboveground_water_columns: true, which read as
-# "clamp off" but was overwritten by the collector selector and did nothing at all -- #35.)
-runoff_collector off
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 14515200000s
-save_nreport_interval 120
-report_interval 50
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region flickevap
-supplied_wt 1
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# BOTH TAPERS ARE THE SUBJECT and both are supplied per arm. Since #88 removed evap_mode, the taper is
+# the ONLY thing that removes surface water here, so the taper-off arm is a real control rather than
+# a cosmetic change.
+emit() { # $1 stem, $2 both evaporation.tapers (REQUIRED: true|false)
+  local tp="${2:?emit needs the taper setting: it IS the subject, never inherit it}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|@TAPER@|$tp|g" config.yaml > "$WORK/$1.yaml"
 }
 # eq_tol 0: run the full fixed cycle count so the per-cycle change is observed, not auto-stopped.
-emit managed
+emit managed true
 "$WTM" "$WORK/managed.yaml" > "$WORK/managed.log" 2>&1 \
   || { echo "RUN FAILED: managed"; tail -3 "$WORK/managed.log"; exit 2; }
-TAPERS=false emit bare   # the BARE arm is the one with the tapers off -- that is its subject
+emit bare false   # the BARE arm is the one with the tapers off -- that is its subject
 "$WTM" "$WORK/bare.yaml" > "$WORK/bare.log" 2>&1 \
   || { echo "RUN FAILED: bare"; tail -3 "$WORK/bare.log"; exit 2; }
 
