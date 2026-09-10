@@ -28,34 +28,21 @@ make_work lc
 TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: INTEG=, RELAX=]
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-${INTEG:+time_integration $INTEG}
-${RELAX:+under_relaxation $RELAX}
-run_type transient
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 29030400000s
-save_nreport_interval 60
-report_interval 200
-fdepth_a 100
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region limitcyc
-supplied_wt 1
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/limit_cycle/config.yaml. Every setting the run resolves to is
+# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# equilibrium_stop.tol is 0 in that file, deliberately: this suite watches the PER-CYCLE change for a
+# limit cycle, so it must run the clock out rather than stop as soon as the change looks small.
+emit() { # $1 stem, $2 time_integration, $3 dev.under_relaxation   (BOTH REQUIRED)
+  local ti="${2:?emit needs a time_integration: name the value for this arm, do not inherit it}"
+  local rx="${3:?emit needs an under_relaxation: naming it is what keeps the damped arm distinct}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  time_integration: tr-bdf2|  time_integration: $ti|" \
+      -e "s|^  under_relaxation: 1|  under_relaxation: $rx|" config.yaml > "$WORK/$1.yaml"
 }
 BB=""
 QUIET="${QUIET:-1e-4}"   # metres; final per-cycle |Δwtd| below this = settled (a limit cycle would stay large)
-emit cc; INTEG=bdf2 emit bd
+emit cc tr-bdf2 1; emit bd bdf2 1
 "$WTM" "$WORK/cc.yaml" $BB                > "$WORK/cc.log" 2>&1 || { echo "RUN FAILED: cc"; tail -3 "$WORK/cc.log"; exit 2; }
 "$WTM" "$WORK/bd.yaml" $BB > "$WORK/bd.log" 2>&1 || { echo "RUN FAILED: bd"; tail -3 "$WORK/bd.log"; exit 2; }
 
@@ -66,7 +53,7 @@ emit cc; INTEG=bdf2 emit bd
 #            identical") and nothing ever checked it. An off switch that is not exactly off is worse than
 #            no off switch, because every result taken with it is quietly a different model.
 #   a = 0.5  must DIFFER, or the key is inert and the check above proves nothing.
-RELAX=1.0 emit rx1; RELAX=0.5 emit rx05
+emit rx1 tr-bdf2 1.0; emit rx05 tr-bdf2 0.5
 "$WTM" "$WORK/rx1.yaml"  $BB > "$WORK/rx1.log"  2>&1 || { echo "RUN FAILED: rx1";  tail -3 "$WORK/rx1.log";  exit 2; }
 "$WTM" "$WORK/rx05.yaml" $BB > "$WORK/rx05.log" 2>&1 || { echo "RUN FAILED: rx05"; tail -3 "$WORK/rx05.log"; exit 2; }
 

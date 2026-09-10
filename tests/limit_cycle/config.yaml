@@ -1,0 +1,98 @@
+# tests/limit_cycle -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# ARMS. Two axes are varied, and each arm names its own value in run.sh:
+#   solver.time_integration   cc (as written) vs bdf2
+#   dev.under_relaxation      1.0 vs 0.5 -- damping the COMMITTED step
+# under_relaxation is a `dev` key precisely because it voids a TRANSIENT trajectory: it steps a damped
+# surrogate rather than the problem as stated. That is the point here, not a side effect.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0   # the early stop is DISABLED: this suite watches the per-cycle change for a limit cycle,
+             # so it must run the clock out rather than stop as soon as the change looks small.
+    metric: frac   # UNSTATED: nobody chose this -- decide it for this suite
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+  initial_water_table: supplied
+time:
+  total: "29030400000s"
+  report_interval: "200"
+  save_every_n_reports: 60
+transmissivity:
+  fdepth:
+    a: 100
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement; identical on every arm
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # the base arm; run.sh overrides to bdf2 for the second integrator arm
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves; the same on every arm
+    dt: 2419200
+    error_tol: 0.1   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  under_relaxation: 1   # THE SECOND AXIS, and the base arm. run.sh overrides to 0.5 for the damped arm.
+                        # It is a `dev` key because it voids a TRANSIENT trajectory -- it steps a damped
+                        # surrogate rather than the problem as stated -- which is the point here.
+  storage_form: volume   # exact dV rather than the secant approximation
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'limitcyc'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
