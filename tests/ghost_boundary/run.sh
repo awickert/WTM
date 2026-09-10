@@ -3,8 +3,10 @@
 # edges and ocean at the west (see make_inputs.py), verify that the off-map land-slope Neumann ghost is
 # implemented consistently across every solver assembly site:
 #
-#   1. MPI determinism   -- cc (Anderson) with the ghost boundary is bit-for-bit identical on 1 vs N ranks
-#                           (exercises the off-map reads under domain decomposition).
+#   1. MPI determinism   -- cc (Anderson) with the ghost boundary agrees on 1 vs N ranks to the solver's
+#                           own water tolerance (exercises the off-map reads under domain decomposition).
+#                           NOT bit-for-bit: that was claimed here, and was never true -- see the measured
+#                           tolerance-scaling note beside the assertion.
 #   2. Cross-scheme      -- cc / TR-BDF2 / BDF2-on-V / Newton integrate the SAME steady residual, so under
 #                           the ghost boundary they must converge to the SAME water table.
 #   3. Newton Jacobian   -- ||J - Jfd||_F/||J||_F stays small (~1e-4) with the ghost boundary ON, i.e. the
@@ -26,9 +28,15 @@ make_work ghostbc
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-3 head bound x0.25 exactly -- the same strictness, correctly labelled.
-TOL="${TOL:-2.5e-4}"      # STEADY-STATE + MPI agreement under the ghost boundary. NOT a
-                          # cross-scheme bound: at the fixed point the schemes agree to 0.00e+00
-                          # by construction, so this tolerance is never the binding constraint (#96).
+TOL="${TOL:-2.5e-4}"      # STEADY-STATE cross-scheme agreement under the ghost boundary.
+                          # ITS OLD JUSTIFICATION WAS THE BUG (#34). It read: "NOT a cross-scheme bound:
+                          # at the fixed point the schemes agree to 0.00e+00 by construction, so this
+                          # tolerance is never the binding constraint". The 0.00e+00 was not "by
+                          # construction" -- every compared field was identically zero, because the wedge
+                          # had saturated and active_set pinned it. The agreement was read as a strong
+                          # result and written down as a rationale, which is how it survived a review.
+                          # Live values on the repaired fixture, in water: tr 1.34e-08, bdf2v ~1.1e-08,
+                          # newton 2.80e-07 -- so TOL now sits ~900x above the largest real signal.
 JTOL="${JTOL:-1e-2}"      # Newton ||J-Jfd||/||J|| ceiling (smooth-T tangent; piecewise kink keeps it >1e-8)
 PY="${PY:-python3}"
 MPIRUN="${MPIRUN:-mpirun}"
@@ -63,8 +71,10 @@ BASE=""  # solver.tolerance is now a CONFIG key (snes_stol in the shim), not a C
 fail=0
 
 # ---- 1. MPI determinism (cc, ghost boundary): 1 rank vs N ranks -------------------------------------
-emit_adaptive cc_n1 tr-bdf2
-emit_adaptive cc_nN tr-bdf2
+# cc's integrator is backward-euler (see the INTEG note in section 2, which is where it is decided).
+# Named literally here because INTEG is declared below; the two must not drift apart.
+emit_adaptive cc_n1 backward-euler
+emit_adaptive cc_nN backward-euler
 "$WTM" "$WORK/cc_n1.yaml" $GB $BASE > "$WORK/cc_n1.log" 2>&1 \
   || { echo "RUN FAILED: cc n=1"; tail -3 "$WORK/cc_n1.log"; exit 2; }
 "$MPIRUN" -n "$NPROCS" "$WTM" "$WORK/cc_nN.yaml" $GB $BASE > "$WORK/cc_nN.log" 2>&1 \
@@ -77,15 +87,22 @@ declare -A FLAG=( [cc]="" [tr]="" [bdf2v]="" [newton]="" )
 # It used to leave the key unset and take whatever `anderson` resolved to; writing that value down
 # changes nothing about the run, which is the point of materialising a config.
 #
-# THAT MAKES cc A BYTE-IDENTICAL COPY OF THE tr ARM, and the copy is NOT fixed here. It could be fixed
-# by giving cc backward-euler -- `cc` denotes backward-euler in tests/variable_porosity, and the name
-# suggests it was meant as the first-order default before that default moved to tr-bdf2. But the arm's
-# OWN history does not support that: its original definition was `-wtm_anderson` with NO integrator
-# flag, i.e. "whatever the default is", and tr-bdf2 IS the default. So pinning backward-euler would
-# not restore an earlier intent -- it would ASSERT a new one, changing which scheme this suite
-# exercises. That is a decision about what the test measures, and #96 carries it rather than a cleanup
-# commit making it quietly.
-declare -A INTEG=([cc]="tr-bdf2" [tr]="tr-bdf2" [bdf2v]="bdf2")
+# cc IS backward-euler NOW, AND THAT IS A DELIBERATE CHANGE OF WHAT THIS SUITE MEASURES (#34/#96).
+# It was tr-bdf2, which made it a BYTE-IDENTICAL COPY of the tr arm -- so `tr=0.00e+00` in check 2 was
+# a field compared against itself, and one of four arms measured nothing.
+#
+# The previous note here declined to change it, on the grounds that the arm's history was `-wtm_anderson`
+# with no integrator flag ("whatever the default is", and tr-bdf2 IS the default), so pinning
+# backward-euler would ASSERT a new intent rather than restore an old one. That reasoning was right to
+# refuse a QUIET change, and this is not one. The decisive argument is the header three lines up: check 2
+# is stated as "cc / TR-BDF2 / BDF2-on-V / Newton ... must converge to the SAME water table" -- FOUR
+# schemes. With cc = tr-bdf2 there were only three, so the duplicate contradicted the suite's own claim.
+# Naming backward-euler makes the suite do what it says.
+#
+# Verified it earns its place rather than just being different: backward-euler converges on this fixture
+# to the same steady wtd range (-1.9059 .. -0.7482) and sits 1.335e-08 m of water from tr-bdf2 -- a real,
+# nonzero measurement, four orders inside TOL.
+declare -A INTEG=([cc]="backward-euler" [tr]="tr-bdf2" [bdf2v]="bdf2")
 for s in tr bdf2v newton; do
   if [ "$s" = newton ]; then emit_fixed "$s" 120 10000 0; else emit_adaptive "$s" "${INTEG[$s]}"; fi
   "$WTM" "$WORK/$s.yaml" ${FLAG[$s]} $GB $BASE > "$WORK/$s.log" 2>&1 \
@@ -99,6 +116,7 @@ BVF=$(ls "$WORK"/bdf2v_*.tif | tail -1)
 NWF=$(ls "$WORK"/newton_*.tif | tail -1)
 
 TOL="$TOL" NPROCS="$NPROCS" PHI="$INP/ghostbc_porosity.tif" TESTS="$(readlink -f ..)" \
+  WATER_TOL="$(awk -F: '/water_volume_tol:/{v=$2; sub(/^[ \t]+/,"",v); sub(/[ \t].*$/,"",v); print v; exit}' config.yaml)" \
   "$PY" - "$CC1" "$CCN" "$TRF" "$BVF" "$NWF" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
@@ -113,7 +131,28 @@ d_mpi = mx(cc1, ccn); d_tr = mx(cc1, tr); d_bv = mx(cc1, bv); d_nw = mx(cc1, nw)
 print(f"  cc steady wtd: min {cc1[m].min():.3f} max {cc1[m].max():.3f} m (land, incl. edges)")
 print(f"  1. MPI determinism  cc n=1 vs n={n}: max|d| = {d_mpi:.2e} m")
 print(f"  2. steady-state agreement vs cc:  tr={d_tr:.2e}  bdf2v={d_bv:.2e}  newton={d_nw:.2e} m")
-ok = (d_mpi <= 1e-9) and max(d_tr, d_bv, d_nw) <= tol
+# THE MPI BOUND IS THE SOLVER TOLERANCE, NOT 1e-9, AND IT IS MEASURED (#34, #84's class).
+# It was `d_mpi <= 1e-9` with a header claiming "bit-for-bit identical on 1 vs N ranks". That claim was
+# never tested: while this suite's field was identically zero, d_mpi was 0.00e+00 for free. On a live
+# field it is not bit-identical, and it should not be expected to be -- a different domain decomposition
+# sums the Anderson reductions in a different floating-point order.
+#
+# What settles it as NOISE rather than a ghost-cell error under decomposition: d_mpi tracks the solver
+# tolerance instead of plateauing. Measured, same fixture, sweeping solver.tolerance and water_volume_tol
+# together:
+#     tr-bdf2         tol 1e-08 -> 7.341e-09 (0.73x)   1e-10 -> 6.631e-11 (0.66x)   1e-12 -> 9.131e-13 (0.91x)
+#     backward-euler  tol 1e-08 -> 2.083e-08 (2.08x)   1e-10 -> 8.796e-11 (0.88x)   1e-12 -> 1.321e-12 (1.32x)
+# Four orders of magnitude, two schemes, ratio always O(1) and never plateauing. A real decomposition
+# error would stop shrinking as the tolerance tightened. This does.
+#
+# THE FACTOR OF 5 IS A CHOICE, and it is mine rather than something the model dictates: the six
+# measurements above span 0.66x to 2.08x, so 5x clears the worst by ~2.4x. It is still 5e-08 on the
+# shipped tolerance -- four orders tighter than TOL, and far tighter than any real off-map ghost error
+# could hide under. Raise it only with a measurement, never to make a red test green.
+MPI_TOL_FACTOR = 5.0
+mpi_tol = MPI_TOL_FACTOR * float(os.environ["WATER_TOL"])   # config's solver.convergence.water_volume_tol
+print(f"     (MPI bound = {MPI_TOL_FACTOR:g}x the run's own solver water tolerance = {mpi_tol:g} m; see run.sh)")
+ok = (d_mpi <= mpi_tol) and max(d_tr, d_bv, d_nw) <= tol
 print("PASS" if ok else "FAIL", "(steady-state / MPI agreement under the ghost boundary)")
 sys.exit(0 if ok else 1)
 PY
