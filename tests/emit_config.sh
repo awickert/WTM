@@ -95,6 +95,13 @@ val()  { printf '%s' "${V[$1]}"; }
 # That is the property that makes this safe to do in one sweep rather than suite by suite.
 def_()  { if have "$1"; then val "$1"; else printf '%s' "$2"; fi; }
 
+# MARK A VALUE THE SUITE DID NOT STATE. Materialised configs (#83) must not LAUNDER: a value the shim
+# supplied is not a value anyone chose, and once it is written into a committed file in the author's
+# voice there is nothing to distinguish the two. This appends a comment saying so, on exactly the lines
+# where def_ fell back. Andy's rule for that task: never write something that hides a failure -- an
+# unmarked default is a decision nobody made, wearing the clothes of one.
+mark_() { have "$1" || printf '%s' "   # UNSTATED: shim default, nobody chose this"; }
+
 # REFUSE A KEY THIS SHIM DOES NOT CONSUME. Until now an unrecognised legacy key was silently
 # DROPPED, and this sits UPSTREAM of every guard the model has: WTM aborts on an unknown YAML key
 # and on an unread -wtm_ flag, but neither ever sees a key the shim swallowed. That is not
@@ -173,8 +180,8 @@ echo "  equilibrium_stop:"
 # tolerance from min(eq_tol,0.5)=0.001 to the never-stop branch's 0.5, which moved tests/xrank_growth.
 # A run that stops on this tolerance says what it stops at.
 have eq_tol && echo "    tol: $(val eq_tol)"
-echo "    metric: $(def_ eq_metric frac)"
-echo "    frac: $(def_ eq_frac 0.001)"
+echo "    metric: $(def_ eq_metric frac)$(mark_ eq_metric)"
+echo "    frac: $(def_ eq_frac 0.001)$(mark_ eq_frac)"
 if have supplied_wt; then
     case "$(val supplied_wt)" in
         0) echo "  initial_water_table: saturated" ;;
@@ -205,7 +212,7 @@ if have fdepth_a || have fdepth_b || have fdepth_fmin; then
     have fdepth_a    && echo "    a: $(val fdepth_a)"
     have fdepth_b    && echo "    b: $(val fdepth_b)"
     have fdepth_fmin && echo "    fmin: $(val fdepth_fmin)"
-    echo "  additive_background_transmissivity: $(def_ t_bedrock 0)"
+    echo "  additive_background_transmissivity: $(def_ t_bedrock 0)$(mark_ t_bedrock)"
 fi
 
 # --- surface_water -----------------------------------------------------------
@@ -266,23 +273,23 @@ esac
 echo "solver:"
 echo "  method: $_method"
 have time_integration && echo "  time_integration: $(val time_integration)"
-echo "  tolerance: $(def_ snes_stol 1e-8)"
-echo "  max_iterations: $(def_ max_iterations 10000)"
-echo "  t_bar: $(def_ t_bar false)"
+echo "  tolerance: $(def_ snes_stol 1e-8)$(mark_ snes_stol)"
+echo "  max_iterations: $(def_ max_iterations 10000)$(mark_ max_iterations)"
+echo "  t_bar: $(def_ t_bar false)$(mark_ t_bar)"
 echo "  convergence:"
-echo "    metric: $(def_ convergence_metric volume)"
-echo "    water_volume_tol: $(def_ convergence_water_volume_tol 1e-08)"
+echo "    metric: $(def_ convergence_metric volume)$(mark_ convergence_metric)"
+echo "    water_volume_tol: $(def_ convergence_water_volume_tol 1e-08)$(mark_ convergence_water_volume_tol)"
 echo "  smoothing:"
-echo "    ksat_surface: $(def_ ksat_surface_smoothing 0)"
-echo "    ksat_soilbottom: $(def_ ksat_soilbottom_smoothing 0)"
-echo "    storativity_surface: $(def_ storativity_surface_smoothing 0.01)"
+echo "    ksat_surface: $(def_ ksat_surface_smoothing 0)$(mark_ ksat_surface_smoothing)"
+echo "    ksat_soilbottom: $(def_ ksat_soilbottom_smoothing 0)$(mark_ ksat_soilbottom_smoothing)"
+echo "    storativity_surface: $(def_ storativity_surface_smoothing 0.01)$(mark_ storativity_surface_smoothing)"
 echo "  anderson:"
 echo "    restart:"
-echo "      enabled: $(def_ ar_enabled false)"
-echo "      rho: $(def_ ar_rho 0.9)"
-echo "      patience: $(def_ ar_patience 2)"
-echo "      max_it: $(def_ ar_max_it 40)"
-echo "      max_restarts: $(def_ ar_max_restarts 30)"
+echo "      enabled: $(def_ ar_enabled false)$(mark_ ar_enabled)"
+echo "      rho: $(def_ ar_rho 0.9)$(mark_ ar_rho)"
+echo "      patience: $(def_ ar_patience 2)$(mark_ ar_patience)"
+echo "      max_it: $(def_ ar_max_it 40)$(mark_ ar_max_it)"
+echo "      max_restarts: $(def_ ar_max_restarts 30)$(mark_ ar_max_restarts)"
 echo "  time_step:"
 [[ -n "$_mode" ]] && echo "    mode: $_mode"
 have deltat && echo "    dt: $(val deltat)"
@@ -299,12 +306,12 @@ have dt_max && echo "    dt_max: \"$(val dt_max)\""
 # controller that is not running is not a setting of the run. full_config.yaml emits them under the same
 # condition (src/WTM.cpp), so the two agree and config_identity has nothing to report either way.
 if [[ "$_ctl" == true ]]; then
-    echo "    grow: $(def_ dtc_grow 1.5)"
-    echo "    shrink: $(def_ dtc_shrink 0.25)"
-    echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)"
-    echo "    max_retries: $(def_ dtc_max_retries 15)"
+    echo "    grow: $(def_ dtc_grow 1.5)$(mark_ dtc_grow)"
+    echo "    shrink: $(def_ dtc_shrink 0.25)$(mark_ dtc_shrink)"
+    echo "    grow_if_niter_leq: $(def_ dtc_easy_iters 8)$(mark_ dtc_easy_iters)"
+    echo "    max_retries: $(def_ dtc_max_retries 15)$(mark_ dtc_max_retries)"
     # norm narrower still -- parsed in the ADAPTIVE branch only, not Newton's ramp.
-    [[ "$_mode" == adaptive ]] && echo "    norm: $(def_ dt_norm rms)"
+    [[ "$_mode" == adaptive ]] && echo "    norm: $(def_ dt_norm rms)$(mark_ dt_norm)"
 fi
 
 # --- dev ---------------------------------------------------------------------
@@ -312,21 +319,21 @@ fi
 # assemblies are the same equation -- S is the exact secant). under_relaxation VOIDS a transient
 # trajectory: it steps a damped surrogate rather than the problem stated.
 echo "dev:"
-echo "  storage_form: $(def_ storage volume)"
-echo "  under_relaxation: $(def_ under_relaxation 1)"
+echo "  storage_form: $(def_ storage volume)$(mark_ storage)"
+echo "  under_relaxation: $(def_ under_relaxation 1)$(mark_ under_relaxation)"
 
 echo "parallel:"
-echo "  threads_per_rank: $(def_ threads_per_rank 1)"
+echo "  threads_per_rank: $(def_ threads_per_rank 1)$(mark_ threads_per_rank)"
 
 # --- evaporation ---------------------------------------------------------------
 echo "evaporation:"
 echo "  et_sigmoid:"
-echo "    wtd_center: $(def_ et_sigmoid_wtd_center 0.05)"
-echo "    logistic_width: $(def_ et_sigmoid_width 0.1)"
-echo "  extinction_depth: $(def_ extinction_depth 8)"
+echo "    wtd_center: $(def_ et_sigmoid_wtd_center 0.05)$(mark_ et_sigmoid_wtd_center)"
+echo "    logistic_width: $(def_ et_sigmoid_width 0.1)$(mark_ et_sigmoid_width)"
+echo "  extinction_depth: $(def_ extinction_depth 8)$(mark_ extinction_depth)"
 echo "  tapers:"
-echo "    surface_transition: $(def_ taper_surface_transition true)"
-echo "    depth_extinction: $(def_ taper_depth_extinction true)"
+echo "    surface_transition: $(def_ taper_surface_transition true)$(mark_ taper_surface_transition)"
+echo "    depth_extinction: $(def_ taper_depth_extinction true)$(mark_ taper_depth_extinction)"
 
 # --- io ----------------------------------------------------------------------
 if have surfdatadir || have region || have time_start || have time_end; then
@@ -346,7 +353,7 @@ if have textfilename || have outfile_prefix || have trace || have run_dir; then
     have outfile_prefix && echo "  outfile_prefix: '$(val outfile_prefix)'"
     have textfilename   && echo "  run_log: '$(val textfilename)'"
     echo "  trace: [$(def_ trace '')]"
-    echo "  verbosity: $(def_ verbosity normal)"
+    echo "  verbosity: $(def_ verbosity normal)$(mark_ verbosity)"
     # EVERY RUN GETS A PROVENANCE RECORD. output.directory is what gates write_provenance() and
     # write_full_config() in the model (src/WTM.cpp), and no test had ever set it -- so not one run in
     # the suite recorded which binary produced it. That is exactly how a measurement got attributed to

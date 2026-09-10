@@ -26,50 +26,29 @@ make_work fscons
 TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-../emit_config.sh > "$WORK/c.yaml" <<EOF
-solver_method anderson
-run_type equilibrium
-total_time 24yr
-supplied_wt 1
-deltat 31536000
-report_interval 2
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_collector active_set  # was: implicit + the retired -wtm_active_set flag
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-eq_tol 0
-# STATED, not inherited. These four are DERIVED by the model from solver.method and the collector, so
-# leaving them out meant this suite's configs described a run they did not choose: `auto` resolves them
-# and the config recorded whatever came back. They are pinned here at the values this arm has always
-# run, so the measurement is unchanged and the choice is now visible where the arm is read.
-time_integration tr-bdf2
-time_step_mode adaptive
-dt_tol 0.5
-textfilename $WORK/c.txt
-outfile_prefix $WORK/c_
-EOF
-# FIRST ARM pinned to `impulse`. It used to get impulse for free, as the default; `continuous` is the
-# default now, so WITHOUT this pin both arms would run continuous and every comparison below would be
-# vacuous -- NON-VACUOUS measured exactly 0.000e+00 the moment the default flipped. Pin it rather than
-# lean on the default: what this test compares is the two couplings, and that has to stay true whichever
-# one the model happens to ship.
-sed -i -e "s|^  mode: routed|  mode: routed\n  fsm_coupling: impulse|" "$WORK/c.yaml"
+# THE CONFIG IS A FILE NOW (#83): tests/fsm_conservation/config.yaml, read and edited directly rather
+# than generated. cfg() instantiates it for one arm by substituting the three run-time tokens -- the
+# fixture directory, this run's work directory, and the arm's stem -- and nothing else.
+cfg() { # $1 = stem ; extra sed expressions may follow
+    local stem="$1"; shift
+    sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" "$@" config.yaml > "$WORK/$stem.yaml"
+}
+
+# FIRST ARM runs the file as written: fsm_coupling: impulse, stated in config.yaml. It used to get
+# impulse for free as the default; `continuous` is the default now, so without the pin both arms would
+# run continuous and every comparison below would be vacuous -- NON-VACUOUS measured exactly 0.000e+00
+# the moment the default flipped. What this test compares is the two couplings, and that has to stay
+# true whichever one the model happens to ship.
+cfg c
 "$WTM" "$WORK/c.yaml" > "$WORK/c.log" 2>&1 \
   || { echo "RUN FAILED"; tail -5 "$WORK/c.log"; exit 2; }
 
 # SECOND ARM: the same physical problem under the OTHER FSM coupling. `impulse` overwrites the water
 # table with FSM's result between steps; `continuous` instead feeds FSM's per-cell volume change into
 # the NEXT step's source term. The two integrate differently and reach different states -- which is the
-# point, and what makes the comparison below non-vacuous.
-sed -e "s|$WORK/c.txt|$WORK/s.txt|" -e "s|$WORK/c_|$WORK/s_|" \
-    -e "s|^  fsm_coupling: impulse|  fsm_coupling: continuous|" "$WORK/c.yaml" > "$WORK/s.yaml"
+# point, and what makes the comparison below non-vacuous. ONE key differs between the arms, and this is
+# the only place it is changed.
+cfg s -e "s|^  fsm_coupling: impulse|  fsm_coupling: continuous|"
 "$WTM" "$WORK/s.yaml" > "$WORK/s.log" 2>&1 \
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
