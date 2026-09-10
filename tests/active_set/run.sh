@@ -33,38 +33,53 @@ make_work as
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # stem  collector
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-run_type equilibrium
-total_time 6yr
-supplied_wt 1
-deltat 31536000
-report_interval 2
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 1
-runoff_collector $2
-surfdatadir $INP
-region fsm_test
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# ARM ASYMMETRY, NOW VISIBLE. The three arms do NOT differ only in the collector: `explicit` runs
+# routing: impulse while the other two run continuous. That is not a change -- it is what has always
+# happened, because all three left fsm_coupling ABSENT and the model resolves an absent coupling to
+# impulse under the explicit collector (continuous x explicit is refused outright). Writing the values
+# down is what made it visible. Whether a collector-independence claim survives one arm also changing
+# its coupling is a real question, recorded rather than papered over.
+#
+# THE CONFIG IS A FILE NOW (#83): tests/active_set/config.yaml, read and edited directly rather than
+# translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# Two preconditions are now WRITTEN DOWN in that file rather than inherited: surface_water.routing
+# must be ON (the pin is defined against the FSM free surface, so with no lakes there is nothing to
+# pin against) and solver.method must be anderson (the pin lives in the matrix-free residual). If
+# either drifted, every arm would agree trivially and the suite would pass while testing nothing.
+# EACH ARM NAMES ITS STEP MODE AS WELL AS ITS COLLECTOR, because the two are COUPLED, not independent:
+# `adaptive` with `implicit` is REFUSED by name -- the implicit siphon removes above-surface water at
+# rate max(0,wtd)/dt, so its per-step error GROWS as the controller shrinks dt and no step is ever
+# accepted. Before #83 the mode was simply absent and the model resolved it per collector; writing the
+# collector down means writing the mode down too, or the arm aborts.
+emit() { # $1 stem, $2 collection.method, $3 time_step.mode, $4 routing  (ALL REQUIRED)
+  local m="${2:?emit needs a collection.method: name the value for this arm, do not inherit it}"
+  local sm="${3:?emit needs a time_step.mode: adaptive is refused with the implicit collector}"
+  local rt="${4:?emit needs a routing: continuous is refused with the explicit collector}"
+  # THE STEP-MODE ARMS DIFFER STRUCTURALLY, not just in values. Under `fixed` the model records NO
+  # controller dials at all and resolves a different error_tol, so declaring them would be EXTRA keys
+  # that full_config does not carry. The fixed arm therefore drops those lines rather than setting them.
+  local dials=()
+  if [ "$sm" = fixed ]; then
+      dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
+             -e "/^    max_retries:/d" -e "/^    norm:/d"
+             -e "s|^    error_tol: .*|    error_tol: 0.1   # the value resolved under mode: fixed|")
+  fi
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^    method: active_set|    method: $m|" \
+      -e "s|^    mode: adaptive|    mode: $sm|" \
+      -e "s|^  routing: continuous|  routing: $rt|" \
+      "${dials[@]}" config.yaml > "$WORK/$1.yaml"
 }
-run() { # stem  collector  extra-flags
-  emit "$1" "$2"
-  "$WTM" "$WORK/$1.yaml" $3 > "$WORK/$1.log" 2>&1 \
+run() { # stem  collector  step-mode  routing  [extra-flags]
+  emit "$1" "$2" "$3" "$4"
+  "$WTM" "$WORK/$1.yaml" $5 > "$WORK/$1.log" 2>&1 \
     || { echo "RUN FAILED: $1"; tail -3 "$WORK/$1.log"; exit 2; }
 }
 # Without active-set: the collector choice is a live variable (the BITE).
-run imp_plain implicit ""
-run exp_plain explicit ""
+run imp_plain implicit fixed continuous ""
+run exp_plain explicit adaptive impulse ""
 # Lake-aware active-set, now selected as a MODE (collection.method: active_set) rather than by a flag
 # that superseded whatever collector was configured.
 #
@@ -74,7 +89,7 @@ run exp_plain explicit ""
 # member of the collection.method enumeration, active_set is mutually exclusive with the other five -- the
 # three configs would now be textually identical and the assertion could not fail. That is a genuine loss
 # of a property, not a rename: the supersession it tested no longer exists to be tested.
-run as active_set ""
+run as active_set adaptive continuous ""
 
 IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | tail -1)
 IA=$(ls "$WORK"/as_*.tif | tail -1)
