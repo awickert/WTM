@@ -111,6 +111,32 @@ attempt() { # $1 stem, $2 extra flags...
     return 1
 }
 
+# THE DOCUMENTED REFUSALS -- the ONLY messages that may be filed under "refused by design" (#94).
+#
+# WHY A LIST RATHER THAN A CATCH-ALL. This classifier used to end in an `else` that swallowed every
+# unmatched message into `refused by design`. A design refusal and a MALFORMED CONFIG are then
+# indistinguishable -- both are a non-zero exit with a message, and both even begin "config: ". So a
+# sweep whose whole purpose is recording WHICH COMBINATIONS RUN could report total success while
+# running NOTHING. It did: a one-line change to how a key was passed sent all 96 cells into this
+# bucket, and the suite printed ALL PASSED with `ran at the nominal dt: 0`.
+#
+# Each entry is a distinguishing SUBSTRING of a refusal the model raises deliberately, paired with the
+# number of cells expected to hit it. The counts are MEASURED from a green run, not chosen: 16 + 6 + 4
+# = 26, which is the `refused BY DESIGN` total. They are asserted at the end, so a refusal that
+# silently spreads to more cells -- or stops firing -- is a failure rather than a quiet re-shuffle.
+declare -A DESIGN_REFUSALS=(
+  ["solver.time_integration: tr-bdf2 runs only on the matrix-free Anderson path"]=16
+  ["dev.storage_form: secant cannot be used with surface_water.collection.method: active_set"]=6
+  ["surface_water.collection.method: active_set is not supported"]=4
+)
+declare -A DESIGN_SEEN=()
+for k in "${!DESIGN_REFUSALS[@]}"; do DESIGN_SEEN["$k"]=0; done
+
+# The ran-count FLOOR. 64 of 96 cells ran at the nominal dt on the reference run. A collapse means the
+# harness broke, not that the model changed its mind about 60 combinations, and it must FAIL rather
+# than pass quietly -- the same non-vacuity guard multilake and dt_sensitivity carry.
+RAN_FLOOR="${RAN_FLOOR:-64}"
+
 for rt in "${RUNTYPES[@]}"; do
   for sv in anderson picard newton; do
     for ig in be volume bdf2v trbdf2; do
@@ -156,8 +182,21 @@ for rt in "${RUNTYPES[@]}"; do
                 echo "refusal kind=hard run_type=$rt solver=$sv integrator=$ig collector=$cl msg=${MSG:0:100}" >> "$REFUSALS"
             fi
         else
-            OUT="refused by design: ${MSG:0:56}"; ndesign=$((ndesign+1))
-            echo "refusal kind=design run_type=$rt solver=$sv integrator=$ig collector=$cl msg=${MSG:0:100}" >> "$REFUSALS"
+            # Match against the DOCUMENTED list. Anything else is this harness being broken -- a
+            # retired key, a typo, a half-rendered config -- and must fail loudly rather than pass as
+            # a refusal the model never made.
+            matched=""
+            for pat in "${!DESIGN_REFUSALS[@]}"; do
+                if [[ "$MSG" == *"$pat"* ]]; then matched="$pat"; break; fi
+            done
+            if [ -n "$matched" ]; then
+                OUT="refused by design: ${MSG:0:56}"; ndesign=$((ndesign+1))
+                DESIGN_SEEN["$matched"]=$(( ${DESIGN_SEEN["$matched"]} + 1 ))
+                echo "refusal kind=design run_type=$rt solver=$sv integrator=$ig collector=$cl msg=${MSG:0:100}" >> "$REFUSALS"
+            else
+                OUT="UNDOCUMENTED FAILURE (this test is broken): ${MSG:0:44}"; nbad=$((nbad+1)); fail=1
+                echo "refusal kind=UNDOCUMENTED run_type=$rt solver=$sv integrator=$ig collector=$cl msg=${MSG:0:200}" >> "$REFUSALS"
+            fi
         fi
         printf "  %-11s %-8s %-11s %-12s %s\n" "$sv" "$ig" "$cl" "$rt" "$OUT"
       done
@@ -176,6 +215,27 @@ if [[ $nbad -gt 0 ]]; then
     echo "  A combination that fails must SAY WHY, and a missing input is THIS TEST's fault, not the"
     echo "  model's. Neither may be quietly filed under \"refused by design\"."
 fi
+
+# NON-VACUITY: the sweep must actually have run something. Without this, breaking every cell reads as
+# 96 design refusals and the suite passes (#94).
+if [[ $nrun -lt $RAN_FLOOR ]]; then
+    echo
+    echo "  FAIL  only $nrun of 96 cells ran at the nominal dt, against a floor of $RAN_FLOOR."
+    echo "        This sweep RECORDS WHICH COMBINATIONS RUN, so a collapse in that count means the"
+    echo "        harness broke -- not that the model changed its mind about 60 combinations."
+    fail=1
+fi
+
+# Each documented refusal must fire on exactly the cells it fired on when the list was measured. A
+# refusal that spreads, or stops firing, is a change in what the model forbids and deserves a look.
+for pat in "${!DESIGN_REFUSALS[@]}"; do
+    want=${DESIGN_REFUSALS["$pat"]}; got=${DESIGN_SEEN["$pat"]}
+    if [[ "$got" -ne "$want" ]]; then
+        echo "  FAIL  refusal count moved: $got cells (expected $want) for:"
+        echo "          ${pat:0:88}"
+        fail=1
+    fi
+done
 echo
 if [[ $fail -eq 0 ]]; then echo "COMBINATION SWEEP: ALL PASSED"; else echo "COMBINATION SWEEP: FAILED" >&2; fi
 exit $fail
