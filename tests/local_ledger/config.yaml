@@ -1,0 +1,97 @@
+# tests/local_ledger -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: the PER-CELL water ledger -- each column's local balance, not just the
+# domain sum. Eight arms sweep several axes at once, and run.sh supplies every one of them:
+#   io.region                two fixtures (ledgerA, ledgerB)
+#   time.total               2yr / 4yr / 20yr
+#   time.report_interval     1 / 2 / 4 -- the number of steps per REPORT, which is what decides how
+#                            much accumulates between the rows the ledger is checked on
+#   solver.time_step.dt      0.5 yr / 1 yr
+#   surface_water.runoff_ratio  0 or 0.3 -- with 0 the ROUTED channel is identically zero
+#   surface_water.collection.method  `off` on most arms, so the ledger sees water pile rather than be
+#                            collected; one arm leaves it ABSENT
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @REGION@, @TOTAL@, @REPORT@, @DT@, @RR@,
+# @COLLECTOR@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "@TOTAL@"   # PER-ARM: 2yr / 4yr / 20yr
+  report_interval: "@REPORT@"   # PER-ARM: steps per report row the ledger is checked on
+  save_every_n_reports: 1
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  runoff_ratio: @RR@   # PER-ARM: 0, or 0.3 to drive the routed channel
+  collection:
+    method: @COLLECTOR@   # PER-ARM: mostly `off`, so above-surface water PILES and the per-cell
+                          # ledger has something to account for
+  routing: off
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; identical on every arm
+  tolerance: 1e-10
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    dt: @DT@   # PER-ARM: 0.5 yr or 1 yr
+    mode: fixed   # the arms ARE a chosen dt/report pairing; a controller would resize dt away from it
+    error_tol: 0.1   # the resolved value; mode is fixed so nothing steers on it
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: '@REGION@'   # PER-ARM: ledgerA or ledgerB
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

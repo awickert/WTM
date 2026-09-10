@@ -35,30 +35,22 @@ make_work ledger
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-mkcfg() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 report_interval, $7 runoff_ratio
-    { cat <<EOF
-solver_method anderson
-run_type equilibrium
-total_time $3
-supplied_wt 1
-deltat $4
-report_interval ${6:-1}
-runoff_ratio ${7:-0}
-save_nreport_interval 1
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-infiltration_on 0
-fsm_on 0
-surfdatadir $INP
-region $2
-time_start t0
-time_end t0
-eq_tol 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
-      echo "snes_stol 1e-10"; [ -n "${5:-}" ] && echo "runoff_collector $5"; } | ../emit_config.sh > "$WORK/$1.yaml"
+# THE CONFIG IS A FILE NOW (#83): tests/local_ledger/config.yaml. Every setting the run resolves to
+# is stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THE `place` ARM NAMES active_set. It used to pass "" -- omitting the key -- and the model resolved
+# active_set anyway, so this states what already ran rather than changing it. Unlike
+# tests/runoff_collector's `unset` arm (#92), the ABSENCE was not the subject here: the subject is
+# having a collector at all, while the other arms run `off` so water piles for the ledger to account.
+# time.report_interval is per-arm because it decides how much accumulates between the report rows the
+# ledger is checked on, which is one of the axes this suite sweeps.
+mkcfg() { # $1 stem, $2 region, $3 total, $4 dt, $5 collector ("" = omit), $6 report_interval, $7 runoff_ratio
+    local sedargs=(-e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g"
+                   -e "s|@REGION@|$2|g" -e "s|@TOTAL@|$3|g" -e "s|@DT@|$4|g"
+                   -e "s|@REPORT@|$6|g" -e "s|@RR@|$7|g")
+    if [ -z "${5:-}" ]; then sedargs+=(-e "/^    method: @COLLECTOR@/d")
+    else                     sedargs+=(-e "s|@COLLECTOR@|$5|g"); fi
+    sed "${sedargs[@]}" config.yaml > "$WORK/$1.yaml"
 }
 
 run() { # $1 stem, $2 region, $3 total_time, $4 deltat, $5 collector, $6 ri, $7 rr, $8.. flags
@@ -74,7 +66,7 @@ echo "=== local-in-space water ledger ==="
 echo "WTM binary: $WTM"
 echo
 fail=0
-run place  ledgerA "2yr"  15768000 ""    1 0 || fail=1   # dt = 0.5 yr, 4 steps
+run place  ledgerA "2yr"  15768000 "active_set" 1 0 || fail=1   # dt = 0.5 yr, 4 steps
 # Arm B pins runoff_collector=off ON PURPOSE, to isolate the lateral flux operator. Under the default
 # active_set the multiplier max(0, -f*Sy) is captured for EVERY cell, not only pinned ones, so
 # freely-solving cells contribute the RECTIFIED part of their converged residual noise -- a small,
