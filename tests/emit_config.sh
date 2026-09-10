@@ -100,7 +100,18 @@ def_()  { if have "$1"; then val "$1"; else printf '%s' "$2"; fi; }
 # voice there is nothing to distinguish the two. This appends a comment saying so, on exactly the lines
 # where def_ fell back. Andy's rule for that task: never write something that hides a failure -- an
 # unmarked default is a decision nobody made, wearing the clothes of one.
-mark_() { have "$1" || printf '%s' "   # UNSTATED: shim default, nobody chose this"; }
+# Keys every suite takes at the model's default ON PURPOSE, owned once in tests/CONFIG_BASELINE.md
+# rather than marked ~1100 times across 39 files. See that file for what the ownership claims.
+_BASELINE=" snes_stol max_iterations ar_enabled ar_rho ar_patience ar_max_it ar_max_restarts \
+ksat_surface_smoothing ksat_soilbottom_smoothing storativity_surface_smoothing dtc_grow dtc_shrink \
+dtc_easy_iters dtc_max_retries dt_norm t_bedrock under_relaxation threads_per_rank verbosity "
+mark_() {
+    have "$1" && return                      # the suite stated it: its own decision, no marker
+    case "$_BASELINE" in
+        *" $1 "*) printf '%s' "   # baseline (tests/CONFIG_BASELINE.md)" ;;
+        *)        printf '%s' "   # UNSTATED: nobody chose this -- decide it for this suite" ;;
+    esac
+}
 
 # REFUSE A KEY THIS SHIM DOES NOT CONSUME. Until now an unrecognised legacy key was silently
 # DROPPED, and this sits UPSTREAM of every guard the model has: WTM aborts on an unknown YAML key

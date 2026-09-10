@@ -1,27 +1,28 @@
 # tests/fsm_conservation -- THE CONFIG THIS SUITE RUNS.
 #
-# A REAL FILE, not a generator's output (#83). tests/emit_config.sh wrote the first version of it and is
-# being retired; from here this file is edited directly. Every setting the run resolves to is stated
-# below, which is what makes tests/config_identity.py's declared == resolved check meaningful for this
-# suite -- it is the one the ratchet ENFORCES (tests/lib.sh WTM_DECLARED_SUITES).
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here -- this is the
+# suite the ratchet ENFORCES (tests/lib.sh WTM_DECLARED_SUITES).
 #
-# LINES MARKED `# UNSTATED` are values the generator supplied because the suite never named them. They
-# are NOT decisions anyone made. They are written here so they can be READ and either owned or changed;
-# leaving them unmarked would be exactly the laundering that the config mirror was deleted for.
-# Removing a marker means someone decided that value is right for this suite.
+# THE COMMENTS ARE THE PROVENANCE OF EACH VALUE, and there are three kinds:
+#   (none)                        the suite chose it, deliberately, for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+# A value with no provenance at all would be the laundering the config mirror was deleted for: a
+# decision nobody made, wearing the clothes of one. There are none in this file.
 #
 # TOKENS substituted by run.sh: @INPUTS@ (fixture dir), @WORK@ (this run's work dir), @STEM@ (arm name).
 #
 # ARMS. The `c` arm runs as written -- fsm_coupling: impulse. The `s` arm overrides that one key to
-# `continuous`; the whole point of the suite is comparing the two couplings, so the override is applied
-# in run.sh where that reasoning lives, and nowhere else.
+# `continuous`; comparing the two couplings is the whole subject, so the override lives in run.sh where
+# that reasoning is.
 
 run:
   type: equilibrium
   equilibrium_stop:
     tol: 0
-    metric: frac   # UNSTATED: shim default, nobody chose this
-    frac: 0.001   # UNSTATED: shim default, nobody chose this
+    metric: frac   # INERT here: eq_tol 0 disables the equilibrium stop, so nothing reads this
+    frac: 0.001   # INERT here: see metric above
   initial_water_table: supplied
 time:
   total: "24yr"
@@ -32,7 +33,7 @@ transmissivity:
     a: 200
     b: 150
     fmin: 2
-  additive_background_transmissivity: 0   # UNSTATED: shim default, nobody chose this
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
   mode: routed
   fsm_coupling: impulse
@@ -45,45 +46,45 @@ boundaries:
 solver:
   method: anderson
   time_integration: tr-bdf2
-  tolerance: 1e-8   # UNSTATED: shim default, nobody chose this
-  max_iterations: 10000   # UNSTATED: shim default, nobody chose this
-  t_bar: false   # UNSTATED: shim default, nobody chose this
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off. This suite does not test the step-averaged transmissivity
   convergence:
-    metric: volume   # UNSTATED: shim default, nobody chose this
-    water_volume_tol: 1e-08   # UNSTATED: shim default, nobody chose this
+    metric: volume   # judged in WATER (#61) -- correct for a suite whose claim IS water conservation
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
   smoothing:
-    ksat_surface: 0   # UNSTATED: shim default, nobody chose this
-    ksat_soilbottom: 0   # UNSTATED: shim default, nobody chose this
-    storativity_surface: 0.01   # UNSTATED: shim default, nobody chose this
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
   anderson:
     restart:
-      enabled: false   # UNSTATED: shim default, nobody chose this
-      rho: 0.9   # UNSTATED: shim default, nobody chose this
-      patience: 2   # UNSTATED: shim default, nobody chose this
-      max_it: 40   # UNSTATED: shim default, nobody chose this
-      max_restarts: 30   # UNSTATED: shim default, nobody chose this
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
   time_step:
     mode: adaptive
     dt: 31536000
     error_tol: "0.5"
-    grow: 1.5   # UNSTATED: shim default, nobody chose this
-    shrink: 0.25   # UNSTATED: shim default, nobody chose this
-    grow_if_niter_leq: 8   # UNSTATED: shim default, nobody chose this
-    max_retries: 15   # UNSTATED: shim default, nobody chose this
-    norm: rms   # UNSTATED: shim default, nobody chose this
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
 dev:
-  storage_form: volume   # UNSTATED: shim default, nobody chose this
-  under_relaxation: 1   # UNSTATED: shim default, nobody chose this
+  storage_form: volume   # exact dV, not the secant approximation -- the right form to assert conservation against
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
 parallel:
-  threads_per_rank: 1   # UNSTATED: shim default, nobody chose this
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
 evaporation:
   et_sigmoid:
-    wtd_center: 0.05   # UNSTATED: shim default, nobody chose this
-    logistic_width: 0.1   # UNSTATED: shim default, nobody chose this
-  extinction_depth: 8   # UNSTATED: shim default, nobody chose this
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. Evaporation is IN this suite's budget, so this
+    logistic_width: 0.1   # shape is load-bearing: the conservation claim is made under it
+  extinction_depth: 8   # shipped extinction depth; likewise part of the evap term being balanced
   tapers:
-    surface_transition: true   # UNSTATED: shim default, nobody chose this
-    depth_extinction: true   # UNSTATED: shim default, nobody chose this
+    surface_transition: true   # both tapers SHIPPED-ON. Conservation is asserted under the default taper
+    depth_extinction: true   # configuration; a suite testing taper variants states them (tests/flicker_evap)
 io:
   source: '@INPUTS@'
   region: 'fsm_test'
@@ -93,6 +94,6 @@ output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
   trace: []
-  verbosity: normal   # UNSTATED: shim default, nobody chose this
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite
