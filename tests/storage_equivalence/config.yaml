@@ -1,0 +1,105 @@
+# tests/storage_equivalence -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES: that backward Euler's SECANT storage term S*dh is identically the stored
+# VOLUME change dV, because S is the exact secant (V(w1)-V(w0))/(w1-w0). The two arms differ in ONE
+# key -- dev.storage_form -- and that override lives in run.sh where the reasoning is.
+#
+# WHAT THAT MAKES LOAD-BEARING: almost nothing in the forcing. The identity is algebraic and holds
+# whatever water is moving, so the evaporation and transmissivity settings below shape the TRAJECTORY
+# both arms share, not the claim. What IS load-bearing is that both arms see the SAME forcing, which
+# is exactly what a single shared base file guarantees.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: transient
+  equilibrium_stop:
+    tol: 0   # the model RESOLVES this to 0, which disables the early stop. Stated because the
+             # reference config.yaml ships 0.001 and a reader would otherwise assume that applies.
+    metric: frac   # INERT here: tol is 0, so nothing reads this
+    frac: 0.001   # INERT here: see metric above
+  initial_water_table: saturated
+time:
+  total: "1451520000s"
+  report_interval: "200"
+  save_every_n_reports: 3
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: explicit
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: backward-euler
+  tolerance: 1e-10
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves here. Both arms step identically -- same file, same
+                     # controller -- so the comparison is unaffected by WHO chooses the step
+    dt: 2419200
+    error_tol: 0.1   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: secant   # THE SUBJECT. Backward Euler's exact-secant storage S*dh. run.sh overrides
+                         # this one key to `volume` (dV directly) for the second arm; the whole claim
+                         # is that the two are identical to machine precision.
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. With routing: off the taper is what removes surface
+    logistic_width: 0.1   # water at all, so this shapes the trajectory -- but BOTH ARMS SHARE IT, and
+  extinction_depth: 8   # the S*dh == dV identity is algebraic, so it holds whatever the forcing is
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'storeq'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

@@ -32,32 +32,16 @@ export OMP_NUM_THREADS=1
 #   runoff_collector: the default is active_set, which REQUIRES the b=0 volume path, so
 #     dev.storage_form: secant with it now aborts by name. explicit is the collector this identity can
 #     be measured under.
+# THE CONFIG IS A FILE NOW (#83): tests/storage_equivalence/config.yaml, read and edited directly
+# rather than translated from legacy key/value lines. Every setting the run resolves to is stated
+# there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# The two pins described above are now WRITTEN DOWN in that file rather than passed each run --
+# solver.time_integration: backward-euler and surface_water.collection.method: explicit -- which is
+# what stops either of them going missing again and taking the test's subject with it.
 emit() { # $1 stem  [env: STORAGE=volume|secant]
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-snes_stol 1e-10
-solver_method anderson
-time_integration backward-euler
-runoff_collector explicit
-run_type transient
-${STORAGE:+storage $STORAGE}
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 1451520000s
-save_nreport_interval 3
-report_interval 200
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region storeq
-supplied_wt 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  storage_form: secant|  storage_form: ${STORAGE:-secant}|" config.yaml > "$WORK/$1.yaml"
 }
 
 # mask-aware ghost boundary (now the default) so edge land cells are not forced against a

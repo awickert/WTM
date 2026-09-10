@@ -8,7 +8,8 @@ reads like a decision.
 
 Facts it reads from the config itself (never from the suite's name or prose):
   eq_tol == 0            -> the equilibrium stop is OFF, so its metric/frac are INERT
-  surface_water.mode     -> whether FSM/lakes are in play, hence whether evaporation is in the budget
+  surface_water.routing  -> whether FSM/lakes are in play, hence whether evaporation is in the budget
+                            (was surface_water.mode until the 2026-09-10 merge, #89)
 """
 import re, sys
 
@@ -17,13 +18,18 @@ MARK = "   # UNSTATED: nobody chose this -- decide it for this suite"
 def own(path):
     txt = open(path).read()
     lines = txt.splitlines()
-    def val(key):
+    # Look up by INDENT DEPTH as well as name. A bare-name search finds `solver.time_step.mode`
+    # when it wants `surface_water.mode` -- that exact bug mistranslated every suite in
+    # materialize.py before it was caught, so it is not hypothetical.
+    def val(key, depth=1):
+        want = "  " * depth + key + ":"
         for l in lines:
-            m = re.match(r'\s*' + re.escape(key) + r':\s*(\S+)', l)
-            if m: return m.group(1).strip("'\"")
+            if l.startswith(want):
+                return l[len(want):].split("#")[0].strip().strip("'\"")
         return None
-    stop_off = val("tol") == "0"                       # run.equilibrium_stop.tol
-    routed   = val("mode") == "routed"                 # FSM on: lakes, and evaporation in the budget
+    stop_off = val("tol", 2) == "0"                    # run.equilibrium_stop.tol
+    routing  = val("routing")                          # surface_water.routing (#89)
+    routed   = routing in ("continuous", "impulse")    # FSM on: lakes, and evaporation in the budget
 
     reasons = {
       "metric: frac":  "INERT: equilibrium_stop.tol is 0, so nothing reads this" if stop_off else None,
@@ -37,8 +43,10 @@ def own(path):
       "logistic_width: 0.1":     "as above -- shipped ET sigmoid shape" if routed else None,
       "extinction_depth: 8":     "shipped extinction depth" if routed else None,
       "surface_transition: true":("both tapers SHIPPED-ON; the result is obtained under the default"
-                                  " taper configuration") if routed else None,
-      "depth_extinction: true":  "as above -- shipped taper configuration" if routed else None,
+                                  " taper configuration") if routed else
+                                 ("SHIPPED-ON. With routing: off the taper is what removes surface"
+                                  " water at all (evap_mode is gone, #88), so it is load-bearing here"),
+      "depth_extinction: true":  "as above -- shipped taper configuration",
     }
     out, owned, left = [], 0, []
     for l in lines:
