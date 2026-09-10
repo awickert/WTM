@@ -267,9 +267,9 @@ Parameters::Parameters(const std::string& config_file) {
         "    mode: routed  + fsm_coupling: impulse                  ->  routing: impulse\n"
         "    mode: ponded  (or removed)                             ->  routing: off\n"
         "`continuous` stays the default, so an old config that set neither key becomes routing: continuous. "
-        "`ponded` and `removed` both become `off`: they were already indistinguishable from a config -- the "
-        "default evaporation taper never consults evap_mode, and with the taper off evap_mode is frozen at "
-        "0, so surface water was removed either way.");
+        "`ponded` and `removed` both become `off`: they were already indistinguishable from any config, "
+        "because whether surface water was ponded or removed was decided by the evaporation taper, not by "
+        "this key.");
   }
   // Before reading anything: reject keys the model does not understand, so a typo or a retired key can
   // never sit in a config quietly doing nothing. See validate_config_keys.
@@ -656,8 +656,6 @@ void Parameters::check() const {
   // inputs. They are DERIVED from the input raster's geotransform (grid_geometry.cpp), which validates
   // what it reads -- north-up, geographic CRS, a geotransform present at all -- at the point of reading.
   // Validating a derived value here would be checking our own arithmetic against the user's mistake.
-  // evap_mode is no longer a config key (dropped in the Phase-2 schema; vestigial when the ET sigmoid is on,
-  // which is the default). It keeps its member default and is not validated here.
   check_positive("fdepth_a", fdepth_a);
   check_positive("fdepth_b", fdepth_b);
   check_positive("fdepth_fmin", fdepth_fmin);
@@ -763,7 +761,6 @@ void Parameters::print() const {
   if (runoff_ratio_uniform >= 0.0)
     std::cout << "c runoff_ratio_uniform   = " << runoff_ratio_uniform << std::endl;
   std::cout << "c infiltration_on        = " << infiltration_on << std::endl;
-  std::cout << "c evap_mode              = " << evap_mode << std::endl;
   // Output.
   std::cout << "c output_directory       = " << (output_directory.empty() ? "(legacy: literal paths)" : output_directory)
             << std::endl;

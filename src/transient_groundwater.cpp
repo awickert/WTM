@@ -2402,8 +2402,9 @@ bool evap_taper_on() { return g_evap_taper; }
 // own. Set by read_evap_taper_options().
 bool extinction_on() { return g_extinction; }
 
-// Read the taper-2 options (-wtm_evap_taper, wtd_c, s) into the file-static flags and enforce the
-// evap_mode-1 requirement. Called BOTH early in WTM.cpp::initialise() (so irf.cpp's initial recharge
+// Read the taper-2 options (-wtm_evap_taper, wtd_c, s) into the file-static flags. (It once also
+// "enforced the evap_mode-1 requirement"; that stopped being true before evap_mode was removed, and
+// the claim outlived the code by some margin.) Called BOTH early in WTM.cpp::initialise() (so irf.cpp's initial recharge
 // sees the flag) AND in update() (so a standalone solve still parses it). Idempotent -- it just
 // re-reads the same PETSc options -- so the double call is harmless.
 void read_evap_taper_options(const Parameters& params) {
@@ -2420,11 +2421,10 @@ void read_evap_taper_options(const Parameters& params) {
   g_extinction = params.taper_depth_extinction;     // evaporation.tapers.depth_extinction
   g_extinction_depth = params.extinction_depth;  // config-owned; -wtm_extinction_depth retired
 
-  // The taper works in BOTH evap_modes: evap_mode 0 also supplies open_water_evap (used for surface
-  // recharge), so E_eff has the owe it needs, and the recharge paths check the taper first so it
-  // governs evaporation mode-independently (the smooth removal auto-zeroes standing water in place of
-  // mode 0's hard wtd=0). Configuration mismatches are surfaced as warnings, not errors -- see the
-  // warn_taper_configuration() checks. (params retained for that call site.)
+  // open_water_evap is supplied either way, so E_eff has the owe it needs, and the recharge paths
+  // check the taper FIRST -- the smooth removal auto-zeroes standing water in place of the hard wtd=0
+  // used when the taper is off. Configuration mismatches are surfaced as warnings, not errors -- see
+  // the warn_taper_configuration() checks.
   (void)params;
 }
 
@@ -2433,41 +2433,34 @@ void read_evap_taper_options(const Parameters& params) {
 // (-wtm_extinction) on; every other combination is arid-unsafe, inert, or the legacy hard-switch
 // model, and is flagged here. Caller guards rank 0 so this prints once. See SURFACE_SINK_DESIGN.md 14.
 void warn_taper_configuration(const Parameters& params) {
-  if (params.evap_mode) {
-    // evap_mode 1: the smooth ET->open-water transition is the intended model.
-    if (g_evap_taper && !g_extinction)
-      std::cerr << "WARNING: -wtm_evap_taper without -wtm_extinction: in arid cells (ET > precip) the "
-                   "evaporation taper draws the water table down WITHOUT BOUND (no equilibrium). Add "
-                   "-wtm_extinction (accessibility / extinction-depth clamp) unless you specifically want "
-                   "taper 2 alone for testing."
-                << std::endl;
-    else if (!g_evap_taper && g_extinction)
-      std::cerr << "WARNING: -wtm_extinction without -wtm_evap_taper has NO EFFECT: the extinction-depth "
-                   "clamp gates taper 2's evaporative deficit, which is not active."
-                << std::endl;
-    else if (!g_evap_taper && !g_extinction)
-      std::cerr << "WARNING: running the LEGACY hard-switch evaporation model (neither -wtm_evap_taper nor "
-                   "-wtm_extinction). The hard wtd=0 ET<->open-water switch makes FillSpillMerge lake "
-                   "formation rank-dependent (NON-DETERMINISTIC across MPI rank counts) and applies no "
-                   "phreatic ET. The smooth tapers (-wtm_evap_taper -wtm_extinction) are recommended."
+  (void)params;
+  // evap_mode is GONE (2026-09-10). It had been frozen at 0 and unsettable, so the whole
+  // `if (params.evap_mode)` half of this function -- three warnings about the mode-1 configurations --
+  // was UNREACHABLE, and the mode-0 half fired on every run. One of those was pure noise in the
+  // DEFAULT configuration: "evap_mode 0 with the taper on ... evap_mode 0 and 1 coincide" told a user
+  // about a setting they could not set, on every single run.
+  //
+  // What survives is what was always the real content: the taper is what governs evaporation, and two
+  // configurations of it are genuinely worth warning about.
+  if (g_evap_taper) {
+    if (!g_extinction)
+      std::cerr << "WARNING: evaporation.tapers.surface_transition without depth_extinction: in arid "
+                   "cells (ET > precip) the evaporation taper draws the water table down WITHOUT BOUND "
+                   "(no equilibrium). Turn depth_extinction on -- the accessibility / extinction-depth "
+                   "clamp -- unless you specifically want the surface taper alone for testing."
                 << std::endl;
   } else {
-    // evap_mode 0: remove all surface water.
-    if (g_evap_taper) {
-      std::cerr << "WARNING: evap_mode 0 (remove all surface water) with the taper on: the smooth taper "
-                   "governs evaporation, so surface water is evaporated smoothly (not hard-removed) and "
-                   "evap_mode 0 and 1 coincide."
-                << (g_extinction ? "" : " Also, without -wtm_extinction, arid drawdown is unbounded.")
+    if (g_extinction)
+      std::cerr << "WARNING: evaporation.tapers.depth_extinction without surface_transition has NO "
+                   "EFFECT: the extinction-depth clamp gates the surface taper's evaporative deficit, "
+                   "which is not active."
                 << std::endl;
-    } else {
-      std::cerr << "WARNING: evap_mode 0 removes ALL surface water every step (GW-alone testing; Fan "
-                   "Reinfelder et al. 2013)."
-                << std::endl;
-      std::cerr << "WARNING: running the LEGACY hard-switch evaporation model. The hard wtd=0 switch is "
-                   "rank-dependent (non-deterministic FSM lakes) and applies no phreatic ET; the smooth "
-                   "tapers (-wtm_evap_taper -wtm_extinction) are recommended."
-                << std::endl;
-    }
+    std::cerr << "WARNING: with evaporation.tapers.surface_transition off, ALL surface water is removed "
+                 "every step (GW-alone testing; Fan Reinfelder et al. 2013), and the hard wtd=0 "
+                 "ET<->open-water switch makes FillSpillMerge lake formation rank-dependent "
+                 "(NON-DETERMINISTIC across MPI rank counts) and applies no phreatic ET. The smooth "
+                 "tapers are recommended."
+              << std::endl;
   }
 }
 

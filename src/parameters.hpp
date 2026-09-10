@@ -215,7 +215,6 @@ struct Parameters {
   // the prototype default rather than erroring (the old parser used -1 sentinels + required them all).
   int32_t infiltration_on = 0;   // surface_water.infiltration_during_flow: false
   int32_t supplied_wt     = 0;   // run.initial_water_table: omit -> saturated (wtd = 0)   [TODO: folder auto-detect]
-  int32_t evap_mode       = 0;   // dropped from the config (vestigial when the ET sigmoid is on = default); 0 = remove
   int32_t fsm_on          = 1;   // surface_water.routing: continuous|impulse (off -> 0)
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster

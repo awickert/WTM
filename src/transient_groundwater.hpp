@@ -56,7 +56,7 @@ double ksat_soilbottom_smoothing_width();
 // sub-surface deficit so an arid table draws down only within the extinction depth; inert on its own.
 bool extinction_on();
 
-// Read the -wtm_evap_taper options (+ wtd_c, s) and enforce evap_mode 1. Call early (before the
+// Read the -wtm_evap_taper options (+ wtd_c, s) into the file-static flags. Call early (before the
 // initial recharge) so every explicit-recharge site sees a consistent flag. Idempotent.
 void read_evap_taper_options(const Parameters& params);
 

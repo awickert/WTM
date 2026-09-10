@@ -322,23 +322,19 @@ void InitialiseBoth(const Parameters& params, ArrayPack& arp) {
     }
   }
 
-  // get the starting runoff using precip and evap inputs. Taper-first (mode-independent): the taper
-  // (2/3) governs evaporation via the implicit E_eff, so feed just precip regardless of evap_mode --
-  // the smooth removal auto-zeroes standing water, so no independent wtd=0 under the taper. Otherwise
-  // mode 1 evaporates surface water at owe (persists); mode 0 removes all surface water (wtd=0;
-  // GW-alone testing, Fan Reinfelder et al. 2013). Matches the per-cycle path.
+  // get the starting runoff using precip and evap inputs. Taper-first: the taper (2/3) governs
+  // evaporation via the implicit E_eff, so feed just precip -- the smooth removal auto-zeroes standing
+  // water, so no independent wtd=0 is needed under the taper. With the taper OFF, all surface water is
+  // removed (wtd=0; GW-alone testing, Fan Reinfelder et al. 2013). Matches the per-cycle path.
   const bool evap_taper = FanDarcyGroundwater::evap_taper_on();
-  std::cout << (evap_taper       ? "p updating the recharge field (taper)"
-               : params.evap_mode ? "p updating the recharge field"
-                                  : "p removing all surface water")
+  std::cout << (evap_taper ? "p updating the recharge field (taper)" : "p removing all surface water")
             << std::endl;
 #pragma omp parallel for default(none) shared(arp, params, evap_taper)
   for (unsigned int i = 0; i < arp.topo.size(); i++) {
     if (evap_taper) {
       arp.rech(i) = arp.precip(i) / seconds_in_a_year * params.deltat;
     } else if (arp.wtd(i) > 0) {  // surface water present
-      if (!params.evap_mode)
-        arp.wtd(i) = 0;  // evap_mode 0: remove all surface water (GW-alone testing)
+      arp.wtd(i) = 0;  // taper off: remove all surface water (GW-alone testing)
       arp.rech(i) = (arp.precip(i) - arp.open_water_evap(i)) / seconds_in_a_year * params.deltat;
     } else {  // water table below the surface; recharge is always positive
       arp.rech(i) =
