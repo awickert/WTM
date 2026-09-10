@@ -102,6 +102,19 @@ commit WTM pins (`4308687`) -- but it was never removed upstream. `4308687` is o
 the file. "Absent at the pinned HEAD" is not "deleted upstream", and reading it that way would have
 retired a live upstream.
 
+**WHY that branch exists, which is what makes the divergence expected rather than alarming** (recorded
+in the 2026-07-31 richdem-alignment work, WTM `c7f7aba`): WTM and the parallel DH deliberately share
+ONE richdem -- `awickert/richdem @ 4308687`, branch `submodule-gdal-pin` -- because that branch hosts
+the GDAL-register-once commit from **r-barnes/richdem PR #100**, which upstream has not merged. The
+commit is therefore orphaned from r-barnes and lives only on the awickert fork, so the pinned line
+cannot be a descendant of upstream master. `awickert/richdem` is the canonical fork for this work (not
+MNiMORPH).
+**REVERT BOTH `.gitmodules` to `r-barnes/richdem` / `dev` once PR #100 merges** -- tracked as DH
+issue #5. Until then the divergent pin is intentional.
+The bump `r-barnes@3313b29 -> awickert@4308687` was verified CLEAN: zero WTM code changes, full suite
+green, no golden movement. The feared "breaking dx/dy" change was not real -- WTM already had `d8x/d8y`
+at 3313b29, and the 4-commit delta is internal richdem refactor (omp / GDAL / wrapping).
+
 ### The ten upstream commits since the fork point, checked BY CONTENT
 
 Commit counts are an upper bound on divergence, not a defect list. Each commit's newly-introduced
