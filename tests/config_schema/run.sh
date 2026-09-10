@@ -230,6 +230,42 @@ else
 fi
 done
 
+# ---- MIGRATED: two keys merged into one, so the refusal must TRANSLATE, not just reject ------------
+# surface_water.mode and surface_water.fsm_coupling became the single key surface_water.routing
+# (2026-09-10). Distinct from RETIRED above: those keys went away, and "unrecognised key ... did you
+# mean" is a sufficient answer. Here the VALUES remap as well --
+#     mode: routed + fsm_coupling: continuous  ->  routing: continuous
+#     mode: ponded (or removed)                ->  routing: off
+# -- so a bare "did you mean routing?" would send a user to a key whose obvious value produces a
+# DIFFERENT RUN. The refusal therefore has to carry the table, and this arm pins that it does.
+#
+# WHY THE MERGE: the split made a contradiction writable. `mode: ponded` with `fsm_coupling:
+# continuous` asks for a coupling that cannot happen, and full_config.yaml then recorded
+# `fsm_coupling: impulse` for a run in which NO coupling ran -- so 72 FSM-off test configs would have
+# had to declare a mechanism they never used (#89).
+for mk in surface_water.mode surface_water.fsm_coupling; do
+python3 - "$REF" "$WORK/migrated.yaml" "$mk" <<'PYEOF'
+import sys, yaml
+ref, out, path = sys.argv[1], sys.argv[2], sys.argv[3]
+cfg = yaml.safe_load(open(ref))
+# A REAL old spelling, not a bogus value: this is what an upgrading user's file actually contains.
+cfg["surface_water"].pop("routing", None)
+cfg["surface_water"][path.split(".")[1]] = "routed" if path.endswith("mode") else "continuous"
+yaml.safe_dump(cfg, open(out, "w"), default_flow_style=False)
+PYEOF
+OUT=$(msg "$WORK/migrated.yaml")
+if echo "$OUT" | grep -q "surface_water.routing" && echo "$OUT" | grep -q -- "-> *routing: off"; then
+    echo "  PASS  MIGRATED   '$mk' aborts, names surface_water.routing, and gives the translation"
+else
+    echo "  FAIL  MIGRATED   '$mk' did not produce the migration message with its value table."
+    echo "        Either the key is accepted again -- which would let 'mode: ponded' coexist with"
+    echo "        'fsm_coupling: continuous', the contradiction the merge removed -- or the refusal"
+    echo "        lost the routed/ponded -> continuous/off translation, leaving an upgrading user to"
+    echo "        guess a value. See task #89."
+    fail=1
+fi
+done
+
 # ---- ARGV: an argument nothing reads is refused, an option and its value are not -----------------
 # The model aborts on a -wtm_ FLAG nothing consumed; until 59b7006 it had no equivalent for a
 # positional ARGUMENT and took any number of them silently -- `wtm.x a.yaml b.yaml` ran a.yaml and
@@ -277,7 +313,7 @@ fdepth_a 200
 fdepth_b 150
 fdepth_fmin 2
 infiltration_on 0
-fsm_on 1
+fsm_on 0
 runoff_ratio 0.3
 runoff_collector active_set
 evap_mode 0
@@ -312,7 +348,6 @@ eq_tol 0.002
 eq_metric rms
 eq_frac 0.002
 land_boundary dirichlet
-fsm_coupling continuous
 runoff_ratio_on 1
 extinction_depth 6
 et_sigmoid_width 0.2
@@ -320,6 +355,32 @@ et_sigmoid_wtd_center 0.0
 trace dt
 run_dir /tmp/shim_explicit_rundir   # DISTINCT from the derived <prefix>prov, or thedifference  vanishes
 EOF
+# ---- SHIM/MERGED: fsm_on and fsm_coupling are ONE key, so they need SEPARATE probes ---------------
+# They both map onto surface_water.routing now, and the shim refuses `fsm_on 0` alongside any
+# fsm_coupling line -- that contradiction is what the merge removed. So they cannot both live in the
+# differential file above: it carries fsm_on 0 (the non-default value, the only one SHIM/BACK can see,
+# since omission now MEANS FSM-on continuous), and fsm_coupling is proved here instead.
+#
+# `impulse` and not `continuous`: continuous is the default, and an unset coupling emits NOTHING by
+# design -- the shim must not write `continuous` down, because the model refuses an explicit
+# `continuous` under infiltration_during_flow: true while resolving an absent one to impulse (#49).
+# So `continuous` in and nothing out is CORRECT here, and only the non-default value is a real probe.
+_r_set=$(printf 'fsm_coupling impulse\n' | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing: impulse")
+_r_off=$(printf 'fsm_on 0\n'             | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing: off")
+_r_bare=$(printf 'run_type equilibrium\n' | bash ../emit_config.sh 2>/dev/null | grep -c "^  routing:")
+if [ "$_r_set" = 1 ] && [ "$_r_off" = 1 ] && [ "$_r_bare" = 0 ]; then
+    echo "  PASS  SHIM/MERGED  fsm_coupling -> routing: impulse, fsm_on 0 -> routing: off, neither -> absent"
+else
+    echo "  FAIL  SHIM/MERGED  the fsm_on/fsm_coupling -> surface_water.routing mapping is wrong"
+    echo "        (fsm_coupling impulse -> routing: impulse? $_r_set;  fsm_on 0 -> routing: off? $_r_off;"
+    echo "         neither set -> NO routing line? $((1-_r_bare)))"
+    echo "        The third is the one to think about before 'fixing': omitting routing means the"
+    echo "        default, which IS FSM-on continuous, so emitting it would be a NO-OP -- except under"
+    echo "        infiltration_during_flow: true, where an explicit continuous is REFUSED and an absent"
+    echo "        one resolves to impulse (#49). Writing it down there broke tests/serial_recharge."
+    fail=1
+fi
+
 bash ../emit_config.sh < "$WORK/shim_keys.txt" > "$WORK/shim.yaml"
 OUT=$(msg "$WORK/shim.yaml")
 if echo "$OUT" | grep -q "unrecognised key"; then
