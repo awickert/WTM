@@ -20,42 +20,43 @@ TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
-emit() { # $1 stem  [env: INTEG= ADAPT_MODE= EQ_TOL=]
-  # BOTH keys are emitted UNCONDITIONALLY, with the control arm's values as the defaults. They used to be
-  # emitted only when the caller set them (`${INTEG:+...}`), which left the key ABSENT -- and absent means
-  # `auto`, which resolves to tr-bdf2 on the Anderson path and to adaptive under any non-implicit
-  # collector. So all three arms ran tr_bdf2 + adaptive + active_set: the `cc` arm named as the
-  # backward-Euler fixed-step CONTROL was a second copy of `adapt`, and guard (1) -- "adaptive matches
-  # backward-Euler" -- compared adaptive with itself. See #24, #37.
-  ../emit_config.sh > "$WORK/$1.yaml" <<EOF
-solver_method anderson
-time_integration ${INTEG:-backward-euler}
-time_step_mode ${ADAPT_MODE:-fixed}
-run_type equilibrium
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 24192000000s
-save_nreport_interval 200
-report_interval 50
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region adwater
-supplied_wt 0
-eq_tol ${EQ_TOL:-0.001}
-eq_metric rms
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-EOF
+# THE CONFIG IS A FILE NOW (#83): tests/adaptive_water/config.yaml, read and edited directly rather
+# than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THE HISTORY THAT MAKES THIS MATTER. These keys were once emitted only when the caller set them
+# (`${INTEG:+...}`), so an unset key was ABSENT -- and absent meant `auto`, which resolved to tr-bdf2
+# on the Anderson path and to adaptive under any non-implicit collector. All three arms therefore ran
+# tr_bdf2 + adaptive + active_set: the arm named as the backward-Euler fixed-step CONTROL was a second
+# copy of `adapt`, and guard (1) -- "adaptive matches backward-Euler" -- compared adaptive with
+# itself (#24, #37). Every one of those keys now lives in the file, for every arm.
+#
+# config.yaml IS THE `adapt` ARM. The others are made from it by DELETING the controller dials, which
+# is the only direction that works: under mode: fixed the model records no dials at all, so building
+# the adaptive arm by inserting them is how one goes missing unnoticed.
+emit() { # $1 stem, $2 time_integration, $3 time_step.mode, $4 equilibrium_stop.tol   (ALL REQUIRED)
+  local ti="${2:?emit needs a time_integration: name the value for this arm, do not inherit it}"
+  local sm="${3:?emit needs a time_step.mode: naming it is what stopped all three arms being one}"
+  local et="${4:?emit needs an equilibrium_stop.tol}"
+  local dials=()
+  if [ "$sm" = fixed ]; then
+      dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
+             -e "/^    max_retries:/d" -e "/^    norm:/d"
+             # error_tol is still RECORDED under fixed -- at a different value -- so it is SET, not
+             # deleted. Only the controller dials disappear.
+             -e "s|^    error_tol: .*|    error_tol: 0.1   # the value resolved under mode: fixed|")
+  fi
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  time_integration: tr-bdf2|  time_integration: $ti|" \
+      -e "s|^    mode: adaptive|    mode: $sm|" \
+      -e "s|^    tol: 0.001|    tol: $et|" \
+      "${dials[@]}" config.yaml > "$WORK/$1.yaml"
 }
 
 BB=""
-emit cc; ADAPT_MODE=adaptive INTEG=tr-bdf2 emit adapt; EQ_TOL=0.0005 emit water
+emit cc    backward-euler fixed    0.001
+emit adapt tr-bdf2       adaptive 0.001
+emit water backward-euler fixed    0.0005
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 # The whole point of this suite is that DIFFERENT schemes reach the SAME equilibrium, so each arm has to
 # prove it ran the scheme it names. Checked against the fingerprint the model writes, not the config we

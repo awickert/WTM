@@ -1,0 +1,111 @@
+# tests/adaptive_water -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES: a cold-start equilibrium must land on the SAME water table whatever the
+# integrator, the step mode, or the equilibrium-stop metric. Three arms:
+#   cc      backward-euler, fixed step        the control
+#   adapt   tr-bdf2, adaptive step            must converge AND match the control
+#   water   backward-euler, fixed, tol 5e-4   must stop on the pure water-depth metric and match
+#
+# THIS FILE IS THE `adapt` ARM as written, and run.sh overrides the others. That direction is not
+# arbitrary: the adaptive arm is the only one whose resolved config carries the controller dials at
+# all, so it is the only arm the others can be produced from by DELETING lines. Building it the other
+# way round would mean inserting keys, which is how a dial goes missing unnoticed.
+#
+# THE HISTORY THIS GUARDS AGAINST is in run.sh: these keys were once emitted only when the caller set
+# them, so an unset key meant `auto` -- and all three arms silently resolved to tr-bdf2 + adaptive.
+# The arm named as the backward-Euler CONTROL was a second copy of `adapt`, and the "adaptive matches
+# backward-Euler" guard compared adaptive with itself (#24, #37). Every one of those keys is now
+# stated, in a file, for every arm.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0.001   # the cc and adapt arms. run.sh overrides to 0.0005 for the `water` arm, which is
+                 # the arm that must stop on the pure water-depth metric |S*dwtd|.
+    metric: rms
+    frac: 0.001   # UNSTATED: nobody chose this -- decide it for this suite
+  initial_water_table: saturated
+time:
+  total: "24192000000s"
+  report_interval: "50"
+  save_every_n_reports: 200
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement; stated because the run resolves it
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # the `adapt` arm; run.sh overrides to backward-euler for cc and water
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # the `adapt` arm. run.sh overrides to `fixed` for cc and water AND deletes the
+                     # controller dials below, because under `fixed` the model records none of them
+    dt: 2419200
+    error_tol: 0.5   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # UNSTATED: nobody chose this -- decide it for this suite
+    logistic_width: 0.1   # UNSTATED: nobody chose this -- decide it for this suite
+  extinction_depth: 8   # UNSTATED: nobody chose this -- decide it for this suite
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'adwater'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
