@@ -46,37 +46,24 @@ make_work golden
 # duplicate hides (tests/flicker_evap ran a collector it did not appear to ask for; #87). The two are
 # indistinguishable to the shim, so the override is resolved HERE, where it is intended: any base line
 # whose key an extra also sets is dropped before emitting. Same config as before, one statement per key.
-emit_cfg() { # sdir region extra... -> stdout config
-    local sdir="$1" region="$2"; shift 2
-    local overridden=" "
-    local kv
-    for kv in "$@"; do overridden+="${kv%% *} "; done
-    { cat <<EOF
-solver_method anderson
-run_type           equilibrium
-infiltration_on    0
-runoff_ratio_on    0
-deltat             31536000
-total_time       6yr
-report_interval            2
-fdepth_a           200
-fdepth_b           150
-fdepth_fmin        2
-time_start         t0
-time_end           t0
-surfdatadir        $sdir
-region             $region
-supplied_wt        0
-save_nreport_interval     9999
-EOF
-    } | while IFS= read -r line; do
-        local k="${line%% *}"
-        case "$overridden" in *" $k "*) ;; *) printf '%s\n' "$line" ;; esac
-      done
-    for kv in "$@"; do echo "$kv"; done
+# THE CONFIG IS A FILE NOW (#83): tests/golden/config.yaml. Every setting each case resolves to is
+# stated there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# THE REFERENCES CONSTRAIN THAT FILE: any value change there changes the answer and invalidates a
+# committed reference, so nothing in it may be "tidied" -- a setting is either what the reference was
+# captured under, or the reference is regenerated deliberately with a stated reason (#55).
+emit_cfg() { # $1 inputs, $2 region, $3 routing, $4 initial_water_table, $5 run.type,
+             # $6 time.total, $7 runoff_ratio, $8 time_start, $9 time_end   -> stdout config
+    sed -e "s|@INPUTS@|$1|g" -e "s|@REGION@|$2|g" -e "s|@ROUTING@|$3|g" -e "s|@IWT@|$4|g" \
+        -e "s|@RUNTYPE@|$5|g" -e "s|@TOTAL@|$6|g" -e "s|@RR@|$7|g" \
+        -e "s|@TSTART@|$8|g" -e "s|@TEND@|$9|g" \
+        -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$STEM|g" "$GOLDEN_CFG"
 }
 
 # case name -> emits config body via the function above
+# run.sh has already cd'd into its own directory (line 14), so this is simply relative.
+GOLDEN_CFG="config.yaml"
+
 case_cfg() {
     local GHOST FSM TRANS RUNOFF
     GHOST=$(readlink -f ../ghost_cell/inputs)
@@ -84,11 +71,11 @@ case_cfg() {
     TRANS=$(readlink -f inputs)
     RUNOFF=$(readlink -f inputs_runoff)
     case "$1" in
-      below_ground)  emit_cfg "$GHOST" ghost_cell_test "fsm_on 0" ;;
-      fsm_evap0)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" ;;
-      fsm_evap1)     emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" ;;
-      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    "fsm_on 1" "supplied_wt 1" "runoff_ratio_on 1" ;;
-      fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi "fsm_on 1" "supplied_wt 1" "runoff_ratio_on 1" ;;
+      below_ground)  emit_cfg "$GHOST" ghost_cell_test off        saturated equilibrium 6yr 0      t0 t0 ;;
+      fsm_evap0)     emit_cfg "$FSM" fsm_test         continuous supplied  equilibrium 6yr 0      t0 t0 ;;
+      fsm_evap1)     emit_cfg "$FSM" fsm_test         continuous supplied  equilibrium 6yr 0      t0 t0 ;;
+      fsm_runoff)    emit_cfg "$RUNOFF" runoff_test    continuous supplied  equilibrium 6yr raster t0 t0 ;;
+      fsm_runoff_hi) emit_cfg "$RUNOFF" runoff_test_hi continuous supplied  equilibrium 6yr raster t0 t0 ;;
       # adaptive_dt: DEFAULT (auto -> true). It was pinned FALSE here between 6ee7840 and the fix
       # below, and the reason is worth keeping rather than deleting. With adaptive dt on, this case
       # failed across MPI rank counts because the embedded error estimate was DECOMPOSITION-DEPENDENT:
@@ -103,11 +90,11 @@ case_cfg() {
       # misleads the next reader, and because a golden should exercise the DEFAULTS that production
       # runs. The adaptive controller's cross-rank determinism is now asserted directly, and far more
       # sensitively, by tests/xrank_adaptive -- which is where that property belongs.
-      transient)     emit_cfg "$TRANS" transient_test "run_type transient" "fsm_on 1" "time_start ta" "time_end tb" "total_time 8yr" ;;
+      transient)     emit_cfg "$TRANS" transient_test  continuous saturated transient   8yr 0      ta tb ;;
       # fsm_impulse: the SAME case as fsm_evap1 under the non-default coupling. It exists because
       # surface_water.fsm_coupling now defaults to `continuous`, which would leave `impulse`
       # unexercised by every arm here -- and an alternative nobody runs is one that rots quietly.
-      fsm_impulse)   emit_cfg "$FSM" fsm_test "fsm_on 1" "supplied_wt 1" "fsm_coupling impulse" ;;
+      fsm_impulse)   emit_cfg "$FSM" fsm_test         impulse    supplied  equilibrium 6yr 0      t0 t0 ;;
       *) echo "unknown case $1" >&2; return 1 ;;
     esac
 }
@@ -135,18 +122,11 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     local cfg="$WORK/${name}_n${n}.yaml"
     local log="$WORK/${name}_n${n}.log"
     PREFIX="$WORK/${name}_n${n}_"
-    { case_cfg "$name" | sed "s|__X__|x|"
-      echo "eq_tol 0"
-      echo "textfilename   $WORK/${name}_n${n}.txt"
-      echo "outfile_prefix $PREFIX"
-      # BOTH per-solve gates, in the CONFIG now rather than as CLI flags. The reasoning below is
-      # unchanged; only the channel is. Keeping them on the command line meant this suite's configs
-      # said one tolerance and its runs used another -- the declared-vs-resolved gap #79 exists to
-      # close, and the worse half of it, because a DIFFER is a config that lies rather than one that
-      # is merely silent.
-      echo "snes_stol $GOLDEN_STOL"
-      echo "convergence_water_volume_tol $GOLDEN_STOL"
-    } | ../emit_config.sh > "$cfg"
+    export STEM="${name}_n${n}"
+    # The config is a FILE now (#83): case_cfg renders tests/golden/config.yaml with this case's
+    # values. The per-solve gates and the outputs are tokens in that file rather than lines appended
+    # here -- appending would be a duplicate YAML key, silently dropped.
+    STEM="${name}_n${n}" case_cfg "$name" | sed -e "s|@STOL@|$GOLDEN_STOL|g" > "$cfg"
     # -wtm_eq_tol 0: run the full fixed total_time so the reference and the cross-rank checks compare at the
     # SAME cycle (the equilibrium auto-stop default could otherwise fire at MPI-decomposition-dependent cycles).
     # -snes_stol 1e-10, NOT 1e-8. snes_stol is a STEP tolerance: it stops when the iterate stops
@@ -170,7 +150,7 @@ run_case() { # name nranks -> sets $PREFIX; nonzero if the run did not finish
     # The run exited 0; require the output for the CONFIGURED end time, so a short run cannot pass
     # itself off as a finished one. WTM names outputs <prefix><cycle>_<elapsed>.tif.
     local tt
-    tt=$(case_cfg "$name" | awk '$1=="total_time"{v=$2} END{print v}')
+    tt=$(STEM="${name}_n${n}" case_cfg "$name" | sed -n 's/^  total: *"\([^"]*\)".*/\1/p' | head -1)
     if ! compgen -G "${PREFIX}*_${tt}.tif" >/dev/null; then
         printf "  %-14s n=%-2s : INCOMPLETE -- no output at total_time=%s (have: %s)\n" \
                "$name" "$n" "$tt" "$(basename -a ${PREFIX}*.tif 2>/dev/null | tr '\n' ' ')" >&2

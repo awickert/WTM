@@ -162,7 +162,7 @@ expect_resolved() {
 # it declared. That makes the conversion monotone -- a converted suite cannot silently drift back while
 # the rest is in flight -- and turns "gradually tighten this" into a count that only goes up instead of an
 # intention that quietly expires. When the list holds every suite, delete it and enforce unconditionally.
-WTM_DECLARED_SUITES="fsm_conservation xrank_adaptive log_schema direct_to_runoff storage_equivalence adaptive_restart fsm_consistency variable_porosity serial_recharge active_set adaptive_water snapshot_restart boundary_analytic xrank_growth limit_cycle lake_evap_equals_et dt_sensitivity multilake solver_consistency boundary_consistency dt_invariance recharge_consistency mpi_consistency fsm_cascade fsm_fullness flicker_evap local_ledger coupling_convergence estimator_order"
+WTM_DECLARED_SUITES="fsm_conservation xrank_adaptive log_schema direct_to_runoff storage_equivalence adaptive_restart fsm_consistency variable_porosity serial_recharge active_set adaptive_water snapshot_restart boundary_analytic xrank_growth limit_cycle lake_evap_equals_et dt_sensitivity multilake solver_consistency boundary_consistency dt_invariance recharge_consistency mpi_consistency fsm_cascade fsm_fullness flicker_evap local_ledger coupling_convergence estimator_order golden"
 
 _wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
     local tag="$1" tests_dir out rc=0
