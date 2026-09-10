@@ -20,12 +20,12 @@
 #   report_interval       -> time.report_interval
 #   save_nreport_interval -> time.save_every_n_reports
 #   fdepth_a|b|fmin       -> transmissivity.fdepth.a|b|fmin
-#   fsm_on 1|0            -> surface_water.mode: routed|ponded
+#   fsm_on 1|0            -> surface_water.routing: (see below) | off
 #   runoff_ratio <num>    -> surface_water.runoff_ratio: <num>   (uniform)
 #   runoff_ratio_on 1     -> surface_water.runoff_ratio: raster  (require the raster)
 #   infiltration_on 0|1   -> surface_water.infiltration_during_flow: false|true
 #   runoff_collector      -> surface_water.collection.method
-#   fsm_coupling          -> surface_water.fsm_coupling (impulse | continuous)
+#   fsm_coupling          -> surface_water.routing (continuous | impulse); with fsm_on 0 -> refused
 #   extinction_depth      -> evaporation.extinction_depth
 #   taper_surface_transition -> evaporation.tapers.surface_transition  (was -wtm_evap_taper)
 #   taper_depth_extinction   -> evaporation.tapers.depth_extinction    (was -wtm_extinction)          (m)
@@ -245,11 +245,28 @@ fi
 # --- surface_water -----------------------------------------------------------
 if true; then   # always: collection.method and fsm_coupling are resolved for every run
     echo "surface_water:"
-    if have fsm_on; then
-        case "$(val fsm_on)" in
-            1) echo "  mode: routed" ;;
-            0) echo "  mode: ponded" ;;
-        esac
+    # fsm_on + fsm_coupling now map onto the SINGLE key surface_water.routing (continuous|impulse|off).
+    # THE OMISSION RULE IS LOAD-BEARING and is why this is not a simple two-into-one substitution:
+    #   fsm_on 0                     -> routing: off        (a real state; say it)
+    #   fsm_on 1 + fsm_coupling X    -> routing: X
+    #   fsm_coupling X, fsm_on unset -> routing: X          (FSM is on by default)
+    #   fsm_on 1, coupling unset     -> EMIT NOTHING. Omitted means "the default", which IS FSM-on
+    #                                   continuous, so the run is unchanged -- and writing `continuous`
+    #                                   down would NOT be the same input: the model refuses an explicit
+    #                                   `continuous` under infiltration_during_flow: true (#49) while
+    #                                   resolving an absent one to impulse. Mirroring it there turned
+    #                                   tests/serial_recharge from a working run into a hard error.
+    if [[ "$(have fsm_on && val fsm_on)" == "0" ]]; then
+        if have fsm_coupling; then
+            printf 'emit_config.sh: fsm_on 0 with fsm_coupling %s -- FSM is off, so there is no coupling\n' \
+                   "$(val fsm_coupling)" >&2
+            printf '  to choose. That contradiction is what surface_water.routing exists to make\n' >&2
+            printf '  unrepresentable. Drop the fsm_coupling line.\n' >&2
+            exit 2
+        fi
+        echo "  routing: off"
+    elif have fsm_coupling; then
+        echo "  routing: $(val fsm_coupling)"
     fi
     # runoff_ratio: a numeric value (uniform) takes precedence; else runoff_ratio_on 1 requires the raster.
     if have runoff_ratio; then
@@ -280,7 +297,6 @@ if true; then   # always: collection.method and fsm_coupling are resolved for ev
     # These resolutions depend on COMBINATIONS (collector x infiltration x method x run_type), and a
     # bash copy of that is the "do not re-derive the model's policy" rule of #24, which I wrote and then
     # broke. The keys stay undeclared until the model itself can be asked for its resolved config.
-    have fsm_coupling && echo "  fsm_coupling: $(val fsm_coupling)"
     if have runoff_collector; then
         echo "  collection:"
         echo "    method: $(val runoff_collector)"
