@@ -1,0 +1,108 @@
+# tests/variable_porosity -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES, and why the FIXTURE is the load-bearing part: this is the suite's only
+# SPATIALLY VARYING POROSITY fixture, and the only place the head-vs-volume distinction can be seen at
+# all. Everywhere else phi is a uniform 0.25 and V(wtd) has slope exactly phi, so converting a
+# comparison from head to water volume is an exact x0.25 rescale -- the cell ranking never changes and
+# nothing that passes can start failing. The whole #61/#65 arc is invisible there by construction.
+#
+# So what this config must not lose is the FIXTURE (io.region below), and the DISCRIMINATES arm that
+# proves the head and volume norms still pick different cells. If the fixture ever drifted toward
+# uniform-equivalent behaviour, the other two arms would keep passing while proving nothing.
+#
+# ARMS differ in ONE key -- solver.time_integration -- and that override lives in run.sh.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: rms
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: saturated
+time:
+  total: "604800000s"
+  report_interval: "50"
+  save_every_n_reports: 500
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement. routing: off here, so it binds only if the table
+                         # reaches the surface -- stated because the run resolves it
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: backward-euler   # THE SUBJECT of the AGREEMENT arm. run.sh overrides this one key
+                                     # to tr-bdf2; the claim is that two integrators reach the SAME
+                                     # equilibrium when judged in water volume on a variable-phi domain.
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves. BOTH ARMS get the same controller, so the
+                     # integrator comparison is not confounded by who sizes the step
+    dt: 2419200
+    error_tol: 0.5   # the resolved adaptive target for this combination
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. With routing: off the taper is what removes surface
+    logistic_width: 0.1   # water at all -- but both arms share it, and the claim is that the two
+  extinction_depth: 8   # integrators AGREE, which is independent of the forcing they both see
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'varphi'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

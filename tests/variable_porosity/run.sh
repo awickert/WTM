@@ -28,36 +28,17 @@ BUDGET_TOL="${BUDGET_TOL:-1e-5}"
 make_work varphi
 export OMP_NUM_THREADS=1
 
-emit() { # stem  integrator
-  ../emit_config.sh > "$WORK/$1.yaml" <<CFG
-run_type equilibrium
-solver_method anderson
-time_integration $2
-# EQUILIBRIUM STOP OFF, FIXED SPAN. The two arms must cover the SAME simulated time or the budget
-# comparison is meaningless: exact_budget_residual is CUMULATIVE, and with an early stop each
-# integrator settles at a different cycle, so the arms end at different model times. I made exactly
-# that mistake here first and read a 387x integrator gap off it that does not exist -- with a fixed
-# span both arms sit at ~1e-06. The span is chosen to be a whole number of reports at this dt.
-eq_tol 0
-eq_metric rms
-fsm_on 0
-infiltration_on 0
-runoff_ratio_on 0
-deltat 2419200
-total_time 604800000s
-report_interval 50
-save_nreport_interval 500
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-time_start ta
-time_end tb
-surfdatadir $INP
-region varphi
-supplied_wt 0
-textfilename $WORK/$1.txt
-outfile_prefix $WORK/${1}_
-CFG
+# THE CONFIG IS A FILE NOW (#83): tests/variable_porosity/config.yaml, read and edited directly
+# rather than translated from legacy key/value lines. Every setting the run resolves to is stated
+# there, and tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# io.region in that file is the LOAD-BEARING line: this is the suite's only spatially varying porosity
+# fixture, and the only place the head-vs-volume distinction is visible at all. The integrator is the
+# only thing that differs between the arms, so it is the only thing overridden here.
+emit() { # $1 stem, $2 solver.time_integration (REQUIRED -- naming it is what keeps the arms distinct)
+  local ti="${2:?emit needs a time_integration: name the value for this arm, do not inherit it}"
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
+      -e "s|^  time_integration: backward-euler|  time_integration: $ti|" config.yaml > "$WORK/$1.yaml"
 }
 run() { emit "$1" "$2"
   WTM_COVERAGE_TAG="variable_porosity/$1" "$WTM" "$WORK/$1.yaml" > "$WORK/$1.log" 2>&1 \
