@@ -1,0 +1,109 @@
+# tests/fsm_consistency -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below, which
+# is what makes tests/config_identity.py's declared == resolved check meaningful here.
+#
+# PROVENANCE, three kinds:
+#   (none)                        the suite chose it for what it measures
+#   # baseline (CONFIG_BASELINE)  the model's default, taken on purpose, owned once for all suites
+#   # <a reason>                  the model's default, examined FOR THIS SUITE and owned here
+#
+# WHAT THIS SUITE MEASURES: that FillSpillMerge's result is identical on 1 rank and on N. FSM runs
+# SERIALLY on rank 0 and its result is broadcast, so this is the only place that broadcast is checked.
+# Shown to BITE: removing the post-FSM wtd broadcast makes n=1 vs n=4 diverge by ~4e-2 m.
+#
+# WHAT THAT MAKES LOAD-BEARING: the fixture must actually give FSM work to do. The ghost_cell and
+# mpi_consistency fixtures keep the table below ground, where FSM is a no-op and cannot catch a bug in
+# the rank-0 path at all. So `routing` being ON, with surface water present, IS the test -- and until
+# #83 this suite never SAID it was FSM-on: the key was absent and resolved to the default.
+#
+# ONE ARM, MANY RANKS. run.sh runs this same file at several rank counts and compares; the rank count
+# is not a config setting, so there are no per-arm overrides.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "6yr"
+  report_interval: "2"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: continuous   # FSM ON, and the production coupling. THE PRECONDITION OF THIS SUITE: with
+                        # routing off there is no FSM result to broadcast and the test measures nothing.
+  runoff_ratio: 0
+  collection:
+    method: active_set   # the shipped enforcement, and it DOES bind here: this fixture puts water
+                         # above ground on purpose, which is exactly when the constraint acts
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; stated so a cross-rank comparison is
+                              # pinned to one integrator on both sides
+  tolerance: 1e-8
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves here. Both rank counts run the SAME file, so the
+                     # controller sees the same problem -- and whether its GLOBAL REDUCTION agrees
+                     # across decompositions is a real question (tests/xrank_adaptive owns it)
+    dt: 31536000
+    error_tol: 0.5   # the resolved adaptive target for this combination
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'fsm_test'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

@@ -28,7 +28,11 @@ def own(path):
                 return l[len(want):].split("#")[0].strip().strip("'\"")
         return None
     stop_off = val("tol", 2) == "0"                    # run.equilibrium_stop.tol
-    routing  = val("routing")                          # surface_water.routing (#89)
+    # surface_water.routing (#89). ABSENT MEANS THE DEFAULT, WHICH IS `continuous` -- i.e. FSM ON.
+    # Treating absent as `off` wrote "with routing: off the taper is what removes surface water" into
+    # an FSM-ON config (caught on fsm_consistency): a provenance comment that was simply false, which
+    # is the exact failure this whole task exists to prevent.
+    routing  = val("routing") or "continuous"
     routed   = routing in ("continuous", "impulse")    # FSM on: lakes, and evaporation in the budget
 
     reasons = {

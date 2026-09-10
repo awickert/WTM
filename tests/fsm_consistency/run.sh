@@ -28,30 +28,20 @@ fi
 
 make_work fsm_consistency
 
-mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml, echoes prefix
+# THE CONFIG IS A FILE NOW (#83): tests/fsm_consistency/config.yaml, read and edited directly rather
+# than translated from legacy key/value lines. Every setting the run resolves to is stated there, and
+# tests/config_identity.py enforces it (this suite is on WTM_DECLARED_SUITES).
+#
+# ONE FILE, EVERY RANK COUNT -- which is the point: the comparison is only meaningful if both sides
+# solve the identical problem, and a single shared file is what guarantees that.
+#
+# surface_water.routing: continuous is stated there now. It had been ABSENT and resolving to the
+# default, so this suite -- whose entire subject is the rank-0 FSM path -- never actually said it was
+# running FSM at all. If the default had moved to off, it would have kept passing while measuring
+# nothing, the way the ghost_cell fixture cannot catch FSM bugs because its table stays below ground.
+mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml
     local n="$1"
-    sed "s|__TXT__|$WORK/n${n}.txt|; s|__OUT__|$WORK/n${n}_|; s|__SD__|$SD|" <<EOF | ../emit_config.sh > "$WORK/n${n}.yaml"
-run_type           equilibrium
-snes_stol          1e-8
-fsm_on             1
-infiltration_on    0
-runoff_ratio_on    0
-deltat             31536000
-total_time       6yr
-report_interval            2
-fdepth_a           200
-fdepth_b           150
-fdepth_fmin        2
-time_start         t0
-time_end           t0
-surfdatadir        __SD__
-region             fsm_test
-supplied_wt        1
-eq_tol 0
-textfilename       __TXT__
-outfile_prefix     __OUT__
-save_nreport_interval     9999
-EOF
+    sed -e "s|@INPUTS@|$SD|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|n${n}|g" config.yaml > "$WORK/n${n}.yaml"
 }
 
 # -wtm_eq_tol 0: pin the full fixed cycle count so the cross-rank comparison is at the same cycle (the
