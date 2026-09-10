@@ -15,13 +15,35 @@ MPI determinism, and the Newton Jacobian against finite differences.
 Regenerate the committed .tif inputs with:  python3 make_inputs.py
 """
 import numpy as np, os, rasterio
-from rasterio.transform import from_bounds
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from wtm_testgrid import make_transform  # noqa: E402
 
 NX, NY = 24, 20
 REGION = "ghostbc"
+
+# CELL SIZE IS PHYSICS HERE, NOT BOOKKEEPING (#34). This generator used
+# `from_bounds(0, 0, NX, NY, NX, NY)`, the arbitrary placeholder from when WTM ignored georeferencing.
+# WTM derives cell geometry from the geotransform (#124), and that placeholder means ONE DEGREE per
+# cell -- 111 km. With ksat 1e-4 and a 24-cell domain, lateral drainage to the ocean outlet is then
+# utterly negligible against 0.2 m/yr of recharge, so the whole wedge simply filled up: measured, the
+# steady state was wtd == 0 in all 460 land cells, and `collection.method: active_set` pinned them
+# there. Every comparison in run.sh was then between identically-zero fields, and the suite passed on
+# 0.00e+00 for 460 simulated years.
+#
+# 1000 cells/degree = ~111 m cells, the value tests/boundary_analytic already uses. Measured across a
+# sweep (cells/degree -> land cells still pinned at wtd == 0, out of 460):
+#     1 -> 460    4 -> 460    16 -> 460    64 -> 440    256 -> 320    1000 -> 0
+# At 1000 the designed coastal wedge actually forms: head rises monotonically 0 -> 93.25 m from the
+# ocean outlet to the east land edge, the east-edge head rise is 4.0039 m per column (the terrain slope,
+# which IS the neumann_toposlope off-map ghost signature), and the N/S edge rows equal the interior row
+# (the zero-slope no-flow divide). That is the boundary this suite exists to validate, now visible in
+# the answer instead of buried under a saturated field.
+CELLS_PER_DEGREE, SOUTHERN_EDGE = 1000, 0
+
 OUT = os.path.join(os.path.dirname(__file__), "inputs")
 os.makedirs(OUT, exist_ok=True)
-tr = from_bounds(0, 0, NX, NY, NX, NY)
+tr = make_transform(CELLS_PER_DEGREE, SOUTHERN_EDGE, NY)
 
 def w(name, data, dt="float32"):
     with rasterio.open(os.path.join(OUT, name), "w", driver="GTiff", height=NY, width=NX, count=1,
