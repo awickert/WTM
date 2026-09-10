@@ -14,7 +14,8 @@ transmissivity:
     b: 150
     fmin: 2
 surface_water:
-  mode: ponded
+  routing: off   # FSM does not run. One key since 2026-09-10 (#89): with no routing there is
+                 # no coupling, so `off` is the whole answer rather than a mode plus an unused coupling.
   infiltration_during_flow: false
 io:
   source: inputs
