@@ -108,35 +108,28 @@ def final(stem):
 
 print(f"  a converged answer must not depend on the tolerance: {os.environ['SHIPPED']} vs {os.environ['TIGHT']}")
 print(f"  {'dt (wk)':>8s}  {'expect':>6s}   max|dV| (water)   verdict")
-bad_clean, bad_band, ok_band = [], [], []
+failed, hist = [], []
 for stem, dt, kind in arms:
     a, b = final(f"{stem}_ship"), final(f"{stem}_tight")
     m = np.ones_like(a, bool); m[:, 0] = False          # land only; the ocean column is pinned
     d = float(VOL.volume_diff(a, b, phi)[m].max())
-    agree = d <= tol
-    if kind == "clean" and not agree: bad_clean.append((dt, d))
-    if kind == "band"  and not agree: bad_band.append((dt, d))
-    if kind == "band"  and agree:     ok_band.append((dt, d))
-    print(f"  {int(dt)/604800:8.4f}  {kind:>6s}   {d:.4e}        {'agree' if agree else 'DISAGREE'}")
+    if d > tol: failed.append((dt, d, kind))
+    if kind == "band": hist.append(dt)
+    print(f"  {int(dt)/604800:8.4f}  {kind:>6s}   {d:.4e}        {'agree' if d <= tol else 'DISAGREE'}")
 
-# A CLEAN ARM THAT DISAGREES IS A REAL FAILURE -- the defect has spread, or something else broke.
-if bad_clean:
-    print("\nFAIL: arms that have always agreed no longer do -- this is NOT the known #104 banding:")
-    for dt, d in bad_clean: print(f"         dt = {int(dt)/604800:.4f} wk   max|dV| = {d:.4e} m water")
+# EVERY ARM MUST AGREE. This was an xfail until #104 was fixed (the water-step verdict is now refused
+# while the residual is above solver.convergence.residual_gate x its initial value). The `band` label is
+# kept as HISTORY, not as an expectation: those are the dt at which the defect bit, and they are the arms
+# that would regress first. Before the gate they disagreed by 1.45e+00 .. 6.68e+00 m of water.
+if failed:
+    print("\nFAIL: a converged answer is depending on the tolerance it stopped at.")
+    for dt, d, kind in failed:
+        print(f"         dt = {int(dt)/604800:.4f} wk ({kind})   max|dV| = {d:.4e} m water  > tol {tol:g}")
+    print("  The looser run did not converge, whatever reason code it printed. Check whether it exited")
+    print("  after very few nonlinear iterations, and see #104 and the note at")
+    print("  src/transient_groundwater.cpp (VolumeStepConverged).")
     sys.exit(1)
-
-# THE BANDED ARMS ARE A KNOWN, OPEN DEFECT (#104). Held as an xfail WITH A GUARD, so that a fix is
-# detected rather than silently absorbed, and so the suite cannot go green while the defect is live.
-if ok_band:
-    print("\nUNEXPECTED PASS: banded arms now agree across tolerances -- #104 may be FIXED:")
-    for dt, d in ok_band: print(f"         dt = {int(dt)/604800:.4f} wk   max|dV| = {d:.4e} m water")
-    print("  Do not just delete the xfail. Confirm the shipped run now exits on CONVERGED_FNORM (the")
-    print("  residual test) rather than after 4-7 iterations on the step test, then convert these arms")
-    print("  to a live assertion. Failing so this cannot pass unnoticed.")
-    sys.exit(1)
-print(f"\n  xfail   KNOWN #104   {len(bad_band)} of {len(bad_band)} banded arms disagree across tolerances")
-print("  The shipped tolerance stops the semismooth active_set solve on a STALL and calls it converged;")
-print("  the tight arm is the same solve allowed to reach its residual. See #104 and the note at")
-print("  src/transient_groundwater.cpp (VolumeStepConverged).")
-print(f"  PASS: the {len(arms) - len(bad_band)} clean arms agree (see the column above), so the comparison is LIVE and not simply failing everywhere.")
+print(f"\nPASS: all {len(arms)} arms agree across {os.environ['SHIPPED']} and {os.environ['TIGHT']}.")
+print(f"  {len(hist)} of them ({', '.join(f'{int(d)/604800:g}' for d in hist)} wk) disagreed by 1.45e+00 .. 6.68e+00 m")
+print("  of water before #104's residual gate; they are the arms that would regress first.")
 PY
