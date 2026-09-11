@@ -49,6 +49,11 @@ EXPECTED = [
     # Appended for #65: the per-cycle change in WATER VOLUME (|S*dwtd|), the units the equilibrium
     # stop, the adaptive step target and the budget all use. Column 5 stays the HEAD change.
     "abs_change_volume_max", "abs_change_volume_rms",
+    # Appended for #105: the off-map ghost flux under boundaries.land: neumann_toposlope, signed
+    # + for INFLOW. It is a mass SOURCE the model books, and until this column existed it was
+    # visible only inside exact_budget_residual -- a sum it shares with five other terms, where
+    # two errors can cancel and read as a closed budget.
+    "boundary_inflow_gw",
 ]
 fail = 0
 def check(name, ok, detail):
