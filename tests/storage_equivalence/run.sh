@@ -27,6 +27,17 @@
 # cycle. At cpd 64 the domain IS in one, so the precondition fails and the identity is UNVERIFIED, not
 # disproven.
 #
+# ANDY, 2026-09-11: "For the #102 tests: note that they are allowed to fail." STANDING, and it means
+# what it says -- a red from this suite is NOT a release blocker and is not to be chased on its own
+# account. The configuration it needs (`secant`, a table crossing wtd = 0, and no flicker) is one the
+# model cannot currently supply, and the collector that flickers is `explicit`, which is not the
+# production method. Do not spend time here to turn it green, and do not let it gate anything.
+#
+# The suite already exits 0 on the known xfail. The two exit-1 paths below are RATCHETS, not failures
+# of the identity: one fires if the defect disappears, the other if its size moves. They exist so a
+# change announces itself rather than passing quietly, and they stay -- but under the standing above,
+# either one is a prompt to read and re-record, not a defect to fix.
+#
 # BUT THE LIMIT CYCLE IS ITSELF A DEFECT, NOT MERELY AN EXCUSE FOR THIS XFAIL -- see task #103. It does
 # not decay: over cycles 5-30 the within-cycle max|dw| wanders between 4e-04 and 1.3e-02 m with no trend,
 # and the count of cells moving >1mm SNAPS between 56, 48 and 0, so the 56 surface cells switch
