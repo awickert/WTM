@@ -212,6 +212,48 @@ else
   fail=1
 fi
 
+# ---- 5. A CONSTRAINT **ON** A BOUNDARY FACE: the crossing that produced #52 and #105 ----------------
+# Both defects needed BOTH a boundary face AND a constraint replacing the cell's mass balance -- neither
+# axis alone showed either of them. Arm 4 above runs the shipped collection.method for this suite, which
+# is `off`; this arm re-runs the same fixture under `active_set`, the shipped DEFAULT collector and the
+# one whose multiplier REPLACES the balance at exactly the cells that carry the boundary flux.
+#
+# ONE ARM, NOT SIX. The full collector x boundary matrix was swept once by hand (2026-09-11) and came
+# back clean for everything that runs:
+#     active_set  neumann 8.56e-10   dirichlet 5.80e-09
+#     explicit    neumann 8.40e-10   dirichlet 5.63e-09
+#     off         neumann 8.40e-10   dirichlet 5.63e-09
+#     implicit    REFUSED under adaptive (legible message); DIVERGED_MAX_IT under fixed -- and also on a
+#                 FLAT-terrain variant of this fixture, so that is fixture difficulty, not a boundary
+#                 interaction. Not a defect, and not this suite's subject.
+# Six standing arms would cost six runs every suite invocation to re-establish a matrix that is clean.
+# The crossing worth PAYING for continuously is constraint x boundary, so that is the one kept.
+emit_adaptive as_bc backward-euler
+sed -i 's|^    method: off$|    method: active_set|' "$WORK/as_bc.yaml"
+grep -q "method: active_set" "$WORK/as_bc.yaml" || { echo "  FAIL  as_bc: collector slot not substituted" >&2; fail=1; }
+"$WTM" "$WORK/as_bc.yaml" > "$WORK/as_bc.log" 2>&1 \
+  || { echo "  FAIL  active_set on a boundary face -- run failed"; tail -3 "$WORK/as_bc.log" | sed 's/^/        /'; fail=1; }
+if [ -f "$WORK/as_bc.txt" ]; then
+  RESID_AS=$("$PY" -c '
+import sys
+L=[l for l in open(sys.argv[1]) if l.strip()]
+h=[l for l in L if l.startswith("Cycles_done")][0].split()
+d=[dict(zip(h,l.split())) for l in L if l and l[0].isdigit()][-1]
+r=float(d["total_recharge_added"])
+print("%.6e" % (abs(float(d["exact_budget_residual"]))/r) if r else "nan")
+' "$WORK/as_bc.txt")
+  if awk -v r="$RESID_AS" -v t="$BUDGET_TOL" 'BEGIN{exit !(r+0 <= 5*t+0)}'; then
+    echo "  5. constrained boundary closes: active_set, |exact residual|/recharge = $RESID_AS"
+    echo "  PASS (the active-set multiplier does not swallow the boundary flux)"
+  else
+    echo "  5. constrained boundary: active_set |exact residual|/recharge = $RESID_AS EXCEEDS 5x $BUDGET_TOL" >&2
+    echo "  FAIL  A CONSTRAINT IS EATING A BOUNDARY FLUX. At a pinned cell the solve satisfies the" >&2
+    echo "        constraint, not the balance, and the discarded residual is booked as removal -- at a" >&2
+    echo "        BOUNDARY cell that lump also contains the face flux. This is #52's shape." >&2
+    fail=1
+  fi
+fi
+
 echo
 [ $fail -eq 0 ] && echo "GHOST-BOUNDARY CHECKS PASSED" || echo "GHOST-BOUNDARY CHECKS FAILED" >&2
 exit $fail
