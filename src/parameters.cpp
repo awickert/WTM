@@ -553,9 +553,12 @@ Parameters::Parameters(const std::string& config_file) {
   //     explicit + adaptive   6.4379e-03 m still moving at the end, 32 of 88 cells, 74509 solves
   //     explicit + fixed      7.1054e-14 m                          0 of 88 cells,  6000 solves
   //     active_set + adaptive 4.3109e-07 m                          0 of 88 cells,    118 solves
-  // So on that fixture the oscillation is NOT a property of the collector alone: it needs the collector
-  // AND the controller. The 74509-vs-6000 solve count is the cost of the controller working against a
-  // surface set that keeps changing under it. One fixture, so the warning claims no more than that.
+  // PERMITS vs DOES, and the difference matters (Andy, 2026-09-11). A post-solve clamp ALWAYS PERMITS
+  // oscillation: nothing in the formulation prevents the clamped set from changing between steps, so
+  // the possibility is a property of the method and no run can retire it. What the numbers above show
+  // is only that it does not always HAPPEN -- at fixed dt, on this fixture, the dynamics do not drive
+  // it there. Those are different questions, and a passing run answers the weaker one. The warning is
+  // therefore phrased as "may", and says nothing about when it will not.
   //
   // NOT a refusal: this pairing runs, converges its solves, and closes its budget -- and suites in the
   // tree use it deliberately. Refusing would break them to prevent a behaviour the user may want.
