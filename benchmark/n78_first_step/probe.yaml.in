@@ -1,0 +1,69 @@
+# PURPOSE-BUILT for task #78. Not a sed of another suite's config (that is what #78 says invalidated the
+# original observation). Written to isolate ONE thing: does |exact_budget_residual| / recharge grow as
+# solver.time_step.dt SHRINKS, on backward-euler, over a FIXED simulated span?
+#
+# The controls #78 asks for, all satisfied by construction:
+#   equilibrium_stop.tol: 0      no arm can stop early, so every arm covers the same span
+#   time_step.mode: @MODE@       PINNED per arm. This is suspect #1: variable_porosity (where the
+#                                observation was made) ships mode: adaptive, in which case varying `dt`
+#                                does not vary the step -- the controller sizes it.
+#   report_interval as a TIME    every arm reports at the SAME simulated times regardless of dt, and the
+#                                span is an exact multiple of it at every dt tested:
+#                                  60480000s / dt = 25, 50, 100, 200 steps per report
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: rms
+    frac: 0.001
+  initial_water_table: saturated
+time:
+  total: "604800000s"
+  report_interval: "60480000s"
+  save_every_n_reports: 10
+transmissivity:
+  fdepth: {a: 200, b: 150, fmin: 2}
+  additive_background_transmissivity: 0
+surface_water:
+  routing: @ROUTING@
+  runoff_ratio: 0
+  collection: {method: active_set}
+  infiltration_during_flow: false
+boundaries: {land: neumann_toposlope}
+solver:
+  method: anderson
+  time_integration: @INTEG@
+  tolerance: 1e-8
+  max_iterations: 10000
+  t_bar: false
+  convergence: {metric: volume, water_volume_tol: 1e-08}
+  smoothing: {ksat_surface: 0, ksat_soilbottom: 0, storativity_surface: 0.01}
+  anderson:
+    restart: {enabled: false, rho: 0.9, patience: 2, max_it: 40, max_restarts: 30}
+  time_step:
+    mode: @MODE@
+    dt: @DT@
+    error_tol: 0.5
+    grow: 1.5
+    shrink: 0.25
+    grow_if_niter_leq: 8
+    max_retries: 15
+    norm: rms
+dev: {storage_form: volume, under_relaxation: 1}
+parallel: {threads_per_rank: 1}
+evaporation:
+  et_sigmoid: {wtd_center: 0.05, logistic_width: 0.1}
+  extinction_depth: 8
+  tapers: {surface_transition: true, depth_extinction: true}
+io:
+  source: '@INPUTS@'
+  region: 'varphi'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
