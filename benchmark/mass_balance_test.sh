@@ -43,26 +43,13 @@ run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     # comparison. -snes_stol 1e-6 is no longer passed on the command line: solver.tolerance states it,
     # and the CLI value used to win silently over the config (#79).
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|/tmp|g" -e "s|@TAG@|$tag|g" \
-        "$(dirname "${BASH_SOURCE[0]}")/mass_balance_config.yaml" > "$cfg"
+        mass_balance_config.yaml > "$cfg"   # line 17 already cd'd here; a dirname prefix doubles the path
     grep -q "@[A-Z_]*@" "$cfg" && { echo "ERROR: unfilled slot in $cfg" >&2; exit 1; }
-run_type test
-fsm_on 1
-deltat 31536000
-total_time 3yr
-report_interval 1
-save_nreport_interval 9999
-fdepth_a 200
-fdepth_b 150
-fdepth_fmin 2
-surfdatadir $INP
-region mb
-time_start t0
-time_end t0
-supplied_wt 0
-eq_tol 0
-textfilename $tf
-outfile_prefix /tmp/${tag}_
-EOF
+    # NOTE (#101's class, missed on the first pass): eighteen orphaned lines used to sit here -- the
+    # BODY of the heredoc that fed the retired tests/emit_config.sh, left behind when the call above was
+    # replaced by the sed. They were not comments: bash executed them, so every run printed
+    # "line 48: run_type: command not found" and the suite failed. The settings they named are all in
+    # mass_balance_config.yaml, which the sed above renders; nothing is lost by deleting them.
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
     OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" >/dev/null 2>&1
     rm -f "$cfg"
