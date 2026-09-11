@@ -107,6 +107,12 @@ run "storage secant≡volume"     ./storage_equivalence/run.sh "$WTM"
 run "recharge consistency (#93)" ./recharge_consistency/run.sh "$WTM"
 run "adaptive dt + water metric" ./adaptive_water/run.sh "$WTM"
 run "adaptive estimator order"   ./estimator_order/run.sh "$WTM"
+# A CONVERGED ANSWER MUST NOT DEPEND ON THE TOLERANCE YOU STOPPED AT. Runs each dt twice, differing only
+# in solver.convergence.water_volume_tol, and requires the two water tables to agree. Needs no stored
+# reference, which is the point: a golden can be regenerated under the shipped settings until the
+# reference IS the defect, and this cannot. Currently an xfail on the banded dt (#104) with a guard that
+# fails on an UNEXPECTED PASS, plus live clean arms that prove the comparison is not dead.
+run "tolerance independence (#104)" ./tolerance_independence/run.sh "$WTM"
 run "config schema (unknown keys)"  ./config_schema/run.sh "$WTM"
 run "config/flag route equality"   ./route_equality/run.sh "$WTM"
 run "snapshot name + restart"    ./snapshot_restart/run.sh "$WTM"

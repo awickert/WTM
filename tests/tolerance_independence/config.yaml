@@ -1,0 +1,111 @@
+# tests/tolerance_independence -- THE CONFIG THIS SUITE RUNS.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: A CONVERGED ANSWER CANNOT DEPEND ON THE TOLERANCE YOU STOPPED AT. Each dt
+# is run twice, differing in ONE key -- solver.convergence.water_volume_tol -- and the two water tables
+# must agree. If they do not, the looser run had not converged, whatever reason code it printed.
+#
+# WHY THIS FORM AND NOT A GOLDEN. A stored reference can be regenerated under the shipped settings, at
+# which point the reference BECOMES the defect and the test goes permanently green -- the failure mode
+# tests/golden already suffered once ("the reference was captured from a run that never finished").
+# There is nothing here to regold: the property is internal to the pair of runs.
+#
+# TWO KEYS VARY PER ARM: solver.convergence.water_volume_tol and solver.time_step.dt.
+#
+# solver.time_step.mode: fixed IS PINNED. #104's defect appears in BANDS of dt, so the arms are a
+# known dt list and a controller free to resize the step would move them off it.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @DT@, @WVTOL@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: rms
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: saturated
+time:
+  total: "@DT@s"
+  report_interval: "1"
+  save_every_n_reports: 1
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: off
+  runoff_ratio: 0
+  collection:
+    method: active_set   # LOAD-BEARING, AND THE WHOLE POINT. This is the shipped default, and it is
+                         # the semismooth min-NCP obstacle -- the path on which the relative-water-step
+                         # criterion mistakes a stall for convergence (#104). Measured: the same dt
+                         # sweep under `explicit` or `off` is clean at EVERY dt (0 of 16 arms), so
+                         # changing this key would delete the test.
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: backward-euler   # HELD FIXED. The integrator is not the subject here; the
+                                     # tolerance is. backward-euler is chosen because #104 was
+                                     # characterised on it, and because BDF2 self-starts with a
+                                     # backward-Euler step so the first step is the same solve.
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: @WVTOL@   # PER-ARM: THE SUBJECT. shipped 1e-08 vs tight 1e-12
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: fixed   # PINNED. #104's defect appears in BANDS of dt, so the arms are a known dt list;
+                  # an adaptive controller would resize the step and move them off it. It would also
+                  # not rescue the run -- measured, the controller rejects four times, accepts inside
+                  # its error tolerance, and commits the bad step anyway.
+    dt: @DT@   # PER-ARM: the step, swept across the bands #104 shows
+    error_tol: 0.1   # INERT but RESOLVED, so it must be stated (#79). mode: fixed means nothing steers
+                     # on it; the model still resolves it, and tests/config_identity.py compares against
+                     # what was resolved, not against what mattered. The other five controller dials
+                     # (grow, shrink, grow_if_niter_leq, max_retries, norm) are NOT resolved under
+                     # fixed mode and are correctly absent -- verified by that check reporting only this
+                     # one key as MISSING when all six were omitted.
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. With routing: off the taper is what removes surface
+    logistic_width: 0.1   # water at all -- but both arms share it, and the claim is that the two
+  extinction_depth: 8   # integrators AGREE, which is independent of the forcing they both see
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'tolind'
+  time_start: 'ta'
+  time_end: 'tb'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+
