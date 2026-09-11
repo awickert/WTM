@@ -172,3 +172,78 @@ and a soundness check on the harness: BDF2 is self-starting, so its *first* step
 
 The cause. Not proposing one here — the two I proposed before this sweep (a dt threshold, surface-water
 removal) were both products of too few sample points.
+
+
+## CAUSE FOUND: premature exit of the per-solve WATER-VOLUME convergence test under `active_set`
+
+Andy: *"Two bands does not make sense with a diffusive solution. Is this FSM? Or something else."* The
+physical objection is what cracked it — a diffusive operator cannot band, so the banding had to come from
+something that switches. It did.
+
+### First, a control of mine that was vacuous
+
+I had excluded FSM because `routing: off` and `continuous` gave **bit-identical** residuals. The control
+was real in one sense (`fsm_on = 0` vs `1`) and worthless in another: this fixture is a plateau draining
+to an ocean strip, and the log says `FSM fullness (last step) = 0 / 0 depressions full`. **There are no
+depressions**, so FSM had nothing to act on either way. The experiment could not discriminate FSM, and
+identical arms that ought to differ is a duplicate, not a confirmation.
+
+### The collector is the discriminator
+
+Step-0 residual across a 16-point dt grid, backward-euler, everything else fixed:
+
+| collector | arms with \|resid\| > 1e3 |
+|---|---|
+| `active_set` | **10 / 16** |
+| `explicit` | 0 / 16 |
+| `off` | 0 / 16 |
+
+`explicit` and `off` are clean at every dt and agree with each other to all printed digits.
+
+### Under `active_set` the first step's ANSWER is discontinuous in dt
+
+`min wtd` after step 0. `explicit` slides smoothly and monotonically across the whole range
+(−38.01 → −5.84). `active_set` tracks it exactly in the clean windows, then departs violently inside the
+bands — **−48.51 vs −30.36 at 2.50 wk**, **−5.91 vs −19.61 at 1.1875 wk** — while the pinned-cell count
+flips between 0, 8, 56 and 64 where `explicit` climbs smoothly 24 → 64. So the budget residual is a
+**symptom**; the solve landing somewhere else is the disease.
+
+### The solves were exiting after 4–7 iterations
+
+`CONVERGED_SNORM_RELATIVE` at **4–7** nonlinear iterations in every banded arm, against 17–62 in the clean
+`active_set` arms and 24–69 in every `explicit` arm.
+
+It is **not** PETSc's `snes_stol` stagnation test, and that had to be checked rather than assumed:
+`-snes_stol 0` verifiably took (`tolerance(snes_stol)=0.` in the log) and changed **nothing** — identical
+residuals *and* identical iteration counts. The reason code is set by WTM itself, at
+`src/transient_groundwater.cpp:1031`, when the relative water step falls below
+`solver.convergence.water_volume_tol`.
+
+### Tightening that tolerance removes the bands and recovers the right answer
+
+| dt (wk) | 1e-08 (shipped) | 1e-10 | 1e-12 | 1e-14 |
+|---|---|---|---|---|
+| 2.5000 | **+9.530e+07** | +6.220e-02 | +6.220e-02 | +6.220e-02 |
+| 1.1875 | **−8.266e+07** | −1.017e-01 | −1.017e-01 | −1.017e-01 |
+| 1.0000 | **+1.112e+07** | **+1.112e+07** | −3.342e-02 | −3.342e-02 |
+
+It collapses to the clean arms' O(0.1) and then **stays put** under further tightening — converged, not
+drifting. And the tightened solve lands on the `explicit` answer exactly:
+
+| dt (wk) | `active_set` @1e-08 | `active_set` @1e-12 | `explicit` |
+|---|---|---|---|
+| 2.5000 | −48.5081 | **−30.3551** | **−30.3551** |
+| 1.1875 | −5.9114 | **−19.6073** | **−19.6073** |
+| 1.0000 | −21.7810 | **−17.4760** | **−17.4760** |
+
+Note that 1.0 wk needs 1e-12 where 2.5 wk is fixed by 1e-10. **That is why it bands**: whether the shipped
+1e-8 happens to be tight enough depends on the solve trajectory, which varies discretely with dt.
+
+### What this is, plainly
+
+The same CLASS as task #61 — a relative per-step test declaring convergence on a stalled solve — recurring
+on the metric that replaced it. #61 moved the test from head to water and fixed the head case; the
+*relative-step form* was kept, and on the semismooth `active_set` path it still exits early. The shipped
+default admits a first step tens of metres from the converged answer, on the default collector.
+
+Tracked as its own task. `#78`'s cumulative-budget symptom is downstream of it.
