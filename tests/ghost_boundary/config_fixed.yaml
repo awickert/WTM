@@ -75,6 +75,9 @@ solver:
   convergence:
     metric: volume   # the per-solve step judged in WATER (#61), the shipped default
     water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+    residual_gate: 1e-05   # baseline (tests/CONFIG_BASELINE.md). #104: the water-step verdict is
+                           # REFUSED while the residual is above this x its initial value -- a
+                           # relative step test cannot tell a converged solve from a stalled one.
   smoothing:
     ksat_surface: @KSMOOTH@   # PER-ARM: 0 on the scheme arm, 0.5 on jac -- the RAW Jacobian, which
     ksat_soilbottom: @KSMOOTH@   # is what the bare flag used to give

@@ -53,6 +53,9 @@ solver:
   convergence:
     metric: volume   # judged in WATER (#61) -- correct for a suite whose claim IS water conservation
     water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+    residual_gate: 1e-05   # baseline (tests/CONFIG_BASELINE.md). #104: the water-step verdict is
+                           # REFUSED while the residual is above this x its initial value -- a
+                           # relative step test cannot tell a converged solve from a stalled one.
   smoothing:
     ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
     ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
