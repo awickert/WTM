@@ -59,8 +59,7 @@ parked until the model work is done.
 | **103** | `explicit` sustains a **permanent** surface limit cycle (no decay over 460 yr, 56 of 88 cells) and the equilibrium stop declares convergence *inside* it — `stopping at cycle 4 of 30` with 0.0606 m of within-cycle motion | `active_set` cures it completely (4.6e-08 vs 0.0912 m). Three options; needs Andy. |
 | **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | Blocked by #103 — `explicit` is the only surface-reaching collector `secant` may use, and it flickers. |
 | **64** | Sub-cycle the FSM coupling | Untouched. **Moves goldens → needs authorization.** |
-| **50** | Re-measure whether Newton still needs `dt_continuation` for cold starts | A measurement about the model; the claim survives at 4 sites, not 5. |
-| **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. |
+| **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. The v2 rework is **in `git stash stash@{0}`**, not in the tree — grepping `src/` for it finds nothing and reads as lost work. |
 | **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
 
 ### B — THE HARNESS, set aside
@@ -73,7 +72,9 @@ Real, and none of it changes an answer. `#84` tolerance provenance (now partly m
 ### Closed today beyond the sweep
 
 `#34` (with `#91`, `#96`) · `#78` → root-caused into `#104` · **`#52`** — both encoded reproductions now
-close, at 319x and ~5800x margin, and are promoted to plain checks.
+close, at 319x and ~5800x margin, and are promoted to plain checks. · **`#50`** — measured, and the
+answer is that the ramp IS still needed: plain Newton fails at 5 of 6 `dt`, and the single success at
+1.0 wk is the same single-`dt` trap. The claim in the docs stands, unchanged.
 
 **`#105` — the default land boundary leaked mass.** Under `boundaries.land: neumann_toposlope` the
 ghost head is `h_edge + (topo_edge − topo_inland)`, which is zero flux relative to the *land surface*,
