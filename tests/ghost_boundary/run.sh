@@ -177,6 +177,41 @@ else
     || { echo "  FAIL (Jacobian off-map tangent inconsistent)"; fail=1; }
 fi
 
+# ---- 4. THE BOUNDARY THAT CARRIES FLUX MUST ALSO BALANCE (#105, #54 item 3) -------------------------
+# THIS IS THE ONLY FIXTURE IN THE SUITE THAT CAN SEE A NEUMANN BOUNDARY LEAK, and until this check it was
+# the only one that could see it and did not look. Every budget fixture is OCEAN-RINGED -- mask 0 on all
+# four edges -- so boundaries.land is never exercised in any of them and the off-map ghost never carries
+# flux. This fixture has 64 land edge cells, 20 of them SLOPING (see the EDGES note every suite now
+# prints), so h_ghost - h_edge = the terrain rise and water genuinely crosses those faces.
+#
+# WHAT IT WOULD HAVE CAUGHT. The default land boundary was leaking 45x the domain's entire recharge:
+# |exact residual|/recharge was 4.4521e+01 here, steady from cycle 0, because neumann_toposlope's off-map
+# flux was booked nowhere -- the accounting called those faces "no-flow", which is true of the LAND
+# SURFACE and false of the Darcy flux. Booked (#105), it is 8.3964e-10.
+#
+# THE BOUND IS THE SAME 5x-the-solver-tolerance RULE section 1 uses, for the same reason: a budget cannot
+# close tighter than the solves that produced it. Measured 8.3964e-10 against 5e-08, ~60x of margin; the
+# defect it guards was eleven orders above that.
+BUDGET_TOL="$(awk -F: '/water_volume_tol:/{v=$2; sub(/^[ \t]+/,"",v); sub(/[ \t].*$/,"",v); print v; exit}' config.yaml)"
+RESID=$("$PY" -c '
+import sys
+L=[l for l in open(sys.argv[1]) if l.strip()]
+h=[l for l in L if l.startswith("Cycles_done")][0].split()
+d=[dict(zip(h,l.split())) for l in L if l and l[0].isdigit()][-1]
+r=float(d["total_recharge_added"])
+print("%.6e" % (abs(float(d["exact_budget_residual"]))/r) if r else "nan")
+' "$WORK/cc_n1.txt")
+if awk -v r="$RESID" -v t="$BUDGET_TOL" 'BEGIN{exit !(r+0 <= 5*t+0)}'; then
+  echo "  4. boundary budget closes: |exact residual|/recharge = $RESID  (bound 5x solver tol)"
+  echo "  PASS (the land boundary's off-map flux is accounted, not leaked)"
+else
+  echo "  4. boundary budget: |exact residual|/recharge = $RESID  EXCEEDS 5x the solver tolerance $BUDGET_TOL" >&2
+  echo "  FAIL  A LAND-BOUNDARY FLUX IS UNACCOUNTED. This fixture has sloping land edges, so the" >&2
+  echo "        neumann_toposlope ghost carries real Darcy flux (h_ghost - h_edge = the terrain rise)." >&2
+  echo "        No other fixture in the suite can see this -- they are all ocean-ringed. See #105." >&2
+  fail=1
+fi
+
 echo
 [ $fail -eq 0 ] && echo "GHOST-BOUNDARY CHECKS PASSED" || echo "GHOST-BOUNDARY CHECKS FAILED" >&2
 exit $fail
