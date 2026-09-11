@@ -50,3 +50,46 @@ range (5.26e-02 at 1.25 wk, where backward-euler is 3.27e-06).
 eight pairs, so the FSM coupling is not involved.
 
 Full measurements and the remaining open question are in task #78.
+
+## CORRECTION, same session: dt is NOT the causal variable, and the estimator is NOT blind
+
+Both of the framings above needed testing rather than believing, and both failed.
+
+**"It switches on below a dt threshold" is a proxy, not a cause.** True in `mode: fixed`, but the
+`adaptive` arms break it. Two runs, `routing: off`, traced:
+
+| nominal dt | controller settled at | `est` at acceptance (tol 0.5) | cycle-0 residual | final `\|resid\|/rech` |
+|---|---|---|---|---|
+| 756000 (1.250 wk) | **4.890e+05 (0.809 wk)** | 0.436 | **+1.0201e+02** | 4.06e-07 |
+| 604800 (1.000 wk) | **2.225e+05 (0.368 wk)** | 0.444 | **+1.1124e+07** | 1.78e-02 |
+
+The **clean** run ran at the **larger** step, and 0.809 wk is well below the 1.167 wk "threshold". Five
+orders of difference in mass error at near-identical estimator readings. Whatever the variable is, it is
+not the size of the step.
+
+**And the estimator is not blind.** Every DTTRACE line carries `nest=88` (all land cells in the estimate)
+and `ecpl=0.0` (no coupling term — `routing: off`, so there is no FSM and `n_in = 0` cannot arise). At
+nominal 604800 the controller *rejected four times*, shrank dt 6.05e5 → 2.39e5, and accepted at
+`est=0.444 < tol=0.5`. It did exactly what it is designed to do, and the mass error happened anyway.
+
+So this is **not** an instance of task #58's blindness (`est = 0.0000e+00` because FSM excluded every
+cell). It is the sharper statement that **the quantity the controller steers on and the quantity going
+wrong are decoupled**: the same `est ≈ 0.44` accompanies both a 1e2 and a 1e7 cycle-0 residual. Compare
+`finding_steer_only_on_controllable_error` — the controller was deliberately taught not to steer on error
+`dt` cannot reduce; this is the other half of that trade, an error `dt` does not reduce and the estimate
+does not see.
+
+### What is established, and what is not
+
+ESTABLISHED, each measured:
+1. One-off, in the first cycle; constant to four figures over nine more cycles.
+2. Requires surface water present at the start — `initial_water_table: supplied` at −5 m gives
+   `total_surface_removed = 0.0000e+00` at cycle 0 and 2.7e-06 … 3.4e-06 at *every* dt.
+3. Not backward-euler-specific (tr-bdf2 is worse and has no clean regime in this range).
+4. Not the FSM — `routing: off` and `continuous` give bit-identical residuals in all eight pairs.
+5. Not dt, and not the estimator (this section).
+
+NOT ESTABLISHED — do not guess it, measure it. What differs between the two adaptive runs above is the
+*path through the first cycle*: 2 rejections settling at 4.89e5 versus 4 rejections settling at 2.23e5.
+The next experiment is whether the rejection/retry history on the **first** step is the variable, which
+would put this next to tasks #13 and #41 rather than anywhere near #58.
