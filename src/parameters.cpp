@@ -541,6 +541,34 @@ Parameters::Parameters(const std::string& config_file) {
         "GROWS as the controller shrinks dt -- no step can ever be accepted, and the run dies with "
         "'step failed after max retries'. Use collection.method: active_set (the default, and the "
         "enforcement adaptive stepping is built for), or solver.time_step.mode: fixed.");
+
+  // ...and `explicit` against the same axis, as a WARNING rather than a refusal. The free surface under
+  // `explicit` is a post-solve clamp, so above-surface water is removed AFTER the step rather than
+  // constrained inside it, and the clamped set is free to change between steps. Andy, 2026-09-11: that
+  // will generally permit free-surface oscillations, it is expected, and it is bad behaviour -- but
+  // `explicit` is not the production collector, so this is stated, not fixed.
+  //
+  // MEASURED (benchmark/lc103_knob_sweep, tests/storage_equivalence fixture at 64 cells/degree, 460
+  // simulated years, 56 of 88 land cells sitting at wtd == 0):
+  //     explicit + adaptive   6.4379e-03 m still moving at the end, 32 of 88 cells, 74509 solves
+  //     explicit + fixed      7.1054e-14 m                          0 of 88 cells,  6000 solves
+  //     active_set + adaptive 4.3109e-07 m                          0 of 88 cells,    118 solves
+  // So on that fixture the oscillation is NOT a property of the collector alone: it needs the collector
+  // AND the controller. The 74509-vs-6000 solve count is the cost of the controller working against a
+  // surface set that keeps changing under it. One fixture, so the warning claims no more than that.
+  //
+  // NOT a refusal: this pairing runs, converges its solves, and closes its budget -- and suites in the
+  // tree use it deliberately. Refusing would break them to prevent a behaviour the user may want.
+  if (time_step_mode_set && time_step_mode == "adaptive" && runoff_collector == "explicit")
+    std::cerr << "WARNING [surface_water.collection.method=explicit + solver.time_step.mode=adaptive]: the "
+                 "explicit collector clamps the free surface AFTER each step, so the clamped set can change "
+                 "from step to step and the surface may LIMIT-CYCLE rather than settle. Measured on "
+                 "tests/storage_equivalence at 64 cells/degree over 460 yr: 6.4e-03 m of motion still "
+                 "present at the end across 32 of 88 cells, at 74509 nonlinear solves -- against 7.1e-14 m, "
+                 "0 cells and 6000 solves for the SAME collector at solver.time_step.mode: fixed, and "
+                 "4.3e-07 m, 0 cells and 118 solves for collection.method: active_set. If the run is meant "
+                 "to reach equilibrium, prefer active_set (the production collector); if you want explicit, "
+                 "prefer a fixed step. See benchmark/lc103_knob_sweep.\n";
   // `ramp` is the NEWTON path's pseudo-transient continuation, and CreateSNES gates it on use_newton
   // (`dtc_on && use_newton`). Asked for anywhere else it would simply not run, and the run would step
   // at a fixed dt while its config said `ramp` -- a key that reads as a choice and is not one, which is
