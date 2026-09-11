@@ -46,67 +46,35 @@ section 1 below.
 
 ## THE OPEN LIST
 
-### 1 — Done since the rewrite
+Andy, 2026-09-11: *"go through your numbered steps. All those that have to do with issues around the
+tests rather than the code itself: set aside. I am interested only in improving the code."* The list is
+split on that line. Section A is work on the model; section B is real but is about the harness, and is
+parked until the model work is done.
 
-`#34` is **CLOSED** (2026-09-11, `bc67220..de70f4e`), and it took `#91` and `#96` with it.
-
-All three filed suites were repaired and each printed number is now a live measurement. The general
-deliverable is `tests/nonvacuous.py`, wired into `lib.sh` at exit 4: a suite fails if its last snapshot
-per stem is identically constant. It was **shown to bite on a suite every other check calls healthy** --
-restore `recharge_consistency`'s 400-week window and the suite still prints `PASS` and `DECLARED` still
-says `OK`, and the guard fails the run anyway.
-
-On its first sweep it found **two more**: `adaptive_water` (3 of 3 zero, fixed) and `storage_equivalence`
-(2 of 2 zero, now a guarded xfail — see `#102`).
-
-**Two corrections worth carrying.** The vacuity exemption list I seeded with three suites was wrong in
-all three: `direct_to_runoff`, `flicker_evap` and `config_schema` all measured fine, because holding
-`wtd` at 0 does not make the output raster constant. It is empty, and the rule is now "add a suite only
-after seeing it fail". And two failures that surfaced in `ghost_boundary` looked like model defects and
-were **not** — the Jacobian's 0.208 was `active_set`'s semismooth `max()` being verified by a *smooth*
-finite-difference reference, and "bit-for-bit MPI" was reduction order tracking the solver tolerance.
-
-**A general mechanism, found on the way:** the `#124` geotransform migration converted **10 of 15**
-fixture generators. The rest keep `from_bounds(0, 0, NX, NY, NX, NY)` — the placeholder meaning **one
-degree per cell, ~111 km** — which is why those domains saturate. Three of the four unconverted suites
-were vacuous because of it; `snapshot_restart` was the only one that was fine. `recharge_consistency`
-still carries the placeholder and now measures correctly anyway, so converting it is optional and would
-change its physics.
-
-### 2 — Correctness of the model
+### A — THE CODE
 
 | # | item | state |
 |---|---|---|
-| **102** | `S·Δh ≡ ΔV` is **UNVERIFIED** where `S ≠ Sy` — the suite that asserts it was comparing two zero fields, and the model's own `secant × active_set` refusal message *cites that suite* as its authority. Live: 2.386e-03 m water where cells sit at the surface, not scaling with solver tolerance, not the clamp. | Held as a guarded **xfail**, not a declared defect: the table is in a surface limit cycle there, which is the claim's one documented exception. The fixture cannot meet its own two preconditions under any collector available to `secant`. **Andy's call** between three options in the task. |
-| **103** | The `explicit` collector sustains a **permanent surface limit cycle** — no decay over 26 cycles / 460 yr, 56 of 88 cells, and it is intermittent rather than alternating (the cell count snaps 56 / 48 / 0). `active_set` cures it completely on the same fixture: 4.6e-08 vs 0.0912 m, zero cells vs 56. | **And the equilibrium stop declares convergence inside it** — measured, `stopping at cycle 4 of 30` with `frac>tol=0.0000`, while that cycle carries 0.0606 m of within-cycle motion across 56 of 88 cells. `WTM.cpp:976` calls this flicker "cosmetic" by design; here it is not. This is also **why #102 cannot be measured** — `explicit` is the only surface-reaching collector `secant` may use, and `active_set`, the cure, is refused for it. |
-| **104** | **#78's root cause, and the top correctness item.** The per-solve water-step test declared convergence after 4-7 nonlinear iterations on the semismooth `active_set` path — the shipped default — committing a first step tens of metres from the answer. | **FIXED** (`db54072`, `2cc272a`): the step verdict is refused until the residual has come down, with an absolute escape so a solve that *begins* converged is not blocked. 10 of 20 sweep arms disagreeing → 0. Pinned by `tests/tolerance_independence`. **Open only until the full suite confirms it.** |
-| **52** | Land→ocean outflow mis-booked at pinned cells | Reproduces unchanged at **1.802e-05**; encoded as an xfail. Two stale pointers: `CreateSNES.hpp:40` now says the opposite (#40 moved it to `WTM.cpp:715`), and its probe patch no longer applies. |
-| **54** | Test and guard the budget at boundaries | Valid, but **item 1 is costed wrong**: `BUDGETTRACE` emits eight *domain scalars*, so this needs model-side machinery, not a mask split. |
-| **64** | Sub-cycle the FSM coupling | Untouched; **moves goldens, needs explicit authorization**. Its sub-item — say in `tests/golden/run.sh` that references are regression *pins*, not accuracy statements — is undone. |
+| **104** | The per-solve water-step test declared convergence after 4-7 iterations on the shipped `active_set` path, committing a first step tens of metres from the answer | **FIXED** (`db54072`, `2cc272a`, `5101991`). The verdict is now judged against what the run has DEMONSTRATED it can reach, not a fixed reduction. 10 of 20 sweep arms disagreeing → 0. Three conditions, each proven load-bearing by ablation. Pinned by `tests/tolerance_independence`. |
+| **103** | `explicit` sustains a **permanent** surface limit cycle (no decay over 460 yr, 56 of 88 cells) and the equilibrium stop declares convergence *inside* it — `stopping at cycle 4 of 30` with 0.0606 m of within-cycle motion | `active_set` cures it completely (4.6e-08 vs 0.0912 m). Three options; needs Andy. |
+| **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | Blocked by #103 — `explicit` is the only surface-reaching collector `secant` may use, and it flickers. |
+| **64** | Sub-cycle the FSM coupling | Untouched. **Moves goldens → needs authorization.** |
+| **54** | Test and guard the budget at boundaries | Needs model-side machinery: `BUDGETTRACE` emits domain scalars, so a mask split is not enough. |
+| **50** | Re-measure whether Newton still needs `dt_continuation` for cold starts | A measurement about the model; the claim survives at 4 sites, not 5. |
+| **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. |
+| **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
 
-### 3 — Provenance: no general mechanism exists yet
+### B — THE HARNESS, set aside
 
-| # | item | state |
-|---|---|---|
-| **84** | 24 tolerances across 19 suites | Count exact. **17 of 24 have no recorded origin; 8 have no comment at all.** |
-| **85** | Goldens carry no in-file provenance | `golden.py:54` writes only shape. Loader skips `#` lines, so provenance is backward-compatible. |
+Real, and none of it changes an answer. `#84` tolerance provenance (now partly mechanised by
+`tests/tol_margin.py`) · `#85` goldens carry no in-file provenance · `#98` `budget_closure`'s `a_as` ≡
+`c_as` · `#90` `active_set`'s header still calls it experimental and off-by-default · `#50`'s doc half ·
+`#58 / 59` strike the "not implemented" sections · `#77` a record, no action claimed.
 
-### 4 — Documentation that misleads
+### Closed today beyond the sweep
 
-| # | item |
-|---|---|
-| **90** | `active_set`'s header still claims collector-independence that was retracted, still lists a deleted assertion as asserted, and calls active_set "EXPERIMENTAL and OFF BY DEFAULT" — it is **the default**. |
-| **50** | Newton cold-start claim: 4 sites, not 5. `parameters.cpp:365/372` no longer contain it; it moved to `CreateSNES.cpp:255` and became a *warning*. |
-| **58 / 59** | Keep the findings; **strike the "not implemented" sections** — `78d7188` made the blind step visible (measured `est = 4.34e-01` where the tasks record `0.0`), and #63 deliberately forbids the reject-trigger form. |
-| **6** | `scheme_bench` re-run: its "active_set × during is a hard error" premise is **false** (that is the default pair); new blocker — `and_be` (secant) now throws under active_set. |
-| **98** | `budget_closure` `a_as` ≡ `c_as`, character-identical. Andy's (a)/(b)/(c) call. |
-| **77** | Storativity smoothing inert under active_set — a record; no action was claimed. |
-
-### 5 — Parked at the bottom, by Andy
-
-| # | item | why it is parked |
-|---|---|---|
-| **60** | Order-aware retry for the adaptive controller | Andy: *"#60 needs a case that would otherwise abort."* Exonerated of the accounting suspicion (the blocker was #61), and a patch exists in the scratchpad, but without a case that aborts without it there is nothing to demonstrate against. |
+`#34` (with `#91`, `#96`) · `#78` → root-caused into `#104` · **`#52`** — both encoded reproductions now
+close, at 319x and ~5800x margin, and are promoted to plain checks.
 
 ## Known repo-hygiene items found by the sweep
 
