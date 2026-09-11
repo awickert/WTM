@@ -91,8 +91,17 @@ evaporation:
     logistic_width: 0.1   # water at all, so this shapes the trajectory -- but BOTH ARMS SHARE IT, and
   extinction_depth: 8   # the S*dh == dV identity is algebraic, so it holds whatever the forcing is
   tapers:
-    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
-    depth_extinction: true   # as above -- shipped taper configuration
+    surface_transition: true   # SHIPPED-ON, and MEASURED INERT ON THIS FIXTURE. The previous comment
+                               # here claimed the taper "is what removes surface water at all" with
+                               # routing: off, "so it is load-bearing here". That is false, and the
+                               # fixture says why: ta/tb_evaporation and ta/tb_open_water_evaporation
+                               # are identically ZERO, so there is no ET for a taper to shape. Flipping
+                               # this key to false leaves the 460 yr answer BIT-IDENTICAL (max|d| =
+                               # 0.000000e+00) at an identical solve count. What actually removes
+                               # surface water here is surface_water.collection.method.
+    depth_extinction: true   # SHIPPED-ON, and inert here for the same reason -- also measured
+                             # bit-identical when flipped. Both are kept at their shipped values so the
+                             # file states the resolved configuration, not because either bites.
 io:
   source: '@INPUTS@'
   region: 'storeq'
