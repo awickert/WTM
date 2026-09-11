@@ -142,7 +142,11 @@ TOL_CONSERVE, MIN_GAP, MIN_RATE = 1e-6, 1e-2, 1.5
 # BIT-IDENTICAL under both couplings, collapsing to 4.8e-10 when dt halves and 8.2e-11 at dt/4. It is
 # therefore a property of that fixture at that step size, NOT of the coupling -- which is why this
 # test found it and tests/budget_closure (a different fixture) never did. Held, not hidden. Task #52.
-XFAIL_CONSERVE = {("multilake", "1yr"): 1e-6}
+# WAS {("multilake", "1yr"): 1e-6} -- #52's arm, held as an expected failure. IT CLOSES NOW.
+# Measured 2026-09-11: worst |exact residual|/recharge 1.735e-10 against the plain TOL_CONSERVE of
+# 1e-6, a margin of ~5800x rather than a value scraping under a floor. The xfail guard reported it by
+# failing on an UNEXPECTED PASS, which is what that guard is for. Promoted to a plain check.
+XFAIL_CONSERVE = {}
 
 # WHAT EACH FIXTURE IS ASKED TO SHOW. Deliberately different, because the fixtures behave
 # differently and asserting one policy on all three would either be vacuous on two of them or

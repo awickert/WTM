@@ -180,4 +180,15 @@ python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md --readme "$ROO
     || echo "coverage matrix: FAILED to regenerate (see the error above); COVERAGE.md/README are STALE"
 
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
+# MACHINE-READABLE TERMINATOR. Whoever is watching this run needs to know it ENDED, and telling that
+# from the outside is unreliable: matching the process by name catches the watcher's own command line
+# (a `pgrep -f run_all.sh` inside a shell whose arguments contain that string matches itself, and did,
+# repeatedly -- once reporting a suite as still running eight hours after it finished). Backgrounding
+# the script and waiting on the wrapper is no better: the wrapper exits immediately and the suite lives
+# on detached, so its exit code is the WRAPPER's, not the suite's.
+#
+# So the run says so itself, last line, greppable, with its own status. Watch a run with:
+#     until grep -q '^SUITE_COMPLETE' log; do sleep 20; done
+# and read the code off that line rather than from any process.
+echo "SUITE_COMPLETE rc=$fail suites=${#NAMES[@]} failed=$(printf '%s\n' "${RESULTS[@]}" | grep -c FAIL)"
 exit $fail

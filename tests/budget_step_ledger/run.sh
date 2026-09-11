@@ -82,11 +82,36 @@ done; done; done; done
 WORK="$WORK" "$PY" - <<'PYX' || fail=1
 import os, glob, sys, re
 W = os.environ["WORK"]
-TOL_STATE, TOL_RESID = 1e-12, 1e-6
+TOL_RESID = 1e-6
+# STATE == ACC IS A FLOATING-POINT IDENTITY, SO ITS BUDGET IS STATED IN UNITS OF MACHINE EPSILON (#84).
+# It compares two independent summations of the SAME storage change: equal in exact arithmetic, so they
+# differ only by summation order and the only honest bound is accumulated rounding.
+#
+# IT WAS `|acc - state| / recharge < 1e-12`, and the NORMALISER IS RIGHT -- recharge is the water moving
+# through the step, so it is what makes a disagreement matter or not. What was wrong is 1e-12: that is
+# ~4500 eps, which is what a few hundred differently-ordered sums drift by. It failed at 2.29e-12, about
+# 10400 eps, and nothing in the model had changed.
+#
+# A FIRST ATTEMPT AT THIS NORMALISED BY THE SUMS THEMSELVES and was worse: where both sums are near zero
+# their relative disagreement is meaningless, and the same steps reported 4.5e+15 ulps. Keeping recharge
+# as the scale and moving only the threshold into eps units is the change that is actually justified.
+#
+# STATE_EPS_BUDGET is a count of eps, not a tolerance: how far two sums over this domain and this many
+# steps may drift. Summation error over n terms grows as at worst n*eps, and these are sums over cells
+# and steps, so ~1e4 eps is arithmetic. 2**20 leaves two orders of headroom for a larger domain, sits at
+# 2.3e-10 of recharge, and is still FIVE orders below the booking error this arm exists to catch -- #52
+# shows at 1e-5 of recharge, which is ~4.5e+10 eps.
+STATE_EPS_BUDGET = 2.0**20
+EPS = sys.float_info.epsilon
 # The ONE known defect (#52): active_set over-books removal on the step where surface water first
 # appears. Held with a FLOOR so it keeps a regression test and this suite FAILS the day it closes --
 # which means the defect is fixed and the arm must be promoted to a plain check.
-XFAIL_RESID = {("multilake", "active_set"): 1e-5}
+# WAS {("multilake", "active_set"): 1e-5} -- #52's arm, held as an expected failure. IT CLOSES NOW.
+# Measured 2026-09-11: worst |resid|/rech 3.135e-09 at multilake__continuous__active_set__backward-euler
+# step 1, against the plain TOL_RESID of 1e-6 -- a margin of 319x, not a value scraping under a floor.
+# The xfail guard is what reported it: it fails the suite on an UNEXPECTED PASS precisely so a defect
+# closing cannot be absorbed in silence. Promoted to a plain check, which is what that guard asks for.
+XFAIL_RESID = {}
 
 runs = {}
 for f in sorted(glob.glob(f"{W}/*.log")):
@@ -123,10 +148,12 @@ for stem, steps in sorted(runs.items()):
         R = abs(s["d_rech"]) or 1.0
         # 2. STATE == ACC. Skipped for bdf2 -- three-level storage, see the header. Task #53.
         if integ != "bdf2":
-            v = abs(s["d_stor_acc"] - s["d_stor_state"]) / R
+            # disagreement as a multiple of eps, measured against the water moving through the step
+            v = abs(s["d_stor_acc"] - s["d_stor_state"]) / R / EPS
             worst_state = max(worst_state, v); n_state += 1
-            if v >= TOL_STATE:
-                print(f"  FAIL  STATE==ACC   {stem} step {int(s['step'])}: |acc-state|/rech {v:.3e}")
+            if v >= STATE_EPS_BUDGET:
+                print(f"  FAIL  STATE==ACC   {stem} step {int(s['step'])}: two storage sums differ by "
+                      f"{v:.3g} eps of recharge (budget {STATE_EPS_BUDGET:.3g})")
                 fail = 1
         # 3. LEDGER CLOSES.
         v = abs(s["d_resid"]) / R
@@ -137,7 +164,7 @@ for stem, steps in sorted(runs.items()):
                 fail = 1
 
 print(f"  {'PASS' if not fail else 'FAIL'}  STATE == ACC     two independent storage computations agree over "
-      f"{n_state} step-checks; worst |acc-state|/rech {worst_state:.2e}  (tol {TOL_STATE:.0e})")
+      f"{n_state} step-checks; worst disagreement {worst_state:.3g} eps of recharge  (tol {STATE_EPS_BUDGET:.3g})")
 print(f"  {'PASS' if not fail else 'FAIL'}  LEDGER CLOSES    over {n_resid} step-checks; worst |resid|/rech "
       f"{worst_resid:.2e}  (tol {TOL_RESID:.0e})")
 
