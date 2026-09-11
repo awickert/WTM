@@ -24,9 +24,21 @@
 # drawdown cells (wtd -62.9 .. -2.8), not the 56 clamped ones, so it is not the collector's clamp either.
 #
 # WHY IT IS AN XFAIL RATHER THAN A DECLARED DEFECT. The claim above excludes one case: a surface limit
-# cycle. At cpd 64 the domain IS in one -- within-cycle max|dw| = 0.0048 m across 56 cells still at cycle
-# 30 (460 simulated years), with a non-monotone per-cycle change. So the precondition fails and the
-# identity is UNVERIFIED, not disproven. The fixture's docstring asks for "coastal cells cross wtd=0 ...
+# cycle. At cpd 64 the domain IS in one, so the precondition fails and the identity is UNVERIFIED, not
+# disproven.
+#
+# BUT THE LIMIT CYCLE IS ITSELF A DEFECT, NOT MERELY AN EXCUSE FOR THIS XFAIL -- see task #103. It does
+# not decay: over cycles 5-30 the within-cycle max|dw| wanders between 4e-04 and 1.3e-02 m with no trend,
+# and the count of cells moving >1mm SNAPS between 56, 48 and 0, so the 56 surface cells switch
+# collectively between free and clamped. It is the COLLECTOR: on this identical fixture at cycle 30,
+#     explicit    0.0081 .. 0.0912 m across 56/88 cells, every cycle
+#     active_set  4.6e-08 .. 4.4e-07, ZERO cells       <- cured
+# Five orders of magnitude. And with the shipped equilibrium stop the run declares convergence INSIDE the
+# oscillation -- "equilibrium reached (frac metric) ... stopping at cycle 4 of 30" while that very cycle
+# carries 0.0606 m of within-cycle motion across 56 of 88 cells.
+#
+# Do not read this xfail as "the flicker is an acceptable background condition". Read it as: two defects
+# are stacked here, and the outer one (#103) is why the inner one (#102) cannot be measured. The fixture's docstring asks for "coastal cells cross wtd=0 ...
 # but the table does not flicker", and measurement says those two are not simultaneously reachable here:
 #     collection.method: explicit    crosses the surface, flickers, does not settle in 460 yr
 #     collection.method: active_set  REFUSED BY THE MODEL -- dev.storage_form: secant cannot be used with
