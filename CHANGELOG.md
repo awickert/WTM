@@ -180,6 +180,35 @@ defects to be worked around, and the first two can invalidate a naive dt-refinem
 
 ### Fixed
 
+- **The default land boundary leaked mass: its off-map flux was never booked.** Under
+  `boundaries.land: neumann_toposlope` the ghost head is set to `h_ghost = h_edge + (topo_edge −
+  topo_inland)`, which is zero flux relative to the *land surface*, not zero Darcy flux. Wherever the
+  terrain rises away from the domain edge, that ghost sits above the edge head and drives water **in**.
+  The solve used this flux, correctly, and the water budget then ignored it, so the arriving water
+  appeared from nowhere. On `tests/ghost_boundary`'s coastal fixture the unaccounted inflow ran to
+  **44.5 times the recharge**, and the exact budget residual fell from `4.4521e+01` to `8.3964e-10`
+  once the term was accounted.
+
+  The flux is now accumulated per step, with the TR-BDF2 stage weights, and enters the exact budget as
+  a **source** rather than as part of the ocean outflow: water arriving from off-map upslope is not
+  ocean outflow, and folding the two together would close the ledger while describing the wrong
+  physics. Both controls are bit-unchanged - `dirichlet_sea_level` and flat terrain each book exactly
+  zero - so no existing answer moves.
+
+  This hid for the whole life of the test suite for one reason: **every other fixture is
+  ocean-ringed**. With no land edge there is no off-map flux, the term is a structural zero, and every
+  budget check was true and empty. `tests/edge_composition.py` now reports, for each fixture, which
+  boundary condition its mask actually exercises, so a blind spot of this shape is visible rather than
+  inferred.
+
+- **New run-log column, `boundary_inflow_gw`** (column 26, appended), reporting that off-map ghost
+  flux, signed `+` for inflow. It had existed only inside `exact_budget_residual`, a sum it shares
+  with five other terms, where two errors can cancel and read as a closed budget - and where the
+  term's null cases cannot be asserted at all, since a test cannot say "this must be exactly zero on
+  flat ground" about a quantity the model never prints. Reporting it also recomputes the fix by a
+  second, independent route: the budget *gap* before the fix and the term the model now *books* agree
+  to five significant figures (`4.4521e+01` both ways).
+
 - **The adaptive step controller could shrink `dt` without bound, and abort, chasing an error that
   `dt` cannot reduce.** The embedded estimate is split into an integrator part and an FSM-coupling
   part, and these were combined by taking the larger. Only one of them answers to `dt`: the
