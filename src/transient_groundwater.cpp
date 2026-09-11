@@ -1026,6 +1026,49 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
                 (int)it, (double)snorm, head_L2, (double)(xnorm > 0.0 ? snorm / xnorm : 0.0),
                 water_max, water_L2, water_rel);
 
+  // ---------------------------------------------------------------------------------------------
+  // THIS TEST CAN DECLARE CONVERGENCE ON A STALLED SEMISMOOTH SOLVE. KNOWN, MEASURED, OPEN (#104).
+  //
+  // water_rel is a RELATIVE STEP: ||Δwater|| / ||water||. #61 fixed the QUANTITY -- it moved the
+  // per-solve criterion off the head step, which was a stagnation test letting 88-95% of solves exit
+  // early. It did not change the FORM. A relative-step criterion cannot distinguish "converged" from
+  // "stalled", whatever quantity it measures, and on the semismooth active-set path (the min-NCP
+  // obstacle, surface_water.collection.method: active_set -- the SHIPPED DEFAULT) the solve does stall.
+  //
+  // MEASURED on the first step of a `saturated` cold start (also the shipped default for equilibrium
+  // spin-up), tests/variable_porosity fixture, backward-euler, routing off. Exit reason and iteration
+  // count at step 0:
+  //     affected arms        CONVERGED_SNORM_RELATIVE at  4-7 iterations
+  //     unaffected active_set                            17-62
+  //     collection.method: explicit                      24-69   (never single digits)
+  // SINGLE-DIGIT ITERATION COUNTS ON THIS PATH ARE THE TELL. #61 recorded the same signature for the
+  // head-metric version of this defect ("signature of a bad step: iters=3"); it still holds.
+  //
+  // The committed answer is not slightly off, it is somewhere else. Tightening
+  // solver.convergence.water_volume_tol removes it, and the result then STOPS MOVING -- converged,
+  // not drifting -- and lands on the collection.method: explicit answer EXACTLY:
+  //     dt (wk)   resid @1e-08   @1e-10       @1e-12     | min wtd @1e-12   explicit
+  //     2.5000    +9.530e+07     +6.220e-02   +6.220e-02 |   -30.3551       -30.3551
+  //     1.1875    -8.266e+07     -1.017e-01   -1.017e-01 |   -19.6073       -19.6073
+  //     1.0000    +1.112e+07     +1.112e+07   -3.342e-02 |   -17.4760       -17.4760
+  //
+  // IT APPEARS IN BANDS OF dt, NOT AS A TREND, and that is diagnostic rather than curious: 1.0 wk needs
+  // 1e-12 where 2.5 wk is fixed by 1e-10, so whether the shipped 1e-8 is tight enough depends on the
+  // solve TRAJECTORY, which varies discretely with dt. It also flips sign between bands. A diffusive
+  // operator cannot produce that, which is what pointed at a switching mechanism in the first place.
+  // Under collection.method: explicit or off the same sweep is clean at every dt (0 of 16 arms), and
+  // the step-0 answer varies smoothly with dt; under active_set it does not.
+  //
+  // IT IS NOT PETSc's snes_stol, and that was checked rather than assumed: running with `-snes_stol 0`
+  // verifiably takes (the banner prints `tolerance(snes_stol)=0.`) and changes NOTHING -- identical
+  // residuals and identical iteration counts. The verdict below is ours.
+  //
+  // DO NOT "fix" this by loosening a downstream tolerance or re-golding a reference. Reproduction and
+  // every table: benchmark/n78_first_step/. Options under consideration in #104 -- an absolute
+  // residual/complementarity test instead of a relative step, requiring the ACTIVE SET to be unchanged
+  // for k iterations, tightening the default (costed: the iteration count roughly quadruples), or at
+  // minimum refusing to report CONVERGED at single-digit iterations on this path.
+  // ---------------------------------------------------------------------------------------------
   if (uc->snes_volume_conv_govern) {
     if (*reason == SNES_CONVERGED_SNORM_RELATIVE) *reason = SNES_CONVERGED_ITERATING;  // drop the head stol verdict
     if (water_rel < uc->snes_volume_conv_tol)     *reason = SNES_CONVERGED_SNORM_RELATIVE;  // ...use the water one
@@ -1067,6 +1110,12 @@ static PetscErrorCode AdaptiveRestartTest(SNES snes, PetscInt it, PetscReal xnor
   // itself converged once the iterate stopped MOVING in head, which on a warm start happens well before
   // the water it still owes has been driven out. water_rel is already solution-relative, so ar_stol
   // carries over unchanged -- only the metric moves, not the tolerance.
+  // SAME FORM, SAME EXPOSURE (#104). This is a relative water step against a relative bound, exactly as
+  // VolumeStepConverged above, so it inherits the same inability to tell "converged" from "stalled" on
+  // the semismooth active-set path. It has not been measured on this path -- the #104 reproduction uses
+  // the ordinary solve -- so this is a flagged risk rather than a finding. Whatever #104 decides about
+  // the FORM of the test above must be applied here too, or the two paths will disagree about what
+  // convergence means.
   if (have_step && water_rel < uc->ar_stol) {  // true convergence
     *reason          = SNES_CONVERGED_SNORM_RELATIVE;
     uc->ar_stop_kind = 1;
