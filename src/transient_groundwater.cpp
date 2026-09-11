@@ -2182,8 +2182,9 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     const bool dt_accept = !(est_int > reject_margin * user_context.dt_tol);  // est_int, not est: see #63 above
     if (user_context.dt_trace)
       PetscPrintf(PETSC_COMM_WORLD,
-                  "DTTRACE dt=%.9e est=%.9e eint=%.9e ecpl=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d "
+                  "DTTRACE newclampd=%.9e newclampn=%d dt=%.9e est=%.9e eint=%.9e ecpl=%.9e tol=%.9e factor=%.6f iters=%d accepted=%d "
                   "nest=%ld ncpl=%ld\n",
+                  user_context.last_newclamp_depth, user_context.last_newclamp_n,
                   dt_now, est, est_int, est_cpl, user_context.dt_tol, factor, its, dt_accept ? 1 : 0,
                   est_n, est_cn);
     if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
@@ -2247,10 +2248,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   double dh_max_local = 0.0;  // max |w^{n+1} - w^n| over owned land cells (for the PTC/SER dt controller)
   int    dh_i_local = -1, dh_j_local = -1;  // argmax cell (diagnostic: which land cell moves most this step)
   int    nflick_local = 0;                  // # owned land cells with |Δw| > 1mm (within-cycle flicker diagnostic)
+  // #103 INSTRUMENT (measurement only -- nothing steers on this yet). The `explicit` collector clamps the
+  // free surface AFTER the solve, so the clamped SET is free to change between steps, and that is what
+  // oscillates: a steady lake clamps every step without flickering, while a shore cell that leaves the set
+  // and re-enters it is the limit cycle. So the quantity to watch is not "did we clamp" but "how much water
+  // sits on cells NEWLY entering the clamped set". In metres of water, so it is directly comparable to
+  // solver.time_step.error_tol, which is what the est_cpl growth-withholding test already compares against.
+  double newclamp_depth_local = 0.0;
+  int    newclamp_n_local     = 0;
   for (int j = ys; j < ys + ym; j++) {
     for (int i = xs; i < xs + xm; i++) {
       // The SNES variable IS the head: wtd = x - topo.
       const double solved_wtd = dmdapack.x[j][i] - my_topo[j][i];
+      // w^n, captured BEFORE the commit below overwrites starting_wtd with w^{n+1}. The explicit
+      // collector's clamp, far below in this same iteration, needs to know whether the cell was under
+      // the surface at the START of the step -- i.e. whether it is ENTERING the clamped set rather than
+      // sitting in it. Read-only; every existing read of starting_wtd above the commit sees this same
+      // value and is left alone.
+      const double wtd_before = dmdapack.starting_wtd[j][i];
       // ACTIVE SET: PROJECT ONTO THE FEASIBLE SET. The semismooth constraint is w <= lake_stage, with
       // EQUALITY on the active set -- so on the active set the value is determined by the CONSTRAINT, not
       // by the iterate. The solve cannot deliver that equality: at a pinned cell the residual IS the water
@@ -2370,6 +2385,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
       if (g_surface_exfiltration_to_runoff_array && dmdapack.starting_wtd[j][i] > 0.0) {
         const double poro         = dmdapack.porosity_vec[j][i];
         const double excess_depth = storedVolume(dmdapack.starting_wtd[j][i], poro) - storedVolume(0.0, poro);
+        // #103 instrument: was this cell BELOW the surface at the start of the step? Then it is entering
+        // the clamped set now. wtd_before is w^n, captured at the top of this iteration, so this reads
+        // the set change directly and needs no extra stored mask.
+        if (wtd_before < 0.0) {
+          newclamp_depth_local = std::max(newclamp_depth_local, excess_depth);
+          newclamp_n_local++;
+        }
         arp.total_surface_removed += excess_depth * arp.cell_area[j];  // budget-closing (WATER_BUDGET.md)
         dmdapack.sink_removed_dist[j][i] += excess_depth;              // collect -> gather -> arp.runoff -> FSM
         // ...and correct the STORAGE term to the state we are about to commit. This removal is
@@ -2406,6 +2428,8 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // state. Reduced here (cheap) so WTM.cpp's continuation loop can read user_context.last_dh_max.
   MPI_Allreduce(&dh_max_local, &user_context.last_dh_max, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
   MPI_Allreduce(&nflick_local, &user_context.last_dh_nflicker, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD);
+  MPI_Allreduce(&newclamp_depth_local, &user_context.last_newclamp_depth, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
+  MPI_Allreduce(&newclamp_n_local, &user_context.last_newclamp_n, 1, MPI_INT, MPI_SUM, PETSC_COMM_WORLD);
   user_context.last_dh_i = dh_i_local;  // argmax cell (exact at n=1; rank-local under MPI -- diagnostic only)
   user_context.last_dh_j = dh_j_local;
 

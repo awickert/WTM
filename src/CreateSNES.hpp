@@ -187,6 +187,12 @@ struct AppCtx {
   int    last_dh_i               = -1;  // argmax (i,j) of last_dh_max: which land cell moves most (diagnostic)
   int    last_dh_j               = -1;
   int    last_dh_nflicker        = 0;   // # land cells with per-sub-step |Δw| > 1mm (within-cycle flicker diagnostic)
+  // #103 INSTRUMENT, measurement only -- no decision reads these yet. Water depth on cells NEWLY
+  // entering the explicit collector's clamped set this step (metres, MAX over cells), and how many
+  // such cells there were. A steady lake clamps every step and contributes NOTHING here; a shore cell
+  // that leaves the set and re-enters it is exactly the limit cycle, and shows up here.
+  double last_newclamp_depth     = 0.0;
+  int    last_newclamp_n         = 0;
   // Convergence-based early stop (-wtm_eq_tol, metres OF WATER -- |S·Δwtd|, not head; 0 = off): stop the cycle loop once the PER-CYCLE
   // water-table change (last_cycle_dw = max|wtd_N - wtd_{N-1}| over land, the honest steady-state measure)
   // stays below eq_tol for two consecutive cycles, instead of always running the full total_time. The per-SUB-STEP
