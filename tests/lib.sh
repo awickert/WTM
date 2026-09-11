@@ -198,7 +198,17 @@ WTM_DECLARED_EXEMPT="config_schema route_equality"
 # three false exemptions -- exactly the hole an exemption list is meant to avoid.
 #
 # So: add a suite here only after SEEING it fail the check, and write the measurement, not the argument.
-WTM_VACUITY_EXEMPT=""
+#
+#   combination_sweep  ADDED 2026-09-11, having failed the check: 44 of 86 final fields identically 0.
+#                      Structural, and its own header says why: "THE ASSERTION IS NOT 'everything
+#                      works'. It is: every combination must either RUN, or REFUSE with a legible
+#                      message." It never compares a field -- it records what each solver x integrator
+#                      x collector x run_type DOES. A run that saturates still ran, so a structureless
+#                      output is outside what this suite claims.
+#                      WORTH KNOWING ANYWAY: half its arms reach a saturated state, so half the sweep
+#                      exercises a degenerate regime. That does not weaken its runnability claim, and it
+#                      is recorded here rather than hidden by the exemption.
+WTM_VACUITY_EXEMPT="combination_sweep"
 
 _wtm_declared_check() { # $1 = suite tag ; reports always, returns 1 only for an ENFORCED suite
     local tag="$1" tests_dir out rc=0
