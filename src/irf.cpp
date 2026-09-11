@@ -449,6 +449,7 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   double global_surface_removed = 0.0;
   double global_evap_removed = 0.0;
   double global_ocean_outflow = 0.0;
+  double global_boundary_inflow = 0.0;   // #105: off-map ghost flux under neumann_toposlope; + is INFLOW
   double global_storage_change = 0.0;
   double global_solver_recharge = 0.0;
   MPI_Allreduce(&arp.total_recharge_direct, &global_recharge_direct, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -461,6 +462,7 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   MPI_Allreduce(&arp.total_surface_removed, &global_surface_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_evap_removed, &global_evap_removed, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_ocean_outflow_gw, &global_ocean_outflow, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&arp.total_boundary_inflow_gw, &global_boundary_inflow, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_storage_change, &global_storage_change, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&arp.total_solver_recharge, &global_solver_recharge, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
@@ -547,8 +549,16 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
   // scheme currently in the code CAN be expressed, TR-BDF2 included (its two stages telescope; see
   // src/tr_bdf2_coefficients.hpp), so this guard is now a backstop for a future scheme rather than a
   // live case -- but it stays, because the failure it prevents is silent.
+  // + global_boundary_inflow, and the SIGN IS THE POINT (#105): the off-map ghost flux under
+  // boundaries.land: neumann_toposlope is a SOURCE, not a sink. Terrain rising away from the domain edge
+  // puts h_ghost above h_edge and drives water IN. It is added alongside recharge rather than subtracted
+  // alongside the outflows, and it is a separate term rather than part of global_ocean_outflow because
+  // water arriving from off-map upslope is not ocean outflow -- folding them together would close the
+  // ledger while describing the wrong physics. Zero by construction on a flat edge, and on every
+  // ocean-ringed fixture (no land edge at all), which is why no budget suite ever saw it.
   const double exact_budget_residual = arp.exact_budget_valid
-                                           ? global_solver_recharge - global_storage_change - global_ocean_outflow
+                                           ? global_solver_recharge + global_boundary_inflow
+                                                 - global_storage_change - global_ocean_outflow
                                                  - global_surface_removed - global_evap_removed
                                            : std::numeric_limits<double>::quiet_NaN();
 

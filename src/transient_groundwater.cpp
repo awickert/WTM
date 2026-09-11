@@ -654,7 +654,27 @@ static void accumulate_ocean_outflow(AppCtx& user_context, ArrayPack& arp, Vec h
       if (j + 1 < info.my && my_mask[j + 1][i] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j + 1][i]) * gn[j][i] * h_c;
       if (j - 1 >= 0      && my_mask[j - 1][i] == 0) arp.total_ocean_outflow_gw += weight * dt * 2.0 / (my_T[j][i] + my_T[j - 1][i]) * gs[j][i] * h_c;
       // Under land-edge Dirichlet, an off-map edge face also drains to the sea-level ghost (surface T);
-      // count it so the water budget closes (neumann_toposlope off-map faces are no-flow -> nothing to add).
+      // count it so the water budget closes. (The neumann_toposlope faces are booked just above, #105 --
+      // this comment used to claim they were no-flow and therefore needed nothing.)
+      // NEUMANN_TOPOSLOPE OFF-MAP FLUX (#105). The default land boundary is terrain-following no-flow:
+      // h_ghost = h_c + (topo_edge - topo_inland), with the ghost at the same wtd and therefore the same
+      // T. That is zero flux relative to the LAND SURFACE, which is NOT zero Darcy flux -- the head
+      // difference across the face is the terrain rise, so on sloping ground water genuinely crosses it.
+      // The comment that used to sit below said "neumann_toposlope off-map faces are no-flow -> nothing
+      // to add"; measured on tests/ghost_boundary's fixture, the unbooked term is 45x the domain's entire
+      // recharge over 120 cycles (|exact residual|/recharge 4.4521e+01, steady from cycle 0).
+      //
+      // Mirrors FormPicardOperator's `face` lambda exactly, because a flux booked differently from the
+      // one the solve applied is the defect class this is fixing: conductance 2/(tau_c + tau_ghost) with
+      // tau_ghost = tau_c, hence T_c; topo_inland by the INWARD reflection topo[2j-nj][2i-ni].
+      // SIGN: positive is INFLOW, matching -(h_c - h_ghost) = +(topo_edge - topo_inland).
+      if (!g_land_boundary_dirichlet) {
+        const double T_c = 1.0 / my_T[j][i];   // my_T holds tau = 1/T
+        if (i + 1 >= info.mx) arp.total_boundary_inflow_gw += weight * dt * T_c * gew[j][i] * (my_topo[j][i] - my_topo[j][i - 1]);
+        if (i - 1 < 0)        arp.total_boundary_inflow_gw += weight * dt * T_c * gew[j][i] * (my_topo[j][i] - my_topo[j][i + 1]);
+        if (j + 1 >= info.my) arp.total_boundary_inflow_gw += weight * dt * T_c * gn[j][i]  * (my_topo[j][i] - my_topo[j - 1][i]);
+        if (j - 1 < 0)        arp.total_boundary_inflow_gw += weight * dt * T_c * gs[j][i]  * (my_topo[j][i] - my_topo[j + 1][i]);
+      }
       if (g_land_boundary_dirichlet) {
         const double e_s = 2.0 / (my_T[j][i] + 1.0 / interblockTransmissivity(0.0, 0.0, my_fdepth[j][i], my_ksat[j][i], smooth_T));
         if (i + 1 >= info.mx) arp.total_ocean_outflow_gw += weight * dt * e_s * gew[j][i] * h_c;

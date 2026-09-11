@@ -108,6 +108,11 @@ struct ArrayPack {
   // ocean-cell content -- total_loss_to_ocean_gw (which counts that content) therefore misses it.
   // This term is what makes the budget close: recharge = d(storage) + ocean_outflow + surface_removed.
   double total_ocean_outflow_gw = 0;
+  // #105: water crossing the OFF-MAP GHOST faces under boundaries.land: neumann_toposlope. POSITIVE is
+  // INFLOW (terrain rising away from the domain drives water in), so it is a SOURCE and must not be
+  // folded into total_ocean_outflow_gw -- off-map upslope inflow is not ocean outflow, and merging them
+  // would make the ledger close while describing the wrong physics.
+  double total_boundary_inflow_gw = 0;
   // Water removed by the sub-surface surface-water sink (-wtm_surface_sink), summed over owned
   // cells and substeps as a per-rank partial (reduced to a global total in PrintValues, like
   // total_loss_to_ocean_gw). For the no-FSM case the removed water is discarded, so this scalar is
