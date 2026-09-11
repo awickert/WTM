@@ -93,3 +93,82 @@ NOT ESTABLISHED — do not guess it, measure it. What differs between the two ad
 *path through the first cycle*: 2 rejections settling at 4.89e5 versus 4 rejections settling at 2.23e5.
 The next experiment is whether the rejection/retry history on the **first** step is the variable, which
 would put this next to tasks #13 and #41 rather than anywhere near #58.
+
+
+## EXPANDED STUDY (same session, after backing off the hypotheses)
+
+Andy: *"Back off of the hypotheses. Redo what caused you to find the first-step and dt dependence. Expand
+the study from there."* Both findings were redone with the instrumentation that produced them — **one
+report per step** — and the dt axis widened from 4 sampled points to 31. Two of my own conclusions did
+not survive the widening.
+
+**Method.** `mode: fixed`, `routing: off`, `saturated` start, one report per step, `total = 4*dt` so every
+arm takes exactly four steps. Verified **deterministic**: three arms rerun, `exact_budget_residual`
+identical to the last digit (`16188146.6127`, `-45175089.7076`, `11123853.0004`).
+
+### It is NOT a threshold. It is TWO BANDS with clean windows between and outside them.
+
+Step-0 `exact_budget_residual`, backward-euler, all 31 points, nothing dropped (`*` = |resid| > 1e3):
+
+```
+  4.0000 +3.27e+00     2.2500 +1.48e-01     1.1250 * +4.11e+07     0.5000 * +1.35e+07
+  3.7500 -3.91e-01     2.0000 -3.05e-02     1.0625 * +1.65e+07     0.4375 * +1.37e+07
+  3.5000 -4.91e-01     1.8750 +1.76e-03     1.0000 * +1.11e+07     0.3750 * +3.44e+05
+  3.2500 -2.15e+00     1.7500 +8.54e-02     0.9375 * +9.65e+06     0.3125 +2.05e-02
+  3.0000 * +1.62e+07   1.6250 -4.59e-01     0.8750 * +9.53e+06     0.2500 +1.49e-02
+  2.7500 * +3.33e+07   1.5000 -1.30e-01     0.7500 * +1.07e+07     0.1875 -1.75e-02
+  2.5000 * +9.53e+07   1.3750 -9.87e-03     0.6250 * +1.23e+07     0.1250 +7.66e-02
+                       1.2500 +1.30e-01     1.1875 * -8.27e+07     0.0625 +1.11e-02
+```
+
+**Band A** 3.00 → 2.50 wk. **Band B** 1.1875 → 0.4375 wk (0.375 transitional at 3.4e5).
+**Clean** ≥ 3.25 wk, 2.25 → 1.25 wk, and ≤ 0.3125 wk. Each band peaks at an *edge* adjacent to a clean
+window — A at 2.50 (9.5e7), B at 1.1875 (−8.3e7). `dt = 8 wk` does not converge (DIVERGED_MAX_IT).
+
+**This retracts the "threshold between 1.25 and 1.167 wk".** That came from four sampled points plus a
+bisection that assumed a monotone picture. There is no threshold and no monotone trend.
+
+### The error is incurred at step 0 and then FROZEN — across the whole band, not one arm
+
+Cumulative residual over the first four steps: every starred arm is identical to 6–7 significant figures
+from step 0 onward (e.g. 2.75 wk: `+3.327940e+07` four times). Every clean arm wanders at O(1) or below
+against a step-0 recharge of ~1e6. One exception worth recording: at **0.0625 wk** step 0 is clean
+(`+1.11e-02`) and **step 1** jumps to `-1.369e+03`, then freezes — the same shape, three orders smaller.
+
+### `total_surface_removed` does NOT track the residual — retracting a second claim
+
+I wrote that the mechanism *is* surface-water removal, on the strength of two arms (`3.86e+05` clean vs
+`3.93e+08` dirty). Across the full sweep that does not hold: the 1019× spike occurs **only** at 1.1875 wk.
+At 1.125, 1.0625 and 1.0 wk the removal is `5.12e5 / 4.84e5 / 4.55e5` — on the smooth trend — while the
+residual is still 1e7. Removal is mildly elevated inside the bands (≈2× in A, ≈15% in B), nowhere near
+enough to account for 1e7. `total_ocean_outflow` also departs from its smooth trend inside the bands.
+Surface water at the start is still a **necessary** condition (the −5 m control zeroes the effect at every
+dt); it is not the quantity that varies with it.
+
+### The bands MOVE with the integrator
+
+Step-0 residual on a shared 16-point grid:
+
+| dt (wk) | backward-euler | tr-bdf2 | bdf2 |
+|---|---|---|---|
+| 4.0000 | +3.2668e+00 | **+1.9309e+08** | +3.2668e+00 |
+| 3.2500 | −2.1499e+00 | **+2.1243e+07** | −2.1499e+00 |
+| 3.0000 | **+1.6188e+07** | **+2.1573e+07** | **+1.6188e+07** |
+| 2.5000 | **+9.5302e+07** | **+2.5741e+07** | **+9.5302e+07** |
+| 2.2500 | +1.4842e-01 | **+2.8071e+07** | +1.4842e-01 |
+| 1.2500 | +1.2964e-01 | **+3.2906e+07** | +1.2964e-01 |
+| 1.1875 | **−8.2662e+07** | +4.3366e+05 | **−8.2662e+07** |
+| 1.0000 | **+1.1124e+07** | **+3.1363e+07** | **+1.1124e+07** |
+| 0.7500 | **+1.0729e+07** | −4.1162e-02 | **+1.0729e+07** |
+| 0.4375 | **+1.3738e+07** | −1.7923e-01 | **+1.3738e+07** |
+| 0.2500 | +1.4931e-02 | −2.2010e-02 | +1.4931e-02 |
+
+`tr-bdf2` is bad at *large* dt and clean at dt ≤ 0.75 wk — a different structure, not a shifted one.
+
+**backward-euler and bdf2 agree to every printed digit at all 16 points**, which is the expected answer
+and a soundness check on the harness: BDF2 is self-starting, so its *first* step is a backward-Euler step.
+
+### Still open
+
+The cause. Not proposing one here — the two I proposed before this sweep (a dt threshold, surface-water
+removal) were both products of too few sample points.
