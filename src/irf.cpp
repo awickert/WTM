@@ -580,7 +580,12 @@ void PrintValues(Parameters& params, const ArrayPack& arp) {
            << params.solves_done << " " << params.rejects_done << " "
            // Columns 24-25: per-cycle change in WATER VOLUME (|S*Dwtd|), the units the model's own
            // equilibrium stop, adaptive step target and budget all use. Column 5 remains the HEAD change.
-           << params.last_cycle_dw_volume << " " << params.last_cycle_rms_volume << " " << std::endl;
+           << params.last_cycle_dw_volume << " " << params.last_cycle_rms_volume << " "
+           // Column 26: the off-map ghost flux (#105), reported rather than left visible only
+           // through the residual it participates in. Exactly 0 on a flat land edge and on any
+           // ocean-ringed domain -- a null the residual alone cannot distinguish from two
+           // errors cancelling.
+           << global_boundary_inflow << " " << std::endl;
 
   textfile.close();
 }

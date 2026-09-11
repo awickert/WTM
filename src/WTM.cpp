@@ -184,6 +184,12 @@ void initialise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
               // it is still what a reader wants when asking "how far did the TABLE move", and the two
               // together are the head-vs-volume contrast the suite now measures in.
               "abs_change_volume_max abs_change_volume_rms "
+              // Column 26: the #105 off-map ghost flux under boundaries.land: neumann_toposlope,
+              // signed + for INFLOW. Reported because the model BOOKS it as a mass source: an
+              // unreported source term can only be checked through a residual that might be
+              // cancelling it against another error. With a column, the null case is directly
+              // assertable -- flat ground, or an ocean-ringed domain, must read exactly 0.
+              "boundary_inflow_gw "
            << std::endl;
   textfile.close();
 }
