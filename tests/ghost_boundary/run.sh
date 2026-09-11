@@ -199,9 +199,27 @@ L=[l for l in open(sys.argv[1]) if l.strip()]
 h=[l for l in L if l.startswith("Cycles_done")][0].split()
 d=[dict(zip(h,l.split())) for l in L if l and l[0].isdigit()][-1]
 r=float(d["total_recharge_added"])
-print("%.6e" % (abs(float(d["exact_budget_residual"]))/r) if r else "nan")
+print("%.6e %.6e" % (abs(float(d["exact_budget_residual"]))/r, abs(float(d["boundary_inflow_gw"]))/r) if r else "nan nan")
 ' "$WORK/cc_n1.txt")
+# THE SECOND NUMBER IS THE ANTI-VACUITY GUARD, and it costs no extra run. A budget check passes just as
+# happily when there is no boundary flux to account for -- that is exactly how #105 hid for the whole
+# life of the suite, since every other fixture is ocean-ringed and books a structural zero here. So the
+# arm asserts the term it exists to check is actually NONZERO. The bar is deliberately crude: the flux
+# must exceed the recharge itself. On this fixture it runs ~44x recharge, so a real regression in the
+# ghost has orders of magnitude of room before it could sneak under the bar, while a fixture edit that
+# accidentally flattened the land edge -- the change that would silently gut this check -- drives it to
+# EXACTLY zero and trips immediately.
+BC_FLUX="${RESID##* }"; RESID="${RESID%% *}"
+if awk -v b="$BC_FLUX" 'BEGIN{exit !(b+0 > 1.0)}'; then :; else
+  echo "  4. boundary budget: |boundary_inflow_gw|/recharge = $BC_FLUX -- THE TERM UNDER TEST IS ~ZERO" >&2
+  echo "  FAIL  VACUOUS CHECK. The budget below would close whether or not the off-map ghost flux is" >&2
+  echo "        booked, because on this run there is no such flux to book. Either the fixture lost its" >&2
+  echo "        sloping land edge or boundaries.land stopped resolving to neumann_toposlope. Fix the" >&2
+  echo "        arm -- do not relax this bar, it is what makes check 4 mean anything." >&2
+  fail=1
+fi
 if awk -v r="$RESID" -v t="$BUDGET_TOL" 'BEGIN{exit !(r+0 <= 5*t+0)}'; then
+  echo "  4. off-map ghost flux BOOKED: |boundary_inflow_gw|/recharge = $BC_FLUX (the term is live, not zero)"
   echo "  4. boundary budget closes: |exact residual|/recharge = $RESID  (bound 5x solver tol)"
   echo "  PASS (the land boundary's off-map flux is accounted, not leaked)"
 else
