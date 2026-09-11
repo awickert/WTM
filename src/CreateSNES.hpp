@@ -130,8 +130,15 @@ struct AppCtx {
   // an absolute bound would not carry from a 96-cell fixture to a 384k-cell domain.
   PetscReal snes_residual_gate = 1e-5;         // solver.convergence.residual_gate
   PetscReal snes_fnorm0        = -1.0;         // this solve's first residual; < 0 until it == 0 is seen
-  PetscReal snes_residual_floor = 1e-10;       // absolute escape for the gate: a residual this small
-                                              // satisfies the equation however it got there. RELEASES only.
+  // WHAT THIS RUN HAS DEMONSTRATED IT CAN REACH. Learned, not configured: every solve that converges
+  // records the residual it settled at, and the running MAX is this problem's observed floor. The gate
+  // below judges a solve against that rather than against a fixed reduction, because a fixed reduction
+  // is unsatisfiable wherever the residual genuinely floors. Negative until the first solve converges.
+  PetscReal snes_floor_ref = -1.0;
+  // Absolute escape, for the case the learned reference cannot cover: a run whose solves all exit on
+  // the STEP test never records a residual verdict, so no reference is ever established, and a warm
+  // solve starting at machine precision is then blocked by the bootstrap. RELEASES only.
+  PetscReal snes_residual_floor = 1e-10;
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
                                                // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)
 

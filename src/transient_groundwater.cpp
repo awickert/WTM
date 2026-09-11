@@ -1085,24 +1085,53 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   // ~179x above the worst agreeing arm and ~2100x below the best disagreeing one. It is a choice, and
   // solver.convergence.residual_gate exposes it; it is not a tuned number, because nothing lives in the
   // five orders either side of it.
-  // A PURELY RELATIVE GATE IS UNSATISFIABLE FOR A SOLVE THAT BEGINS CONVERGED, and warm starts at small
-  // dt do exactly that. Measured on tests/ghost_boundary: the failing solve started at fnorm_0 =
-  // 1.0991e-16 with min/fnorm_0 = 1.0000 -- the FIRST iterate was the best it would ever be -- so
-  // demanding a further 1e-5 reduction was arithmetically impossible and the solve burned all 10000
-  // iterations. The adaptive controller then retried with ever-smaller dt, each retry starting even
-  // closer to zero (2.8e-14, 7.0e-15, 1.8e-15, 4.4e-16, 1.1e-16), and the step aborted.
+  // ---- the gate's reference: what THIS RUN has shown it can reach -------------------------------
+  // A fixed relative reduction cannot work, and both ways of failing were measured before this was
+  // written. Demand 1e-5 off the solve's own starting residual and you block every solve that BEGINS
+  // at its floor: tests/ghost_boundary's warm solves start at 1.0991e-16 with the first iterate already
+  // the best they will ever reach, and budget_closure's `continuous` arm floors at ~1e-5 absolute
+  // because the FSM delta keeps moving the target. Both ran to 10000 iterations and aborted. But drop
+  // the demand and the premature exits this gate exists to catch come straight back.
   //
-  // So the gate needs an absolute escape, and it can only ever RELEASE a solve, never hold one: a
-  // residual this small satisfies the equation by any measure. The two populations are not close --
-  //     residuals at the premature exits this gate exists to catch   1.5287e+01 .. 1.3064e+02
-  //     residuals of the warm solves it must not block                1.0991e-16 .. 4.1428e-13
-  // -- so 1e-10 sits ~2.4e+03 above the largest it must release and ~1.5e+11 below the smallest it must
-  // still catch. It does NOT need to scale with problem size, and that is the point: on a domain where
-  // fnorm is naturally large the floor simply never fires and the relative gate governs alone. A bypass
-  // that can only fire at an absurdly small residual is safe by construction.
+  // So the reference is neither a reduction factor nor an absolute number: it is the residual that
+  // solves in THIS run actually settle at when they converge. Measured, the two populations separate
+  // by a wide margin against that reference:
+  //     budget_closure `continuous`, floored   best reached is 1.24x .. 852x the converged level
+  //     variable_porosity 2.5 wk, STALLED      best reached is 3.83e+06x the converged level
+  // A stalled solve sits ~4 million times above what its own run demonstrates is achievable; a floored
+  // one sits within a few hundred. FLOOR_FACTOR is log-centred in that ~4500x-wide window.
+  //
+  // It is a constant, and it is not a user knob: it is an internal safety factor on a MEASURED
+  // quantity, which is why it lives here with its measurement rather than in 47 configs.
+  constexpr double FLOOR_FACTOR = 1e4;
+
+  // Record what a converging solve settles at. ONLY A RESIDUAL VERDICT MAY SET THIS, and getting that
+  // wrong once is instructive: written as `*reason > 0` it also accepted SNESConvergedDefault's
+  // head-stol verdict, which fires early at fnorm ~1.3e+02 on the very stall this gate exists to catch.
+  // The reference was then set FROM the stall, the gate admitted it, and tolerance_independence went
+  // straight back to failing on all four banded arms. A reference for "what the residual can reach"
+  // must come from the residual test alone.
+  //
+  // Running MAX, so it is the run's worst observed floor rather than its best luck -- the conservative
+  // direction for a test whose job is to RELEASE.
+  if ((*reason == SNES_CONVERGED_FNORM_ABS || *reason == SNES_CONVERGED_FNORM_RELATIVE) && fnorm > 0.0)
+    uc->snes_floor_ref = (uc->snes_floor_ref < 0.0) ? fnorm : std::max(uc->snes_floor_ref, fnorm);
+
+  // BOOTSTRAP. The first solve of a run has no reference, and that is exactly where #104's stall lives
+  // (variable_porosity's bad step IS solve 0), so the fallback has to be able to catch it. The relative
+  // gate does: fnorm 6.708e+01 against fnorm_0 1.018e+02 is a ratio of 0.66, nowhere near
+  // solver.convergence.residual_gate, so the step verdict stays refused.
+  // THREE WAYS TO SATISFY IT, and each covers a case the others cannot. Measured, all three are needed:
+  //   learned reference  budget_closure `continuous` floors at ~1e-5 absolute; only the run's own
+  //                      converged solves reveal that level
+  //   bootstrap          variable_porosity's stall IS solve 0, before any reference exists
+  //   absolute escape    ghost_boundary's solves all exit on the STEP test, so no residual verdict ever
+  //                      records a reference, and its warm solves start at 1e-16
   const bool residual_has_come_down =
-      (uc->snes_fnorm0 <= 0.0) || (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0)
-      || (fnorm <= uc->snes_residual_floor);
+      (uc->snes_fnorm0 <= 0.0)
+      || (fnorm <= uc->snes_residual_floor)
+      || (uc->snes_floor_ref > 0.0 ? (fnorm <= FLOOR_FACTOR * uc->snes_floor_ref)
+                                   : (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0));
   if (uc->snes_volume_conv_govern) {
     if (*reason == SNES_CONVERGED_SNORM_RELATIVE) *reason = SNES_CONVERGED_ITERATING;  // drop the head stol verdict
     if (water_rel < uc->snes_volume_conv_tol && residual_has_come_down)
@@ -1153,8 +1182,10 @@ static PetscErrorCode AdaptiveRestartTest(SNES snes, PetscInt it, PetscReal xnor
   // the lowest residual seen, which is the right thing to compare against when restarts may have reset
   // the iterate, and it is already maintained for the restart logic.
   const bool ar_residual_has_come_down =
-      (uc->snes_fnorm0 <= 0.0) || (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0)
-      || (fnorm <= uc->snes_residual_floor);   // the same absolute escape; see VolumeStepConverged
+      (uc->snes_fnorm0 <= 0.0)
+      || (fnorm <= uc->snes_residual_floor)
+      || (uc->snes_floor_ref > 0.0 ? (fnorm <= 1e4 * uc->snes_floor_ref)
+                                   : (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0));
   if (have_step && water_rel < uc->ar_stol && ar_residual_has_come_down) {  // true convergence
     *reason          = SNES_CONVERGED_SNORM_RELATIVE;
     uc->ar_stop_kind = 1;
