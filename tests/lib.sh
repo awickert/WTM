@@ -252,10 +252,24 @@ _wtm_vacuity_check() { # $1 = suite tag ; reports always, returns 1 only for a N
     return $rc
 }
 
+# WHICH BOUNDARY CONDITION DOES THIS SUITE'S FIXTURE ACTUALLY EXERCISE? Printed by every suite, because
+# the absence of that answer is what let #105 live -- a 45x-of-recharge mass leak in the DEFAULT land
+# boundary, invisible because every budget fixture is ocean-ringed and no test said so. A config saying
+# `boundaries.land: neumann_toposlope` means nothing if the mask has no land edge; the mask decides.
+# See tests/edge_composition.py. Reports only -- it never fails a suite.
+_wtm_edges_note() {
+    local tests_dir
+    tests_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+    command -v python3 >/dev/null 2>&1 || return 0
+    [ -d "./inputs" ] || return 0
+    "$tests_dir/edge_composition.py" ./inputs 2>/dev/null || true
+}
+
 _wtm_work_cleanup() {
     local rc=$?
     # Run BEFORE the work dir is deleted -- the configs, full_config.yaml records and output snapshots
     # all live in it. Does not mask a real failure: a suite that already failed keeps its own exit code.
+    _wtm_edges_note
     if [ "$rc" -eq 0 ] && ! _wtm_declared_check "${WORK_TAG:-unknown}"; then rc=3; fi
     if [ "$rc" -eq 0 ] && ! _wtm_vacuity_check  "${WORK_TAG:-unknown}"; then rc=4; fi
     if [ "$rc" -ne 0 ] || [ "${WTM_KEEP:-0}" = 1 ]; then
