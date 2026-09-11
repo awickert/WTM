@@ -74,13 +74,12 @@ still carries the placeholder and now measures correctly anyway, so converting i
 change its physics.
 
 ### 2 — Correctness of the model
-### 2 — Correctness of the model
 
 | # | item | state |
 |---|---|---|
 | **102** | `S·Δh ≡ ΔV` is **UNVERIFIED** where `S ≠ Sy` — the suite that asserts it was comparing two zero fields, and the model's own `secant × active_set` refusal message *cites that suite* as its authority. Live: 2.386e-03 m water where cells sit at the surface, not scaling with solver tolerance, not the clamp. | Held as a guarded **xfail**, not a declared defect: the table is in a surface limit cycle there, which is the claim's one documented exception. The fixture cannot meet its own two preconditions under any collector available to `secant`. **Andy's call** between three options in the task. |
 | **103** | The `explicit` collector sustains a **permanent surface limit cycle** — no decay over 26 cycles / 460 yr, 56 of 88 cells, and it is intermittent rather than alternating (the cell count snaps 56 / 48 / 0). `active_set` cures it completely on the same fixture: 4.6e-08 vs 0.0912 m, zero cells vs 56. | **And the equilibrium stop declares convergence inside it** — measured, `stopping at cycle 4 of 30` with `frac>tol=0.0000`, while that cycle carries 0.0606 m of within-cycle motion across 56 of 88 cells. `WTM.cpp:976` calls this flicker "cosmetic" by design; here it is not. This is also **why #102 cannot be measured** — `explicit` is the only surface-reaching collector `secant` may use, and `active_set`, the cure, is refused for it. |
-| **78** | Budget residual grows as dt shrinks. **CONFIRMED, and worse than filed:** it is *not* backward-euler-specific — at fixed dt tr-bdf2 is worse at every step (3.08e-01 / 4.87e-02 / 5.01e-02). Reaches ~1-30% of recharge. | **UNRESOLVED DISCREPANCY:** my `fsm_consistency` run shows 1.16e-2 → 2.55e-2 growth (reproduced at `runoff_ratio` 0 **and** 0.3); an independent purpose-written config showed 1e-8 with no growth. **The discriminator is unidentified.** Find it before acting. |
+| **104** | **#78's root cause, and the top correctness item.** The per-solve water-step test declared convergence after 4-7 nonlinear iterations on the semismooth `active_set` path — the shipped default — committing a first step tens of metres from the answer. | **FIXED** (`db54072`, `2cc272a`): the step verdict is refused until the residual has come down, with an absolute escape so a solve that *begins* converged is not blocked. 10 of 20 sweep arms disagreeing → 0. Pinned by `tests/tolerance_independence`. **Open only until the full suite confirms it.** |
 | **52** | Land→ocean outflow mis-booked at pinned cells | Reproduces unchanged at **1.802e-05**; encoded as an xfail. Two stale pointers: `CreateSNES.hpp:40` now says the opposite (#40 moved it to `WTM.cpp:715`), and its probe patch no longer applies. |
 | **54** | Test and guard the budget at boundaries | Valid, but **item 1 is costed wrong**: `BUDGETTRACE` emits eight *domain scalars*, so this needs model-side machinery, not a mask split. |
 | **64** | Sub-cycle the FSM coupling | Untouched; **moves goldens, needs explicit authorization**. Its sub-item — say in `tests/golden/run.sh` that references are regression *pins*, not accuracy statements — is undone. |
@@ -102,6 +101,12 @@ change its physics.
 | **6** | `scheme_bench` re-run: its "active_set × during is a hard error" premise is **false** (that is the default pair); new blocker — `and_be` (secant) now throws under active_set. |
 | **98** | `budget_closure` `a_as` ≡ `c_as`, character-identical. Andy's (a)/(b)/(c) call. |
 | **77** | Storativity smoothing inert under active_set — a record; no action was claimed. |
+
+### 5 — Parked at the bottom, by Andy
+
+| # | item | why it is parked |
+|---|---|---|
+| **60** | Order-aware retry for the adaptive controller | Andy: *"#60 needs a case that would otherwise abort."* Exonerated of the accounting suspicion (the blocker was #61), and a patch exists in the scratchpad, but without a case that aborts without it there is nothing to demonstrate against. |
 
 ## Known repo-hygiene items found by the sweep
 
