@@ -123,6 +123,13 @@ struct AppCtx {
   bool      vol_step_trace          = false;   // output.trace: [water_step] -- per-iteration line, answer-neutral
   bool      snes_volume_conv_govern = true;    // solver.convergence.metric: volume (DEFAULT) -- authoritative
   PetscReal snes_volume_conv_tol    = 1e-8;    // -wtm_snes_vol_tol: relative water-step tolerance (matches snes_stol)
+  // THE WATER-STEP TEST MAY NOT SPEAK UNTIL THE RESIDUAL HAS COME DOWN (#104). A relative STEP test
+  // cannot tell "converged" from "stalled"; this gate supplies the missing half. The step verdict is
+  // refused while fnorm > snes_residual_gate * fnorm_0, i.e. until the solve is demonstrably in its
+  // asymptotic regime rather than sitting on a plateau. RELATIVE to the first residual on purpose --
+  // an absolute bound would not carry from a 96-cell fixture to a 384k-cell domain.
+  PetscReal snes_residual_gate = 1e-5;         // solver.convergence.residual_gate
+  PetscReal snes_fnorm0        = -1.0;         // this solve's first residual; < 0 until it == 0 is seen
   Vec       vol_prev_x              = nullptr;  // previous accepted iterate, to diff the step directly (Anderson's
                                                // SNESGetSolutionUpdate is NOT the accepted step -- ~10x larger)
 

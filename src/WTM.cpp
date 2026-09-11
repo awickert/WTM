@@ -1524,6 +1524,7 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   f << "  convergence:\n";
   f << "    metric: " << (uc.snes_volume_conv_govern ? "volume" : "head") << "\n";
   f << "    water_volume_tol: " << uc.snes_volume_conv_tol << "\n";
+  f << "    residual_gate: " << uc.snes_residual_gate << "\n";
   f << "  max_iterations: " << maxit << "\n";
   f << "  time_integration: " << (params.time_integration.empty() ? "backward-euler" : params.time_integration) << "\n";
   f << "  t_bar: " << params.t_bar << "\n";

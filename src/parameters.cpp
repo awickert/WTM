@@ -80,7 +80,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // relative-step test for |S*Δwtd|, so all three "close enough" gates (this, run.equilibrium_stop
       // and solver.time_step.error_tol) finally speak the same units. water_volume_tol is read ONLY when
       // metric: volume, and sits beside it for that reason.
-      {"solver.convergence", {"metric", "water_volume_tol"}},
+      {"solver.convergence", {"metric", "water_volume_tol", "residual_gate"}},
       // solver.time_step: ONE step-size controller, deliberately not nested under adaptive_dt --
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
@@ -383,6 +383,7 @@ Parameters::Parameters(const std::string& config_file) {
     convergence_metric_head =
         (require_enum(n.as<std::string>(), "solver.convergence.metric", {"head", "volume"}) == "head");
   if (auto n = root["solver"]["convergence"]["water_volume_tol"]) water_volume_tol = std::stod(n.as<std::string>());
+  if (auto n = root["solver"]["convergence"]["residual_gate"]) residual_gate = std::stod(n.as<std::string>());
   if (auto sc = root["solver"]["time_step"]) {
     if (auto n = sc["norm"])              dt_norm_rms     =
         (require_enum(n.as<std::string>(), "solver.time_step.norm", {"rms", "max"}) == "rms");

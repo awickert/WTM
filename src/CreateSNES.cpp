@@ -101,10 +101,13 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
   user_context.snes_volume_conv_govern = !params.convergence_metric_head;
   user_context.vol_step_trace          = params.trace_water_step;  // INDEPENDENT of governing, see AppCtx
   user_context.snes_volume_conv_tol    = params.water_volume_tol;
+  user_context.snes_residual_gate      = params.residual_gate;  // #104: the step verdict's residual gate
   if (user_context.snes_volume_conv_govern)
     PetscPrintf(PETSC_COMM_WORLD,
-                "solver.convergence.metric: volume -- the per-solve step is judged as |S*Δwtd| (rel tol %g).\n",
-                (double)user_context.snes_volume_conv_tol);
+                "solver.convergence.metric: volume -- the per-solve step is judged as |S*Δwtd| (rel tol %g),\n"
+                "  and that verdict is REFUSED while the residual is above %g x its initial value (#104): a\n"
+                "  relative step test cannot tell a converged solve from a stalled one on its own.\n",
+                (double)user_context.snes_volume_conv_tol, (double)user_context.snes_residual_gate);
   else
     PetscPrintf(PETSC_COMM_WORLD,
                 "solver.convergence.metric: head -- the per-solve step is judged as |Δhead| (snes_stol). This is\n"

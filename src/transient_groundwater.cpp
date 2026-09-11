@@ -1015,6 +1015,7 @@ static bool waterStep(SNES snes, AppCtx* uc, PetscInt it, double* water_rel, dou
 static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnorm, PetscReal snorm,
                                           PetscReal fnorm, SNESConvergedReason* reason, void* ctx) {
   AppCtx* uc = static_cast<AppCtx*>(ctx);
+  if (it == 0) uc->snes_fnorm0 = fnorm;   // this solve's reference residual; the gate below is relative to it
   // Standard verdict first: atol/rtol/maxit + the head-step stol. Keep all of it except, when governing, the stol.
   SNESConvergedDefault(snes, it, xnorm, snorm, fnorm, reason, nullptr);
   double water_rel = 0.0, water_max = 0.0, water_L2 = 0.0, head_L2 = 0.0;
@@ -1069,9 +1070,27 @@ static PetscErrorCode VolumeStepConverged(SNES snes, PetscInt it, PetscReal xnor
   // for k iterations, tightening the default (costed: the iteration count roughly quadruples), or at
   // minimum refusing to report CONVERGED at single-digit iterations on this path.
   // ---------------------------------------------------------------------------------------------
+  // THE GATE (#104). The step verdict is a FALLBACK for a residual that cannot reach rtol -- a real
+  // possibility on this semismooth path, where the residual can floor on the constraint kink. It is NOT
+  // a second opinion that may overrule a residual still far from converged. So it is refused until the
+  // residual has demonstrably come down.
+  //
+  // RELATIVE TO THIS SOLVE'S FIRST RESIDUAL, deliberately: an absolute bound measured on a 96-cell
+  // fixture would not carry to a 384k-cell domain. MEASURED on a 20-point dt sweep, fnorm_exit/fnorm_0
+  // at the moment of exit, classified by whether the committed answer matched a converged one:
+  //     10 arms that agreed   worst ratio 5.5870e-08
+  //     10 arms that did not  best  ratio 2.1219e-02
+  // A separation of 3.8e+05, with fnorm_0 itself spanning 5.09 to 162.9 across the sweep -- so the RATIO
+  // discriminates where an absolute number could not. The default 1e-5 is log-centred in that window:
+  // ~179x above the worst agreeing arm and ~2100x below the best disagreeing one. It is a choice, and
+  // solver.convergence.residual_gate exposes it; it is not a tuned number, because nothing lives in the
+  // five orders either side of it.
+  const bool residual_has_come_down =
+      (uc->snes_fnorm0 <= 0.0) || (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0);
   if (uc->snes_volume_conv_govern) {
     if (*reason == SNES_CONVERGED_SNORM_RELATIVE) *reason = SNES_CONVERGED_ITERATING;  // drop the head stol verdict
-    if (water_rel < uc->snes_volume_conv_tol)     *reason = SNES_CONVERGED_SNORM_RELATIVE;  // ...use the water one
+    if (water_rel < uc->snes_volume_conv_tol && residual_has_come_down)
+      *reason = SNES_CONVERGED_SNORM_RELATIVE;  // ...use the water one, but only once the residual agrees
   }
   return 0;
 }
@@ -1110,13 +1129,16 @@ static PetscErrorCode AdaptiveRestartTest(SNES snes, PetscInt it, PetscReal xnor
   // itself converged once the iterate stopped MOVING in head, which on a warm start happens well before
   // the water it still owes has been driven out. water_rel is already solution-relative, so ar_stol
   // carries over unchanged -- only the metric moves, not the tolerance.
-  // SAME FORM, SAME EXPOSURE (#104). This is a relative water step against a relative bound, exactly as
-  // VolumeStepConverged above, so it inherits the same inability to tell "converged" from "stalled" on
-  // the semismooth active-set path. It has not been measured on this path -- the #104 reproduction uses
-  // the ordinary solve -- so this is a flagged risk rather than a finding. Whatever #104 decides about
-  // the FORM of the test above must be applied here too, or the two paths will disagree about what
-  // convergence means.
-  if (have_step && water_rel < uc->ar_stol) {  // true convergence
+  // SAME FORM, SO THE SAME GATE (#104). This is a relative water step against a relative bound, exactly
+  // as VolumeStepConverged above, and it inherited the same inability to tell "converged" from "stalled"
+  // on the semismooth active-set path. It carries the gate so the two paths cannot disagree about what
+  // convergence means. NOTE the gate is measured on the ORDINARY solve path, not this one -- applying it
+  // here is consistency, not a second measurement. ar_best_norm above is this phase's reference: it is
+  // the lowest residual seen, which is the right thing to compare against when restarts may have reset
+  // the iterate, and it is already maintained for the restart logic.
+  const bool ar_residual_has_come_down =
+      (uc->snes_fnorm0 <= 0.0) || (fnorm <= uc->snes_residual_gate * uc->snes_fnorm0);
+  if (have_step && water_rel < uc->ar_stol && ar_residual_has_come_down) {  // true convergence
     *reason          = SNES_CONVERGED_SNORM_RELATIVE;
     uc->ar_stop_kind = 1;
     return 0;

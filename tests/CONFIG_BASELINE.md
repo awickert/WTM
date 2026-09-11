@@ -22,6 +22,7 @@ reference here, because it is that suite's decision.
 |---|---|---|
 | `solver.tolerance` | `1e-8` | per-solve step tolerance; suites that probe convergence state their own |
 | `solver.max_iterations` | `10000` | a cap, not a target -- a run that reaches it has already failed |
+| `solver.convergence.residual_gate` | `1e-5` | #104: the water-step verdict is refused while the residual is above this x its initial value. Relative on purpose -- an absolute bound would not carry from a 96-cell fixture to 384k cells. MEASURED: over a 20-point dt sweep the arms that reached the converged answer exited at worst 5.59e-08, the ones that did not at best 2.12e-02 -- a window of 3.8e+05, so 1e-5 is log-centred rather than tuned. No suite varies it; the suites that vary a per-solve tolerance vary `water_volume_tol` |
 | `solver.anderson.restart.*` | off | the rho-driven restart loop; `tests/adaptive_restart` is the suite that turns it on |
 | `solver.smoothing.ksat_surface` | `0` | sharp; the smooth form exists for Jacobian FD checks, which state it |
 | `solver.smoothing.ksat_soilbottom` | `0` | as above |

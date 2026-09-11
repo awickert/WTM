@@ -144,6 +144,7 @@ struct Parameters {
   // exiting on a test the budget could not honour); `head` is the off-switch.
   bool   convergence_metric_head = false;
   double water_volume_tol        = 1e-8;
+  double residual_gate           = 1e-5;   // #104: the water-step verdict is refused above this x fnorm_0
 
   // output.trace: [dt|water_step|budget|fsm] -- PRINTING ONLY, never the answer.
   bool trace_dt = false, trace_water_step = false, trace_budget = false, trace_fsm = false;
