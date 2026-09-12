@@ -1,3 +1,4 @@
+#include <fmt/core.h>
 #include "transient_groundwater.hpp"
 #include "add_recharge.hpp"
 #include "tr_bdf2_coefficients.hpp"
@@ -2187,7 +2188,24 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
                   dt_now, est, est_int, est_cpl, user_context.dt_tol, factor, its, dt_accept ? 1 : 0,
                   est_n, est_cn);
     if (!dt_accept) {  // LARGE overshoot: reject + retry (state NOT committed)
-      user_context.deltat = dt_now * std::min(factor, 1.0);
+      // FAILURE PATH AT THE FLOOR -> ABORT, and do NOT consume another retry. Retrying the same step at
+      // a dt that cannot go lower repeats an identical failure until max_retries runs out, and then
+      // reports "ran out of retries" -- the symptom, not the cause. SUNDIALS makes this explicit: its
+      // tests read `(|h| <= hmin*ONEPSM) || (nef == maxnef)`, OR rather than AND, so the floor
+      // short-circuits the counter. MODFLOW 6 goes further and has no counter at all: DTMIN *is* the
+      // terminator. The (1 + sqrt(eps)) margin is PETSc's comparison form, there so an exact-equality
+      // miss cannot let the run slide a hair under the floor and grind anyway.
+      constexpr double FLOOR_MARGIN = 1.0 + 1.4901161193847656e-08;  // 1 + sqrt(DBL_EPSILON)
+      if (user_context.dtc_dt_min > 0.0 && dt_now <= user_context.dtc_dt_min * FLOOR_MARGIN)
+        throw std::runtime_error(fmt::format(
+            "adaptive dt: step REJECTED at the floor -- dt = {:g} s is at solver.time_step.dt_min = {:g} s "
+            "and cannot go lower, so retrying would repeat this failure until max_retries. The step error "
+            "{:g} exceeds solver.time_step.error_tol {:g} and shrinking cannot fix it. Either the tolerance "
+            "is tighter than this problem supports at any step size, or the local stability ceiling is below "
+            "the floor. Loosen error_tol, lower dt_min, or change the configuration -- do not raise "
+            "max_retries, which only delays this same message.",
+            dt_now, user_context.dtc_dt_min, est_int, user_context.dt_tol));
+      user_context.deltat = std::max(dt_now * std::min(factor, 1.0), user_context.dtc_dt_min);
       return -1;
     }
     // ACCEPT (a mild overshoot is tolerated): commit, remember this error for the PI term, size the next step.
@@ -2206,6 +2224,17 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
     if (its > user_context.dtc_easy_iters) factor = std::min(factor, 1.0);  // hard solve: hold, don't grow
     dt_next = dt_now * factor;
     if (user_context.dtc_dt_max > 0.0 && dt_next > user_context.dtc_dt_max) dt_next = user_context.dtc_dt_max;
+    // CONTROLLER PATH AT THE FLOOR -> CLAMP AND CONTINUE, accepting the error. Unanimous across every
+    // code that implements a floor: CVODE/ARKODE (`eta = SUNMAX(eta, hmin/|h|)`), MODFLOW 6
+    // (`if (delt < dtmin) delt = dtmin`), ParFlow, and PETSc (which force-ACCEPTS a step it would
+    // otherwise reject once h is at dt_min). Nothing has failed here -- the PI law is merely asking for
+    // a step we decline to take -- so stopping the run would be a harsher response than the situation
+    // warrants. The step runs at known-degraded accuracy instead, which is why the clamp is REPORTED
+    // below rather than applied silently.
+    if (user_context.dtc_dt_min > 0.0 && dt_next < user_context.dtc_dt_min) {
+      dt_next = user_context.dtc_dt_min;
+      user_context.dt_floor_clamped++;
+    }
     have_dt_next = true;
   }
 

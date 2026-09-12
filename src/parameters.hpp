@@ -184,6 +184,10 @@ struct Parameters {
   // would silently change one of them, so the was-it-set flag carries that distinction.
   double dtc_dt_max     = 0.0;
   bool   dtc_dt_max_set = false;
+  // solver.time_step.dt_min -- the FLOOR, seconds. See CreateSNES.cpp for the default and
+  // src/transient_groundwater.cpp for the two DIFFERENT things it does on the two paths.
+  double dtc_dt_min     = 0.0;
+  bool   dtc_dt_min_set = false;
 
   // Equilibrium stop: fraction of land cells allowed above eq_tol for the `frac` metric.
   double eq_frac = 0.001;

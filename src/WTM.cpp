@@ -768,6 +768,22 @@ void update(
     while (t < cycle_duration * (1.0 - 1e-9) && nsteps < 1000000) {
       const double remaining = cycle_duration - t;
       if (user_context.deltat > remaining) user_context.deltat = remaining;
+      // UNCONDITIONAL ROUNDOFF GUARD, deliberately independent of solver.time_step.dt_min. If dt has
+      // shrunk so far that adding it to the clock does not change the clock, the loop cannot advance and
+      // will spin forever making no progress. That is a correctness failure, not a tuning question, so it
+      // is not attached to a config key and cannot be switched off -- and it is the only thing standing
+      // between an unbounded shrink and an infinite loop when dt_min is 0. Hairer's own codes make the
+      // same check non-optional (dop853.f:588 and radau5.f:862 both abort on 0.1*|h| <= |x|*uround, with
+      // the documented return IDID=-3, "step size becomes too small"), as does ParFlow, which raises
+      // PARFLOW_ERROR("Time increment is too small; solver has failed") when t + dt == t within its
+      // TIME_EPSILON. CVODE is the outlier: it only WARNS here (MSGCV_HNIL), up to mxhnil times.
+      if (t + user_context.deltat == t)
+        throw std::runtime_error(fmt::format(
+            "adaptive dt: dt = {:g} s is too small to advance the clock at t = {:g} s -- t + dt == t in "
+            "double precision, so the run cannot make progress and would loop forever. The step size has "
+            "collapsed. Set solver.time_step.dt_min to stop the controller before it reaches this point, "
+            "and loosen solver.time_step.error_tol if the tolerance is unreachable at any step size.",
+            user_context.deltat, t));
       const double dt_taken   = user_context.deltat;
       const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       const double rech_snap  = arp.total_recharge_direct;    // roll back on a rejected step (non-converged
@@ -798,6 +814,16 @@ void update(
     }
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
                 nsteps, rejects, cycle_duration, params.report_steps);
+    // A floor-clamped step ran at UNKNOWN accuracy: the controller asked for something smaller and was
+    // refused. That has to be visible in the ordinary run output, not only under a trace flag -- ParFlow
+    // is the precedent, logging a per-step reason code for whatever constraint set dt. Silence here would
+    // let a run report a tolerance it did not actually meet.
+    if (user_context.dt_floor_clamped > 0)
+      PetscPrintf(PETSC_COMM_WORLD,
+                  "adaptive dt: %ld step(s) CLAMPED at solver.time_step.dt_min = %g s -- the controller "
+                  "asked for a smaller step and was refused, so those steps ran at accuracy LOOSER than "
+                  "solver.time_step.error_tol. Lower dt_min if that matters.\n",
+                  user_context.dt_floor_clamped, user_context.dtc_dt_min);
   } else if (user_context.use_newton_continuation) {
     // Newton pseudo-transient continuation (equilibrium): march report_steps ACCEPTED steps with a
     // Newton-iteration-controlled dt. Start deltat small so the storage term S/deltat keeps the

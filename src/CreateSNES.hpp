@@ -177,6 +177,23 @@ struct AppCtx {
   double dtc_grow                = 1.5;   // dt growth when a step converges EASILY (-wtm_dtc_grow)
   double dtc_shrink              = 0.25;  // dt shrink on a REJECTED (non-converged) step (-wtm_dtc_shrink)
   double dtc_dt_max              = 0.0;   // cap on deltat [s]; 0 => set from params in InitialiseSNES
+  // FLOOR on deltat [s]; 0 disables it. TWO DIFFERENT BEHAVIOURS, keyed on WHY dt is shrinking -- this
+  // split is the convention in every adaptive integrator that implements a floor at all (SUNDIALS
+  // CVODE/ARKODE/IDA, MODFLOW 6 ATS, PETSc TSAdapt, ParFlow):
+  //   CONTROLLER path -- the PI law merely PROPOSES something smaller: CLAMP to the floor, take the
+  //     step, accept the error. The run continues at known-degraded accuracy rather than stopping.
+  //   FAILURE path -- a step was REJECTED while already at the floor: ABORT IMMEDIATELY, without
+  //     consuming another retry. Clamping here would retry the identical step forever.
+  // The asymmetry is deliberate and unanimous: SUNDIALS tests `(|h| <= hmin*ONEPSM) || (nef == maxnef)`
+  // -- OR, not AND -- so a failure at the floor short-circuits the retry counter rather than exhausting
+  // it. MODFLOW 6 has no retry counter at all; DTMIN *is* its terminator. The point is the DIAGNOSIS:
+  // "rejected at the floor" names the cause, where "ran out of retries" names only the symptom.
+  double dtc_dt_min              = 0.0;
+  long   dt_floor_clamped        = 0;    // how many steps the floor CLAMPED (controller path). Reported
+                                         // at the end of a run: a floor-clamped step ran at degraded
+                                         // accuracy, and that must be visible without a verbose flag.
+                                         // ParFlow is the precedent -- it logs a per-step reason code
+                                         // for whatever constraint set dt.
   int    dtc_easy_iters          = 8;     // grow dt only if the step converged in <= this many Newton iters
                                           // (-wtm_dtc_easy_iters); otherwise hold dt (near the safe ceiling)
   int    dtc_max_retries         = 15;    // consecutive rejects before giving up (-wtm_dtc_max_retries)

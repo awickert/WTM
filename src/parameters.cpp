@@ -85,7 +85,7 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // Newton's dt_continuation ramp reads the same dials, so an `adaptive_`-prefixed home would
       // misdescribe them.
       {"solver.time_step", {"dt", "mode", "grow", "shrink", "grow_if_niter_leq", "max_retries", "norm",
-                               "dt_max", "error_tol"}},
+                               "dt_max", "dt_min", "error_tol"}},
       // solver.smoothing: widths that ROUND a kink in the coefficients. The two ksat_* default to 0
       // (sharp) and exist so a Jacobian finite-difference check has a smooth tangent; they are off in a
       // normal run. storativity_surface is different in kind -- 0.01 m, always on, sub-grid roughness --
@@ -413,6 +413,13 @@ Parameters::Parameters(const std::string& config_file) {
     refuse_auto(n, "solver.time_step.dt_max");
     dtc_dt_max = parse_time_seconds(n.as<std::string>(), "solver.time_step.dt_max");
     dtc_dt_max_set = true;
+  }
+  if (auto n = root["solver"]["time_step"]["dt_min"]) {
+    refuse_auto(n, "solver.time_step.dt_min");
+    dtc_dt_min = parse_time_seconds(n.as<std::string>(), "solver.time_step.dt_min");
+    dtc_dt_min_set = true;
+    if (dtc_dt_min < 0.0)
+      throw std::runtime_error("config: solver.time_step.dt_min must be >= 0 (0 disables the floor).");
   }
   if (auto n = root["evaporation"]["extinction_depth"]) extinction_depth = n.as<double>();
   if (auto n = root["evaporation"]["tapers"]["surface_transition"]) taper_surface_transition = n.as<bool>();

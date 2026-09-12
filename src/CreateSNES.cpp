@@ -302,6 +302,7 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     user_context.dtc_dt_max = 1000.0 * params.deltat;
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
+    if (params.dtc_dt_min_set) user_context.dtc_dt_min = params.dtc_dt_min;
     user_context.dtc_easy_iters  = params.dtc_easy_iters;
     user_context.dtc_max_retries = params.dtc_max_retries;
     PetscPrintf(PETSC_COMM_WORLD,
@@ -339,6 +340,17 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     user_context.dtc_shrink     = params.dtc_shrink;
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
+    // ...and solver.time_step.dt_min, the FLOOR. DEFAULT = 1e-5 x params.deltat, i.e. 1e-5 of the
+    // configured step. THIS VALUE IS A PROPOSAL, not a convention I found: no surveyed code ships a
+    // guessed default (SUNDIALS and PETSc disable it; MODFLOW 6 and ParFlow REQUIRE the user to state
+    // it). The 1e-5 is MODFLOW 6's own documented recommendation for DTMIN -- "a small value, such as
+    // 1.e-5" (utl-ats.dfn) -- read in model time units, and WTM's model time unit is the year, which
+    // its shipped deltat of 31536000 s states outright. On that default step the floor is ~315 s, five
+    // orders below any step the controller takes in practice, so it binds only on a run that is already
+    // walking dt down toward abort.
+    // NOT derived from dt_max, and not from the current time: no surveyed code does either.
+    user_context.dtc_dt_min = 1.0e-5 * params.deltat;
+    if (params.dtc_dt_min_set) user_context.dtc_dt_min = params.dtc_dt_min;
     user_context.dtc_easy_iters = params.dtc_easy_iters;
     // ...and max_retries with them. It was LEFT BEHIND when the other four were moved here: the adaptive
     // reject/retry loop reads dtc_max_retries on every rejected step (WTM.cpp:617), but the flag was
