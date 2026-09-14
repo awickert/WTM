@@ -62,6 +62,39 @@ parked until the model work is done.
 | **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. The v2 rework is **in `git stash stash@{0}`**, not in the tree — grepping `src/` for it finds nothing and reads as lost work. |
 | **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
 
+### Measured and NOT shipped: option A, a continuous PI law on the coupling error
+
+The adaptive controller reads `est_int` only. The FSM coupling error reaches it through ONE line —
+`if (est_cpl > dt_tol) factor = min(factor, 1.0)` — a binary gate in a controller that is otherwise
+fully continuous, and the conservative residue of `#63` removing `est_cpl` from the reject test.
+
+That gate looked worth replacing, because on `fsm_runoff_hi` `est_int` sits at **1.3e-06 .. 9.7e-05**
+against `dt_tol` 0.5 — four to five orders BELOW tolerance — so the PI law saturates `dtc_grow` every
+step and the factor actually taken is only ever **1.0 or 1.5, nothing between**. Step size was being
+decided entirely by the gate, while `est_cpl` (0 .. 2.82, up to 5.6× tolerance) carried all the dynamic
+range and was allowed to say only "hold".
+
+Replacing it works *mechanically*: factors become continuous (0.808, 0.536, 1.260, 1.002), `dt` responds
+to the coupling error and recovers when it falls, and it never pins at the floor. **But it does not fix
+the accuracy problem**, measured against `#64`'s own dt-refined ground truth (fixed `dt` = 1/1000 yr):
+
+| fixture | arm | max \|dV\| (m) | rms (m) | cells>1cm |
+|---|---|---|---|---|
+| `transient` | before (binary cap) | 2.9632e+00 | 2.1729e-01 | 90 of 256 |
+| `transient` | after (continuous PI) | 2.9630e+00 | **2.1740e-01** | 90 of 256 |
+| `fsm_runoff_hi` | before | 4.0063e-01 | 3.5011e-02 | 4 of 256 |
+| `fsm_runoff_hi` | after | 3.9361e-01 | 3.3938e-02 | 4 of 256 |
+
+0.007% better in max and 0.05% WORSE in rms on the widespread case; 1.8% / 3.1% better on the localised
+one. And it **breaks 10 golden checks**, so shipping it costs a full re-gold for no measured gain.
+
+Consistent with `#64`'s own diagnosis, and that is the lesson: the splitting error is delivered O(1) per
+coupling event and comes down only under **uniformly** smaller steps. A shrinks `dt` when `est_cpl` is
+large *at that moment*; it never makes the whole ladder finer, so it cannot reach the regime that
+converges.
+
+NOT SHIPPED. The patch is in `git stash` — "#64 A: continuous PI on est_cpl". Do not re-derive it.
+
 ### B — THE HARNESS, set aside
 
 Real, and none of it changes an answer. `#84` tolerance provenance (now partly mechanised by
