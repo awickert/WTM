@@ -146,8 +146,8 @@ Two of these were mis-filed here, one has grown, and three are confirmed exactly
 
 | # | verified state |
 |---|---|
-| **58** | **NOT harness – this is the adaptive CONTROLLER, and its open part looks SUPERSEDED.** Its premise (`n_in = 0` → `est = 0.0` → grow maximally) has no code path left: `transient_groundwater.cpp:2086` now reads `est_n = gn + gcn` ("EVERY land cell informs the estimate"), and `:2189` caps growth when `est_cpl > dt_tol`. That IS this item's own safe-form proposal. Its strong form (reject on it) is what `#63` measured and refuted – `est_cpl` is O(1) in `dt`. Verified by reading the code, not running it. |
-| **59** | **NOT harness either, and the same supersession.** Its measured negative – FSM activity cannot predict the error, because exposure is a property of the trajectory *ahead* – stands permanently and should not be re-derived. Its surviving item (b) is #58's trigger, and has no condition left to fire on. |
+| **58** | **CLOSED 2026-09-17 on a MEASUREMENT.** See the run below. Its rate-vs-exposure finding stands as a permanent record. |
+| **59** | **CLOSED 2026-09-17.** Item (b) is measured away by the same run. Item (a) – FSM activity cannot predict the error, because exposure is a property of the trajectory *ahead* – stands permanently and must not be rebuilt. |
 | **77** | Confirmed, and its premise is now the shipped default: `active_set` is the default collector (`resolve_defaults.cpp:31`) and `CONFIG_BASELINE.md:29` already cites this measurement. A record, no action claimed. |
 | **84** | **Grown.** Recounted mechanically (`grep -rnoE '\$\{[A-Z_]*TOL[A-Z_]*:-[^}]*\}' tests/*/run.sh`): **30 across 20 suites**, up from 24 across 19. And "partly mechanised by `tol_margin.py`" was optimistic – that file is referenced by **nothing**, and `run_all.sh` does not call it. |
 | **85** | Confirmed verbatim. All 7 references still open with `shape=` and nothing else: no commit, no config, no date, no reason. |
@@ -155,6 +155,26 @@ Two of these were mis-filed here, one has grown, and three are confirmed exactly
 | **98** | Confirmed: `a_as` and `c_as` still resolve identically, `ARM_TOL=1e-5` on both. NEW: `a_as`'s label still prints "[loose tol, see note]", promising a distinction it no longer has. |
 
 `#50`'s doc half also sits here.
+
+#### The decisive run that closed `#58` and `#59`
+
+Clean binary at `1507e28`; `tests/golden` transient_test, `continuous` / `active_set` / `tr-bdf2`,
+`mode: adaptive`, `error_tol 0.1`, `trace.dt true`, 8 yr. `gn = nest - ncpl` is the interior count that
+informs `est_int` — the old `n_in`.
+
+```
+ #     dt(yr)          est         eint         ecpl   factor   nest   ncpl     gn  acc
+ 1     0.9993   1.8255e-02   1.8255e-02   0.0000e+00    1.499    196      0    196    1
+ 2     0.9993   2.8272e-01   0.0000e+00   2.8272e-01    1.000    196    196      0    1
+ 3     0.9993   5.1343e-02   5.1343e-02   9.0904e-04    1.099    196     16    180    1
+ 9     0.1249   1.7401e-03   1.7401e-03   1.3347e-05    1.500    196     32    164    1
+```
+
+**Step 2 is the blind step** — all 196 land cells FSM-touched, so `est_int` has no data. It used to
+report `est = 0.0` and grow maximally. It now reports `est_cpl = 2.83e-01` against `tol = 0.1` and holds
+at `factor = 1.000`, the only step in the run that does not grow. No step reports `est == 0` while the
+estimate is valid. The step is still ACCEPTED, correctly: the coupling part withholds growth and never
+forces a shrink (`#63`).
 
 ### The shipped example is BROKEN — `#108`, found 2026-09-17
 
