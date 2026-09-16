@@ -192,10 +192,17 @@ Declined, with the reasoning recorded so it is not re-opened blind:
 
 ## Known repo-hygiene items found by the sweep
 
-- `tests/lib.sh` **contradicts itself**: line 171 says three suites are exempt and names
-  `runoff_collector`; line 184 lists two. The variable is right, the prose is stale.
-- `tests/lib.sh:155-164` still carries the **pre-#79 ratchet paragraph** ("494 of 494 runs currently
-  leave at least one key implicit") directly above the paragraph saying the rule is unconditional.
+- ~~`tests/lib.sh` **contradicts itself**: line 171 says three suites are exempt and names
+  `runoff_collector`; line 184 lists two.~~ **HANDLED `3956ad0`.** The prose now says TWO, matching
+  `WTM_DECLARED_EXEMPT`, and says in the same breath that `runoff_collector` used to be the third and
+  why it stopped being one (its `unset` arm became declarable via the OPTIONAL marker, #92). Written
+  down rather than silently corrected, because a list and its description drifting apart is the exact
+  defect class that file exists to prevent.
+- ~~`tests/lib.sh:155-164` still carries the **pre-#79 ratchet paragraph** ("494 of 494 runs currently
+  leave at least one key implicit") directly above the paragraph saying the rule is unconditional.~~
+  **HANDLED `3956ad0`.** Removed; `grep -n 494 tests/lib.sh` now returns nothing. What stands in its
+  place states the rule unconditionally and explains that the opt-in list was migration scaffolding,
+  retired once all 39 suites were materialised (#83).
 - ~~`#52`, `#58`, `#59` cite `scratchpad/*.patch` reproduction routes.~~ **HANDLED 2026-09-16.** The
   directory is not in the repo and 3 of 4 patches no longer apply, so the routes were never usable.
   Rather than delete the references, each task now says so at the TOP and names what IS reproducible
