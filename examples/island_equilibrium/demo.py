@@ -28,12 +28,19 @@ import sys
 
 import numpy as np
 import rasterio
-from rasterio.transform import from_bounds
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WTM = os.path.abspath(os.path.join(HERE, "..", "..", "build", "wtm.x"))
-# 2nd-order implicit method. -wtm_bdf2_on_V drives the semi-implicit Picard/BDF2-on-V path.
-SOLVER_FLAGS = ["-wtm_bdf2_on_V", "-snes_stol", "1e-8"]
+
+# The ONE shared geotransform writer (tests/wtm_testgrid.py). WTM derives its grid geometry -- degree
+# spacing, southern-edge latitude, and the cos-latitude cell-size scaling -- from each input raster's
+# GDAL geotransform (#124). This demo used to stamp `from_bounds(0, 0, W, H, W, H)`, i.e. ONE DEGREE
+# PER CELL starting at the equator, from the era when WTM ignored georeferencing entirely. That is
+# 111 km cells against the 11 km (spectral) and 0.9 km (corsica) the demo intends, so the run was
+# solving a different problem than the one it describes. Routed through the shared helper rather than
+# hand-rolled here, for the reason that file gives: a hand-rolled transform drifts from its grid.
+sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..", "tests")))
+from wtm_testgrid import write_tif  # noqa: E402
 
 
 def _fields(H, W, topo, mask):
@@ -53,14 +60,12 @@ def _fields(H, W, topo, mask):
     }
 
 
-def _write(d, region, H, W, topo, mask):
-    tr = from_bounds(0, 0, W, H, W, H)
+def _write(d, region, H, W, topo, mask, cpd, south):
+    """Write the input rasters with the geotransform the demo actually intends (cpd, south)."""
     for name, (arr, dt) in _fields(H, W, topo, mask).items():
         # ksat/porosity are time-independent (no _t0); the rest carry the time tag.
         fn = f"{region}_{name}.tif" if name in ("horizontal_ksat", "porosity") else f"{region}_t0_{name}.tif"
-        with rasterio.open(os.path.join(d, fn), "w", driver="GTiff", height=H, width=W, count=1,
-                           dtype=dt, crs="EPSG:4326", transform=tr) as o:
-            o.write(np.asarray(arr).astype(dt), 1)
+        write_tif(os.path.join(d, fn), np.asarray(arr), cpd, south, dtype=dt)
 
 
 def make_spectral(d, N=96):
@@ -80,7 +85,7 @@ def make_spectral(d, N=96):
     mask = (topo > 0.0).astype("float32")
     mask[0] = mask[-1] = mask[:, 0] = mask[:, -1] = 0                    # ocean edge ring
     topo = np.where(mask > 0, np.maximum(topo, 0.5), 0.0).astype("float32")
-    _write(d, "spectral", N, N, topo, mask)
+    _write(d, "spectral", N, N, topo, mask, 10, -30.0)
     return "spectral", 10, -30.0                                        # region, cells/deg, southern_edge
 
 
@@ -91,7 +96,7 @@ def make_corsica(d):
     mask = (dem > 0).astype("float32")
     mask[0] = mask[-1] = mask[:, 0] = mask[:, -1] = 0                    # force ocean boundary
     topo = np.where(mask > 0, np.maximum(dem, 0.5), 0.0).astype("float32")
-    _write(d, "corsica", H, W, topo, mask)
+    _write(d, "corsica", H, W, topo, mask, 120, 41.2)
     return "corsica", 120, 41.2                                         # GEBCO 30" ; Corsica latitude
 
 
