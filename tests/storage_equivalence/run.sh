@@ -58,7 +58,9 @@
 #     collection.method: off         mounds to +65.7 m and is still filling at the end of the run
 #
 # THIS MATTERS BEYOND THE TEST. The model's own refusal message for secant x active_set says "NOTE the two
-# forms are mathematically identical -- S is the exact secant, so S*dh == dV (tests/storage_equivalence)".
+# forms are mathematically identical BY CONSTRUCTION -- S is DEFINED as the secant, so S*dh == dV is an
+# identity". It no longer cites this suite as authority: the algebra is exact, the numerics across the
+# surface jump are what this suite has never verified.
 # A runtime message cites this suite as its authority for a claim this suite has never checked in the
 # regime that matters.
 set -uo pipefail

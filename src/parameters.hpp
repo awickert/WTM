@@ -75,7 +75,9 @@ struct Parameters {
 
   // dev.storage_form: which ASSEMBLY the backward-Euler storage term uses -- `volume` (exact dV, RHS b=0)
   // or `secant` (S*dh, RHS b=h^n). NOT an accuracy choice: S is the exact secant, so the two are the same
-  // equation and tests/storage_equivalence pins them bit-identical. DEFAULT volume, which is what the
+  // equation BY ALGEBRA. This used to add "and tests/storage_equivalence pins them bit-identical"; that
+  // suite's pass was vacuous at the cell size it ran (#34), and where cells actually sit at the surface
+  // the two differ by 2.4e-03 m of water (#102). DEFAULT volume, which is what the
   // active-set constraint requires; `secant` exists so that equivalence test has something to compare.
   // Since the default is volume, `false` here can only mean an EXPLICIT dev.storage_form: secant.
   bool volume_storage = true;

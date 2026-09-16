@@ -1519,7 +1519,16 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
   // dev.storage_form -- which ASSEMBLY the backward-Euler storage term uses. NOT an accuracy choice: the
   // two forms are the SAME EQUATION, because S is the EXACT SECANT
   // S = (V(w^{n+1}) - V(w^n)) / (w^{n+1} - w^n), so S·Δh ≡ ΔV identically -- even across the surface,
-  // where dV/dh jumps porosity→~1. tests/storage_equivalence pins that at max|Δwtd| = 0.000e+00 m.
+  // where dV/dh jumps porosity→~1. That is ALGEBRA, and it holds whatever the code does.
+  //
+  // WHAT IS NOT ESTABLISHED is that the CODE's discrete S reproduces it across that jump. This comment
+  // used to cite "tests/storage_equivalence pins that at max|Δwtd| = 0.000e+00 m". That zero was
+  // VACUOUS: the suite's fixture carried the placeholder geotransform, cells were ~111 km, the plateau
+  // saturated, and BOTH compared fields were identically zero -- a pass with nothing in it (#34). Live,
+  // at a cell size that actually puts cells AT the surface, the disagreement is 2.4e-03 m of water, and
+  // it is not convergence noise: 2.39e-03 / 4.46e-03 / 2.47e-03 at solver tol 1e-8 / 1e-10 / 1e-12.
+  // Held as a guarded xfail; see task #102. The algebra is exact, the numerics are unverified, and the
+  // difference between those two statements is the whole of #102.
   //
   // THIS COMMENT PREVIOUSLY CLAIMED THE OPPOSITE, with numbers ("at a surface CROSSING the secant
   // S·Δh ≠ ΔV ... Esquibel: mean ~0.11 m, tails ~19 m"). That claim is RETRACTED -- see
@@ -1650,9 +1659,13 @@ int update(Parameters& params, ArrayPack& arp, AppCtx& user_context, DMDA_Array_
         "The semismooth exfiltration constraint is enforced inside the residual and needs a b=0 residual "
         "path; the secant form puts the previous-step storage in the RHS (b = h^n) instead, so the "
         "constraint would not be enforced. Use dev.storage_form: volume (the default), or a different "
-        "surface_water.collection.method. NOTE the two forms are mathematically identical -- S is the exact "
-        "secant, so S*dh == dV (tests/storage_equivalence) -- so this is a constraint on the ASSEMBLY, not "
-        "a difference in the answer.");
+        "surface_water.collection.method. NOTE the two forms are mathematically identical BY CONSTRUCTION: "
+        "S is defined as the secant (V(w1)-V(w0))/(w1-w0), so S*dh == dV is an identity, not a claim about "
+        "this model. So this is a constraint on the ASSEMBLY, not a difference in the answer. It used to "
+        "cite tests/storage_equivalence as authority; that suite has never checked the identity in the "
+        "regime where it is in doubt -- across the surface, where dV/dh jumps from porosity to ~1 -- and "
+        "the largest measured disagreement there is 2.4e-03 m of water (task #102). The algebra is exact; "
+        "what is unverified is whether the code's discrete S reproduces it across that jump.");
   // Active-set IS the exfiltration enforcement, so it SUPERSEDES the runoff_collector removals -- otherwise the
   // in-residual siphon (implicit) or post-solve clamp (explicit) stack on top of the pin and the result is no
   // longer enforcement-independent. Disable all collector removals when active-set is on; the pinned-cell
