@@ -148,6 +148,12 @@ struct Parameters {
 
   // output.trace: [dt|water_step|budget|fsm] -- PRINTING ONLY, never the answer.
   bool trace_dt = false, trace_water_step = false, trace_budget = false, trace_fsm = false;
+  // output.extra_rasters.post_groundwater -- write the table AFTER the groundwater solve and BEFORE
+  // FillSpillMerge, beside the ordinary (post-FSM) snapshot. The two are different quantities and the
+  // names matter: an error measured against the ordinary snapshot is the WTM ERROR (the model's answer),
+  // one measured against this is the POST-GROUNDWATER ERROR (the solve's answer). Comparing one to the
+  // other manufactures a difference that is not there.
+  bool write_post_groundwater = false;
 
   // surface_water.routing. TRUE (continuous) is the DEFAULT, decided in #43 on the physical
   // argument: FSM's per-cell volume change is delivered to the next step's source term rather than

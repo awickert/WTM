@@ -54,6 +54,20 @@ static std::string snapshot_filename(const Parameters& params) {
   return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
 }
 
+// THE POST-GROUNDWATER SNAPSHOT, and the reason it is a SEPARATE FILE rather than a second band or a
+// replacement. It carries the table after the groundwater solve and before FillSpillMerge, matched
+// step-for-step with the ordinary snapshot beside it. The two answer different questions and must never
+// be mistaken for one another:
+//     <prefix><n>_<T>yr.tif          the model's answer   -> an error against it is the WTM ERROR
+//     <prefix>postgw_<n>_<T>yr.tif   the solve's answer   -> ... the POST-GROUNDWATER ERROR
+// The `postgw_` infix sits AFTER the user's prefix and before the index, so a glob for the ordinary
+// snapshots (`<prefix>0*.tif`) cannot match it -- the two sets stay separable by pattern alone, which is
+// what stops a test picking up the wrong one and reporting a plausible number.
+static std::string post_groundwater_filename(const Parameters& params) {
+  const double years = params.cycles_done * params.report_seconds / seconds_in_a_year;
+  return fmt::format("{}postgw_{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
+}
+
 std::string get_current_time_and_date_as_str() {
   const auto now       = std::chrono::system_clock::now();
   const auto in_time_t = std::chrono::system_clock::to_time_t(now);
@@ -675,6 +689,13 @@ void update(
     if (rank == 0) {
       arp.wtd.setNoData(-9999);
       arp.wtd.saveGDAL(snapshot_filename(params));
+      // ...and the post-groundwater table beside it, if asked for. arp.wtd_mid still holds the LAST
+      // STEP's pre-FSM table at this point -- it is overwritten a few lines below -- so the pair written
+      // here is matched, not a step apart.
+      if (params.write_post_groundwater) {
+        arp.wtd_mid.setNoData(-9999);
+        arp.wtd_mid.saveGDAL(post_groundwater_filename(params));
+      }
     }
   }
 
@@ -1132,6 +1153,11 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   if (rank == 0) {
     arp.wtd.setNoData(-9999);
     arp.wtd.saveGDAL(snapshot_filename(params));
+    // The final answer's post-groundwater counterpart. Same pairing as the per-cycle site above.
+    if (params.write_post_groundwater) {
+      arp.wtd_mid.setNoData(-9999);
+      arp.wtd_mid.saveGDAL(post_groundwater_filename(params));
+    }
   }
 
   textfile.close();
@@ -1566,6 +1592,8 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
     f << "    budget: "     << (uc.budget_trace   ? "true" : "false") << "\n";
     f << "    fsm: "        << (uc.fsm_trace      ? "true" : "false") << "\n";
   }
+  f << "  extra_rasters:\n";
+  f << "    post_groundwater: " << (params.write_post_groundwater ? "true" : "false") << "\n";
 
   f << "\nboundaries:\n";
   f << "  land: " << (params.land_boundary_dirichlet ? "dirichlet_sea_level" : "neumann_toposlope") << "\n";

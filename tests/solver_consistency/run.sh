@@ -51,7 +51,8 @@ emit() { # $1 stem, $2 solver.method, $3 time_integration, $4 time_step.mode, $5
   local ti="${3:?emit needs a time_integration: it follows the method, so name it}"
   local sm="${4:?emit needs a time_step.mode: newton requires ramp}"
   local cm="${5:?emit needs a convergence.metric}"
-  local tr="${6:?emit needs an output.trace value, e.g. [] or [water_step]}"
+  local tr="${6:?emit needs a value for output.trace.water_step -- true or false, named per-arm because
+                   two arms turn the per-iteration trace ON and the rest leave it off}"
   local col="${7:?emit needs a collection.method: active_set is refused on Picard}"
   # THE RAMP ARM DIFFERS STRUCTURALLY, not just in values: under time_step.mode: ramp the model
   # records solver.newton.dt0 and solver.time_step.dt_max, records NO step norm, and resolves a
@@ -68,7 +69,7 @@ emit() { # $1 stem, $2 solver.method, $3 time_integration, $4 time_step.mode, $5
       -e "s|^  time_integration: tr-bdf2|  time_integration: $ti|" \
       -e "s|^    mode: adaptive|    mode: $sm|" \
       -e "s|^    metric: volume|    metric: $cm|" \
-      -e "s|^  trace: \[\]|  trace: $tr|" \
+      -e "s|^    water_step: false|    water_step: $tr|" \
       -e "s|^    method: active_set|    method: $col|" \
       "${ramp[@]}" config.yaml > "$WORK/$1.yaml"
 
@@ -81,9 +82,9 @@ emit() { # $1 stem, $2 solver.method, $3 time_integration, $4 time_step.mode, $5
 # three within ~1e-4 wtd, well inside the 1e-3 agreement tol. (Converge tighter than you compare.)
 # eq_metric/eq_tol now travel in the CONFIG (run.equilibrium_stop.*), so BB is empty.
 BB=""
-emit anderson anderson tr-bdf2        adaptive volume "[]" active_set
-emit picard   picard   backward-euler adaptive volume "[]" explicit
-emit newton   newton   backward-euler ramp     volume "[]" active_set
+emit anderson anderson tr-bdf2        adaptive volume false active_set
+emit picard   picard   backward-euler adaptive volume false explicit
+emit newton   newton   backward-euler ramp     volume false active_set
 # THE ORACLE IS ONLY AN ORACLE IF THE THREE SOLVERS ARE ACTUALLY DIFFERENT. This suite's whole claim
 # is that two matrix-based solvers independently corroborate the matrix-free one -- so if `picard`
 # silently downgraded to anderson (which the model DOES do in some combinations, and announces with a
@@ -107,7 +108,7 @@ run newton newton
 # FOURTH ARM: the same Anderson solve with the volume-step DIAGNOSTIC registered
 # (-wtm_snes_volume_conv, not _govern). Three things are asserted below, and the fixture is the reason
 # they can be: it is gentle and purely SUBSURFACE, so every cell sits on the porosity branch of V(wtd).
-emit volconv anderson tr-bdf2 adaptive volume "[water_step]" active_set
+emit volconv anderson tr-bdf2 adaptive volume true  active_set
 run volconv anderson
 
 # FIFTH ARM: the same solve judged in HEAD (solver.convergence.metric: head) instead of water. Water is
@@ -116,7 +117,7 @@ run volconv anderson
 # arm a second copy of `anderson` and the assertion below vacuous.
 # A convergence criterion decides WHEN a solve stops, never WHERE it converges, so both metrics must land
 # on the same equilibrium. That is the whole claim, and it is what makes the default safe to change.
-emit volgov  anderson tr-bdf2 adaptive head   "[water_step]" active_set
+emit volgov  anderson tr-bdf2 adaptive head   true  active_set
 run volgov anderson
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)

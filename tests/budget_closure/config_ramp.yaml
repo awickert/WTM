@@ -108,6 +108,11 @@ io:
 output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
+  extra_rasters:            # additional rasters beside the water table. Same map shape as
+                            # trace. The ordinary snapshot is the model's answer (an error
+                            # against it is the WTM ERROR); post_groundwater is the solve's
+                            # answer before FillSpillMerge (the POST-GROUNDWATER ERROR).
+    post_groundwater: false
   trace:
     dt: false
     water_step: false

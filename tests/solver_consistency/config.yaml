@@ -99,7 +99,12 @@ io:
   time_start: 'ta'
   time_end: 'tb'
 output:
-  trace:   # PER-ARM: two arms request [water_step] to inspect the per-step water trace
+  extra_rasters:            # additional rasters beside the water table. Same map shape as
+                            # trace. The ordinary snapshot is the model's answer (an error
+                            # against it is the WTM ERROR); post_groundwater is the solve's
+                            # answer before FillSpillMerge (the POST-GROUNDWATER ERROR).
+    post_groundwater: false
+  trace:   # PER-ARM: two arms set water_step: true to inspect the per-step water trace
     dt: false
     water_step: false
     budget: false

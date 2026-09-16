@@ -383,6 +383,21 @@ Parameters::Parameters(const std::string& config_file) {
       if (k == "fsm")        trace_fsm        = on;
     }
   }
+  // output.extra_rasters -- same MAP shape as output.trace, and for the same reason: the raster names
+  // ship in the config rather than having to be known. Adding one here is a new entry in the map and a
+  // new line in the schema dictionary, not a new key.
+  if (auto er = root["output"]["extra_rasters"]) {
+    if (!er.IsMap())
+      throw std::runtime_error(
+          "config: output.extra_rasters must be a map of raster -> true|false, e.g.\n"
+          "  extra_rasters:\n    post_groundwater: true");
+    for (const auto& kv : er) {
+      const std::string k = require_enum(kv.first.as<std::string>(), "output.extra_rasters",
+                                         {"post_groundwater"});
+      if (k == "post_groundwater") write_post_groundwater = kv.second.as<bool>();
+    }
+  }
+
   // surface_water.routing: continuous | impulse | off -- ONE key for whether FillSpillMerge routes
   // above-ground water AND, when it does, how its result reaches the groundwater. `off` is a real state
   // (nothing is routed), not an absence, which is what lets an FSM-off run RECORD what it did instead of
