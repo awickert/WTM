@@ -24,53 +24,8 @@ configs built through `tests/emit_config.sh`).
 
 ### Known limitations
 
-Four limits measured during this work. All are properties of the model as it stands rather than
-defects to be worked around. The first three all bear on the same trap: with lakes and rivers on,
-refining the time step does not buy what it looks like it should.
-
-- **Adaptive stepping buys speed, not accuracy, and it stops improving well short of the converged
-  answer.** Adaptive stepping chooses each step as it goes. Use it to get a usable answer cheaply. Do
-  not use it to get a precise one, and do not assume a smaller starting step will make it precise.
-
-  With lakes and rivers on (FillSpillMerge), the answer settles at a level the run cannot improve on,
-  no matter how small the starting step. Measured on the `transient` test case, 8 simulated years, and
-  reported as the largest difference in water depth from a reference run at a step of 1/1000 yr:
-
-  | starting step | fixed stepping | | adaptive stepping | |
-  |---|---|---|---|---|
-  | | steps | largest difference | steps | largest difference |
-  | 1 yr | 8 | 2.90 m | 6 | 2.96 m |
-  | 1/8 yr | 64 | 1.31 m | 13 | 1.25 m |
-  | 1/32 yr | 256 | 0.96 m | 17 | 1.04 m |
-  | 1/128 yr | 1024 | 0.70 m | 19 | 0.92 m |
-
-  Read across the rows and adaptive stepping is a bargain: it reaches about 1 m of agreement in
-  **17 steps** where fixed stepping needs **256**. Read down the adaptive column and it stalls: making
-  the starting step 128 times smaller moves the answer only from 2.96 m to 0.92 m, and costs three extra
-  steps. Fixed stepping is still improving at the bottom of the table.
-
-  The reason is that the step size adapts to how fast the water table itself is moving, and that is not
-  what limits the accuracy here. The accuracy is limited by the water handed over from the lake-and-river
-  routing, which arrives in a few large amounts whatever the step size, so the run cannot see the thing
-  that is actually costing it accuracy.
-
-  Two consequences for anyone tuning a run:
-
-  1. **`solver.time_step.error_tol` does not control this.** It governs the part of the error the run
-     can see, which here is thousands of times smaller than the part it cannot.
-  2. **`solver.time_step.dt_max` does not control it either.** Holding the starting step at 1/128 yr and
-     varying only the ceiling, the answer stays between 0.88 m and 0.93 m while the work rises from
-     19 steps to 259 - nearly fourteen times the cost for no gain. Only pulling the ceiling all the way
-     down to the starting step improves the answer, and that is fixed stepping by another name.
-
-  **So if you need a converged answer, use fixed stepping with a small step and expect to pay for it:**
-  going from 0.92 m to 0.70 m on this case costs 54 times the steps. If you need a reasonable answer at
-  reasonable cost, which is the usual case, adaptive stepping is the better choice and its remaining
-  disagreement is the price.
-
-  Measured on one test case. See `benchmark/n64_adaptive_yardstick/` for the full tables, and for two
-  things this measurement does NOT establish: wall-clock speed, which this case is too small to time
-  meaningfully, and whether adaptive stepping survives runs that fixed stepping cannot finish.
+Three limits measured during this work. All are properties of the model as it stands rather than
+defects to be worked around, and the first two can invalidate a naive dt-refinement argument.
 
 - **With FillSpillMerge on, first-order operator splitting caps the whole scheme at order 1**,
   regardless of integrator. Measured by solution convergence at fixed model time: TR-BDF2 gives
