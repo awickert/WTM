@@ -969,6 +969,60 @@ void update(
     user_context.last_cycle_fracabove = (gn > 0) ? (double)gabove / (double)gn : 0.0;
     user_context.last_cycle_dw_water  = gvmax;
     user_context.last_cycle_rms_water = (gn > 0) ? std::sqrt(gvsq / (double)gn) : 0.0;
+    // THE SERIAL PATH RECOMPUTES ALL OF THIS FROM POST-FSM STATE, and overwrites what the loop above
+    // produced. #106: the loop reads `starting_wtd`, and on this path `starting_wtd` never receives the
+    // post-FSM table -- the scatter that delivers it is gated on `distribute_recharge` (see the
+    // `else if (distribute_recharge)` guard around scatter_into_owned, far above). The post-FSM values
+    // arrive at the TOP of the next cycle, via the wholesale re-load, which is one cycle too late for a
+    // metric evaluated at the end of this one. So the loop above compares two PRE-FSM states: a real
+    // cycle-to-cycle change, but between states that do not physically exist.
+    //
+    // That matters because this metric TERMINATES the run. It does not describe the answer, it selects
+    // which state becomes the answer. Measured on tests/serial_recharge, max |S*dwtd| over land:
+    //     cycle 0   pre-FSM 4.996254e+00   post-FSM 7.587996e+00
+    //     cycle 1   pre-FSM 4.985729e+00   post-FSM 4.547693e+00
+    // For any eq_tol between 4.548 and 4.986 the two disagree about whether to stop AT ALL, not merely
+    // by how much.
+    //
+    // NO NEW STATE IS NEEDED. arp.wtd holds THIS cycle's post-FSM table (the coupler has already run for
+    // the cycle's last step); arp.wtd_old holds the PREVIOUS cycle's, snapshotted from arp.wtd at the top
+    // of update() before the solve. Both rank-0, both post-FSM. This is the same pair irf.cpp already
+    // differences for the run-log change columns.
+    //
+    // Deliberately NOT done by scattering arp.wtd into starting_wtd: that carrier feeds the next solve,
+    // and writing it earlier than today would also newly apply the cross-rank-drift reset documented at
+    // the scatter site to this path. Recomputing a diagnostic cannot perturb the solve; moving the
+    // carrier can.
+    if (!distribute_recharge) {
+      double vmax = 0.0, vsq = 0.0, hmax = 0.0, hsq = 0.0;
+      long   ncell = 0, nabove = 0;
+      if (mpi_rank == 0) {
+        for (int y = 0; y < params.ncells_y; y++)
+          for (int x = 0; x < params.ncells_x; x++) {
+            if (arp.land_mask(x, y) == 0.f) continue;          // ocean cells are pinned; they say nothing
+            const double now  = arp.wtd(x, y);
+            const double then = arp.wtd_old(x, y);
+            const double d    = std::abs(now - then);
+            const double dv   = d * updateEffectiveStorativity(then, now, arp.porosity(x, y));
+            hmax = std::max(hmax, d);   hsq += d * d;
+            vmax = std::max(vmax, dv);  vsq += dv * dv;
+            ncell++;
+            if (user_context.eq_tol > 0.0 && dv > user_context.eq_tol) nabove++;
+          }
+      }
+      // Rank 0 owns the full grid on this path, so BROADCAST rather than reduce -- the other ranks
+      // contributed nothing and must not add their stale partials.
+      double packed[4] = {hmax, hsq, vmax, vsq};
+      long   counts[2] = {ncell, nabove};
+      MPI_Bcast(packed, 4, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+      MPI_Bcast(counts, 2, MPI_LONG, 0, PETSC_COMM_WORLD);
+      user_context.last_cycle_dw        = packed[0];
+      user_context.last_cycle_rms       = (counts[0] > 0) ? std::sqrt(packed[1] / (double)counts[0]) : 0.0;
+      user_context.last_cycle_dw_water  = packed[2];
+      user_context.last_cycle_rms_water = (counts[0] > 0) ? std::sqrt(packed[3] / (double)counts[0]) : 0.0;
+      user_context.last_cycle_fracabove = (counts[0] > 0) ? (double)counts[1] / (double)counts[0] : 0.0;
+    }
+
     // ...and hand them to PrintValues, which only receives params. Set HERE, six lines before the call,
     // so the log row carries THIS cycle's change rather than the previous one.
     params.last_cycle_dw_volume  = user_context.last_cycle_dw_water;
