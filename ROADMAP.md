@@ -172,8 +172,12 @@ Declined, with the reasoning recorded so it is not re-opened blind:
   `runoff_collector`; line 184 lists two. The variable is right, the prose is stale.
 - `tests/lib.sh:155-164` still carries the **pre-#79 ratchet paragraph** ("494 of 494 runs currently
   leave at least one key implicit") directly above the paragraph saying the rule is unconditional.
-- `#52`, `#58`, `#59` cite `scratchpad/*.patch` reproduction routes. **That directory is not in the
-  repo**, and 3 of 4 patches no longer apply — those routes are unusable by the next session.
+- ~~`#52`, `#58`, `#59` cite `scratchpad/*.patch` reproduction routes.~~ **HANDLED 2026-09-16.** The
+  directory is not in the repo and 3 of 4 patches no longer apply, so the routes were never usable.
+  Rather than delete the references, each task now says so at the TOP and names what IS reproducible
+  (for `#58`: `BDF2_ADAPTIVE_DESIGN.md` §3.5 at commit `5520e67`, plus the N-sweep from the fixture named
+  there), with the patch list demoted to a historical record explicitly marked do-not-use. Deleting them
+  would have hidden that the work happened; leaving them as instructions was worse.
 
 ## Standing
 
