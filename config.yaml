@@ -203,7 +203,14 @@ solver:
                                # collection.method: implicit (an error controller cannot drive it --
                                # its per-step error GROWS as dt shrinks), `adaptive` otherwise. The run
                                # prints what it chose and full_config.yaml records it.
-                               #   adaptive  error-controlled, clamped to the report span
+                               #   adaptive  error-controlled, clamped to the report span. INTENDED to
+                               #             get through runs a fixed step cannot -- it shrinks where
+                               #             the problem is hard and grows where it is easy, so a stiff
+                               #             stretch that would stall or abort at a constant dt should
+                               #             be survivable. That is what it is FOR, and it is the reason
+                               #             to reach for it. Stated as design intent: it has not been
+                               #             measured head-to-head against fixed stepping on a run that
+                               #             fixed cannot finish.
                                #   ramp      pseudo-transient continuation: grows on solve-EASE,
                                #             unclamped. Newton path only; asked for elsewhere it is
                                #             refused rather than silently not run.

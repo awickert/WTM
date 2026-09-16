@@ -93,8 +93,12 @@ step-size POLICY rather than a refinement, its patch is in `git stash`, and it s
 robustness if it is ever judged at all, not on an accuracy comparison that was measuring the wrong
 thing.
 
-STILL OPEN, and untouched by any of this: whether adaptive stepping completes runs that fixed stepping
-cannot. That is the claim adaptive actually rests on and nothing has ever tested it.
+NOT AN OPEN ITEM, by decision (Andy, 2026-09-16): adaptive stepping is **intended** to complete runs
+that a fixed step cannot, and in principle it should. It shrinks where the problem is hard and grows
+where it is easy, so a stiff stretch that would stall at a constant `dt` should be survivable. That is
+what it is for. It has not been measured head-to-head on a run that fixed stepping cannot finish, and
+direct tests are deferred to later or to users. Recorded as design intent in `config.yaml`, where
+someone choosing a mode will read it, rather than carried as a to-do.
 
 ### B — THE HARNESS, set aside
 
