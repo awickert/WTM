@@ -7,19 +7,31 @@ in serial and on N MPI ranks, and shows that the result is cross-rank consistent
 floating-point-reduction noise) while producing the expected surface hydrology: lakes ponded in
 closed depressions, rivers draining to the coast, and the ocean boundary.
 
-MEASURED 2026-09-17, on the repaired demo:
-    spectral   n=4: max|dwtd| = 5.684e-13 m      n=8: 7.958e-13 m    (37 lake cells, max 8.3 m)
-    corsica    n=4: max|dwtd| = 1.206e-09 m      n=8: 1.720e-09 m    (218 lake cells, max 79.0 m)
-both against a 1e-6 m threshold.
+MEASURED 2026-09-17, on the repaired demo, against the 1e-6 m threshold. BOTH solver sets are
+cross-rank consistent on both topographies:
+
+    region    --solver    n=4 max|dwtd|   n=8 max|dwtd|   lake cells   max lake
+    spectral  picard        5.684e-13 m     7.958e-13 m       37         8.3 m
+    spectral  anderson      1.754e-11 m     1.751e-11 m       37         8.3 m
+    corsica   picard        1.206e-09 m     1.720e-09 m      218        79.0 m
+    corsica   anderson      4.775e-12 m     4.320e-12 m      211        79.0 m
+
+Anderson sits a decade or two looser than Picard on the synthetic island, which is what a
+matrix-free method with global reductions should do, and is still five orders below the threshold.
+The two solvers do NOT find the same lakes on corsica (218 vs 211 cells): they run different
+collectors and different FSM couplings, so the depression that a marginal cell ends up in can
+differ. That is a real difference between two configurations, not an inconsistency in either.
 
 Two topographies:
   * `spectral` -- a synthetic island (radial dome + Fourier roughness + two carved basins).
     Deterministic, self-contained.
   * `corsica`  -- a real DEM: a 240x156 window of GEBCO_08 over Corsica (bundled as
-    `corsica_gebco.tif`, so no GEBCO download is needed). Steep real terrain -- note the default
-    Anderson solver fails to converge here, while the implicit Picard solver does. (That observation
-    predates the current default set -- anderson / tr-bdf2 / active_set / adaptive -- and has not
-    been re-measured against it.)
+    `corsica_gebco.tif`, so no GEBCO download is needed). Steep real terrain, and for a long time
+    the case where the default Anderson solver FAILED to converge while the implicit Picard solver
+    did. THAT IS NO LONGER TRUE, measured 2026-09-17: under the current default set (tr-bdf2 +
+    active_set + continuous routing) Anderson completes corsica and is cross-rank consistent to
+    4.8e-12 m. The old claim is kept here, corrected rather than deleted, because it is why the
+    Picard path was the demo's default in the first place.
 
 Usage:
     demo.py spectral [--ranks 4 8] [--map]
@@ -107,17 +119,39 @@ def make_corsica(d):
     return "corsica", 120, 41.2                                         # GEBCO 30" ; Corsica latitude
 
 
-def cfg(d, region, txt, pfx, outdir):
+# THE TWO SOLVER SETS THIS DEMO CAN RUN. Both are stated in full rather than one being expressed as
+# a diff of the other: which keys a solver resolves to is exactly what a reader comes here to learn,
+# and a diff hides it. They are NOT free to vary independently -- each set is internally forced:
+#
+#   picard   explicit collector (active_set is refused on the Picard path), so routing must be
+#            `impulse` (continuous x explicit is refused), and time_integration bdf2 = BDF2-on-V.
+#            This is what the demo has always run, via the retired flag -wtm_bdf2_on_V.
+#   anderson THE SHIPPED DEFAULT SET: active_set collector, routing continuous, tr-bdf2. What a new
+#            user actually gets by omitting all three keys. Stated explicitly anyway, per the
+#            declared-config rule.
+#
+# time_step.mode is `fixed` for BOTH, and that is a DEMO choice rather than either solver's default
+# (both resolve to `adaptive`). Serial and parallel must take the SAME steps for the cross-rank
+# comparison to be measuring cross-rank behaviour and not two different step sequences.
+SOLVERS = {
+    "picard": dict(method="picard", time_integration="bdf2",
+                   collection="explicit", routing="impulse"),
+    "anderson": dict(method="anderson", time_integration="tr-bdf2",
+                     collection="active_set", routing="continuous"),
+}
+
+
+def cfg(d, region, txt, pfx, outdir, solver):
     """The run's configuration, in the nested-YAML schema (see config.yaml at the repo root).
 
     EVERY setting this run resolves to is stated here. That is the house rule for configs in this
     repo, and it is what makes a run reproducible from the file alone rather than from knowing which
     defaults applied on the day. Four of them are LOAD-BEARING for what this demo claims:
 
-      solver.method: picard + time_integration: bdf2
-          The 2nd-order-in-time BDF2-on-V path. This is what the demo has always run (it asked for it
-          as the retired flag `-wtm_bdf2_on_V`), and it is the cross-rank-deterministic solver, which
-          is the property the demo exists to show.
+      solver.method + time_integration + collection.method + routing
+          One of the two sets in SOLVERS above, chosen by --solver. They are internally forced: each
+          solver supports a different collector, and the collector then decides what routing is
+          representable.
       time_step.mode: fixed
           The legacy behaviour: dt is exactly `dt` below. Picard would otherwise resolve to
           `adaptive`. Held fixed so the serial and parallel runs take the SAME steps, and any
@@ -126,10 +160,12 @@ def cfg(d, region, txt, pfx, outdir):
           Run the clock out; never stop early. A determinism comparison that is free to auto-stop can
           have its two runs halt at different cycles and then differ for a reason that is not a
           defect -- exactly the trap #95 caught in the taper study.
-      surface_water.routing: impulse
-          FSM's routed table replaces the step baseline -- what the model has always done, and what
-          v2.0.1 does. `continuous` is REFUSED with the `explicit` collector that Picard resolves to.
+      surface_water.routing
+          `impulse` on Picard (FSM's routed table replaces the step baseline -- what the model has
+          always done, and what v2.0.1 does; `continuous` is REFUSED with the `explicit` collector
+          Picard resolves to). `continuous` on Anderson, the shipped default.
     """
+    sv = SOLVERS[solver]
     return f"""run:
   type: equilibrium
   initial_water_table: saturated   # was `supplied_wt 0`
@@ -169,14 +205,14 @@ evaporation:
     surface_transition: true
     depth_extinction: true
 surface_water:
-  routing: impulse    # LOAD-BEARING -- see the docstring
+  routing: {sv['routing']}    # LOAD-BEARING -- see the docstring
   runoff_ratio: raster   # was `runoff_ratio_on 1`: use the runoff_ratio layer this demo writes
   infiltration_during_flow: false
   collection:
-    method: explicit  # what Picard resolves to; active_set is refused on the Picard path
+    method: {sv['collection']}
 solver:
-  method: picard
-  time_integration: bdf2   # BDF2-on-V, the 2nd-order path. Was `-wtm_bdf2_on_V`
+  method: {sv['method']}
+  time_integration: {sv['time_integration']}
   convergence:
     metric: volume         # the shipped default (#61): the per-solve step judged in WATER
     water_volume_tol: 1.0e-8
@@ -192,17 +228,21 @@ parallel:
 """
 
 
-def run(d, region, cpd, south, n):
-    c = os.path.join(d, f"cfg_n{n}.yaml")
+def run(d, region, cpd, south, n, solver):
+    # The stem carries the SOLVER as well as the rank count. Without it a picard run and an anderson
+    # run at the same n write the same prefix, and the glob below silently reads the other solver's
+    # raster -- the failure mode that #74 exists to prevent in the test suites.
+    stem = f"{solver}_n{n}"
+    c = os.path.join(d, f"cfg_{stem}.yaml")
     with open(c, "w") as f:
         # Absolute paths, as the test suites do: `directory` is the run's provenance dir, while the
         # raster prefix and the log are written where this script then looks for them.
-        f.write(cfg(d, region, os.path.join(d, f"out_n{n}.txt"),
-                    os.path.join(d, f"n{n}_"), os.path.join(d, f"prov_n{n}")))
+        f.write(cfg(d, region, os.path.join(d, f"out_{stem}.txt"),
+                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver))
     subprocess.run(["mpirun", "-n", str(n), WTM, c], cwd=d,
                    env={**os.environ, "OMP_NUM_THREADS": "1"}, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    with rasterio.open(sorted(glob.glob(os.path.join(d, f"n{n}_*.tif")))[-1]) as s:
+    with rasterio.open(sorted(glob.glob(os.path.join(d, f"{stem}_*.tif")))[-1]) as s:
         return s.read(1)
 
 
@@ -260,6 +300,10 @@ def main():
     ap.add_argument("region", choices=["spectral", "corsica"])
     ap.add_argument("--ranks", type=int, nargs="*", default=[4, 8])
     ap.add_argument("--map", action="store_true")
+    ap.add_argument("--solver", choices=sorted(SOLVERS), default="picard",
+                    help="picard = the 2nd-order BDF2-on-V path this demo has always run "
+                         "(cross-rank deterministic); anderson = the SHIPPED DEFAULT set "
+                         "(tr-bdf2 + active_set + continuous routing), i.e. what a new user gets.")
     a = ap.parse_args()
     if not os.access(WTM, os.X_OK):
         sys.exit(f"build wtm.x first (looked for {WTM})")
@@ -269,23 +313,23 @@ def main():
         region, cpd, south = make_spectral(d)
     else:
         region, cpd, south = make_corsica(d)
-    w1 = run(d, region, cpd, south, 1)
+    w1 = run(d, region, cpd, south, 1, a.solver)
     with rasterio.open(os.path.join(d, f"{region}_t0_mask.tif")) as s:
         land = s.read(1) > 0
     lakes = int((land & (w1 > 0.05)).sum())
-    print(f"{region}: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
+    print(f"{region} [{a.solver}]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
           f"{int((~land).sum())} ocean cells")
     fail = 0
     w_par, npar = None, None
     for n in a.ranks:
-        wn = run(d, region, cpd, south, n)
+        wn = run(d, region, cpd, south, n, a.solver)
         md = float(np.abs(w1 - wn)[land].max())
         ok = md < 1e-6
         fail += not ok
         w_par, npar = wn, n                                             # keep the last (largest) for the map
         print(f"  serial vs n={n}: max|dwtd| = {md:.3e} m  {'CONSISTENT' if ok else 'MISMATCH'}")
     if a.map and w_par is not None:
-        render_map(d, region, w1, w_par, npar, os.path.join(HERE, f"{region}_map.png"))
+        render_map(d, region, w1, w_par, npar, os.path.join(HERE, f"{region}_{a.solver}_map.png"))
     sys.exit(1 if fail else 0)
 
 
