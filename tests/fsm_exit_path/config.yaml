@@ -1,0 +1,119 @@
+# tests/fsm_exit_path -- WHERE the FillSpillMerge time-stepping error lives.
+#
+# A REAL FILE, not a generator's output (#83): every setting the run resolves to is stated below.
+# Tokens substituted by run.sh: @INPUTS@ @WORK@ @STEM@ @MODE@ @DT@ @NSTEP@ @ROUTING@.
+# The three geometries differ ONLY in the pit's horizontal position -- see make_inputs.py.
+# tests/golden -- THE CONFIG EVERY GOLDEN CASE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: each case's final water table against a COMMITTED REFERENCE captured from
+# a trusted n=1 run, at n=1 AND n=4, so the references double as an absolute cross-rank check.
+#
+# THE REFERENCES ARE THE POINT, AND THAT CONSTRAINS THIS FILE: any change to a value here changes the
+# answer and invalidates a committed reference. So nothing may be "tidied" -- a setting is either what
+# the reference was captured under, or the reference must be regenerated deliberately, with a stated
+# reason (see #55, and the CHANGELOG entries for the three regolds).
+#
+# EIGHT KEYS VARY PER CASE and run.sh supplies each: run.type, run.initial_water_table, time.total,
+# surface_water.routing, surface_water.runoff_ratio, io.region, io.time_start, io.time_end.
+#
+# ADAPTIVE STEPPING IS THE DEFAULT HERE, DELIBERATELY. It was pinned OFF between 6ee7840 and 99a8eee
+# because the embedded error estimate was decomposition-dependent (22% spread at n=1/2/6 from states
+# agreeing to 2e-11). That was fixed by projecting pinned cells onto their constraint; the pin was
+# then REMOVED because a workaround left in place after its defect is fixed misleads the next reader,
+# and because a golden should exercise the DEFAULTS production runs use. tests/xrank_adaptive now
+# asserts the controller's cross-rank determinism directly and far more sensitively.
+#
+# TOKENS substituted by run.sh: /home/awickert/models/WTM/tests/golden/inputs, /tmp/claude-1000/cap, tr_A, transient, saturated, 8yr, continuous,
+# 0, transient_test, ta, tb.
+
+run:
+  type: transient   # PER-CASE: equilibrium, except `transient`
+  equilibrium_stop:
+    tol: 0   # the early stop is DISABLED so the reference and the cross-rank checks compare at
+             # the SAME cycle; the auto-stop could otherwise fire at decomposition-dependent cycles
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: saturated   # PER-CASE
+time:
+  total: "8yr"   # PER-CASE
+  report_interval: "@NSTEP@"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  routing: @ROUTING@
+  runoff_ratio: 0   # PER-CASE: 0, or the raster for the runoff cases
+  collection:
+    method: active_set   # the shipped enforcement, and part of every committed reference
+  infiltration_during_flow: false
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; every reference was captured under it
+  tolerance: 1e-10   # PER-RUN: the suite's own gate; see run.sh for the 1e-10 measurement
+
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-10   # PER-RUN: the same gate, in water
+    residual_gate: 1e-05   # baseline (tests/CONFIG_BASELINE.md). #104: the water-step verdict is
+                           # REFUSED while the residual is above this x its initial value -- a
+                           # relative step test cannot tell a converged solve from a stalled one.
+
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    # EVERY arm of this suite runs mode: fixed, so the controller dials are ABSENT rather than declared.
+    # The step size is the subject here only as a thing held CONSTANT: the question is WHERE the error
+    # sits, not how big it is, and an adaptive controller choosing its own steps would add a second
+    # moving part. error_tol / grow / shrink / grow_if_niter_leq / max_retries / norm are not read under
+    # fixed stepping, and writing them down would be declaring keys the run never consults.
+    mode: @MODE@
+    dt: @DT@
+    error_tol: 0.1   # INERT under mode: fixed -- no controller reads it -- but the model RESOLVES it, so
+                     # the declared-config rule requires it here at the value the run actually gets.
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid. Evaporation is in every reference captured here,
+    logistic_width: 0.1   # so this shape is part of what the goldens PIN -- changing it invalidates
+  extinction_depth: 8   # them. Shipped values, examined and owned, not idly defaulted.
+  tapers:
+    surface_transition: true   # SHIPPED-ON. With routing: off the taper is what removes surface water at all (evap_mode is gone, #88), so it is load-bearing here
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'exitpath'
+  time_start: 'ta'   # PER-CASE
+  time_end: 'tb'   # PER-CASE
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  trace: []
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
