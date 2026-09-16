@@ -7,20 +7,35 @@ in serial and on N MPI ranks, and shows that the result is cross-rank consistent
 floating-point-reduction noise) while producing the expected surface hydrology: lakes ponded in
 closed depressions, rivers draining to the coast, and the ocean boundary.
 
-MEASURED 2026-09-17, on the repaired demo, against the 1e-6 m threshold. BOTH solver sets are
-cross-rank consistent on both topographies:
+MEASURED 2026-09-17, with slope derived from the DEM (see terrain_slope), against the 1e-6 m
+threshold:
 
     region    --solver    n=4 max|dwtd|   n=8 max|dwtd|   lake cells   max lake
-    spectral  picard        5.684e-13 m     7.958e-13 m       37         8.3 m
-    spectral  anderson      1.754e-11 m     1.751e-11 m       37         8.3 m
-    corsica   picard        1.206e-09 m     1.720e-09 m      218        79.0 m
-    corsica   anderson      4.775e-12 m     4.320e-12 m      211        79.0 m
+    spectral  picard        1.851e-10 m     1.127e-10 m       37         8.3 m
+    spectral  anderson      4.880e-11 m     1.174e-11 m       37         8.3 m
+    corsica   picard      DID NOT COMPLETE -- DIVERGED_MAX_IT at 10000 nonlinear iterations
+    corsica   anderson      6.139e-12 m     6.594e-12 m      254        79.0 m
 
-Anderson sits a decade or two looser than Picard on the synthetic island, which is what a
-matrix-free method with global reductions should do, and is still five orders below the threshold.
-The two solvers do NOT find the same lakes on corsica (218 vs 211 cells): they run different
-collectors and different FSM couplings, so the depression that a marginal cell ends up in can
-differ. That is a real difference between two configurations, not an inconsistency in either.
+AND THAT LAST PAIR IS THE POINT. Nothing was tuned to make Picard fail: the demo was made more
+REALISTIC, by giving it the slope field a real DEM implies instead of slope = 0, and the split
+appeared on its own. The two topographies now sit either side of the difficulty:
+
+    spectral   median slope 0.0010, max 0.0025  ->  fdepth 145 .. 200 m
+               A continental-scale gentle dome (1/10 degree cells, ~11 km). Barely any T contrast,
+               and BOTH solvers handle it. This is the "it works, and it is deterministic" case.
+    corsica    median slope 0.1341, max 0.7660  ->  fdepth 2 .. 200 m, median 9.5
+               Real 30-arcsecond terrain over 2453 m of relief. fdepth now spans two orders, and
+               T = fdepth * ksat * exp((wtd + 1.5) / fdepth) spans ~9.5e+05 at wtd = -20 m. Only 5
+               of 14064 land cells reach the fdepth_fmin floor, so the floor is not what makes this
+               hard -- the exponential is.
+
+Picard freezes its coefficients within a solve, so a steep, spatially varying exp-T is exactly what
+it cannot chase; this is the limiter recorded in the solver notes, reproduced here on real terrain
+rather than argued. Anderson completes the same fixture and stays cross-rank consistent to 6e-12 m.
+
+Note the lake count moved (211 -> 254 for Anderson) when slope became real: shallower fdepth means
+less transmissivity, so water backs up into more depressions. Expected, and a physics change rather
+than a numerical one.
 
 Two topographies:
   * `spectral` -- a synthetic island (radial dome + Fourier roughness + two carved basins).
@@ -62,11 +77,61 @@ sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..", "tests")))
 from wtm_testgrid import write_tif  # noqa: E402
 
 
-def _fields(H, W, topo, mask):
-    """Uniform forcing that yields a surplus (lakes + rivers) without saturating the whole island."""
+def terrain_slope(topo, mask, cpd, south):
+    """|grad z|, dimensionless rise/run, by central differences on the DEM.
+
+    WHY THIS EXISTS. WTM's e-folding depth is a function of slope (src/irf.cpp setup_fdepth,
+    the Fan/Ying form):
+
+        fdepth = max(fdepth_a / (1 + fdepth_b * slope), fdepth_fmin)
+
+    and transmissivity is T = fdepth * ksat * exp((wtd + 1.5) / fdepth). This demo used to supply
+    slope = 0 EVERYWHERE, so with a = 200 and b = 150 every cell got the same fdepth = 200 m, and
+    with a uniform ksat the domain had NO spatial transmissivity contrast whatsoever. That is the
+    numerically easiest case there is, and it is not what a real DEM gives you: the same parameters
+    over real Corsica span fdepth from the 2 m floor on the steep faces to 200 m in the flats, and T
+    with it. Spatially varying exp-T is the thing the solver notes name as Picard's real limiter, so
+    a demo with slope = 0 was not exercising the hard part of this model.
+
+    Cell spacing is computed in METRES from the geotransform the fixture is written with, and the
+    east-west spacing carries the cos(latitude) factor -- at Corsica's 41.2 deg N a 1/120 deg cell is
+    ~927 m north-south but only ~697 m east-west, and ignoring that would tilt every slope.
+
+    Ocean cells are excluded from the gradient stencil by filling them with their land neighbour's
+    elevation: a land cell at the coast should not read a slope from the 0 m ocean beside it, which
+    would manufacture the steepest gradients in the domain exactly where the boundary already is.
+    """
+    deg = 1.0 / float(cpd)
+    H, W = topo.shape
+    lat = south + (np.arange(H - 1, -1, -1) + 0.5) * deg        # row 0 = north
+    m_per_deg = 111320.0
+    dy = deg * m_per_deg                                         # metres, constant
+    dx = deg * m_per_deg * np.cos(np.radians(lat))               # metres, per row
+    land = mask > 0
+    z = np.where(land, topo, np.nan)
+    # fill ocean with the nearest land value along each axis so the coast reads a land-side gradient
+    filled = np.array(z)
+    for _ in range(2):
+        for sh, ax in ((1, 0), (-1, 0), (1, 1), (-1, 1)):
+            nb = np.roll(filled, sh, axis=ax)
+            filled = np.where(np.isnan(filled), nb, filled)
+    filled = np.where(np.isnan(filled), 0.0, filled)
+    gy, gx = np.gradient(filled, dy, 1.0)                        # dz/dy in m/m; dz/dx still per CELL
+    gx = gx / dx[:, None]                                        # now m/m, with the cos(lat) spacing
+    slope = np.sqrt(gx ** 2 + gy ** 2)
+    return np.where(land, slope, 0.0).astype("float32")
+
+
+def _fields(H, W, topo, mask, slope):
+    """Uniform forcing that yields a surplus (lakes + rivers) without saturating the whole island.
+
+    `slope` is the ONE field derived from the terrain rather than set to a constant. ksat and
+    porosity stay uniform: WTM takes those from soil data, and there is no soil raster bundled with
+    this demo, so anything spatial here would be invented rather than measured.
+    """
     return {
         "topography": (topo, "float32"),
-        "slope": (np.zeros((H, W)), "float32"),
+        "slope": (slope, "float32"),
         "mask": (mask, "float32"),
         "precipitation": (np.full((H, W), 0.22), "float32"),        # m/yr, > evap+... : net surplus
         "evaporation": (np.full((H, W), 0.10), "float32"),
@@ -81,7 +146,12 @@ def _fields(H, W, topo, mask):
 
 def _write(d, region, H, W, topo, mask, cpd, south):
     """Write the input rasters with the geotransform the demo actually intends (cpd, south)."""
-    for name, (arr, dt) in _fields(H, W, topo, mask).items():
+    slope = terrain_slope(topo, mask, cpd, south)
+    land = mask > 0
+    fd = np.maximum(200.0 / (1 + 150 * slope[land]), 2.0)   # setup_fdepth at this demo's a/b/fmin
+    print(f"  slope (land): median {np.median(slope[land]):.4f}  max {slope[land].max():.4f}"
+          f"  ->  fdepth min {fd.min():.2f}  median {np.median(fd):.2f}  max {fd.max():.2f} m")
+    for name, (arr, dt) in _fields(H, W, topo, mask, slope).items():
         # ksat/porosity are time-independent (no _t0); the rest carry the time tag.
         fn = f"{region}_{name}.tif" if name in ("horizontal_ksat", "porosity") else f"{region}_t0_{name}.tif"
         write_tif(os.path.join(d, fn), np.asarray(arr), cpd, south, dtype=dt)
@@ -228,6 +298,10 @@ parallel:
 """
 
 
+class DidNotComplete(RuntimeError):
+    """The model ran and did not reach an answer. An outcome of the experiment, not a bug in it."""
+
+
 def run(d, region, cpd, south, n, solver):
     # The stem carries the SOLVER as well as the rank count. Without it a picard run and an anderson
     # run at the same n write the same prefix, and the glob below silently reads the other solver's
@@ -239,9 +313,22 @@ def run(d, region, cpd, south, n, solver):
         # raster prefix and the log are written where this script then looks for them.
         f.write(cfg(d, region, os.path.join(d, f"out_{stem}.txt"),
                     os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver))
-    subprocess.run(["mpirun", "-n", str(n), WTM, c], cwd=d,
-                   env={**os.environ, "OMP_NUM_THREADS": "1"}, check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # A SOLVER THAT CANNOT FINISH IS A RESULT, NOT A CRASH. On the realistic corsica fixture Picard
+    # does not converge, and that is the single most informative thing this demo has to say -- so it
+    # is reported as an outcome with the model's own reason, not as a Python traceback. Robustness
+    # here is computes-vs-does-not-compute, and the run log is where the model says which.
+    log = os.path.join(d, f"stdout_{stem}.log")
+    with open(log, "w") as lf:
+        rc = subprocess.run(["mpirun", "-n", str(n), WTM, c], cwd=d,
+                            env={**os.environ, "OMP_NUM_THREADS": "1"},
+                            stdout=lf, stderr=subprocess.STDOUT).returncode
+    if rc != 0:
+        reason = "(no reason found in the log)"
+        with open(log, errors="replace") as lf:
+            for line in lf:
+                if "DIVERGED" in line or line.startswith("ERROR"):
+                    reason = line.strip()
+        raise DidNotComplete(f"{solver} n={n}: exit {rc} -- {reason}\n      log: {log}")
     with rasterio.open(sorted(glob.glob(os.path.join(d, f"{stem}_*.tif")))[-1]) as s:
         return s.read(1)
 
@@ -313,7 +400,13 @@ def main():
         region, cpd, south = make_spectral(d)
     else:
         region, cpd, south = make_corsica(d)
-    w1 = run(d, region, cpd, south, 1, a.solver)
+    try:
+        w1 = run(d, region, cpd, south, 1, a.solver)
+    except DidNotComplete as e:
+        print(f"{region} [{a.solver}]: DID NOT COMPLETE\n      {e}")
+        print(f"      This is the result. Try --solver "
+              f"{'anderson' if a.solver == 'picard' else 'picard'} on the same terrain.")
+        sys.exit(2)
     with rasterio.open(os.path.join(d, f"{region}_t0_mask.tif")) as s:
         land = s.read(1) > 0
     lakes = int((land & (w1 > 0.05)).sum())
@@ -322,7 +415,12 @@ def main():
     fail = 0
     w_par, npar = None, None
     for n in a.ranks:
-        wn = run(d, region, cpd, south, n, a.solver)
+        try:
+            wn = run(d, region, cpd, south, n, a.solver)
+        except DidNotComplete as e:
+            print(f"  serial vs n={n}: DID NOT COMPLETE -- {e}")
+            fail += 1
+            continue
         md = float(np.abs(w1 - wn)[land].max())
         ok = md < 1e-6
         fail += not ok
