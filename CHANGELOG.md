@@ -24,8 +24,41 @@ configs built through `tests/emit_config.sh`).
 
 ### Known limitations
 
-Three limits measured during this work. All are properties of the model as it stands rather than
-defects to be worked around, and the first two can invalidate a naive dt-refinement argument.
+Four limits measured during this work. All are properties of the model as it stands rather than
+defects to be worked around, and the second and third can invalidate a naive dt-refinement argument.
+
+- **Where lakes drain to the sea, the answer depends on an arbitrary choice when two outlets are level.**
+  FillSpillMerge fills a depression and sends the surplus out through the depression's lowest outlet.
+  When two or more outlets sit at the same elevation, one is picked arbitrarily. That is a deliberate
+  choice in the depression hierarchy, and its own source says so: *"If a depression has more than one
+  outlet at the same level one of them is arbitrarily chosen; hopefully this happens only rarely in
+  natural environments."*
+
+  On real terrain exact ties are rare, which is the assumption the method is built on. On FLAT terrain
+  they are universal, and then the arbitrary choice decides the whole answer. Measured on a test island
+  with a perfectly flat plateau and a pit in the exact centre — a case symmetric to machine precision in
+  every input, on both axes:
+
+  | | left-right | up-down |
+  |---|---|---|
+  | groundwater only | **0.000 m** | **0.000 m** |
+  | with lake routing on | 8.43 m | 9.04 m |
+
+  The groundwater solve is exactly symmetric. The lake routing is not, because every cell around the
+  plateau's rim is a tied outlet and one of them wins. Give the same terrain a slope of 1 cm per cell so
+  that exactly one outlet is lowest, and the preference disappears completely: two mirror-image runs
+  then agree to **1.8e-08 m**.
+
+  **What this means in practice.** Two consequences, and neither is a reason to distrust a normal run:
+
+  1. On terrain with real relief, outlets rarely tie and this does not arise.
+  2. Where it does arise — a flat plateau, a plain, a synthetic test surface — the water still balances
+     exactly and the total is right. What moves is WHICH way it leaves, and therefore which cells near
+     the outlet end up wet. Refining the time step does not help, because the choice is not a
+     time-stepping error: the finest run made it slightly worse, not better.
+
+  If you need a deterministic outlet on flat ground, add a small gradient to the surface. `tests/fsm_exit_path`
+  demonstrates the whole thing, including the tilted case that removes it.
 
 - **With FillSpillMerge on, first-order operator splitting caps the whole scheme at order 1**,
   regardless of integrator. Measured by solution convergence at fixed model time: TR-BDF2 gives
