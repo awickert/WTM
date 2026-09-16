@@ -16,6 +16,7 @@ UNITS. storedVolume returns stored water volume PER UNIT AREA -- a DEPTH in metr
 `volume_diff` is in "metres of water volume": at phi = 0.25 and wtd well below the surface it is one quarter
 of the head difference, and above the surface it approaches the head difference (slope -> 1).
 """
+import os
 import numpy as np
 
 DEFAULT_SMOOTHING = 0.01   # g_storativity_surface_smoothing_width, src/update_effective_storativity.cpp
@@ -92,6 +93,63 @@ def latest_output(prefix, suffix=".tif"):
             "prefix %r also matched output from another stem -- the last of these would be the WRONG "
             "fixture:\n  %s" % (prefix, "\n  ".join(strays)))
     return hits[-1]
+
+
+# ---------------------------------------------------------------------------------------------------
+# WHICH ERROR IS THIS? Two different quantities, and mixing them manufactures a difference that is not
+# there. The names are the model's (see output.extra_rasters.post_groundwater in config.yaml):
+#
+#   WTM error              measured against the ordinary snapshot -- the MODEL'S answer, post-FSM.
+#                          This is what an accuracy claim means unless it says otherwise.
+#   post-groundwater error measured against <prefix>postgw_* -- the SOLVE'S answer, before
+#                          FillSpillMerge places surface water.
+#
+# The kind is INFERRED FROM THE FILENAME rather than passed in, because a caller who has to declare it
+# is a caller who can declare it wrongly. `error()` then refuses a cross-kind comparison outright: it is
+# not a warning, because a plausible number is exactly what makes this mistake survive review.
+WTM_ERROR              = "WTM error"
+POST_GROUNDWATER_ERROR = "post-groundwater error"
+
+
+def error_kind(path):
+    """Which error a raster measures, read off its name. See the note above."""
+    return POST_GROUNDWATER_ERROR if "postgw_" in os.path.basename(path) else WTM_ERROR
+
+
+def error(run_path, ref_path, porosity, land=None, smoothing=DEFAULT_SMOOTHING,
+          extended_soil=False, cell_threshold=0.01, label=None, quiet=False):
+    """Error of `run` against `ref`, in metres of water, reported as MEDIAN and MAX.
+
+    MEDIAN AND MAX TOGETHER, always (Andy, 2026-09-16: "median feels more useful"). Max alone is one
+    cell and it misleads: on tests/golden's transient fixture the median error is exactly 0.0 at every
+    step size while the max is ~1 m, because the whole discrepancy sits in three cells on a lake's
+    discharge path. Reporting only the max made a three-cell artefact read as a model-wide inaccuracy.
+
+    `land` is a boolean mask. Pass it. Ocean cells are pinned, contribute exactly 0, and only dilute a
+    norm -- they left every rms 14% low before anyone noticed.
+
+    RAISES on a cross-kind comparison rather than returning a number.
+    """
+    kr, kf = error_kind(run_path), error_kind(ref_path)
+    if kr != kf:
+        raise AssertionError(
+            f"refusing to compare a {kr} raster against a {kf} one:\n"
+            f"    run = {run_path}\n    ref = {ref_path}\n"
+            "These measure different quantities -- the model's answer and the solve's answer before\n"
+            "FillSpillMerge -- so their difference is not an error, it is the two being different\n"
+            "things. Compare like with like, and say in the test which kind you meant.")
+    d = volume_diff(read_band(run_path), read_band(ref_path), porosity, smoothing, extended_soil)
+    if land is not None:
+        d = d[land]
+    d = d[np.isfinite(d)]
+    out = {"kind": kr, "median": float(np.median(d)), "max": float(d.max()),
+           "rms": float(np.sqrt((d ** 2).mean())),
+           "n_over": int((d > cell_threshold).sum()), "n_total": int(d.size)}
+    if not quiet:
+        print("  %s%s  median %.4e m   max %.4e m   cells over %g: %d of %d"
+              % (kr, (" [%s]" % label) if label else "",
+                 out["median"], out["max"], cell_threshold, out["n_over"], out["n_total"]))
+    return out
 
 
 def compare_series(pairs, reference, porosity, label="run",
