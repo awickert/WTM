@@ -46,6 +46,15 @@ emit nofsm_run exit_right fixed $((YR/16))    128 off
 # the fixture is its own control, because a mirror-symmetric problem must give a mirror-symmetric answer.
 emit sym_centre_off        centre fixed $((YR/16)) 128 off
 emit sym_centre_continuous centre fixed $((YR/16)) 128 continuous
+# EQUATOR-CENTRED: cos(lat) is even in latitude, so rows mirrored about the equator have identical cell
+# widths and UP-DOWN becomes a fair test too. (A uniform-cellsize projected grid is not an option --
+# src/grid_geometry.cpp supports geographic grids only.)
+emit sym_centre_eq_off        centre_eq fixed $((YR/16)) 128 off
+emit sym_centre_eq_continuous centre_eq fixed $((YR/16)) 128 continuous
+# TIE-BROKEN MIRROR PAIR: each has ONE strictly-lowest outlet, and the two are exact mirrors of each
+# other. A model with no directional preference must answer one as the mirror of the other.
+emit tilt_e_run tilt_e fixed $((YR/16)) 128 continuous
+emit tilt_w_run tilt_w fixed $((YR/16)) 128 continuous
 
 TESTS="$(readlink -f ..)" WORK="$WORK" "$PY" - <<'PYEOF'
 import os, sys, glob, re
@@ -69,6 +78,16 @@ def err(geom, run, ref):
     land=rasterio.open(os.path.join(d,"exitpath_ta_mask.tif")).read(1)!=0
     e=np.abs(V.volume_diff(last(run), last(ref), phi))
     return e, land
+
+def sym_ud(geom, routing):
+    w=last(f"sym_{geom}_{routing}")
+    return float(np.abs(w - w[::-1, :]).max())
+
+def cross_mirror():
+    """|answer(tilt_e) - mirror(answer(tilt_w))|. Works where self-symmetry CANNOT: both runs have a
+    unique lowest outlet, so nothing is decided by a tie-break, yet the pair is still an exact mirror."""
+    a=last("tilt_e_run"); b=last("tilt_w_run")
+    return float(np.abs(a - b[:, ::-1]).max())
 
 def sym(geom, routing):
     """max|w - mirror_LR(w)| on the final field. Needs no reference run at all: the fixture is its own."""
@@ -125,6 +144,25 @@ elif lr_on < XFAIL_FLOOR:
 else:
     print(f"  xfail  KNOWN: FillSpillMerge breaks L-R symmetry by {lr_on:.4e} m on symmetric terrain "
           f"(solve alone: {lr_off:.4e} m)")
+
+# 3b. THE EQUATOR-CENTRED PAIR: both axes are now fair, so assert both.
+for ax,fn in (("L-R", sym), ("U-D", sym_ud)):
+    off = fn("centre_eq", "off")
+    check(off == 0.0, f"centre_eq {ax}: solve exact", f"routing off -> {off:.4e} m (must be exactly 0)")
+on_lr, on_ud = sym("centre_eq","continuous"), sym_ud("centre_eq","continuous")
+print(f"  xfail  KNOWN: routing on, centre_eq -- L-R {on_lr:.4e} m, U-D {on_ud:.4e} m")
+
+# 3c. THE DISCRIMINATOR. This is what separates "the depression hierarchy picks arbitrarily among TIED
+#     outlets", which src/dephier.hpp documents and which no symmetric fixture can ever avoid, from "a
+#     direction is preferred even when one outlet is strictly lowest". tilt_e and tilt_w each have ONE
+#     lowest outlet and are exact mirrors of each other, so a tie-break decides nothing here.
+#       cross-mirror ~ 0  -> the flat-case asymmetry IS the documented tie-break. Not a defect.
+#       cross-mirror >> 0 -> something prefers a direction regardless. That WOULD be a defect.
+xm = cross_mirror()
+check(xm < 1.0e-6, "TIE-BROKEN cross-mirror", f"|tilt_e - mirror(tilt_w)| = {xm:.4e} m"
+      + ("  -> the flat-case break is the documented arbitrary tie-choice, not a directional bias"
+         if xm < 1.0e-6 else
+         "  <- a direction is preferred even with a UNIQUE lowest outlet: NOT explained by tie-breaking"))
 
 # 4. CONTROL: routing off. Same geometry; the concentration must vanish.
 e,land=err("exit_right","nofsm_run","nofsm_ref"); el=e[land]
