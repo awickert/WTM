@@ -903,10 +903,30 @@ void update(
               << arp.fsm_n_depressions << " depressions full" << std::endl;
 
   // Per-CYCLE convergence metric: max change in the (post-FSM) water table since the previous cycle. This
+  // WHY THIS IS THE RIGHT QUANTITY, and it is a physical argument rather than a convenience (Andy,
+  // 2026-09-16): THE ONLY VALID STATES ARE THE ONES IMMEDIATELY AFTER FillSpillMerge RUNS. Within-cycle
+  // motion is computational, not physical -- it is the solver mid-thought, before the surface water has
+  // been put where it belongs. A stopping test must therefore judge post-FSM states and ignore what
+  // happens between them, which is exactly what a per-cycle metric does. This is the same rule that
+  // makes the post-FSM table the only one ever WRITTEN; here it is applied to what gets JUDGED.
+  //
+  // So the per-sub-step max|Δw| is NOT a rival convergence metric that this one beats. It is a FLICKER
+  // DIAGNOSTIC, correctly computed where flicker lives (inside update(), pre-FSM), and it would be the
+  // wrong thing to stop on no matter how it behaved. Task #103 was opened on the belief that a run
+  // stopping with within-cycle motion still present was converging prematurely; it was not.
+  //
   // is the HONEST steady-state signal -- unlike the per-sub-step max|Δw|, it excludes the cosmetic within-
   // cycle oscillation at lake/shore free boundaries (which returns to the same value each cycle and so
   // over-reports non-convergence). Wired to -wtm_eq_tol in run(). (Distributed-recharge path: starting_wtd
-  // is post-FSM here; the serial path measures pre-FSM, still a valid cycle-to-cycle change.)
+  // is post-FSM here; the serial path measures pre-FSM.)
+  //
+  // THAT ASYMMETRY IS A DEFECT, not a footnote, and the "still a valid cycle-to-cycle change" this note
+  // used to end with is the reasoning the rule above denies: a difference between two PRE-FSM states is a
+  // difference between two states that do not physically exist. The serial path is taken when
+  // `distribute_recharge` is false, i.e. fsm_on AND infiltration_on -- the one configuration where FSM
+  // actually runs and the distinction therefore bites hardest. UNMEASURED: on a run where FSM moves
+  // little the two states nearly coincide and the stop would answer the same either way, so the SIZE of
+  // this is unknown. Tracked as its own item rather than folded into #103's closure.
   {
     const auto [pxs, pys, pxm, pym] = get_corners(user_context.da);
     PetscScalar **prevw;

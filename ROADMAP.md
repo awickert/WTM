@@ -56,10 +56,26 @@ parked until the model work is done.
 | # | item | state |
 |---|---|---|
 | **104** | The per-solve water-step test declared convergence after 4-7 iterations on the shipped `active_set` path, committing a first step tens of metres from the answer | **FIXED** (`db54072`, `2cc272a`, `5101991`). The verdict is now judged against what the run has DEMONSTRATED it can reach, not a fixed reduction. 10 of 20 sweep arms disagreeing → 0. Three conditions, each proven load-bearing by ablation. Pinned by `tests/tolerance_independence`. |
-| **103** | `explicit` sustains a **permanent** surface limit cycle (no decay over 460 yr, 56 of 88 cells) and the equilibrium stop declares convergence *inside* it — `stopping at cycle 4 of 30` with 0.0606 m of within-cycle motion | `active_set` cures it completely (4.6e-08 vs 0.0912 m). Three options; needs Andy. |
-| **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | Blocked by #103 — `explicit` is the only surface-reaching collector `secant` may use, and it flickers. |
+| **106** | The equilibrium stop measures **pre-FSM** states on the serial path (`fsm_on` AND `infiltration_on`), while the distributed path measures post-FSM | Under Andy's rule those are states that do not physically exist. Split out of #103. **Size unmeasured** — measure the two metrics against each other before proposing anything. |
+| **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | **No longer blocked by #103.** The refusal itself is CORRECT and stays — it is an assembly constraint, `secant` puts `b = h^n` in the RHS so the active-set pin would not be enforced. The open part is only that its closing sentence cites `tests/storage_equivalence` as authority for a claim that suite has never checked. Tests allowed to fail (Andy). |
 | **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. The v2 rework is **in the stash, not the tree** — grepping `src/` finds nothing and reads as lost work. Find it by MESSAGE, not index: `git stash list \| grep '#60 v2'`. Indices shift every time anything else is stashed, and one already has: stashing #64's option A on 2026-09-16 pushed this from `stash@{0}` to `stash@{1}`. |
 | **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
+
+### #103 RESOLVED: the stopping test was right, and the reason is physical
+
+Opened on the belief that a run halting with within-cycle motion still present was converging early.
+It was not. Andy, 2026-09-16: **"The only valid states are immediately after FSM is run; within-cycle
+motion is computational but not physical."** So the per-cycle metric is not a convenience that happens
+to dodge the flicker — it is the only correct quantity, and the per-sub-step `max|Δw|` is a flicker
+DIAGNOSTIC, correctly located inside `update()` where flicker lives. That argument is now in the design
+note at `src/WTM.cpp:906`, which previously stated the choice without the reason.
+
+Its other two questions closed too: `explicit` + adaptive is a property rather than a defect (and is
+**not** an FSM interaction — the fixture that shows it runs with `fsm_on = 0`; the clamp is
+dt-dependent and adaptive keeps changing `dt`), with a warning shipped; and the `secant × active_set`
+refusal is correct as an assembly constraint and stays.
+
+One real defect came out of it and is **not** buried in the closure: `#106`.
 
 ### #64 RESOLVED, and it was not a time-stepping problem at all
 
