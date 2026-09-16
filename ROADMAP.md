@@ -55,11 +55,16 @@ parked until the model work is done.
 
 | # | item | state |
 |---|---|---|
-| **104** | The per-solve water-step test declared convergence after 4-7 iterations on the shipped `active_set` path, committing a first step tens of metres from the answer | **FIXED** (`db54072`, `2cc272a`, `5101991`). The verdict is now judged against what the run has DEMONSTRATED it can reach, not a fixed reduction. 10 of 20 sweep arms disagreeing → 0. Three conditions, each proven load-bearing by ablation. Pinned by `tests/tolerance_independence`. |
 | **106** | The equilibrium stop measures **pre-FSM** states on the serial path (`fsm_on` AND `infiltration_on`), while the distributed path measures post-FSM | Under Andy's rule those are states that do not physically exist. Split out of #103. **Size unmeasured** — measure the two metrics against each other before proposing anything. |
 | **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | **No longer blocked by #103.** The refusal itself is CORRECT and stays — it is an assembly constraint, `secant` puts `b = h^n` in the RHS so the active-set pin would not be enforced. The open part is only that its closing sentence cites `tests/storage_equivalence` as authority for a claim that suite has never checked. Tests allowed to fail (Andy). |
 | **60** | Order-aware retry for the adaptive controller | Parked by Andy: needs a case that would otherwise abort. The v2 rework is **in the stash, not the tree** — grepping `src/` finds nothing and reads as lost work. Find it by MESSAGE, not index: `git stash list \| grep '#60 v2'`. Indices shift every time anything else is stashed, and one already has: stashing #64's option A on 2026-09-16 pushed this from `stash@{0}` to `stash@{1}`. |
 | **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
+
+**`#104` — the per-solve water-step test declared convergence after 4-7 iterations on the shipped
+`active_set` path, committing a first step tens of metres from the answer.** FIXED (`db54072`,
+`2cc272a`, `5101991`): the verdict is judged against what the run has DEMONSTRATED it can reach,
+not a fixed reduction. 10 of 20 sweep arms disagreeing → 0. Three conditions, each proven
+load-bearing by ablation. Pinned by `tests/tolerance_independence`.
 
 ### #103 RESOLVED: the stopping test was right, and the reason is physical
 
