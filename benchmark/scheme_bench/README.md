@@ -24,12 +24,31 @@ Re-run of the full 2×2. Iterations to reach rms ≤ 10 mm-water:
 **Under `active_set` the expected result, larger than expected:** 1780 → 44, a 40× improvement. That is
 the tangent, and it is the headline this re-run was for.
 
-**Under `implicit` it went the other way and I cannot say why.** ~123k actual iterations with
-`DIVERGED_MAX_IT` in the log, against 18041 before. Two cautions before anyone treats that as a
-regression introduced by the tangent: the runs are separated by many commits, not just `bf187ee`; and
-the old `implicit × during` figure of **10** iterations to 10 mm rms from a cold start is not credible
-on its face, which suggests that arm was not measuring what its label says. Attributing this needs a
-bisect, and it is filed rather than guessed at.
+**Under `implicit` it went the other way, and the reason turns out to matter more than the number.**
+Newton + continuation under `implicit` NEVER CONVERGED on this problem. It was exiting on the
+head-based RELATIVE-STEP test after 10-14 iterations -- the stagnation test `#61` identified as letting
+88-95% of solves exit early -- and `#104` now gates that verdict behind a residual check, so the
+premature exit is refused and the solve runs to `max_iterations`.
+
+Established by one controlled run, HEAD binary, same config, one key changed:
+
+| `residual_gate` | first solve | exit reason | total iterations |
+|---|---|---|---|
+| `1e-05` (shipped) | 10000 | `DIVERGED_MAX_IT` | 122878 |
+| `1e+30` (disabled) | **14** | **`CONVERGED_SNORM_RELATIVE`** | 21454 |
+| baseline `1b3069b` | 10 | `CONVERGED_SNORM_RELATIVE` | 110179 |
+
+Disabling the gate restores both the count and the exit reason, so the gate is the whole difference.
+
+**So the 2026-08-25 table is the misleading one, not this one.** Its `implicit` Newton rows present a
+scheme that was not solving as one that solved cheaply, and anyone choosing a scheme from that table
+would have been misled. The rows here are a measurement of non-convergence, which is the honest result.
+
+Two eliminations saved a 520-commit bisect: `bf187ee`'s tangent is gated behind
+`g_active_set && !g_kirchhoff`, so it is unreachable under `implicit`; and a fresh build at `1b3069b`
+reproduces `32 / 18041 / 29.6` exactly, so the difference was real and in-range. The clue was that
+HEAD's FINAL per-cycle rms is **2.27 mm-water** against baseline's **4.983** -- HEAD converges further
+while the matrix called it "never", which pointed at the first cycle rather than the trajectory.
 
 **Two harness bugs were fixed to make this run at all**, both of which had made the benchmark
 silently unusable rather than loudly broken:
