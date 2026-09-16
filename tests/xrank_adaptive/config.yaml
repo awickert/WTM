@@ -102,7 +102,11 @@ io:
 output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
-  trace: [dt]   # LOAD-BEARING: the DTTRACE lines ARE the quantity this suite asserts
+  trace:   # LOAD-BEARING: the DTTRACE lines ARE the quantity this suite asserts
+    dt: true
+    water_step: false
+    budget: false
+    fsm: false
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite

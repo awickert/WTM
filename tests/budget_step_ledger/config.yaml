@@ -15,7 +15,7 @@
 # model (#44), and running it here would test the guard rather than the ledger.
 #
 # TWO SETTINGS ARE LOAD-BEARING:
-#   output.trace: [budget]       the per-step identity IS the trace; without it there is nothing to read
+#   output.trace.budget: true    the per-step identity IS the trace; without it there is nothing to read
 #   solver.time_step.mode: fixed the sweep compares cells at a KNOWN step; a controller would resize dt
 #                                per cell and the comparison would be across different steps
 #
@@ -94,7 +94,11 @@ io:
 output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
-  trace: [budget]
+  trace:
+    dt: false
+    water_step: false
+    budget: true
+    fsm: false
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite

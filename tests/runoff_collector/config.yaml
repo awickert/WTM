@@ -92,7 +92,11 @@ io:
 output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
-  trace: []
+  trace:
+    dt: false
+    water_step: false
+    budget: false
+    fsm: false
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite

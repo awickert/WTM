@@ -104,7 +104,13 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       {"dev", {"storage_form", "under_relaxation"}},
       {"parallel", {"threads_per_rank"}},
       {"io", {"source", "region", "time_start", "time_end"}},
-      {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace"}},
+      {"output", {"outfile_prefix", "run_log", "directory", "if_exists", "verbosity", "trace",
+                  "extra_rasters"}},
+      // Both are MAPS of name -> bool rather than lists of names, so the vocabulary ships in the
+      // config file instead of having to be known. Every channel/raster is listed here, which is
+      // what makes a typo an abort rather than a silently-ignored line.
+      {"output.trace", {"dt", "water_step", "budget", "fsm"}},
+      {"output.extra_rasters", {"post_groundwater"}},
   };
   return schema;
 }
@@ -356,14 +362,25 @@ Parameters::Parameters(const std::string& config_file) {
     if (auto n = sm["storativity_surface"]) storativity_surface_smoothing = n.as<double>();
   }
   if (auto n = root["dev"]["under_relaxation"]) under_relaxation = n.as<double>();
+  // output.trace is a MAP of channel -> bool, not a list of names (Andy, 2026-09-16: "I would rather
+  // have this than have the user need to know what to type"). A list requires the reader to already know
+  // the vocabulary; a map ships the vocabulary in the file, with every channel visible at its default.
+  // Same reasoning as output.extra_rasters below, and the two are deliberately the same shape.
   if (auto tr = root["output"]["trace"]) {
-    if (!tr.IsSequence()) throw std::runtime_error("config: output.trace must be a list, e.g. [dt] (or [] for none)");
-    for (const auto& e : tr) {
-      const std::string v = require_enum(e.as<std::string>(), "output.trace", {"dt", "water_step", "budget", "fsm"});
-      if (v == "dt")         trace_dt         = true;
-      if (v == "water_step") trace_water_step = true;
-      if (v == "budget")     trace_budget     = true;
-      if (v == "fsm")        trace_fsm        = true;
+    if (!tr.IsMap())
+      throw std::runtime_error(
+          "config: output.trace must be a map of channel -> true|false, e.g.\n"
+          "  trace:\n    dt: true\n    fsm: false\n"
+          "The list form ([dt]) was retired 2026-09-16: it required knowing the channel names to discover "
+          "them. The channels are dt, water_step, budget, fsm.");
+    for (const auto& kv : tr) {
+      const std::string k = require_enum(kv.first.as<std::string>(), "output.trace",
+                                         {"dt", "water_step", "budget", "fsm"});
+      const bool on = kv.second.as<bool>();
+      if (k == "dt")         trace_dt         = on;
+      if (k == "water_step") trace_water_step = on;
+      if (k == "budget")     trace_budget     = on;
+      if (k == "fsm")        trace_fsm        = on;
     }
   }
   // surface_water.routing: continuous | impulse | off -- ONE key for whether FillSpillMerge routes

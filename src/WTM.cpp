@@ -1558,17 +1558,13 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
     // A provenance record that under-reports the channels a run had open is worse than no record, since
     // it reads as authoritative. The list must be derived from the same state the channels are, which
     // is why every entry below reads its own uc flag rather than re-deriving from the config.
-    std::string tr;
-    auto add = [&tr](bool on, const char* name) {
-      if (!on) return;
-      if (!tr.empty()) tr += ", ";
-      tr += name;
-    };
-    add(uc.dt_trace,       "dt");
-    add(uc.vol_step_trace, "water_step");
-    add(uc.budget_trace,   "budget");
-    add(uc.fsm_trace,      "fsm");
-    f << "  trace: [" << tr << "]\n";
+    // Now a MAP, and EVERY channel is written whether on or off. The list form could only record what
+    // was open, so a reader could not tell "fsm was off" from "this file predates the fsm channel".
+    f << "  trace:\n";
+    f << "    dt: "         << (uc.dt_trace       ? "true" : "false") << "\n";
+    f << "    water_step: " << (uc.vol_step_trace ? "true" : "false") << "\n";
+    f << "    budget: "     << (uc.budget_trace   ? "true" : "false") << "\n";
+    f << "    fsm: "        << (uc.fsm_trace      ? "true" : "false") << "\n";
   }
 
   f << "\nboundaries:\n";

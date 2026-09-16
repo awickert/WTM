@@ -43,18 +43,32 @@ output:
   run_log: run.log             # per-run status log within the run subdir
   verbosity: normal            # quiet | normal | verbose
   if_exists: increment         # increment (new subdir each run) | overwrite | error
-  trace: []                    # extra machine-readable trace lines; [] = none.
-                               # [fsm] emits FSMTRACE (wet_cells, lake_volume, max_depth) after every
-                               # FillSpillMerge call, rank 0. The lake configuration is what changes
-                               # discretely between runs, so this is the first thing to compare when two
+  trace:                       # extra machine-readable DIAGNOSTIC lines on stdout, for tests and for
+                               # debugging. ANSWER-NEUTRAL: turning these on only prints, it never
+                               # changes what the model computes. A MAP rather than a list, so the
+                               # channels are discoverable here instead of having to be known.
+    dt: false                  # DTTRACE after every step: dt, the error estimate, the tolerance, the
+                               # factor, iterations, accepted. REJECTED steps included -- they are where
+                               # a mis-scaled estimate does its damage, and omitting them hides it.
+    fsm: false                 # FSMTRACE after every FillSpillMerge call, rank 0: wet_cells,
+                               # lake_volume, max_depth. The lake configuration is what changes
+                               # DISCRETELY between runs, so this is the first thing to compare when two
                                # runs differ and the cause is not obvious -- e.g. when refining the time
                                # step makes the answer WORSE, which it can (BDF2_ADAPTIVE_DESIGN.md 3.5).
-                               # [dt] emits DTTRACE (dt, est, tol, factor, niter, accepted), REJECTED
-                               # steps included -- they are where a mis-scaled estimate does its damage.
-                               # [water_step] emits a per-ITERATION line: the head step, an independent
-                               # reconstruction of it, and the same step measured in WATER. Denser than
-                               # [dt], which is per-step. Answer-neutral -- it only prints.
-                               # A list, so further traces can join without a new key each.
+    budget: false              # BUDGETTRACE: the per-step water-budget terms.
+    water_step: false          # per-ITERATION line: the head step, an independent reconstruction of it,
+                               # and the same step measured in WATER. Denser than dt, which is per-step.
+
+  extra_rasters:               # additional rasters written beside the water table. Same map shape as
+                               # trace, and for the same reason. All default false.
+    post_groundwater: false    # the table AFTER the groundwater solve and BEFORE FillSpillMerge, as
+                               # <outfile_prefix>postgw_<n>_<T>yr.tif, matched step-for-step with the
+                               # ordinary snapshot beside it. THE TWO ANSWER DIFFERENT QUESTIONS, and
+                               # mixing them is how a comparison invents a difference that is not there:
+                               #   ordinary snapshot -> the model's answer  -> "WTM error"
+                               #   this one          -> the solve's answer  -> "post-groundwater error"
+                               # Turn it on to separate solve error from routing error. Off by default
+                               # because it doubles raster volume.
 
 boundaries:
   land: neumann_toposlope      # neumann_toposlope (terrain-following no-flow) | dirichlet_sea_level

@@ -11,7 +11,7 @@
 # WHAT THIS SUITE MEASURES, and why that decides the provenance below: it pins the run log's COLUMN
 # NAMES and proves the trace parser reads `est` independently of `nest`. It asserts the log's SHAPE,
 # never a physical VALUE -- so the physics settings here are not load-bearing, and they are marked as
-# examined rather than chosen. The two that ARE load-bearing are `trace: [dt]` (no trace, nothing to
+# examined rather than chosen. The two that ARE load-bearing are `trace.dt: true` (no trace, nothing to
 # parse) and `report_interval: 1` (the log needs rows).
 #
 # TOKENS substituted by run.sh: @INPUTS@ (ghost_cell's fixture, borrowed), @WORK@, @STEM@.
@@ -99,7 +99,11 @@ io:
 output:
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
-  trace: [dt]   # LOAD-BEARING: the DTTRACE lines are what the substring-proof check parses
+  trace:   # LOAD-BEARING: the DTTRACE lines are what the substring-proof check parses
+    dt: true
+    water_step: false
+    budget: false
+    fsm: false
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
   directory: '@WORK@/@STEM@_prov'
   if_exists: overwrite

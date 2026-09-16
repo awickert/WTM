@@ -99,7 +99,11 @@ io:
   time_start: 'ta'
   time_end: 'tb'
 output:
-  trace: []   # PER-ARM: two arms request [water_step] to inspect the per-step water trace
+  trace:   # PER-ARM: two arms request [water_step] to inspect the per-step water trace
+    dt: false
+    water_step: false
+    budget: false
+    fsm: false
   outfile_prefix: '@WORK@/@STEM@_'
   run_log: '@WORK@/@STEM@.txt'
   verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
