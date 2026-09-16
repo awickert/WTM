@@ -92,3 +92,21 @@ Nothing today tested that, and at-scale is out of scope.
   plus an unconditional `t + dt == t` roundoff guard
 - `output.trace` and `output.extra_rasters` are now MAPS of name → bool, not lists
 - `benchmark/n64_adaptive_yardstick/`, `benchmark/lc103_knob_sweep/` — reproduction records
+
+## THE ROBUSTNESS RATIONALE, held in reserve (Andy, 2026-09-16)
+
+Adaptive's robustness is recorded as DESIGN INTENT, not measured, and `#60` closed because its only
+unblocking condition was a proof Andy does not want *yet*. But the concrete case that WOULD justify both
+is named, so nobody has to re-derive it:
+
+> Start with a **50-week time step**. Adaptive can reduce the step and run. Fixed cannot, and will
+> likely crash on realistic topography.
+
+That is the shape of the demonstration: not a speed comparison at matched precision, but a run that
+**completes under adaptive and dies under fixed**. It needs realistic topography, which is why no
+synthetic fixture here has produced it.
+
+**The trigger to revisit: an actual crash.** When a run dies on repeated rejection or on a step the
+model cannot take, that run IS the missing case. At that point re-open `#60` (patch in `git stash`,
+find by message) and use the crash as the rationale. Until then this is a hypothesis with a named test,
+which is the honest state — not an open task.
