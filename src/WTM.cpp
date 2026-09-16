@@ -1670,6 +1670,10 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // rule needs. Absence stays unambiguous because the mechanisms that own this key --
   // solver.time_step.mode -- is emitted above, explicitly and concretely.
   if (uc.dtc_dt_max > 0.0) f << "    dt_max: \"" << cfg_num(uc.dtc_dt_max) << "s\"\n";
+  // ...and the FLOOR beside the ceiling. Omitted when this was added, which tests/config_schema
+  // caught: it fails when a schema key is never written to full_config.yaml, because a provenance
+  // record that silently drops a key a run resolved is worse than no record.
+  if (uc.dtc_dt_min > 0.0) f << "    dt_min: \"" << cfg_num(uc.dtc_dt_min) << "s\"\n";
   // THE STEP-CONTROLLER DIALS, and like dt_max they are emitted ONLY WHEN A CONTROLLER IS RUNNING.
   //
   // This file promises, in its own header, to be "re-runnable as-is". It was not: on a FIXED-STEP run

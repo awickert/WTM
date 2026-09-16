@@ -155,30 +155,25 @@ expect_resolved() {
 # SUITES WHOSE CONFIGS ARE FULLY DECLARED. A suite listed here is CHECKED AND ENFORCED: every key the
 # run resolved must already be stated in the config it was given, or the suite fails.
 #
-# THE RATCHET. The rule -- a test's config says everything, a user's config may rely on defaults -- cannot
-# be switched on at once: 494 of 494 runs currently leave at least one key implicit, and some of those
-# keys still arrive by CLI flag because the YAML migration is unfinished. So the check REPORTS for every
-# suite and ENFORCES for the suites named here, and a suite joins the list in the same commit that makes
-# it declared. That makes the conversion monotone -- a converted suite cannot silently drift back while
-# the rest is in flight -- and turns "gradually tighten this" into a count that only goes up instead of an
-# intention that quietly expires. When the list holds every suite, delete it and enforce unconditionally.
 # THE DECLARED-CONFIG RULE IS UNCONDITIONAL NOW (#79 Phase 5). It used to be opt-in per suite via
 # WTM_DECLARED_SUITES, which was scaffolding for the migration: a suite joined the list once its
 # configs stated everything its runs resolved to. All 39 suites have been materialised (#83), so the
 # list has served its purpose and is gone -- every suite is enforced, and a new suite is enforced the
 # day it is written rather than the day someone remembers to add it.
 #
-# THREE SUITES ARE EXEMPT, and each exemption is STRUCTURAL rather than a to-do. They are named here,
+# TWO SUITES ARE EXEMPT, and each exemption is STRUCTURAL rather than a to-do. They are named here,
 # in the code that would otherwise fail them, because an exemption a reader cannot see is a hole:
 #
 #   config_schema    every arm ABORTS AT PARSE -- that is its subject. No run completes, so no run
 #                    writes a full_config.yaml, so there is nothing to compare a config against.
 #   route_equality   its arms compare the FLAG route against the CONFIG route. The DIFFERENCE between
 #                    the two IS the assertion, so making both configs identical would delete the test.
-#   runoff_collector it asserts that RETIRED aliases abort rather than being silently ignored, so its
-#                    arms deliberately pass settings the schema no longer accepts.
-#                    (Its `unset` arm is NOT a reason: that one is declarable now, via the OPTIONAL
-#                    marker from #92, and states what it expects to resolve to.)
+#
+# runoff_collector USED TO BE THE THIRD and no longer is, which is why it is written down rather than
+# simply deleted: its `unset` arm became declarable via the OPTIONAL marker (#92) and now states what it
+# expects to resolve to, so the exemption was retired with the arm that needed it. The prose kept saying
+# THREE for a while after the variable said two -- a list and its description drifting apart is the same
+# defect class this file exists to prevent, so it is noted here rather than quietly corrected.
 #
 # An exempt suite still REPORTS its progress; it just cannot fail on it.
 WTM_DECLARED_EXEMPT="config_schema route_equality"
