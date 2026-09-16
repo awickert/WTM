@@ -141,10 +141,33 @@ someone choosing a mode will read it, rather than carried as a to-do.
 
 ### B — THE HARNESS, set aside
 
-Real, and none of it changes an answer. `#84` tolerance provenance (now partly mechanised by
-`tests/tol_margin.py`) · `#85` goldens carry no in-file provenance · `#98` `budget_closure`'s `a_as` ≡
-`c_as` · `#90` `active_set`'s header still calls it experimental and off-by-default · `#50`'s doc half ·
-`#58 / 59` strike the "not implemented" sections · `#77` a record, no action claimed.
+**RE-VERIFIED against the tree 2026-09-17, every item, and the task text updated with what was found.**
+Two of these were mis-filed here, one has grown, and three are confirmed exactly as written.
+
+| # | verified state |
+|---|---|
+| **58** | **NOT harness – this is the adaptive CONTROLLER, and its open part looks SUPERSEDED.** Its premise (`n_in = 0` → `est = 0.0` → grow maximally) has no code path left: `transient_groundwater.cpp:2086` now reads `est_n = gn + gcn` ("EVERY land cell informs the estimate"), and `:2189` caps growth when `est_cpl > dt_tol`. That IS this item's own safe-form proposal. Its strong form (reject on it) is what `#63` measured and refuted – `est_cpl` is O(1) in `dt`. Verified by reading the code, not running it. |
+| **59** | **NOT harness either, and the same supersession.** Its measured negative – FSM activity cannot predict the error, because exposure is a property of the trajectory *ahead* – stands permanently and should not be re-derived. Its surviving item (b) is #58's trigger, and has no condition left to fire on. |
+| **77** | Confirmed, and its premise is now the shipped default: `active_set` is the default collector (`resolve_defaults.cpp:31`) and `CONFIG_BASELINE.md:29` already cites this measurement. A record, no action claimed. |
+| **84** | **Grown.** Recounted mechanically (`grep -rnoE '\$\{[A-Z_]*TOL[A-Z_]*:-[^}]*\}' tests/*/run.sh`): **30 across 20 suites**, up from 24 across 19. And "partly mechanised by `tol_margin.py`" was optimistic – that file is referenced by **nothing**, and `run_all.sh` does not call it. |
+| **85** | Confirmed verbatim. All 7 references still open with `shape=` and nothing else: no commit, no config, no date, no reason. |
+| **90** | Confirmed, **and it is now three things.** The arm asymmetry stands (`exp_plain` still differs in three ways) but is at least written down. NEW: the header at `run.sh:15` still advertises `COLLECTOR-INDEPENDENT ... < 1e-9 m spread` – an arm that `run.sh:86-89` records as deliberately DELETED. And `run.sh:2, :19` still call active-set "EXPERIMENTAL and OFF BY DEFAULT (`-wtm_active_set`)", which is wrong three times over. |
+| **98** | Confirmed: `a_as` and `c_as` still resolve identically, `ARM_TOL=1e-5` on both. NEW: `a_as`'s label still prints "[loose tol, see note]", promising a distinction it no longer has. |
+
+`#50`'s doc half also sits here.
+
+### The shipped example is BROKEN — `#108`, found 2026-09-17
+
+Section A stays empty: `src/` is fine. But `examples/island_equilibrium/demo.py:36` passes
+`-wtm_bdf2_on_V` to `build/wtm.x`, and the retired-namespace guard (`WTM.cpp:1251`) aborts the run.
+**Verified by execution: `rc=1`.** This is the demonstration a new user runs first, and the goal of this
+document is a model someone else can run without us.
+
+`#101` closed having found "two benchmark scripts" of this kind. A scan for lines that BUILD A COMMAND
+LINE containing `-wtm_` returns **29 files**, four of which are legitimate (the guard itself, two stored
+records, and the fork-targeted `scaling_study.py`, where `-wtm_anderson` is correct for v2.0.1). So
+~24 candidates, **one verified**. Each needs its target binary identified before being touched: "fixing"
+a fork-targeted script would break a working baseline.
 
 ### Closed today beyond the sweep
 
