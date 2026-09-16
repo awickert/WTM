@@ -36,8 +36,8 @@ defects to be worked around, and the second and third can invalidate a naive dt-
 
   On real terrain exact ties are rare, which is the assumption the method is built on. On FLAT terrain
   they are universal, and then the arbitrary choice decides the whole answer. Measured on a test island
-  with a perfectly flat plateau and a pit in the exact centre — a case symmetric to machine precision in
-  every input, on both axes:
+  with a perfectly flat plateau and a pit in the exact centre, a case symmetric to machine precision in
+  every input on both axes:
 
   | | left-right | up-down |
   |---|---|---|
@@ -52,7 +52,7 @@ defects to be worked around, and the second and third can invalidate a naive dt-
   **What this means in practice.** Two consequences, and neither is a reason to distrust a normal run:
 
   1. On terrain with real relief, outlets rarely tie and this does not arise.
-  2. Where it does arise — a flat plateau, a plain, a synthetic test surface — the water still balances
+  2. Where it does arise (a flat plateau, a plain, a synthetic test surface) the water still balances
      exactly and the total is right. What moves is WHICH way it leaves, and therefore which cells near
      the outlet end up wet. Refining the time step does not help, because the choice is not a
      time-stepping error: the finest run made it slightly worse, not better.
