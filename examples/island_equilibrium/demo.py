@@ -2,17 +2,24 @@
 """Island equilibrium demo: implicit (2nd-order Picard) groundwater, serial == parallel.
 
 Runs WTM to equilibrium on an island (ocean along every side) with the 2nd-order-in-time
-implicit solver (`-wtm_bdf2_on_V`), in serial and on N MPI ranks, and shows that the result is
-cross-rank consistent (identical to floating-point-reduction noise) while producing the expected
-surface hydrology: lakes ponded in closed depressions, rivers draining to the coast, and the ocean
-boundary.
+implicit solver (`solver.method: picard` + `solver.time_integration: bdf2`, the BDF2-on-V path),
+in serial and on N MPI ranks, and shows that the result is cross-rank consistent (identical to
+floating-point-reduction noise) while producing the expected surface hydrology: lakes ponded in
+closed depressions, rivers draining to the coast, and the ocean boundary.
+
+MEASURED 2026-09-17, on the repaired demo:
+    spectral   n=4: max|dwtd| = 5.684e-13 m      n=8: 7.958e-13 m    (37 lake cells, max 8.3 m)
+    corsica    n=4: max|dwtd| = 1.206e-09 m      n=8: 1.720e-09 m    (218 lake cells, max 79.0 m)
+both against a 1e-6 m threshold.
 
 Two topographies:
   * `spectral` -- a synthetic island (radial dome + Fourier roughness + two carved basins).
     Deterministic, self-contained.
   * `corsica`  -- a real DEM: a 240x156 window of GEBCO_08 over Corsica (bundled as
     `corsica_gebco.tif`, so no GEBCO download is needed). Steep real terrain -- note the default
-    Anderson solver fails to converge here, while the implicit Picard solver does.
+    Anderson solver fails to converge here, while the implicit Picard solver does. (That observation
+    predates the current default set -- anderson / tr-bdf2 / active_set / adaptive -- and has not
+    been re-measured against it.)
 
 Usage:
     demo.py spectral [--ranks 4 8] [--map]
@@ -100,19 +107,99 @@ def make_corsica(d):
     return "corsica", 120, 41.2                                         # GEBCO 30" ; Corsica latitude
 
 
-def cfg(d, region, cpd, south, txt, pfx):
-    return (f"run_type equilibrium\nfsm_on 1\nevap_mode 1\ninfiltration_on 0\nrunoff_ratio_on 1\n"
-            f"cells_per_degree {cpd}\nsouthern_edge {south}\ndeltat 31536000\ntotal_cycles 15\nmaxiter 3\n"
-            f"fdepth_a 200\nfdepth_b 150\nfdepth_fmin 2\ntime_start t0\ntime_end t0\n"
-            f"surfdatadir {d}\nregion {region}\nsupplied_wt 0\ncycles_to_save 9999\n"
-            f"textfilename {txt}\noutfile_prefix {pfx}\n")
+def cfg(d, region, txt, pfx, outdir):
+    """The run's configuration, in the nested-YAML schema (see config.yaml at the repo root).
+
+    EVERY setting this run resolves to is stated here. That is the house rule for configs in this
+    repo, and it is what makes a run reproducible from the file alone rather than from knowing which
+    defaults applied on the day. Four of them are LOAD-BEARING for what this demo claims:
+
+      solver.method: picard + time_integration: bdf2
+          The 2nd-order-in-time BDF2-on-V path. This is what the demo has always run (it asked for it
+          as the retired flag `-wtm_bdf2_on_V`), and it is the cross-rank-deterministic solver, which
+          is the property the demo exists to show.
+      time_step.mode: fixed
+          The legacy behaviour: dt is exactly `dt` below. Picard would otherwise resolve to
+          `adaptive`. Held fixed so the serial and parallel runs take the SAME steps, and any
+          difference between them is the thing being measured rather than a different step sequence.
+      equilibrium_stop.tol: 0
+          Run the clock out; never stop early. A determinism comparison that is free to auto-stop can
+          have its two runs halt at different cycles and then differ for a reason that is not a
+          defect -- exactly the trap #95 caught in the taper study.
+      surface_water.routing: impulse
+          FSM's routed table replaces the step baseline -- what the model has always done, and what
+          v2.0.1 does. `continuous` is REFUSED with the `explicit` collector that Picard resolves to.
+    """
+    return f"""run:
+  type: equilibrium
+  initial_water_table: saturated   # was `supplied_wt 0`
+  equilibrium_stop:
+    tol: 0            # LOAD-BEARING: never auto-stop -- see the docstring
+    metric: frac      # INERT with tol 0
+    frac: 0.001       # INERT, as above
+time:
+  total: "15yr"       # was `total_cycles 15` at a 1 yr step
+  report_interval: 1
+  save_every_n_reports: 1
+io:
+  source: '{d}'
+  region: '{region}'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  directory: '{outdir}'
+  outfile_prefix: '{pfx}'
+  run_log: '{txt}'
+  verbosity: normal
+  if_exists: overwrite
+boundaries:
+  land: neumann_toposlope
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05
+    logistic_width: 0.1
+  extinction_depth: 8
+  tapers:
+    surface_transition: true
+    depth_extinction: true
+surface_water:
+  routing: impulse    # LOAD-BEARING -- see the docstring
+  runoff_ratio: raster   # was `runoff_ratio_on 1`: use the runoff_ratio layer this demo writes
+  infiltration_during_flow: false
+  collection:
+    method: explicit  # what Picard resolves to; active_set is refused on the Picard path
+solver:
+  method: picard
+  time_integration: bdf2   # BDF2-on-V, the 2nd-order path. Was `-wtm_bdf2_on_V`
+  convergence:
+    metric: volume         # the shipped default (#61): the per-solve step judged in WATER
+    water_volume_tol: 1.0e-8
+  smoothing:
+    ksat_surface: 0
+    ksat_soilbottom: 0
+    storativity_surface: 0.01
+  time_step:
+    mode: fixed       # LOAD-BEARING -- see the docstring
+    dt: 31536000      # 1 year; was `deltat`
+parallel:
+  threads_per_rank: 1
+"""
 
 
 def run(d, region, cpd, south, n):
-    c = os.path.join(d, f"cfg_n{n}")
+    c = os.path.join(d, f"cfg_n{n}.yaml")
     with open(c, "w") as f:
-        f.write(cfg(d, region, cpd, south, os.path.join(d, f"out_n{n}.txt"), os.path.join(d, f"n{n}_")))
-    subprocess.run(["mpirun", "-n", str(n), WTM, c] + SOLVER_FLAGS, cwd=d,
+        # Absolute paths, as the test suites do: `directory` is the run's provenance dir, while the
+        # raster prefix and the log are written where this script then looks for them.
+        f.write(cfg(d, region, os.path.join(d, f"out_n{n}.txt"),
+                    os.path.join(d, f"n{n}_"), os.path.join(d, f"prov_n{n}")))
+    subprocess.run(["mpirun", "-n", str(n), WTM, c], cwd=d,
                    env={**os.environ, "OMP_NUM_THREADS": "1"}, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     with rasterio.open(sorted(glob.glob(os.path.join(d, f"n{n}_*.tif")))[-1]) as s:
