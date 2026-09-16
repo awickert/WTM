@@ -51,13 +51,25 @@ tests rather than the code itself: set aside. I am interested only in improving 
 split on that line. Section A is work on the model; section B is real but is about the harness, and is
 parked until the model work is done.
 
-### A — THE CODE
+### A – THE CODE: **EMPTY** as of 2026-09-17
 
-| # | item | state |
+Every model-code item is closed. The three that stood here on 2026-09-11 closed on 2026-09-16, each
+with its reason, and they are listed rather than deleted so a reader can see what the section held:
+
+| # | closed as | commit |
 |---|---|---|
-| **106** | The equilibrium stop measures **pre-FSM** states on the serial path (`fsm_on` AND `infiltration_on`), while the distributed path measures post-FSM | Under Andy's rule those are states that do not physically exist. Split out of #103. **Size unmeasured** — measure the two metrics against each other before proposing anything. |
-| **102** | `S·Δh ≡ ΔV` unverified where `S ≠ Sy`, and the model's own `secant × active_set` refusal cites the suite that never checked it | **No longer blocked by #103.** The refusal itself is CORRECT and stays — it is an assembly constraint, `secant` puts `b = h^n` in the RHS so the active-set pin would not be enforced. The open part is only that its closing sentence cites `tests/storage_equivalence` as authority for a claim that suite has never checked. Tests allowed to fail (Andy). |
-| **6** | Re-run `scheme_bench` | Blocked by a live model refusal (`and_be` secant throws under `active_set`), which is itself #102's territory. |
+| **106** | The equilibrium stop read **pre-FSM** state on the serial path. Size measured before proposing anything, as the item demanded: the two metrics disagree by 52% / 9%, and the disagreement changes the stop decision for `eq_tol` in [4.548, 4.986]. Fixed – the serial path now recomputes from post-FSM `arp.wtd` against post-FSM `arp.wtd_old`. | `4c1e3b4` |
+| **102** | The `secant × active_set` refusal is CORRECT and stays: an assembly constraint, since `secant` puts `b = h^n` in the RHS and the active-set pin would not be enforced. The open part was only that it cited `tests/storage_equivalence` as authority for something that suite never checked. Three unearned citations removed; the message now says the identity is true BY CONSTRUCTION. | `af8c6aa` |
+| **6** | `scheme_bench` re-run. It was never blocked by #102: the refusal it cited applies to `secant`, and the benchmark does not run `secant`. `active_set` Newton went 1780 → 44 iterations. Two harness bugs fixed on the way (a relative `OUT` that doubled the path, and a producer/consumer directory-name mismatch). The `implicit` arm got 7× worse and was filed as **#107**. | `a5e7247` |
+
+**#107**, filed out of #6, also closed: Newton + `implicit` was **never** converging. It had been
+exiting on the head relative-step stagnation test, and #104's residual gate now refuses that false
+verdict. Not a regression – the 2026-08-25 benchmark table is the misleading artefact. Confirmed by one
+controlled run: `residual_gate 1e+30` restores the old 14 iterations and `CONVERGED_SNORM_RELATIVE`.
+
+**#64** and **#103** closed the same day; both have their own sections below. **#60** closed on Andy's
+decision, also below. The remaining open work is section B, plus the one unnumbered item at the end of
+this file.
 
 **`#104` — the per-solve water-step test declared convergence after 4-7 iterations on the shipped
 `active_set` path, committing a first step tens of metres from the answer.** FIXED (`db54072`,
