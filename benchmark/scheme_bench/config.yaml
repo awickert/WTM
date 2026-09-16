@@ -89,7 +89,16 @@ io:
 output:
   outfile_prefix: '@OUT@/@STEM@_'
   run_log: '@OUT@/@STEM@.txt'
-  trace: []
+  trace:                     # diagnostic channels; answer-neutral. A map since 2026-09-16 so the
+                             # channel names ship here rather than having to be known.
+    dt: false
+    water_step: false
+    budget: false
+    fsm: false
+  extra_rasters:             # the ordinary snapshot is the model's answer; post_groundwater is the
+                             # solve's answer before FillSpillMerge. Off: this benchmark measures cost
+                             # and iterations, not either error.
+    post_groundwater: false
   verbosity: normal
   directory: '@OUT@/@STEM@_prov'
   if_exists: overwrite

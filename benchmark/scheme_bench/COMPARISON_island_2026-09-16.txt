@@ -1,0 +1,72 @@
+FSM COUPLING COMPARISON -- island 117x75 (8775 cells), cold start, dt = 1 week, n=4
+  between = FSM overwrites the table between steps (original)   [results_active_set_between]
+  during  = FSM's dV enters the next step's source (-wtm_fsm_continuous, #116)  [results_active_set_during]
+
+The two converge to DIFFERENT equilibria, so the rms below is a SETTLING-RATE metric
+(how fast each stops changing), NOT accuracy. Speedup > 1 means `during` is cheaper.
+
+============================================================================================================
+COST TO REACH rms <= 100 mm-water
+============================================================================================================
+scheme                            between: it / ~s       during: it / ~s    iter speedup    wall speedup
+------------------------------------------------------------------------------------------------------------
+Anderson BE (secant)                   did not run
+Anderson BE (volume dV)                  256 / 0.3             256 / 0.2           1.00x           1.02x
+Picard BDF2-on-V (plain)               did not run
+Picard BDF2-on-V + Tbar                did not run
+TR-BDF2 (fixed dt)                       126 / 0.2             126 / 0.2           1.00x           1.06x
+TR-BDF2 + adaptive dt                    126 / 0.2             126 / 0.2           1.00x           0.99x  <-- variable dt: rms is a step-size artifact, NOT convergence
+Newton (plain)                         did not run
+Newton + dt-continuation                   8 / 0.0               8 / 0.0           1.00x           1.03x  <-- variable dt: rms is a step-size artifact, NOT convergence
+
+============================================================================================================
+COST TO REACH rms <= 10 mm-water
+============================================================================================================
+scheme                            between: it / ~s       during: it / ~s    iter speedup    wall speedup
+------------------------------------------------------------------------------------------------------------
+Anderson BE (secant)                   did not run
+Anderson BE (volume dV)                  878 / 0.9             878 / 0.8           1.00x           1.02x
+Picard BDF2-on-V (plain)               did not run
+Picard BDF2-on-V + Tbar                did not run
+TR-BDF2 (fixed dt)                       471 / 0.8             471 / 0.8           1.00x           1.06x
+TR-BDF2 + adaptive dt                    471 / 0.8             471 / 0.8           1.00x           0.99x  <-- variable dt: rms is a step-size artifact, NOT convergence
+Newton (plain)                         did not run
+Newton + dt-continuation                  44 / 0.1               8 / 0.0           5.50x           5.67x  <-- variable dt: rms is a step-size artifact, NOT convergence
+
+============================================================================================================
+COST TO REACH rms <= 1 mm-water
+============================================================================================================
+scheme                            between: it / ~s       during: it / ~s    iter speedup    wall speedup
+------------------------------------------------------------------------------------------------------------
+Anderson BE (secant)                   did not run
+Anderson BE (volume dV)                      never                 never              --              --
+Picard BDF2-on-V (plain)               did not run
+Picard BDF2-on-V + Tbar                did not run
+TR-BDF2 (fixed dt)                           never                 never              --              --
+TR-BDF2 + adaptive dt                        never                 never              --              --  <-- variable dt: rms is a step-size artifact, NOT convergence
+Newton (plain)                         did not run
+Newton + dt-continuation                     never                 never              --              --  <-- variable dt: rms is a step-size artifact, NOT convergence
+
+============================================================================================================
+FULL-BUDGET TOTALS (same cycle budget both sides)
+============================================================================================================
+scheme                              between it / s         during it / s      iter ratio      wall ratio
+------------------------------------------------------------------------------------------------------------
+Anderson BE (secant)                       0 / 1.0               0 / 0.9              --           1.03x
+Anderson BE (volume dV)                 1351 / 1.3            1351 / 1.3           1.00x           1.02x
+Picard BDF2-on-V (plain)                   0 / 3.0               0 / 0.9              --           3.11x
+Picard BDF2-on-V + Tbar                    0 / 1.0               0 / 1.9              --           0.51x
+TR-BDF2 (fixed dt)                       775 / 1.3             775 / 1.2           1.00x           1.06x
+TR-BDF2 + adaptive dt                    775 / 1.3             775 / 1.3           1.00x           0.99x
+Newton (plain)                             3 / 3.6               3 / 2.5           1.00x           1.45x
+Newton + dt-continuation                1180 / 3.0            1180 / 2.9           1.00x           1.03x
+
+============================================================================================================
+SETTLING FLOOR reached within the budget (lower = stopped changing more completely)
+============================================================================================================
+scheme                              between best/final         during best/final
+------------------------------------------------------------------------------------------------------------
+Anderson BE (volume dV)                  2.161 / 2.161             2.161 / 2.161
+TR-BDF2 (fixed dt)                       2.051 / 2.051             2.051 / 2.051
+TR-BDF2 + adaptive dt                    2.051 / 2.051             2.051 / 2.051
+Newton + dt-continuation                   5.15 / 5.15              4.914 / 5.15

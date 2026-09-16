@@ -44,6 +44,14 @@ COUPLING="${COUPLING:-between}"
 # surface_water.mode merged into surface_water.routing (#89). It was `-wtm_fsm_continuous` until the
 # -wtm_ namespace was retired; that flag would now abort the run as an unconsumed option.
 # `during` == continuous == THE DEFAULT (#43); `between` == impulse.
+# The DIRECTORY name keeps the user-facing spelling (between|during), because matrix.py reads
+# results_<collector>_<between|during>. Deriving OUT from the REMAPPED value instead wrote to
+# results_*_impulse / _continuous, which matrix.py does not look for -- so a full 2x2 could complete and
+# the matrix would still report the previous run's numbers. Producer and consumer must agree on the name.
+case "$COUPLING" in
+  between|impulse)    COUPLING_DIR="between" ;;
+  during|continuous)  COUPLING_DIR="during" ;;
+esac
 case "$COUPLING" in
   between) COUPLING="impulse" ;;
   during)  COUPLING="continuous" ;;
@@ -67,7 +75,14 @@ esac
 
 DOM=$(readlink -f ../island/domain)
 [[ -f "$DOM/Esquibel_010000_topography.tif" ]] || { echo "ERROR: island fixture missing at $DOM"; exit 1; }
-OUT="${OUT:-results_${COLLECTOR}_${COUPLING}}"; mkdir -p "$OUT"
+OUT="${OUT:-results_${COLLECTOR}_${COUPLING_DIR}}"; mkdir -p "$OUT"
+# ABSOLUTE, and it has to be. output.outfile_prefix is joined ONTO output.directory by the model, so a
+# RELATIVE OUT produces `<OUT>/<stem>_prov/<OUT>/<stem>_...tif` -- a directory that does not exist, and
+# every arm dies with "Attempt to create new tiff file ... No such file or directory". It failed that
+# way for all 8 arms in all 4 corners on 2026-09-16 and looked like a model failure, because rc=1 with
+# an empty log is indistinguishable from one until you read the log. A caller passing an absolute OUT
+# never sees it, which is why it survived.
+OUT="$(readlink -f "$OUT")"
 export OMP_NUM_THREADS=1     # pure MPI: OpenMP x MPI oversubscription hangs this fixture at n>=4
 
 # Cold start from a saturated table (supplied_wt 0) -- the spin-up regime, where the schemes actually

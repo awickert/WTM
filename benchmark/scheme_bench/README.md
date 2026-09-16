@@ -1,13 +1,52 @@
 # Precision-matched scheme comparison
 
-**Date:** 2026-08-25 · **Branch:** `bdf2-adaptive-dt` · **Fixture:** island, 117×75 = 8,775 cells
+**Date:** 2026-09-16 (re-run for #6; the 2026-08-25 files are kept beside these) · **Branch:** `bdf2-adaptive-dt` · **Fixture:** island, 117×75 = 8,775 cells
 
 `run.sh` sweeps WTM's time-integration / solver schemes and `report.py` reads cost off at **matched
-precision**. Raw output of the run below: `RESULTS_island_2026-08-25.txt`.
+precision**. Raw output of the run below: `RESULTS_island_2026-09-16.txt`.
 
 Reproduce: `benchmark/scheme_bench/run.sh <wtm.x> 4 250`
 (cold start from saturated, `dt` = 1 week, FSM on, `runoff_collector implicit`, `-snes_stol 1e-8`,
 auto-stop disabled so every arm runs the same budget and reveals its own floor.)
+
+
+## 2026-09-16 re-run (#6): what changed, and one thing that is NOT explained
+
+Newton's rows in the 2026-08-25 matrix predate `bf187ee`, which gave Newton the semismooth active-set
+tangent, so they measured a Newton that could not differentiate the constraint it was solving against.
+Re-run of the full 2×2. Iterations to reach rms ≤ 10 mm-water:
+
+| Newton + dt-continuation | implicit × between | implicit × during | active-set × between | active-set × during |
+|---|---|---|---|---|
+| 2026-08-25 | 18041 | 10 | 1780 | 7 |
+| 2026-09-16 | **100000** | **100000** | **44** | 8 |
+
+**Under `active_set` the expected result, larger than expected:** 1780 → 44, a 40× improvement. That is
+the tangent, and it is the headline this re-run was for.
+
+**Under `implicit` it went the other way and I cannot say why.** ~123k actual iterations with
+`DIVERGED_MAX_IT` in the log, against 18041 before. Two cautions before anyone treats that as a
+regression introduced by the tangent: the runs are separated by many commits, not just `bf187ee`; and
+the old `implicit × during` figure of **10** iterations to 10 mm rms from a cold start is not credible
+on its face, which suggests that arm was not measuring what its label says. Attributing this needs a
+bisect, and it is filed rather than guessed at.
+
+**Two harness bugs were fixed to make this run at all**, both of which had made the benchmark
+silently unusable rather than loudly broken:
+
+1. `OUT` was relative, and the model joins `outfile_prefix` onto `directory` -- so every arm died with
+   "Attempt to create new tiff file ... No such file or directory". All 8 arms in all 4 corners failed
+   that way, and `rc=1` with an empty log is indistinguishable from a model failure until you read the
+   log. A caller passing an absolute `OUT` never sees it, which is why it survived.
+2. `OUT` was derived from the REMAPPED coupling name, so `run.sh` wrote `results_*_impulse` /
+   `_continuous` while `matrix.py` reads `results_*_between` / `_during`. A full 2×2 could therefore
+   complete and the matrix would still report the PREVIOUS run's numbers -- the worst kind of failure,
+   since it produces a plausible table.
+
+Under `active_set` the coupling choice is very nearly inert: `between` and `during` differ by
+**1.6466e-09 m** in the final field, which is why their iteration counts are identical rather than
+merely close. That bears on #90.
+
 
 ## The rule this enforces
 
@@ -78,7 +117,7 @@ was never claimed to handle.
 
 `run.sh` takes `COUPLING=between|during`. Both sweeps were run identically
 (`results_between/`, `results_during/`); side-by-side output in
-`COMPARISON_island_2026-08-25.txt`, produced by `compare.py`.
+`COMPARISON_island_2026-09-16.txt`, produced by `compare.py`.
 
 - **between** — `surface_water.routing: impulse`. FillSpillMerge runs between steps and **overwrites**
   the water table (the original behaviour). `between` is this script's env value; `impulse` is the
@@ -129,7 +168,7 @@ marked in the output:
 
 ---
 
-# The 2×2: collector × coupling (`matrix.py`, `MATRIX_island_2026-08-25.txt`)
+# The 2×2: collector × coupling (`matrix.py`, `MATRIX_island_2026-09-16.txt`)
 
 `run.sh` takes `COLLECTOR=implicit|active_set` and `COUPLING=between|during`, giving four corners.
 `implicit × between` is the original model; `active_set × during` was the proposed full stack.
