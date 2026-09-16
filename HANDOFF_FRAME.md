@@ -17,7 +17,7 @@ Every model-code item closed. What remains is parked, set aside, or hygiene:
 
 | # | state |
 |---|---|
-| 60 | parked by Andy: needs a case that would otherwise ABORT. Patch is in `git stash` — find it by MESSAGE (`git stash list \| grep '#60 v2'`), never by index; indices shift. |
+| 60 | **CLOSED** 2026-09-16, not parked. Andy: "I do not care to prove that adaptive time stepping is more robust." Its only unblocking condition WAS that proof. Patch stays in `git stash` — find it by MESSAGE (`git stash list \| grep '#60 v2'`), never by index. |
 | 77 | a measurement on the record, no action claimed |
 | 58, 59, 84, 85, 90, 98 | harness, set aside by Andy. None changes an answer. |
 
