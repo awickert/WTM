@@ -108,5 +108,24 @@ synthetic fixture here has produced it.
 
 **The trigger to revisit: an actual crash.** When a run dies on repeated rejection or on a step the
 model cannot take, that run IS the missing case. At that point re-open `#60` (patch in `git stash`,
-find by message) and use the crash as the rationale. Until then this is a hypothesis with a named test,
-which is the honest state — not an open task.
+find by message) and use the crash as the rationale.
+
+### THE TRIGGER FIRED — 2026-09-17. The case is real and measured.
+
+It came out of making `examples/island_equilibrium` realistic (slope derived from the DEM, so `fdepth`
+spans 2–200 m instead of a uniform 200). Corsica, Anderson, serial, step walked up in powers of two:
+
+| dt | `mode: fixed` | `mode: adaptive` |
+|---|---|---|
+| 48 wk | completes | completes |
+| 64 / 128 / 256 wk | completes | — |
+| **512 wk** | **DIES** – "The SNES solver has not converged" | **completes**, 253 lakes |
+| **1024 wk** | **DIES** – "TR-BDF2 trapezoidal stage (1) did not converge" | **completes**, 253 lakes |
+
+Handed a step the solver cannot take, the fixed stepper ends the run; handed the same step as a
+STARTING point, the controller subdivides and finishes. Computes versus does not compute.
+
+Two honest qualifications. It took **512 weeks, not 50** — corsica at 48 weeks is not hard enough, so
+the case is real but not near the working regime. And this demonstrates what ADAPTIVE STEPPING is for;
+it does not by itself argue for `#60`'s order-aware retry patch, whose value is a separate question.
+**The decision to land that patch has NOT been taken.**
