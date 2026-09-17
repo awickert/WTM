@@ -306,7 +306,31 @@ def time_step_block(mode, dt):
     raise ValueError(mode)
 
 
-def cfg(d, region, txt, pfx, outdir, solver, mode, dt):
+# RUNNING TO EQUILIBRIUM RATHER THAN TO A CLOCK. The two are different experiments and this demo now
+# does both, because each answers a question the other cannot:
+#
+#   CYCLES (default)  every run takes the SAME 15 steps of the SAME size and stops. One variable, so
+#                     serial-vs-parallel is a clean comparison -- this is what the cross-rank claim
+#                     rests on, and why equilibrium_stop.tol is 0 there.
+#   EQUILIBRIUM       every run stops when the water table stops moving, however long that takes.
+#                     Now the solvers are compared at the SAME PHYSICAL STATE instead of at the same
+#                     clock reading, which is the only way a cross-SOLVER comparison of lake counts
+#                     means anything (at 15 years none of them had converged -- corsica/newton was
+#                     still moving 0.856 m of water per cycle at cycle 14).
+#                     The cross-RANK comparison is NOT valid here and the script does not make it:
+#                     two rank counts may satisfy the stop test at different cycles, which is a
+#                     different amount of simulated time, not a disagreement.
+#
+# The stop tolerance is the SHIPPED DEFAULT from config.yaml (0.001 m of water, metric frac, 0.001 of
+# cells) rather than a number invented for this demo. TOTAL is a CAP, not a target: if a run reaches
+# it, it did not converge, and that is reported rather than passed off as an equilibrium.
+EQ_TOL   = 0.001     # config.yaml's shipped default: metres of WATER moved in a whole cycle
+EQ_FRAC  = 0.001     # ...at this fraction of cells
+EQ_YEARS = 20000     # the CAP. Reaching it means the run did not settle
+EQ_REPORT = 10       # steps per equilibrium check
+
+
+def cfg(d, region, txt, pfx, outdir, solver, mode, dt, equilibrium):
     """The run's configuration, in the nested-YAML schema (see config.yaml at the repo root).
 
     EVERY setting this run resolves to is stated here. That is the house rule for configs in this
@@ -331,20 +355,31 @@ def cfg(d, region, txt, pfx, outdir, solver, mode, dt):
           Picard resolves to). `continuous` on Anderson, the shipped default.
     """
     sv = SOLVERS[solver]
+    if equilibrium:
+        report_interval = EQ_REPORT
+        reports = max(1, int(round(EQ_YEARS * YEAR_S / (dt * report_interval))))
+        eq_block = (f"    tol: {EQ_TOL}        # config.yaml's shipped default, in metres of WATER\n"
+                    f"    metric: frac\n"
+                    f"    frac: {EQ_FRAC}       # stop once fewer than this fraction of cells still move\n")
+    else:
+        report_interval = 1
+        reports = CYCLES
+        eq_block = ("    tol: 0            # LOAD-BEARING: never auto-stop -- see the docstring\n"
+                    "    metric: frac      # INERT with tol 0\n"
+                    "    frac: 0.001       # INERT, as above\n")
+    total_s = reports * report_interval * dt
     if mode == "ramp" and solver != "newton":
         sys.exit(f"--mode ramp is the Newton continuation and is refused on the {solver} path.")
     return f"""run:
   type: equilibrium
   initial_water_table: saturated   # was `supplied_wt 0`
   equilibrium_stop:
-    tol: 0            # LOAD-BEARING: never auto-stop -- see the docstring
-    metric: frac      # INERT with tol 0
-    frac: 0.001       # INERT, as above
+{eq_block}
 time:
-  total: "{CYCLES * dt}s"   # CYCLES reports of exactly dt each. Stated in seconds, not
-                    # years, because total must be an integer number of report spans and a
-                    # non-annual dt does not divide a year
-  report_interval: 1
+  total: "{total_s}s"   # reports of exactly dt each. Stated in seconds, not years, because
+                    # total must be an integer number of report spans and a non-annual dt
+                    # does not divide a year
+  report_interval: {report_interval}
   save_every_n_reports: 1
 io:
   source: '{d}'
@@ -399,17 +434,17 @@ class DidNotComplete(RuntimeError):
     """The model ran and did not reach an answer. An outcome of the experiment, not a bug in it."""
 
 
-def run(d, region, cpd, south, n, solver, mode, dt):
+def run(d, region, cpd, south, n, solver, mode, dt, equilibrium=False):
     # The stem carries the SOLVER and the MODE as well as the rank count. Without it a picard run and an anderson
     # run at the same n write the same prefix, and the glob below silently reads the other solver's
     # raster -- the failure mode that #74 exists to prevent in the test suites.
-    stem = f"{solver}_{mode}_dt{dt}_n{n}"
+    stem = f"{solver}_{mode}_dt{dt}{'_eq' if equilibrium else ''}_n{n}"
     c = os.path.join(d, f"cfg_{stem}.yaml")
     with open(c, "w") as f:
         # Absolute paths, as the test suites do: `directory` is the run's provenance dir, while the
         # raster prefix and the log are written where this script then looks for them.
         f.write(cfg(d, region, os.path.join(d, f"out_{stem}.txt"),
-                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver, mode, dt))
+                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver, mode, dt, equilibrium))
     # A SOLVER THAT CANNOT FINISH IS A RESULT, NOT A CRASH. On the realistic corsica fixture Picard
     # does not converge, and that is the single most informative thing this demo has to say -- so it
     # is reported as an outcome with the model's own reason, not as a Python traceback. Robustness
@@ -484,6 +519,12 @@ def main():
     ap.add_argument("region", choices=["spectral", "corsica"])
     ap.add_argument("--ranks", type=int, nargs="*", default=[4, 8])
     ap.add_argument("--map", action="store_true")
+    ap.add_argument("--equilibrium", action="store_true",
+                    help="run until the water table stops moving (config.yaml's shipped stop: 0.001 m "
+                         "of water at 0.001 of cells) instead of for a fixed 15 cycles. Compares "
+                         "solvers at the same PHYSICAL STATE. The cross-rank check is not meaningful "
+                         "here -- two rank counts may satisfy the stop at different cycles -- so run "
+                         "it with --ranks and nothing after it.")
     ap.add_argument("--dt-weeks", type=float, default=None,
                     help="time step in WEEKS (default: 1 year). The #60 case is --dt-weeks 48: a step "
                          "big enough that a fixed stepper may not get through realistic terrain, "
@@ -508,7 +549,7 @@ def main():
     else:
         region, cpd, south = make_corsica(d)
     try:
-        w1 = run(d, region, cpd, south, 1, a.solver, mode, dt)
+        w1 = run(d, region, cpd, south, 1, a.solver, mode, dt, a.equilibrium)
     except DidNotComplete as e:
         print(f"{region} [{a.solver}/{mode}, dt={dt/WEEK_S:.3g} wk]: DID NOT COMPLETE\n      {e}")
         print(f"      This is the result. Try --solver "
@@ -517,13 +558,18 @@ def main():
     with rasterio.open(os.path.join(d, f"{region}_t0_mask.tif")) as s:
         land = s.read(1) > 0
     lakes = int((land & (w1 > 0.05)).sum())
-    print(f"{region} [{a.solver}/{mode}, dt={dt/WEEK_S:.3g} wk]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
+    if a.equilibrium and a.ranks:
+        print("NOTE: --equilibrium compares solvers at one physical state; the cross-rank numbers\n"
+              "      below are NOT a determinism check, because two rank counts may stop at\n"
+              "      different cycles. Use the default (15-cycle) mode for that.")
+    print(f"{region} [{a.solver}/{mode}, dt={dt/WEEK_S:.3g} wk"
+          f"{', to equilibrium' if a.equilibrium else ''}]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
           f"{int((~land).sum())} ocean cells")
     fail = 0
     w_par, npar = None, None
     for n in a.ranks:
         try:
-            wn = run(d, region, cpd, south, n, a.solver, mode, dt)
+            wn = run(d, region, cpd, south, n, a.solver, mode, dt, a.equilibrium)
         except DidNotComplete as e:
             print(f"  serial vs n={n}: DID NOT COMPLETE -- {e}")
             fail += 1
