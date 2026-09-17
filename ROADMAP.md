@@ -51,10 +51,26 @@ tests rather than the code itself: set aside. I am interested only in improving 
 split on that line. Section A is work on the model; section B is real but is about the harness, and is
 parked until the model work is done.
 
-### A – THE CODE: **EMPTY** as of 2026-09-17
+### A – THE CODE: **ONE ITEM**, reopened 2026-09-17
 
-Every model-code item is closed. The three that stood here on 2026-09-11 closed on 2026-09-16, each
-with its reason, and they are listed rather than deleted so a reader can see what the section held:
+This section was empty for a day. It is not any more.
+
+| # | item | state |
+|---|---|---|
+| **110** | Snapshot filenames carry the **wrong simulated year** under `mode: ramp` | **FIXED IN SOURCE (`8df81df`), NOT YET VERIFIED.** `snapshot_filename` derived the year as `cycles_done × report_seconds`, which assumes every report spans the nominal duration — true under `fixed` and under `adaptive` (clamped to the report span), false under `ramp` (explicitly unclamped). Measured: the filename said **1140 yr** where the model's own clock said **37670.6 yr**. Both filename builders held identical copies of the wrong expression; they now share one helper reading `params.elapsed_time_s`, which the model already sums. **Three checks outstanding**, first of them a real risk: does a `fixed`-mode filename move? `elapsed_time_s` is summed where the old form multiplied, so `{:.0f}` could round a year differently and break `tests/golden`'s globs. |
+
+**How it was found is the transferable part.** Nothing was looking for it. `examples/island_equilibrium/summarize.py`
+cross-checks the year in a raster's NAME against the year in the run LOG, and warned when they
+disagreed. A label computed by anything other than the code that did the work can drift from it — and
+this one had, silently, for as long as `ramp` has existed.
+
+**It also invalidates a comparison made earlier the same day.** Reading `<prefix>_15yr.tif` from three
+solvers, the `newton/ramp` file was not at 15 years. The lake-count disagreement reported then (165 vs
+254) carried that error on top of the separate fact that none of the runs had converged.
+
+#### Closed on 2026-09-16, listed rather than deleted
+
+The three that stood here on 2026-09-11 closed the next day, each with its reason:
 
 | # | closed as | commit |
 |---|---|---|
@@ -138,6 +154,13 @@ where it is easy, so a stiff stretch that would stall at a constant `dt` should 
 what it is for. It has not been measured head-to-head on a run that fixed stepping cannot finish, and
 direct tests are deferred to later or to users. Recorded as design intent in `config.yaml`, where
 someone choosing a mode will read it, rather than carried as a to-do.
+
+### Found 2026-09-17, outside both sections
+
+| # | item | state |
+|---|---|---|
+| **108** | `examples/island_equilibrium/demo.py` could not run | **FIXED**, four commits. It had **three** independent breakages, and the retired flag it was filed for was the *last* one it would have hit: a legacy flat `key value` config the parser refuses outright, and a placeholder **1-degree-per-cell** geotransform (111 km cells where the demo intends 11 km and 0.9 km) left over from #124, which converted 10 of 15 generators. Now runs both topographies on three solvers, two step modes and a `--dt-weeks` axis. |
+| **109** | `solver.time_step.dt_min` is missing from **30 suite configs** | **OPEN.** A regression from this session: the `dt_min` floor landed, `3956ad0` made the model *write* it to `full_config.yaml`, but no suite config *states* it — so the declared-config rule fails them. Measured: 0 configs declare it, 30 resolve it. **This is the rule working**, and it blocks `run_all.sh` being green. |
 
 ### B — THE HARNESS, set aside
 
