@@ -61,6 +61,28 @@ Picard freezes its coefficients within a solve, so a steep, spatially varying ex
 it cannot chase; this is the limiter recorded in the solver notes, reproduced here on real terrain
 rather than argued. Anderson completes the same fixture and stays cross-rank consistent to 6e-12 m.
 
+WHAT ADAPTIVE STEPPING IS FOR, DEMONSTRATED (--dt-weeks). The model documents adaptive stepping as
+INTENDED to get through runs a fixed step cannot, and until 2026-09-17 that was design intent rather
+than a measurement -- no synthetic fixture here had ever produced the case. Real terrain does.
+Corsica, Anderson, serial, walking the step up in powers of two:
+
+    dt        mode: fixed                                    mode: adaptive
+    48 wk     completes                                      completes
+    64 wk     completes                                      --
+    128 wk    completes                                      --
+    256 wk    completes                                      --
+    512 wk    DIES: "The SNES solver has not converged"       completes (253 lakes, 79.0 m)
+    1024 wk   DIES: "TR-BDF2 trapezoidal stage (1) did not    completes (253 lakes, 79.0 m)
+                     converge"
+
+At 512 weeks and beyond the fixed stepper is handed a step the solver cannot take and the run ends.
+The adaptive controller is handed the SAME step as its starting point, finds it too large, subdivides
+-- and finishes. That is robustness in the only sense that matters here: computes versus does not
+compute, not a speed comparison at matched precision.
+
+Note it took 512 weeks, not the 50 the idea was first sketched with. Corsica at 48 weeks is simply
+not hard enough, which is worth knowing: the case exists but it is not near the working regime.
+
 Note the lake count moved (211 -> 254 for Anderson) when slope became real: shallower fdepth means
 less transmissivity, so water backs up into more depressions. Expected, and a physics change rather
 than a numerical one.
@@ -255,7 +277,12 @@ MODES = {
 }
 
 
-def time_step_block(mode):
+CYCLES = 15          # reports per run. Held fixed across step sizes, so time.total follows dt
+YEAR_S = 31536000    # seconds; the demo's historical step
+WEEK_S = 7 * 86400
+
+
+def time_step_block(mode, dt):
     """The solver.time_step keys THIS mode actually reads.
 
     Deliberately minimal per mode. The model refuses a -wtm_ flag nothing consumed, and the same
@@ -263,22 +290,23 @@ def time_step_block(mode):
     looks like a setting and is not one.
     """
     if mode == "fixed":
-        return "    mode: fixed\n    dt: 31536000      # 1 year, exactly as given\n"
+        return f"    mode: fixed\n    dt: {dt}      # exactly as given; nothing may change it\n"
     if mode == "adaptive":
-        return ("    mode: adaptive\n"
-                "    dt: 31536000      # the STARTING step; the controller moves it from here\n"
+        return (f"    mode: adaptive\n"
+                f"    dt: {dt}      # the STARTING step; the controller moves it from here,\n"
+                f"                      # and may SUBDIVIDE it -- clamped to the report span\n"
                 "    error_tol: 0.01   # metres of WATER per step. Stated rather than inherited:\n"
                 "                      # it would otherwise track equilibrium_stop.tol, which this\n"
                 "                      # demo sets to 0 to keep the two rank counts in lockstep\n"
                 "    grow: 1.5\n    shrink: 0.25\n    grow_if_niter_leq: 8\n"
                 "    max_retries: 15\n    norm: rms\n")
     if mode == "ramp":
-        return ("    mode: ramp\n"
-                "    dt: 31536000      # the TARGET step the continuation climbs towards\n")
+        return (f"    mode: ramp\n"
+                f"    dt: {dt}      # the TARGET step the continuation climbs towards\n")
     raise ValueError(mode)
 
 
-def cfg(d, region, txt, pfx, outdir, solver, mode):
+def cfg(d, region, txt, pfx, outdir, solver, mode, dt):
     """The run's configuration, in the nested-YAML schema (see config.yaml at the repo root).
 
     EVERY setting this run resolves to is stated here. That is the house rule for configs in this
@@ -313,7 +341,9 @@ def cfg(d, region, txt, pfx, outdir, solver, mode):
     metric: frac      # INERT with tol 0
     frac: 0.001       # INERT, as above
 time:
-  total: "15yr"       # was `total_cycles 15` at a 1 yr step
+  total: "{CYCLES * dt}s"   # CYCLES reports of exactly dt each. Stated in seconds, not
+                    # years, because total must be an integer number of report spans and a
+                    # non-annual dt does not divide a year
   report_interval: 1
   save_every_n_reports: 1
 io:
@@ -360,7 +390,7 @@ solver:
     ksat_soilbottom: 0
     storativity_surface: 0.01
   time_step:
-{time_step_block(mode)}parallel:
+{time_step_block(mode, dt)}parallel:
   threads_per_rank: 1
 """
 
@@ -369,17 +399,17 @@ class DidNotComplete(RuntimeError):
     """The model ran and did not reach an answer. An outcome of the experiment, not a bug in it."""
 
 
-def run(d, region, cpd, south, n, solver, mode):
+def run(d, region, cpd, south, n, solver, mode, dt):
     # The stem carries the SOLVER and the MODE as well as the rank count. Without it a picard run and an anderson
     # run at the same n write the same prefix, and the glob below silently reads the other solver's
     # raster -- the failure mode that #74 exists to prevent in the test suites.
-    stem = f"{solver}_{mode}_n{n}"
+    stem = f"{solver}_{mode}_dt{dt}_n{n}"
     c = os.path.join(d, f"cfg_{stem}.yaml")
     with open(c, "w") as f:
         # Absolute paths, as the test suites do: `directory` is the run's provenance dir, while the
         # raster prefix and the log are written where this script then looks for them.
         f.write(cfg(d, region, os.path.join(d, f"out_{stem}.txt"),
-                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver, mode))
+                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver, mode, dt))
     # A SOLVER THAT CANNOT FINISH IS A RESULT, NOT A CRASH. On the realistic corsica fixture Picard
     # does not converge, and that is the single most informative thing this demo has to say -- so it
     # is reported as an outcome with the model's own reason, not as a Python traceback. Robustness
@@ -454,6 +484,11 @@ def main():
     ap.add_argument("region", choices=["spectral", "corsica"])
     ap.add_argument("--ranks", type=int, nargs="*", default=[4, 8])
     ap.add_argument("--map", action="store_true")
+    ap.add_argument("--dt-weeks", type=float, default=None,
+                    help="time step in WEEKS (default: 1 year). The #60 case is --dt-weeks 48: a step "
+                         "big enough that a fixed stepper may not get through realistic terrain, "
+                         "while adaptive can subdivide it. time.total follows, so the number of "
+                         "reporting cycles is what stays fixed across step sizes.")
     ap.add_argument("--mode", choices=sorted(MODES), default=None,
                     help="who sizes the time step. Default = the solver's own: "
                          + ", ".join(f"{k}->{v['mode']}" for k, v in sorted(SOLVERS.items())))
@@ -463,6 +498,7 @@ def main():
                          "(tr-bdf2 + active_set + continuous routing), i.e. what a new user gets.")
     a = ap.parse_args()
     mode = a.mode or SOLVERS[a.solver]["mode"]
+    dt = int(round(a.dt_weeks * WEEK_S)) if a.dt_weeks else YEAR_S
     if not os.access(WTM, os.X_OK):
         sys.exit(f"build wtm.x first (looked for {WTM})")
     d = os.path.join(HERE, f"_work_{a.region}")
@@ -472,22 +508,22 @@ def main():
     else:
         region, cpd, south = make_corsica(d)
     try:
-        w1 = run(d, region, cpd, south, 1, a.solver, mode)
+        w1 = run(d, region, cpd, south, 1, a.solver, mode, dt)
     except DidNotComplete as e:
-        print(f"{region} [{a.solver}/{mode}]: DID NOT COMPLETE\n      {e}")
+        print(f"{region} [{a.solver}/{mode}, dt={dt/WEEK_S:.3g} wk]: DID NOT COMPLETE\n      {e}")
         print(f"      This is the result. Try --solver "
               f"{'anderson' if a.solver == 'picard' else 'picard'} on the same terrain.")
         sys.exit(2)
     with rasterio.open(os.path.join(d, f"{region}_t0_mask.tif")) as s:
         land = s.read(1) > 0
     lakes = int((land & (w1 > 0.05)).sum())
-    print(f"{region} [{a.solver}/{mode}]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
+    print(f"{region} [{a.solver}/{mode}, dt={dt/WEEK_S:.3g} wk]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
           f"{int((~land).sum())} ocean cells")
     fail = 0
     w_par, npar = None, None
     for n in a.ranks:
         try:
-            wn = run(d, region, cpd, south, n, a.solver, mode)
+            wn = run(d, region, cpd, south, n, a.solver, mode, dt)
         except DidNotComplete as e:
             print(f"  serial vs n={n}: DID NOT COMPLETE -- {e}")
             fail += 1
