@@ -20,6 +20,29 @@
 # rank counts. That is the quantity that was wrong, and asserting it directly means a regression is
 # reported as "the controller disagreed" rather than as an unexplained field difference.
 #
+# WHAT THIS SUITE DOES NOT COVER, stated because its NAME promises more than its fixture delivers
+# (measured 2026-09-17). It proves #56's DEFECT is gone -- a decomposition-dependent estimator
+# DIVISOR, which shows up immediately and at 22% magnitude, well inside this fixture's 22 steps. It
+# does NOT prove that an adaptive run is reproducible across rank counts in general, and that is a
+# different question with a much longer time constant:
+#
+#   On a real fixture (examples/island_equilibrium, corsica at 30" with DEM-derived slope) the
+#   estimates agree to 1.7e-10 relative -- pure reduction-order noise, with nest and ncpl IDENTICAL,
+#   so #56's signature is absent -- and the FIRST divergence is at STEP 33. This suite's run is over
+#   at 22. Over ~100 steps that last-bit difference compounds until the two rank counts take
+#   DIFFERENT NUMBERS OF STEPS (108 at n=1 vs 104 at n=4) and the fields then differ by truncation
+#   error rather than rounding: 1.3e-03 m at a 1 yr step, 1.0e-01 m at 48 weeks.
+#
+# So the STEP COUNT assertion below is the one with teeth, and it is binary. The two SEQUENCE
+# assertions carry a 1e-04 relative tolerance, six orders looser than the 1.7e-10 they would see, so
+# they would pass on corsica right up until the counts part company.
+#
+# This is a COVERAGE gap, not a defect, and it is recorded rather than closed: the behaviour is
+# inherent to an error-controlled step under MPI, it is documented at solver.time_step.mode in
+# config.yaml, and a user who needs the same answer on any core count is told there to use `fixed`.
+# Lengthening this fixture until compounding is reachable would turn the gap into a stated property;
+# that is a decision, not a bug fix, and it has not been taken.
+#
 # This suite runs the PRODUCTION COMBINATION -- time_step.mode adaptive, fsm_coupling continuous,
 # collection.method active_set -- because that is what production runs, and the defect lived only in
 # that combination. Those used to be left implicit and taken from the defaults; since #83 they are
