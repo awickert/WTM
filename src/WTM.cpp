@@ -962,83 +962,44 @@ void update(
   //
   // is the HONEST steady-state signal -- unlike the per-sub-step max|Δw|, it excludes the cosmetic within-
   // cycle oscillation at lake/shore free boundaries (which returns to the same value each cycle and so
-  // over-reports non-convergence). Wired to -wtm_eq_tol in run(). (Distributed-recharge path: starting_wtd
-  // is post-FSM here; the serial path measures pre-FSM.)
+  // over-reports non-convergence).
   //
-  // THAT ASYMMETRY IS A DEFECT, not a footnote, and the "still a valid cycle-to-cycle change" this note
-  // used to end with is the reasoning the rule above denies: a difference between two PRE-FSM states is a
-  // difference between two states that do not physically exist. The serial path is taken when
-  // `distribute_recharge` is false, i.e. fsm_on AND infiltration_on -- the one configuration where FSM
-  // actually runs and the distinction therefore bites hardest. UNMEASURED: on a run where FSM moves
-  // little the two states nearly coincide and the stop would answer the same either way, so the SIZE of
-  // this is unknown. Tracked as its own item rather than folded into #103's closure.
+  // IT IS COMPUTED FROM POST-FSM STATE ON EVERY PATH, AND THERE IS NO LONGER A BRANCH THAT COULD DO
+  // OTHERWISE. That is the whole design of this block, so it is stated first.
+  //
+  // WHAT WAS HERE BEFORE, and why a comment is not enough. This block used to hold TWO computations: a
+  // loop over `starting_wtd` against `prev_cycle_wtd`, and -- under `if (!distribute_recharge)` -- a
+  // recomputation from post-FSM `arp.wtd`/`arp.wtd_old` that overwrote it. #106 added the second one
+  // for the SERIAL path and left a note asserting the first was already post-FSM on the distributed
+  // path. THAT NOTE WAS FALSE. Measured 2026-09-17 by writing output.extra_rasters.post_groundwater
+  // and comparing the logged metric against both raster series, on a distributed-path run
+  // (fsm_on, infiltration off, routing: continuous -- THE PRODUCTION DEFAULT):
+  //     cycle 0   logged 7.738868e-02   pre-FSM pair 7.738868e-02   post-FSM pair 5.216603e+00
+  //     cycle 1   logged 5.113149e+00   pre-FSM pair 5.113149e+00   post-FSM pair 1.751315e+00
+  // Digit-for-digit with the PRE-FSM pair, differing from the physical state by 67x at cycle 0. The
+  // production path had been stopping runs on states that do not physically exist.
+  //
+  // So the branch is gone rather than corrected. `starting_wtd` and `prev_cycle_wtd` are not read here
+  // at all now -- `prev_cycle_wtd` was removed outright, since this was its only consumer and its own
+  // declaration described it as "post-FSM at the previous cycle", which it was not. A path that cannot
+  // be selected cannot be selected wrongly; a comment saying which path is safe has now been wrong
+  // twice.
+  //
+  // NO NEW STATE IS NEEDED. arp.wtd holds THIS cycle's post-FSM table (the coupler has already run for
+  // the cycle's last step); arp.wtd_old holds the PREVIOUS cycle's, snapshotted from arp.wtd at the end
+  // of update(). Both are maintained on RANK 0 -- see `if (mpi_rank == 0) arp.wtd_old = arp.wtd` below
+  // -- which is why this computes on rank 0 and BROADCASTS rather than reducing: the other ranks hold
+  // nothing to contribute and must not add stale partials. It is the same pair irf.cpp already
+  // differences for the run-log change columns.
+  //
+  // Deliberately NOT done by scattering arp.wtd into starting_wtd: that carrier feeds the next solve,
+  // and writing it earlier than today would also newly apply the cross-rank-drift reset documented at
+  // the scatter site. Recomputing a diagnostic cannot perturb the solve; moving the carrier can.
+  //
+  // Pinned by tests/postfsm_metric, which asserts the logged metric matches the POST-FSM raster pair on
+  // BOTH the distributed and the serial path -- the check #106 never ran on the path it did not touch.
   {
-    const auto [pxs, pys, pxm, pym] = get_corners(user_context.da);
-    PetscScalar **prevw;
-    DMDAVecGetArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
-    double dw_local = 0.0, sq_local = 0.0;
-    double dv_local = 0.0, sqv_local = 0.0;   // pure-water-depth (|S*Δwtd|) analogues, in m of water
-    long   n_local = 0, above_local = 0;
-    for (int j = pys; j < pys + pym; j++)
-      for (int i = pxs; i < pxs + pxm; i++) {
-        if (dmdapack.mask[j][i] != 0) {
-          const double d = std::abs(dmdapack.starting_wtd[j][i] - static_cast<double>(prevw[j][i]));
-          dw_local = std::max(dw_local, d);
-          sq_local += d * d;
-          // Pure-water depth = |ΔV|/area = S*|Δh| with the SECANT effective storativity (S*Δh ≡ water moved).
-          // Deep low-S cells contribute ~0 even when their head swings metres -- the FV-consistent measure.
-          const double S  = updateEffectiveStorativity(static_cast<double>(prevw[j][i]),
-                                                        dmdapack.starting_wtd[j][i],
-                                                        dmdapack.porosity_vec[j][i]);
-          const double dv = d * S;
-          dv_local = std::max(dv_local, dv);
-          sqv_local += dv * dv;
-          n_local++;
-          // frac metric counts cells by PURE-WATER change (dv = |S*Δwtd|), not head, so eq_tol is a water depth
-          if (user_context.eq_tol > 0.0 && dv > user_context.eq_tol) above_local++;
-        }
-        prevw[j][i] = dmdapack.starting_wtd[j][i];
-      }
-    // Aggregate the per-cycle change three ways so the equilibrium stop (-wtm_eq_metric) can pick: MAX
-    // (worst cell), RMS (bulk), and the fraction of cells still exceeding eq_tol. All are cheap Allreduces.
-    double gmax = 0.0, gsq = 0.0, gvmax = 0.0, gvsq = 0.0;
-    long   gn = 0, gabove = 0;
-    MPI_Allreduce(&dw_local, &gmax, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
-    MPI_Allreduce(&sq_local, &gsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-    MPI_Allreduce(&dv_local, &gvmax, 1, MPI_DOUBLE, MPI_MAX, PETSC_COMM_WORLD);
-    MPI_Allreduce(&sqv_local, &gvsq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
-    MPI_Allreduce(&n_local, &gn, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
-    MPI_Allreduce(&above_local, &gabove, 1, MPI_LONG, MPI_SUM, PETSC_COMM_WORLD);
-    user_context.last_cycle_dw        = gmax;
-    user_context.last_cycle_rms       = (gn > 0) ? std::sqrt(gsq / (double)gn) : 0.0;
-    user_context.last_cycle_fracabove = (gn > 0) ? (double)gabove / (double)gn : 0.0;
-    user_context.last_cycle_dw_water  = gvmax;
-    user_context.last_cycle_rms_water = (gn > 0) ? std::sqrt(gvsq / (double)gn) : 0.0;
-    // THE SERIAL PATH RECOMPUTES ALL OF THIS FROM POST-FSM STATE, and overwrites what the loop above
-    // produced. #106: the loop reads `starting_wtd`, and on this path `starting_wtd` never receives the
-    // post-FSM table -- the scatter that delivers it is gated on `distribute_recharge` (see the
-    // `else if (distribute_recharge)` guard around scatter_into_owned, far above). The post-FSM values
-    // arrive at the TOP of the next cycle, via the wholesale re-load, which is one cycle too late for a
-    // metric evaluated at the end of this one. So the loop above compares two PRE-FSM states: a real
-    // cycle-to-cycle change, but between states that do not physically exist.
-    //
-    // That matters because this metric TERMINATES the run. It does not describe the answer, it selects
-    // which state becomes the answer. Measured on tests/serial_recharge, max |S*dwtd| over land:
-    //     cycle 0   pre-FSM 4.996254e+00   post-FSM 7.587996e+00
-    //     cycle 1   pre-FSM 4.985729e+00   post-FSM 4.547693e+00
-    // For any eq_tol between 4.548 and 4.986 the two disagree about whether to stop AT ALL, not merely
-    // by how much.
-    //
-    // NO NEW STATE IS NEEDED. arp.wtd holds THIS cycle's post-FSM table (the coupler has already run for
-    // the cycle's last step); arp.wtd_old holds the PREVIOUS cycle's, snapshotted from arp.wtd at the top
-    // of update() before the solve. Both rank-0, both post-FSM. This is the same pair irf.cpp already
-    // differences for the run-log change columns.
-    //
-    // Deliberately NOT done by scattering arp.wtd into starting_wtd: that carrier feeds the next solve,
-    // and writing it earlier than today would also newly apply the cross-rank-drift reset documented at
-    // the scatter site to this path. Recomputing a diagnostic cannot perturb the solve; moving the
-    // carrier can.
-    if (!distribute_recharge) {
+    {
       double vmax = 0.0, vsq = 0.0, hmax = 0.0, hsq = 0.0;
       long   ncell = 0, nabove = 0;
       if (mpi_rank == 0) {
@@ -1055,7 +1016,7 @@ void update(
             if (user_context.eq_tol > 0.0 && dv > user_context.eq_tol) nabove++;
           }
       }
-      // Rank 0 owns the full grid on this path, so BROADCAST rather than reduce -- the other ranks
+      // arp.wtd_old is maintained on RANK 0 only, so BROADCAST rather than reduce -- the other ranks
       // contributed nothing and must not add their stale partials.
       double packed[4] = {hmax, hsq, vmax, vsq};
       long   counts[2] = {ncell, nabove};
@@ -1072,7 +1033,6 @@ void update(
     // so the log row carries THIS cycle's change rather than the previous one.
     params.last_cycle_dw_volume  = user_context.last_cycle_dw_water;
     params.last_cycle_rms_volume = user_context.last_cycle_rms_water;
-    DMDAVecRestoreArray(user_context.da, user_context.prev_cycle_wtd, &prevw);
   }
 
   // Print values about the change in water table depth to the text file.
@@ -1208,7 +1168,6 @@ void finalise(Parameters& params, ArrayPack& arp, AppCtx& user_context) {
   VecDestroy(&user_context.topo_vec);
   VecDestroy(&user_context.rech_vec);
   VecDestroy(&user_context.porosity_vec);
-  VecDestroy(&user_context.prev_cycle_wtd);
   VecDestroy(&user_context.starting_wtd);
   VecDestroy(&user_context.lake_stage);
   VecDestroy(&user_context.fsm_delta_vec);

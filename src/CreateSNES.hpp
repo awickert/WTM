@@ -25,7 +25,6 @@ struct AppCtx {
   Vec topo_vec            = nullptr;
   Vec rech_vec            = nullptr;
   Vec porosity_vec        = nullptr;
-  Vec prev_cycle_wtd      = nullptr;  // post-FSM water table at the previous cycle (for the per-CYCLE convergence metric)
   double last_cycle_dw       = 1e30;  // MAX |wtd_cycleN - wtd_cycleN-1| over land (worst-cell per-cycle change)
   double last_cycle_rms      = 1e30;  // RMS |wtd change| over land (robust: bulk convergence, ignores outliers)
   double last_cycle_fracabove = 1.0;  // fraction of land cells with |wtd change| > eq_tol (for the -wtm_eq_metric frac stop)
@@ -369,8 +368,6 @@ struct AppCtx {
     VecDuplicate(x, &topo_vec);
     VecDuplicate(x, &rech_vec);
     VecDuplicate(x, &porosity_vec);
-    VecDuplicate(x, &prev_cycle_wtd);
-    VecSet(prev_cycle_wtd, 0.0);
     VecDuplicate(x, &starting_wtd);
     VecDuplicate(x, &lake_stage);
     VecDuplicate(x, &fsm_delta_vec);
