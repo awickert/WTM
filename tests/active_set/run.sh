@@ -162,12 +162,16 @@ lf_distinct = min(float(np.max(np.abs(lfa - lfe))), float(np.max(np.abs(lfa - lf
 lf_bite     = float(VOL.volume_diff(lfe, lfi, phi_i).max())
 check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > 1e-6,
       f"min|active_set - {{explicit,implicit}}| = {lf_distinct:.3e} m, routing and step mode HELD")
-# THE LIKE-FOR-LIKE BITE HAS NO BAR YET, and that is deliberate rather than forgotten. The 0.0125 m
-# above was MEASURED on the continuous/adaptive arms; carrying it over to impulse/fixed would be a
-# number that looks derived and is not -- the laundered-tolerance problem of #84, committed knowingly.
-# Reported so the gap is visible in the output instead of being an absent assertion nobody sees.
-print(f"  ----  LIKE-FOR-LIKE BITE, NO BAR SET: max|ΔV(explicit) - ΔV(implicit)| = {lf_bite:.4f} m"
-      f" water volume at impulse/fixed. Set the bar from this measurement, with a stated margin.")
+# THE LIKE-FOR-LIKE BITE BAR, 0.0044 m, AND WHERE IT COMES FROM. It is NOT the 0.0125 m above: that
+# was measured on the continuous/adaptive arms and does not transfer, and carrying it over would have
+# been a number that looks derived and is not (#84). MEASURED here, first run, 2026-09-17:
+#     max|ΔV(explicit) - ΔV(implicit)| = 0.1590 m of water volume, at routing: impulse / mode: fixed
+# The bar is that measurement divided by 36, which is the SAME RELATIVE MARGIN the sibling BITE check
+# carries (0.4498 measured against a 0.0125 bar) -- the only precedent in this suite, so the two
+# checks fail at the same fraction of their own signal rather than at two unrelated round numbers.
+check("LIKE-FOR-LIKE BITE (collectors diverge, collector the ONLY variable)", lf_bite > 0.0044,
+      f"max|ΔV(explicit) - ΔV(implicit)| = {lf_bite:.4f} m water volume at impulse/fixed"
+      f" (bar 0.0044 = measured 0.1590 / 36, the sibling check's margin)")
 print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
