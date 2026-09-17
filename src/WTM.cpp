@@ -45,13 +45,37 @@ namespace rd = richdem;
 constexpr double seconds_in_a_year = 31536000.;
 
 // Snapshot output filename: report number _ elapsed simulated years, underscore-separated (e.g.
-// "<prefix>000000015_1yr.tif"). Each report spans report_seconds of simulated time (report_steps*deltat, or
-// the user's report_interval time) -- true even under adaptive dt (the controller varies the sub-step, not the
-// report duration) -- so elapsed years is well-defined. The report index keeps the files uniquely ordered; the
-// year is the physically meaningful label (essential for transient runs, informative for spin-up progress).
+// "<prefix>000000015_1yr.tif"). The report index keeps the files uniquely ordered; the year is the
+// physically meaningful label (essential for transient runs, informative for spin-up progress).
+//
+// THE YEAR IS REPORTED, NOT PREDICTED, and that is the whole point of this helper.
+//
+// It used to be `cycles_done * report_seconds`, which asserts that every report spans exactly the
+// nominal report duration. That holds under `fixed` by construction, and under `adaptive`, which is
+// CLAMPED to the report span -- there the controller varies the sub-step, not the report. It does NOT
+// hold under `mode: ramp`, the Newton path's pseudo-transient continuation, which config.yaml
+// documents as UNCLAMPED: it grows the step on solve-ease and nothing holds it to a report boundary.
+//
+// MEASURED (examples/island_equilibrium, newton/ramp, spectral, run to equilibrium): the derived
+// label said 1140 yr where the model's own clock said 37670.6 yr -- a factor of 33. The filename is
+// the ONLY time label a raster carries, so anyone opening "<prefix>_15yr.tif" from two solvers and
+// comparing them was comparing different times without being told.
+//
+// The model already sums the true value: transient_groundwater.cpp does
+// `params.elapsed_time_s += user_context.deltat`, commented "TRUE elapsed time: summed, never
+// derived". So the label now reports that number instead of recomputing it from an assumption about
+// how the step behaved. A label computed by anything other than the code that did the work can
+// disagree with it, and here it did.
+//
+// Both filename builders below go through this, so they cannot drift apart -- they carried identical
+// copies of the wrong expression, and fixing one would have left the other lying.
+static double snapshot_years(const Parameters& params) {
+  return params.elapsed_time_s / seconds_in_a_year;
+}
+
 static std::string snapshot_filename(const Parameters& params) {
-  const double years = params.cycles_done * params.report_seconds / seconds_in_a_year;
-  return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
+  return fmt::format("{}{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done,
+                     snapshot_years(params));
 }
 
 // THE POST-GROUNDWATER SNAPSHOT, and the reason it is a SEPARATE FILE rather than a second band or a
@@ -64,8 +88,8 @@ static std::string snapshot_filename(const Parameters& params) {
 // snapshots (`<prefix>0*.tif`) cannot match it -- the two sets stay separable by pattern alone, which is
 // what stops a test picking up the wrong one and reporting a plausible number.
 static std::string post_groundwater_filename(const Parameters& params) {
-  const double years = params.cycles_done * params.report_seconds / seconds_in_a_year;
-  return fmt::format("{}postgw_{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done, years);
+  return fmt::format("{}postgw_{:09}_{:.0f}yr.tif", params.outfile_prefix, params.cycles_done,
+                     snapshot_years(params));
 }
 
 std::string get_current_time_and_date_as_str() {
