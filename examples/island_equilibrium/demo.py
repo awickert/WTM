@@ -87,6 +87,39 @@ Note the lake count moved (211 -> 254 for Anderson) when slope became real: shal
 less transmissivity, so water backs up into more depressions. Expected, and a physics change rather
 than a numerical one.
 
+CORSICA NEVER REACHES EQUILIBRIUM, AND THAT IS THE RIGHT ANSWER (measured 2026-09-17).
+Run with --equilibrium and corsica reports "did not settle" however long you give it: over a full
+20000 yr run the stop metric bottoms out at frac = 0.001351 against its 0.001 threshold. The domain
+genuinely has no steady state, for a reason visible in the numbers at the top of _fields():
+
+    precipitation 0.22    evaporation 0.10    open_water_evaporation 0.30
+
+Open-water evaporation is ABOVE precipitation -- deliberately, to cap lakes. So the water balance
+CHANGES SIGN at the ground surface:
+
+    below the surface : (P - E_soil) x (1 - runoff_ratio) = +0.060 m/yr    surplus
+    at the surface    : ET becomes open water, P - E_ow   = -0.080 m/yr    deficit
+
+No water-table height balances those, so a cell that reaches the surface cannot rest there. It fills
+for ~100 yr, touches the surface, flips into deficit, drains ~24 m over ~60 yr as its transmissivity
+collapses by 43x, and refills: a relaxation oscillator of ~225 yr period. Both limbs are predicted
+from first principles within 7% (fill) and a factor under two (drain, Darcy with harmonic-mean T).
+
+It shows up in 32 of 14064 land cells -- 2-3 that actually reach the surface, plus neighbours. They
+are the HIGH, STEEP cells (median topo 1172 m against 428 domain-wide, median slope 0.264 against
+0.134) because slope sets fdepth, and fdepth ~5 m makes lateral drainage slow enough for local
+recharge to stack up 24 m of water table.
+
+NOT a numerical artifact, and five candidates were eliminated by measurement before concluding that:
+the metric reading pre-FSM state (real defect, fixed separately, but here pre- and post-FSM agree to
+1e-12); FSM outlet switching (lake volume bit-identical every cycle); time discretisation (4x dt
+refinement moves the amplitude 0.5%); operator splitting (FSM runs once per STEP, so that same sweep
+refined the coupling too); and the surface removal law (active_set, explicit and implicit all give
+the same cycle to 0.4%). See task #111 for the full record.
+
+If you want corsica to settle, lower open_water_evaporation below precipitation. That is a change to
+the PHYSICS you are asking for, not a fix.
+
 Two topographies:
   * `spectral` -- a synthetic island (radial dome + Fourier roughness + two carved basins).
     Deterministic, self-contained.
