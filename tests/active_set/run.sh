@@ -104,15 +104,36 @@ run exp_plain explicit adaptive impulse ""
 # of a property, not a rename: the supersession it tested no longer exists to be tested.
 run as active_set adaptive continuous ""
 
+# LIKE-FOR-LIKE ARMS: the collector varied ALONE, with routing and step mode HELD (#90).
+#
+# The three arms above differ in more than the collector -- imp_plain is continuous/fixed, exp_plain is
+# impulse/adaptive, `as` is continuous/adaptive -- and that is FORCED, not careless: continuous x
+# explicit is refused, and adaptive x implicit is refused. A comparison across them therefore has three
+# variables in it, so "the collectors differ" cannot be attributed to the collector.
+#
+# It is fixable, and the reason is structural: THE TWO REFUSALS BITE ON DIFFERENT AXES. `explicit` is
+# refused only against `continuous`; `implicit` only against `adaptive`. So routing: impulse with
+# mode: fixed is the ONE pairing under which all three collectors run, and it is therefore the only
+# place a single-variable collector comparison can be made. The full table is in config.yaml.
+#
+# The production arm above is KEPT rather than converted: it is the combination real runs use
+# (continuous + active_set + adaptive), and dropping it to gain comparability would trade a property
+# for a property. These three are additional.
+run lf_as  active_set fixed impulse ""
+run lf_exp explicit   fixed impulse ""
+run lf_imp implicit   fixed impulse ""
+
 IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | tail -1)
 IA=$(ls "$WORK"/as_*.tif | tail -1)
-TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" "$PY" - "$IP" "$EP" "$IA" <<'PY'
+LFA=$(ls "$WORK"/lf_as_*.tif | tail -1); LFE=$(ls "$WORK"/lf_exp_*.tif | tail -1)
+LFI=$(ls "$WORK"/lf_imp_*.tif | tail -1)
+TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" "$PY" - "$IP" "$EP" "$IA" "$LFA" "$LFE" "$LFI" <<'PY'
 import sys, numpy as np, rasterio, os
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
-ip, ep, ia = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
+ip, ep, ia, lfa, lfe, lfi = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:7]]
 def interior(a): return a[1:-1, 1:-1]
-ip, ep, ia = map(interior, (ip, ep, ia))
+ip, ep, ia, lfa, lfe, lfi = map(interior, (ip, ep, ia, lfa, lfe, lfi))
 lake_head = float(ia.max())
 phi_i = interior(VOL.read_band(os.environ["PHI"]))
 bite      = float(VOL.volume_diff(ip, ep, phi_i).max())
@@ -132,6 +153,21 @@ check("DISTINCT (active-set is not either plain collector)", differs > 1e-6,
 # on runoff_collector and newton_solver, where the governing cell sits at the surface.
 check("BITE (collectors diverge without active-set)", bite > 0.0125,
       f"max|ΔV(implicit) - ΔV(explicit)| (no active-set) = {bite:.4f} m water volume")
+
+# LIKE-FOR-LIKE (#90): the same two claims, with the collector as the ONLY variable. The three arms
+# above are forced to differ in routing and step mode as well (continuous x explicit and adaptive x
+# implicit are both refused), so an attribution to the collector is not available from them. These
+# three run at routing: impulse and mode: fixed -- the one pairing all three collectors can take.
+lf_distinct = min(float(np.max(np.abs(lfa - lfe))), float(np.max(np.abs(lfa - lfi))))
+lf_bite     = float(VOL.volume_diff(lfe, lfi, phi_i).max())
+check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > 1e-6,
+      f"min|active_set - {{explicit,implicit}}| = {lf_distinct:.3e} m, routing and step mode HELD")
+# THE LIKE-FOR-LIKE BITE HAS NO BAR YET, and that is deliberate rather than forgotten. The 0.0125 m
+# above was MEASURED on the continuous/adaptive arms; carrying it over to impulse/fixed would be a
+# number that looks derived and is not -- the laundered-tolerance problem of #84, committed knowingly.
+# Reported so the gap is visible in the output instead of being an absent assertion nobody sees.
+print(f"  ----  LIKE-FOR-LIKE BITE, NO BAR SET: max|ΔV(explicit) - ΔV(implicit)| = {lf_bite:.4f} m"
+      f" water volume at impulse/fixed. Set the bar from this measurement, with a stated margin.")
 print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
