@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Lake-aware active-set / semismooth exfiltration regression (-wtm_active_set).
+# Lake-aware active-set / semismooth exfiltration regression
+# (surface_water.collection.method: active_set -- THE DEFAULT).
 #
 # The active-set pin enforces the exfiltration complementarity INSIDE the matrix-free Anderson residual, pinned to
 # the FSM FREE SURFACE (wtd <= d_pond, d_pond = lagged ponded depth; 0 off lakes) via the min-NCP
@@ -9,14 +10,26 @@
 # above the stage is skimmed to runoff. (See benchmark/FSM_EVERY_STEP_DESIGN.md, project_lake_head_boundary_design.)
 #
 # On the fsm_test fixture (a plateau with an off-centre depression, surface water supplied), on the Anderson
-# path with FSM on, this test asserts:
-#   LAKE PERSISTS         : with active-set the lake keeps its head (max wtd well above 0) -- it is NOT
-#                           flattened to the land surface (the pre-lake-aware pin gave max wtd = 0).
-#   COLLECTOR-INDEPENDENT  : with active-set, implicit == explicit == off to machine zero (< 1e-9 m spread).
-#   BITE                   : WITHOUT active-set the collector choice moves the equilibrium (implicit vs
-#                            explicit spread > 0.05 m) -- proving the independence is the pin doing work.
+# path with FSM on, this test asserts THREE things -- and the list below is the whole list:
+#   LAKE PERSISTS : with active-set the lake keeps its head (max wtd well above 0) -- it is NOT
+#                   flattened to the land surface (the pre-lake-aware pin gave max wtd = 0).
+#   DISTINCT      : active_set differs from BOTH plain collectors. Without this the arm measures nothing.
+#   BITE          : WITHOUT active-set the collector choice moves the equilibrium (implicit vs explicit
+#                   spread > 0.0125 m of water volume) -- so the pin is doing real work.
 #
-# active-set is EXPERIMENTAL and OFF BY DEFAULT (-wtm_active_set). Anderson residual only for now.
+# WHAT THIS HEADER USED TO CLAIM, and why it is gone rather than merely deleted. It listed a fourth
+# assertion, COLLECTOR-INDEPENDENT: "with active-set, implicit == explicit == off to machine zero
+# (< 1e-9 m spread)". That arm HAS NOT EXISTED since active_set became a member of the
+# collection.method enumeration -- see the note further down, which records the deletion and the
+# reason: the three configs would be textually identical, so the assertion could not fail. The header
+# went on advertising it, which is worse than having lost it, because a reader takes the header for
+# the claim and this was the strongest of the four. (#90)
+#
+# STATUS, corrected (#90): active-set is THE DEFAULT collector, not experimental and not off by
+# default -- src/resolve_defaults.cpp resolves an absent surface_water.collection.method to
+# active_set on every solver except Picard. The flag this header used to name, -wtm_active_set, is
+# RETIRED: the whole -wtm_ namespace is closed (#86) and passing any of it aborts the run by name.
+# Anderson residual only, still true.
 #
 # Usage:  tests/active_set/run.sh [path/to/wtm.x]
 set -uo pipefail
