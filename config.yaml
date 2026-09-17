@@ -165,6 +165,40 @@ surface_water:
 # work the model refuses BY NAME rather than quietly substituting (see collection.method: active_set
 # on Picard, and routing: continuous with collection.method: explicit).
 
+# WHAT COMBINATIONS ACTUALLY RUN -- collector x routing x step mode, on Anderson with FSM on.
+# Twelve combinations; FOUR are refused. Derived from the refusal code (parameters.cpp and
+# resolve_defaults.cpp), and exercised by tests/combination_sweep, which requires every combination to
+# either RUN or REFUSE with a legible message.
+#
+#   collector    routing     mode       runs?          why not, or what to watch
+#   -----------  ----------  ---------  -------------  ------------------------------------------------
+#   active_set   continuous  adaptive   yes            THE PRODUCTION DEFAULT
+#   active_set   continuous  fixed      yes
+#   active_set   impulse     adaptive   yes
+#   active_set   impulse     fixed      yes
+#   explicit     impulse     fixed      yes
+#   explicit     impulse     adaptive   yes, WARNED    the post-solve clamp lets the clamped set change
+#                                                      between steps -> free-surface oscillation. Stated
+#                                                      rather than fixed: explicit is not production.
+#   implicit     impulse     fixed      yes
+#   implicit     continuous  fixed      yes, UNSOUND   it runs, but the budget does NOT close under
+#                                                      implicit -- do not build a conservation claim on it
+#   explicit     continuous  adaptive   NO             continuous feeds above-surface water back as a
+#   explicit     continuous  fixed      NO             SOURCE while explicit clamps it AFTER the solve.
+#                                                      They fight: observed order goes NEGATIVE under dt
+#                                                      refinement and the error stalls at ~1.1 m.
+#   implicit     continuous  adaptive   NO             the implicit siphon removes at rate max(0,wtd)/dt,
+#   implicit     impulse     adaptive   NO             so per-step error GROWS as the controller shrinks
+#                                                      dt. Error control's founding assumption is false
+#                                                      for it; no step is ever accepted and the run dies
+#                                                      on max retries.
+#
+# THE TWO REFUSALS BITE ON DIFFERENT AXES, which is the useful structure here: `explicit` is refused
+# only against `continuous`, `implicit` only against `adaptive`. So `impulse` + `fixed` is the ONE
+# combination of routing and step mode under which ALL THREE collectors run -- the only way to vary the
+# collector alone, with everything else held. tests/active_set uses exactly that for its comparison
+# arms, and keeps a separate arm on the production default so both properties stay covered (#90).
+
 solver:
   method: anderson             # anderson (matrix-free; default) | picard | newton
                                # CHOOSING THIS ALSO CHOOSES A DEFAULT SET -- see the table above.
