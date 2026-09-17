@@ -10,11 +10,39 @@ closed depressions, rivers draining to the coast, and the ocean boundary.
 MEASURED 2026-09-17, with slope derived from the DEM (see terrain_slope), against the 1e-6 m
 threshold:
 
-    region    --solver    n=4 max|dwtd|   n=8 max|dwtd|   lake cells   max lake
-    spectral  picard        1.851e-10 m     1.127e-10 m       37         8.3 m
-    spectral  anderson      4.880e-11 m     1.174e-11 m       37         8.3 m
-    corsica   picard      DID NOT COMPLETE -- DIVERGED_MAX_IT at 10000 nonlinear iterations
-    corsica   anderson      6.139e-12 m     6.594e-12 m      254        79.0 m
+    region    solver/mode         n=4 max|dwtd|   n=8 max|dwtd|   lakes   max lake
+    spectral  picard/fixed          1.851e-10 m     1.127e-10 m     37      8.3 m
+    spectral  anderson/fixed        4.880e-11 m     1.174e-11 m     37      8.3 m
+    spectral  anderson/adaptive     4.880e-11 m           --        37      8.3 m
+    spectral  newton/ramp           1.386e-10 m           --        30      5.6 m
+    corsica   picard/fixed        DID NOT COMPLETE -- DIVERGED_MAX_IT at 10000 iterations
+    corsica   anderson/fixed        6.139e-12 m     6.594e-12 m    254     79.0 m
+    corsica   anderson/adaptive   MISMATCH 1.331e-03 m     --      254     79.0 m
+    corsica   newton/ramp           6.174e-08 m           --       165     10.7 m
+
+TWO THINGS IN THAT TABLE ARE WORTH MORE THAN THE REST.
+
+(1) ADAPTIVE IS NOT CROSS-RANK DETERMINISTIC ON THE HARD PROBLEM, and that is why this demo pins
+    mode: fixed rather than taking the shipped default. The error estimate is an MPI reduction, so
+    its last bits depend on how many ranks summed it; where the estimate sits near a decision
+    boundary the two rank counts make DIFFERENT accept/grow choices, take different step sequences
+    from there on, and end up 1.3 mm apart -- a thousand times the 1e-6 threshold. It is not a
+    defect: the two runs agree on the physics (same 254 lakes, same 79.0 m maximum), they just are
+    not the same arithmetic. On spectral, where the estimate never sits near a boundary, adaptive
+    and fixed return the identical 4.880e-11, which suggests the controller never moved dt there at
+    all -- stated as a reading of the number, not verified with a dt trace.
+
+(2) THE SOLVERS DISAGREE ON THE ANSWER, AND THE REASON IS THAT NOBODY HAS CONVERGED. At cycle 14 of
+    the corsica Newton run the log still reports abs_change_volume_max = 0.856 m, falling only
+    0.859 -> 0.857 -> 0.856 over the last three cycles. 15 years from a saturated start on 2453 m of
+    relief is nowhere near equilibrium, so each solver is showing a DIFFERENT POINT ON A MOVING
+    TRAJECTORY, reached by a different step sequence. That is why newton/ramp reports 165 lakes and
+    anderson 254.
+    SO: the cross-RANK comparison in this demo is sound -- same solver, same steps, one variable.
+    A cross-SOLVER comparison of these numbers is NOT, and nothing here should be read as one. To
+    compare solvers you need them stopped by the same physical criterion rather than the same clock,
+    which means running to a real equilibrium_stop.tol and accepting that the rank counts may then
+    stop at different cycles.
 
 AND THAT LAST PAIR IS THE POINT. Nothing was tuned to make Picard fail: the demo was made more
 REALISTIC, by giving it the slope field a real DEM implies instead of slope = 0, and the split
@@ -205,13 +233,52 @@ def make_corsica(d):
 # comparison to be measuring cross-rank behaviour and not two different step sequences.
 SOLVERS = {
     "picard": dict(method="picard", time_integration="bdf2",
-                   collection="explicit", routing="impulse"),
+                   collection="explicit", routing="impulse", mode="fixed"),
     "anderson": dict(method="anderson", time_integration="tr-bdf2",
-                     collection="active_set", routing="continuous"),
+                     collection="active_set", routing="continuous", mode="fixed"),
+    # Newton means the WORKING recipe: the analytic Jacobian WITH pseudo-transient continuation.
+    # Its natural mode is `ramp`, not `fixed` -- #50 measured plain Newton failing at 5 of 6 step
+    # sizes from a cold start, and the single success was a single-dt artefact. `ramp` grows dt on
+    # solve-EASE rather than on an error estimate, starting from newton.dt0 (default time.deltat/200),
+    # which keeps the storage term S/dt diagonally dominant while the guess is still far away.
+    "newton": dict(method="newton", time_integration="backward-euler",
+                   collection="active_set", routing="continuous", mode="ramp"),
+}
+
+# WHO MAY SIZE THE STEP. `ramp` is the Newton path's continuation and is REFUSED elsewhere; the other
+# two run anywhere. Stated here so an impossible pairing is rejected by this script with an
+# explanation rather than by the model a minute into a run.
+MODES = {
+    "fixed":    "dt exactly as configured; serial and parallel take identical steps",
+    "adaptive": "error-controlled, clamped to the report span -- the SHIPPED default",
+    "ramp":     "pseudo-transient continuation, grows on solve-ease. Newton only",
 }
 
 
-def cfg(d, region, txt, pfx, outdir, solver):
+def time_step_block(mode):
+    """The solver.time_step keys THIS mode actually reads.
+
+    Deliberately minimal per mode. The model refuses a -wtm_ flag nothing consumed, and the same
+    principle applies to config keys: a dial written down beside a controller that never reads it
+    looks like a setting and is not one.
+    """
+    if mode == "fixed":
+        return "    mode: fixed\n    dt: 31536000      # 1 year, exactly as given\n"
+    if mode == "adaptive":
+        return ("    mode: adaptive\n"
+                "    dt: 31536000      # the STARTING step; the controller moves it from here\n"
+                "    error_tol: 0.01   # metres of WATER per step. Stated rather than inherited:\n"
+                "                      # it would otherwise track equilibrium_stop.tol, which this\n"
+                "                      # demo sets to 0 to keep the two rank counts in lockstep\n"
+                "    grow: 1.5\n    shrink: 0.25\n    grow_if_niter_leq: 8\n"
+                "    max_retries: 15\n    norm: rms\n")
+    if mode == "ramp":
+        return ("    mode: ramp\n"
+                "    dt: 31536000      # the TARGET step the continuation climbs towards\n")
+    raise ValueError(mode)
+
+
+def cfg(d, region, txt, pfx, outdir, solver, mode):
     """The run's configuration, in the nested-YAML schema (see config.yaml at the repo root).
 
     EVERY setting this run resolves to is stated here. That is the house rule for configs in this
@@ -236,6 +303,8 @@ def cfg(d, region, txt, pfx, outdir, solver):
           Picard resolves to). `continuous` on Anderson, the shipped default.
     """
     sv = SOLVERS[solver]
+    if mode == "ramp" and solver != "newton":
+        sys.exit(f"--mode ramp is the Newton continuation and is refused on the {solver} path.")
     return f"""run:
   type: equilibrium
   initial_water_table: saturated   # was `supplied_wt 0`
@@ -291,9 +360,7 @@ solver:
     ksat_soilbottom: 0
     storativity_surface: 0.01
   time_step:
-    mode: fixed       # LOAD-BEARING -- see the docstring
-    dt: 31536000      # 1 year; was `deltat`
-parallel:
+{time_step_block(mode)}parallel:
   threads_per_rank: 1
 """
 
@@ -302,17 +369,17 @@ class DidNotComplete(RuntimeError):
     """The model ran and did not reach an answer. An outcome of the experiment, not a bug in it."""
 
 
-def run(d, region, cpd, south, n, solver):
-    # The stem carries the SOLVER as well as the rank count. Without it a picard run and an anderson
+def run(d, region, cpd, south, n, solver, mode):
+    # The stem carries the SOLVER and the MODE as well as the rank count. Without it a picard run and an anderson
     # run at the same n write the same prefix, and the glob below silently reads the other solver's
     # raster -- the failure mode that #74 exists to prevent in the test suites.
-    stem = f"{solver}_n{n}"
+    stem = f"{solver}_{mode}_n{n}"
     c = os.path.join(d, f"cfg_{stem}.yaml")
     with open(c, "w") as f:
         # Absolute paths, as the test suites do: `directory` is the run's provenance dir, while the
         # raster prefix and the log are written where this script then looks for them.
         f.write(cfg(d, region, os.path.join(d, f"out_{stem}.txt"),
-                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver))
+                    os.path.join(d, f"{stem}_"), os.path.join(d, f"prov_{stem}"), solver, mode))
     # A SOLVER THAT CANNOT FINISH IS A RESULT, NOT A CRASH. On the realistic corsica fixture Picard
     # does not converge, and that is the single most informative thing this demo has to say -- so it
     # is reported as an outcome with the model's own reason, not as a Python traceback. Robustness
@@ -328,7 +395,7 @@ def run(d, region, cpd, south, n, solver):
             for line in lf:
                 if "DIVERGED" in line or line.startswith("ERROR"):
                     reason = line.strip()
-        raise DidNotComplete(f"{solver} n={n}: exit {rc} -- {reason}\n      log: {log}")
+        raise DidNotComplete(f"{solver}/{mode} n={n}: exit {rc} -- {reason}\n      log: {log}")
     with rasterio.open(sorted(glob.glob(os.path.join(d, f"{stem}_*.tif")))[-1]) as s:
         return s.read(1)
 
@@ -387,11 +454,15 @@ def main():
     ap.add_argument("region", choices=["spectral", "corsica"])
     ap.add_argument("--ranks", type=int, nargs="*", default=[4, 8])
     ap.add_argument("--map", action="store_true")
+    ap.add_argument("--mode", choices=sorted(MODES), default=None,
+                    help="who sizes the time step. Default = the solver's own: "
+                         + ", ".join(f"{k}->{v['mode']}" for k, v in sorted(SOLVERS.items())))
     ap.add_argument("--solver", choices=sorted(SOLVERS), default="picard",
                     help="picard = the 2nd-order BDF2-on-V path this demo has always run "
                          "(cross-rank deterministic); anderson = the SHIPPED DEFAULT set "
                          "(tr-bdf2 + active_set + continuous routing), i.e. what a new user gets.")
     a = ap.parse_args()
+    mode = a.mode or SOLVERS[a.solver]["mode"]
     if not os.access(WTM, os.X_OK):
         sys.exit(f"build wtm.x first (looked for {WTM})")
     d = os.path.join(HERE, f"_work_{a.region}")
@@ -401,22 +472,22 @@ def main():
     else:
         region, cpd, south = make_corsica(d)
     try:
-        w1 = run(d, region, cpd, south, 1, a.solver)
+        w1 = run(d, region, cpd, south, 1, a.solver, mode)
     except DidNotComplete as e:
-        print(f"{region} [{a.solver}]: DID NOT COMPLETE\n      {e}")
+        print(f"{region} [{a.solver}/{mode}]: DID NOT COMPLETE\n      {e}")
         print(f"      This is the result. Try --solver "
               f"{'anderson' if a.solver == 'picard' else 'picard'} on the same terrain.")
         sys.exit(2)
     with rasterio.open(os.path.join(d, f"{region}_t0_mask.tif")) as s:
         land = s.read(1) > 0
     lakes = int((land & (w1 > 0.05)).sum())
-    print(f"{region} [{a.solver}]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
+    print(f"{region} [{a.solver}/{mode}]: serial (n=1) done -- {lakes} lake cells (max {w1[land].max():.1f} m), "
           f"{int((~land).sum())} ocean cells")
     fail = 0
     w_par, npar = None, None
     for n in a.ranks:
         try:
-            wn = run(d, region, cpd, south, n, a.solver)
+            wn = run(d, region, cpd, south, n, a.solver, mode)
         except DidNotComplete as e:
             print(f"  serial vs n={n}: DID NOT COMPLETE -- {e}")
             fail += 1
@@ -427,7 +498,7 @@ def main():
         w_par, npar = wn, n                                             # keep the last (largest) for the map
         print(f"  serial vs n={n}: max|dwtd| = {md:.3e} m  {'CONSISTENT' if ok else 'MISMATCH'}")
     if a.map and w_par is not None:
-        render_map(d, region, w1, w_par, npar, os.path.join(HERE, f"{region}_{a.solver}_map.png"))
+        render_map(d, region, w1, w_par, npar, os.path.join(HERE, f"{region}_{a.solver}_{mode}_map.png"))
     sys.exit(1 if fail else 0)
 
 
