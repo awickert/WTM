@@ -94,16 +94,30 @@ genuinely has no steady state, for a reason visible in the numbers at the top of
 
     precipitation 0.22    evaporation 0.10    open_water_evaporation 0.30
 
-Open-water evaporation is ABOVE precipitation -- deliberately, to cap lakes. So the water balance
-CHANGES SIGN at the ground surface:
+Open-water evaporation is ABOVE precipitation -- deliberately, to cap lakes -- so the water balance
+changes sign at the ground surface: +0.060 m/yr below it, -0.080 m/yr at it.
 
-    below the surface : (P - E_soil) x (1 - runoff_ratio) = +0.060 m/yr    surplus
-    at the surface    : ET becomes open water, P - E_ow   = -0.080 m/yr    deficit
+THAT IS NOT THE DRIVER, and it was written here as though it were until an ablation said otherwise.
+HALVING open_water_evaporation to 0.15 (below P, so a saturated cell stays in surplus) leaves the
+oscillation UNCHANGED: cell (120,63) span 24.4915 m -> 24.5777 m. The ET contrast is a real feature of
+this forcing and it is not what makes the cell leave the surface.
 
-No water-table height balances those, so a cell that reaches the surface cannot rest there. It fills
-for ~100 yr, touches the surface, flips into deficit, drains ~24 m over ~60 yr as its transmissivity
-collapses by 43x, and refills: a relaxation oscillator of ~225 yr period. Both limbs are predicted
-from first principles within 7% (fill) and a factor under two (drain, Darcy with harmonic-mean T).
+WHAT IS ESTABLISHED, by ablation rather than argument:
+  - REMOVING SURFACE WATER ENTIRELY (routing: off, collection: off) STOPS the driver cell
+    oscillating: (120,63) rises to the surface and STAYS, reaching +0.02 m. So surface-water removal
+    is NECESSARY for that cell's cycle.
+  - WHICH removal mechanism does not matter: active_set, explicit and implicit give spans of 24.4966,
+    24.4085 and 24.4877 m, the same 8 of 41 reports at the surface, the same phase.
+  - Cell (98,75) is NOT the same story: its span is 9.8932 m with routing on and 9.8741 m with routing
+    off. Something drives that one which does not need surface water at all.
+  - The FILL limb is recharge-limited and predicted to 7%: 24.5 m of table x phi 0.25 = 6.12 m of
+    water at +0.060 m/yr = 102 yr, against 110 yr measured. That prediction survives -- it depends on
+    the BELOW-surface balance, which the E_ow ablation did not change.
+
+SO THE MECHANISM IS NOT SETTLED. At least two distinct behaviours are present, one needing surface
+removal and one not, and no single explanation has survived a test yet. Two have already failed here
+(the ET contrast; and earlier, "active_set fails to cure flicker" -- see #111). Treat anything more
+specific than the four bullets above as unproven.
 
 It shows up in 32 of 14064 land cells -- 2-3 that actually reach the surface, plus neighbours. They
 are the HIGH, STEEP cells (median topo 1172 m against 428 domain-wide, median slope 0.264 against
