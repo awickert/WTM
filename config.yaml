@@ -217,14 +217,36 @@ solver:
                                # collection.method: implicit (an error controller cannot drive it --
                                # its per-step error GROWS as dt shrinks), `adaptive` otherwise. The run
                                # prints what it chose and full_config.yaml records it.
-                               #   adaptive  error-controlled, clamped to the report span. INTENDED to
-                               #             get through runs a fixed step cannot -- it shrinks where
-                               #             the problem is hard and grows where it is easy, so a stiff
-                               #             stretch that would stall or abort at a constant dt should
-                               #             be survivable. That is what it is FOR, and it is the reason
-                               #             to reach for it. Stated as design intent: it has not been
-                               #             measured head-to-head against fixed stepping on a run that
-                               #             fixed cannot finish.
+                               #   adaptive  error-controlled, clamped to the report span. It gets
+                               #             through runs a fixed step cannot -- it shrinks where the
+                               #             problem is hard and grows where it is easy, so a stiff
+                               #             stretch that would stall or abort at a constant dt is
+                               #             survivable. That is what it is FOR, and it is the reason
+                               #             to reach for it.
+                               #             MEASURED 2026-09-17 on real terrain (Corsica, 30", DEM
+                               #             slope so fdepth spans 2-200 m), Anderson, serial, walking
+                               #             the step up in powers of two: at 512 weeks and at 1024
+                               #             weeks `fixed` DIES ("The SNES solver has not converged";
+                               #             "TR-BDF2 trapezoidal stage (1) did not converge") while
+                               #             `adaptive`, handed the same step as a STARTING point,
+                               #             subdivides and finishes. Reproduce with
+                               #             examples/island_equilibrium/demo.py corsica
+                               #             --solver anderson --mode fixed|adaptive --dt-weeks 512.
+                               #             COSTS, so the choice is informed: an adaptive run is NOT
+                               #             REPRODUCIBLE ACROSS RANK COUNTS on a long run. The error
+                               #             estimate is a global reduction, so its last bits depend on
+                               #             how many ranks summed it; over ~100 steps that difference
+                               #             compounds until two rank counts take DIFFERENT NUMBERS OF
+                               #             STEPS (measured: 108 at n=1 vs 104 at n=4 on corsica) and
+                               #             from there the answers differ by truncation error rather
+                               #             than by rounding -- 1.3e-03 m at a 1 yr step, 1.0e-01 m at
+                               #             48 weeks. Both runs are equally valid and they agree on
+                               #             the physics (same lakes, same maximum depth); they are not
+                               #             the same arithmetic. This is NOT the #56 defect, which was
+                               #             a decomposition-dependent estimator DIVISOR and is fixed
+                               #             (tests/xrank_adaptive still pins it: identical step counts
+                               #             and sequences to ~1e-09 on its fixture). If you need the
+                               #             same answer on any core count, use `fixed`.
                                #   ramp      pseudo-transient continuation: grows on solve-EASE,
                                #             unclamped. Newton path only; asked for elsewhere it is
                                #             refused rather than silently not run.
