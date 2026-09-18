@@ -106,6 +106,16 @@ def main():
     rows = scan(paths)
     if not rows:
         return 0
+    # A LINE THAT SAYS PASS CANNOT BE REPORTED AS FAILING. When the computed margin is below 1 but the
+    # suite itself printed PASS/OK, the disagreement is THIS SCRIPT'S PARSE, not the suite's verdict --
+    # it has picked a number off the line that is not the compared quantity. Seen the first time this
+    # ran: an arm labelled "... (runoff 0.3, FSM never runs)" reported 0.00x FAILING, because 0.3 in
+    # the LABEL is a better match for "magnitude <= 1" than the 6.73e-08 actually being compared.
+    # Reporting a passing assertion as failing is worse than over-reporting: it is a false alarm in the
+    # one output whose whole job is to rank real risk. So those are split out and named as unparsed.
+    verdicted = lambda l: any(w in l for w in ("PASS", "OK  ", "ok  ", " OK ")) 
+    misparsed = [r for r in rows if r[0] < 1.0 and verdicted(r[2])]
+    rows = [r for r in rows if r not in misparsed]
     thin = [r for r in rows if r[0] < 10.0]
     print(f"  {len(rows)} assertions printed a value beside a tolerance.")
     if not thin:
@@ -117,6 +127,13 @@ def main():
     for margin, suite, line in thin:
         m = "  0.00x (FAILING)" if margin < 1 else f"{margin:7.2f}x"
         print(f"      {m}  {suite:<22s} {line[:88]}")
+    if misparsed:
+        print()
+        print(f"  {len(misparsed)} line(s) NOT RANKED: the suite printed a pass but this script's parse")
+        print("  puts them below their tolerance, so the parse is wrong -- usually a bare number in the")
+        print("  LABEL being a better match than the quantity. Fix the label, or teach the rule:")
+        for margin, suite, line in misparsed:
+            print(f"      {suite:<22s} {line[:88]}")
     return 0
 
 

@@ -422,7 +422,7 @@ DT_TOL=0.5 ROUTING=impulse MODE=adaptive INTEG=tr-bdf2 COLL=explicit            
 # the question this suite exists to ask, and the one configuration it was not asking it in.
 # Four suites DO check the exact residual with routing: off (variable_porosity, ghost_boundary
 # x2, log_schema) and every one of them runs runoff_ratio 0, so none of them covers it.
-DT_TOL=0.5 ROUTING=off MODE=adaptive INTEG=tr-bdf2 COLL=active_set check "Anderson x routing off (runoff 0.3, FSM never runs)" c_rof
+DT_TOL=0.5 ROUTING=off MODE=adaptive INTEG=tr-bdf2 COLL=active_set check "Anderson x routing off (FSM never runs; runoff share still booked)" c_rof
 # `legacy` on Anderson keeps the band sink AND the clamp, and its per-cycle residual is
 # TOLERANCE-LIMITED rather than defective -- the same signature as the active-set arm above. Verified
 # by scaling the solve on this fixture:

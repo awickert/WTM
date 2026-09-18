@@ -60,12 +60,24 @@ trap 'rm -f "$LOCK"' EXIT
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$(mktemp /tmp/wtm_coverage_XXXX)}"
 : > "$WTM_COVERAGE_LOG"
 
+# TOLERANCE MARGINS. Every suite's output is teed to a file so tol_margin.py can read it at the end.
+# Same shape as the coverage log above, and for the same reason: the information is already being
+# printed, and the only thing missing was somewhere to put it. tests/tol_margin.py has existed since
+# #84 was opened and NOTHING CALLED IT -- not run_all.sh, not any suite -- so the ranking it produces
+# had never been seen. A tolerance decides PASS/FAIL, so one set too loose is a vacuous test reporting
+# success; this is the instrument that finds those, and it was sitting unused.
+export WTM_TOLSCAN_DIR="${WTM_TOLSCAN_DIR:-$(mktemp -d /tmp/wtm_tolscan_XXXX)}"
+
 declare -a NAMES RESULTS
 run() { # name  command...
     local name="$1" rc=0; shift
     echo; echo "########## $name ##########"
     export WTM_COVERAGE_TAG="$name"
-    "$@" || rc=$?
+    # TEE, not redirect: a suite's output must still appear as it runs. stderr is merged so the log
+    # keeps the true interleaving, and the suite's own exit code is taken from PIPESTATUS -- the pipe
+    # would otherwise report tee's success as the suite's.
+    local slug; slug=$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '_')
+    "$@" 2>&1 | tee "$WTM_TOLSCAN_DIR/$slug.out"; rc=${PIPESTATUS[0]}
     NAMES+=("$name"); RESULTS+=($([ $rc -eq 0 ] && echo PASS || echo FAIL))
     # EXIT 3 = a suite on the declared-config ratchet (tests/lib.sh; unconditional since #79 Phase 5) stopped saying
     # everything its run resolved to. BREAK OUT rather than carry on: unlike an ordinary assertion
@@ -178,6 +190,15 @@ echo "================================================="
 # the aggregator behind a plausible-sounding reason, and the matrix silently went stale.
 python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md --readme "$ROOT/README.md" \
     || echo "coverage matrix: FAILED to regenerate (see the error above); COVERAGE.md/README are STALE"
+
+# HOW CLOSE DID EACH ASSERTION RUN TO ITS OWN TOLERANCE? (#84) Never fails the suite -- it carries no
+# threshold of its own, which would just be another invented number one level up. It sorts by
+# margin = tol/value and prints the thin end, because the fix for a thin margin is never "loosen it":
+# it is to ask what the bound should have been DERIVED from.
+echo
+echo "===== tolerance margins ====="
+python3 ./tol_margin.py "$WTM_TOLSCAN_DIR" \
+    || echo "tol_margin: FAILED to scan (see the error above)"
 
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
 # MACHINE-READABLE TERMINATOR. Whoever is watching this run needs to know it ENDED, and telling that

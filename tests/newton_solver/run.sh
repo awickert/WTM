@@ -72,7 +72,34 @@ JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it
 # is 4x STRICTER below ground, so this is not a loosening in any regime.
 # NOTE the margin is thin either way: 0.05 against an achieved 4.27e-02 is 1.17x (the old head
 # pairing was tighter still, 1.055x). This test runs close to its limit by nature.
-AGREE_TOL="${AGREE_TOL:-0.05}"   # metres OF WATER VOLUME
+# DERIVED, NOT CHOSEN (#84). 0.05 was a round number with 1.17x of headroom -- the thinnest margin in
+# the suite, and the first thing tol_margin.py flagged when it was finally wired in.
+#
+# THE HYPOTHESIS FOR WHERE IT SHOULD COME FROM WAS WRONG, and the refutation is the useful part.
+# tol_margin.py's own docstring named this assertion as an example: "each solver converged to the run's
+# own water tolerance, so THAT is what bounds their disagreement -- and it moves automatically if
+# someone tightens the solver." MEASURED by sweeping the equilibrium tolerance both arms share, over
+# three orders of magnitude:
+#       eq_tol 1e-3   max|dV| = 4.307e-02
+#       eq_tol 1e-4   max|dV| = 4.271e-02      <- what this suite runs
+#       eq_tol 1e-5   max|dV| = 4.268e-02
+#       eq_tol 1e-6   max|dV| = 4.267e-02
+# A 1000x tightening moves it 1%. Noise scales; this PLATEAUS. So the disagreement is not solver slop
+# bounded by the stopping criterion -- it is a REAL, CONVERGED difference between the two solvers'
+# fixed points, stable to 1%. Tightening the solver would not move this bound, and deriving it from
+# solver tolerance would have been deriving it from something that does not govern it.
+#
+# SO THE BOUND IS DERIVED FROM THE MEASUREMENT: 2x the largest value over that sweep,
+# 2 x 4.307e-02 = 8.6e-02. The factor is stated rather than implied -- it fails when the two solvers
+# disagree TWICE as much as they measurably do, which is a change worth reporting, while 1% run-to-run
+# variation cannot flip it. Re-derive by re-running the sweep above if the fixture or either solver
+# changes.
+#
+# STILL OPEN, and deliberately not closed here: WHY they differ by 4.3e-02 at all. Both are pinned to
+# fixed dt so the stepping is held equal, but they stop at different cycles (466 vs 463), and with FSM
+# on a different step count can flip a discrete fill/spill decision. That is a question about the
+# model, not about this tolerance, and it should not be settled by widening a bound.
+AGREE_TOL="${AGREE_TOL:-0.086}"   # metres OF WATER VOLUME; see the derivation above
 export OMP_NUM_THREADS=1
 
 # THE CONFIGS ARE FILES NOW (#83): config.yaml (mode: fixed), config_ramp.yaml, config_adaptive.yaml.
