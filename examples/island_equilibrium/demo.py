@@ -114,9 +114,11 @@ WHAT IS ESTABLISHED, by ablation rather than argument:
     water at +0.060 m/yr = 102 yr, against 110 yr measured. That prediction survives -- it depends on
     the BELOW-surface balance, which the E_ow ablation did not change.
 
-THE MECHANISM IS A TWO-CELL RELAXATION OSCILLATOR, GATED BY THE DOWNHILL CELL'S TRANSMISSIVITY.
-Found by decomposing the flux between the driver (120,63) at 1084 m and its downhill neighbour
-(121,63) at 874 m. Flux = T_harmonic x head-drop, and only one factor moves:
+THE MECHANISM IS NOT KNOWN. What follows is what is MEASURED about the coupling, and then the test
+that shows it is not sufficient as an explanation.
+
+The flux between the driver (120,63) at 1084 m and its downhill neighbour (121,63) at 874 m is
+CONDUCTANCE-controlled, not gradient-controlled. Flux = T_harmonic x head-drop, and only one moves:
 
     head DROP  : 202 .. 233 m        varies 1.16x     corr(flux, drop)   = -0.444
     T_harmonic : 7.5e-6 .. 6.1e-5    varies 8.1x      corr(flux, T_harm) = +0.998
@@ -133,15 +135,30 @@ the LOW side, which is the downhill cell on 37 of 41 reports. So the neighbour i
 A true limit cycle: the orbit in (wtd_driver, wtd_neighbour) returns to within a mean 3.0 m after 21
 reports, against amplitudes of 24.5 and 13.1 m. PERIOD 210 yr. The two run antiphase.
 
-The nonlinearity is the exponential transmissivity BELOW ground. Nothing at the surface is involved:
-above-surface water does not conduct (T is clamped at the wtd=0 value, transient_groundwater.cpp:115),
-and the clamp never even engages -- the driver turns at -0.06 m, 0 of 41 reports above ground.
+Above-surface water does NOT conduct -- T is clamped at the wtd=0 value (transient_groundwater.cpp:115)
+because surface water moves in FillSpillMerge, not by Darcy -- and the clamp never even engages: the
+driver turns at -0.06 m, 0 of 41 reports above ground.
 
-STILL OPEN: WHY removal is necessary at all. Without it the driver rests at +0.042 m, the neighbour
-stays dry, and the valve never opens. Either remover alone restores the full cycle. A storativity
-buffer is the natural explanation (S measures 0.9896 at the rest point against porosity 0.25) but has
-not been shown causal, and a hand-rolled flux budget for the neighbour does NOT close -- it predicts
-the opposite of the measured trajectory, so it cannot be reasoned from. See task #111.
+AND THAT IS NOT ENOUGH TO EXPLAIN THE OSCILLATION. A faithful ODE reduction of the local physics does
+NOT oscillate. Built with the model's own forms -- piecewise T (exponential / linear / clamped),
+harmonic-mean interfaces, 5-point stencil, specificYield storage, real topography, real fdepth from
+real slopes, real cell sizes, the surface cap as the collector, outer ring fixed at measured time-means:
+
+    5x5  block:  driver -> -19.860, neighbour -> -14.383   span 0.001 m
+    11x11 block: driver ->  -6.342, neighbour -> -13.227   span 0.031 m
+
+Both converge MONOTONICALLY to a stable fixed point, with the whole oscillating cluster strictly
+interior in the 11x11. So the conductance story above is a correct statement about the COUPLING and an
+insufficient one about the CAUSE.
+
+WHAT THE REDUCTION OMITS, as candidates to test ONE AT A TIME: FSM's surface routing of the
+runoff_ratio share (0.06 m/yr) downhill; the ET tapers and the open-water switch; the implicit
+TR-BDF2/Anderson solve (the reduction used explicit RK4); and full-domain boundaries rather than a
+fixed ring.
+
+Surface removal IS necessary -- without it the driver rests at +0.042 m, the neighbour stays dry, and
+nothing cycles; either remover alone restores it. Five explanations have been refuted by measurement
+here. Task #111 lists them so they are not re-run.
 
 It shows up in 32 of 14064 land cells -- 2-3 that actually reach the surface, plus neighbours. They
 are the HIGH, STEEP cells (median topo 1172 m against 428 domain-wide, median slope 0.264 against
