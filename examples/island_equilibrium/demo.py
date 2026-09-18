@@ -114,10 +114,34 @@ WHAT IS ESTABLISHED, by ablation rather than argument:
     water at +0.060 m/yr = 102 yr, against 110 yr measured. That prediction survives -- it depends on
     the BELOW-surface balance, which the E_ow ablation did not change.
 
-SO THE MECHANISM IS NOT SETTLED. At least two distinct behaviours are present, one needing surface
-removal and one not, and no single explanation has survived a test yet. Two have already failed here
-(the ET contrast; and earlier, "active_set fails to cure flicker" -- see #111). Treat anything more
-specific than the four bullets above as unproven.
+THE MECHANISM IS A TWO-CELL RELAXATION OSCILLATOR, GATED BY THE DOWNHILL CELL'S TRANSMISSIVITY.
+Found by decomposing the flux between the driver (120,63) at 1084 m and its downhill neighbour
+(121,63) at 874 m. Flux = T_harmonic x head-drop, and only one factor moves:
+
+    head DROP  : 202 .. 233 m        varies 1.16x     corr(flux, drop)   = -0.444
+    T_harmonic : 7.5e-6 .. 6.1e-5    varies 8.1x      corr(flux, T_harm) = +0.998
+
+The gradient is pinned by the 210 m TOPOGRAPHIC drop, so a 24 m water-table swing perturbs it by 16%
+and in the wrong direction. The conductance does all the work -- and the harmonic mean is dominated by
+the LOW side, which is the downhill cell on 37 of 41 reports. So the neighbour is a valve:
+
+    neighbour deep   T = 3.8e-6   valve SHUT  -> the driver cannot drain, and fills
+    neighbour wet    T = 6.5e-5   valve OPEN  -> the driver drains 7x faster and plunges 24 m
+    driver now deep  T = 1.7e-5   the driver becomes the low side -> flux chokes
+    neighbour drains downhill, dries, valve shuts -> the driver refills
+
+A true limit cycle: the orbit in (wtd_driver, wtd_neighbour) returns to within a mean 3.0 m after 21
+reports, against amplitudes of 24.5 and 13.1 m. PERIOD 210 yr. The two run antiphase.
+
+The nonlinearity is the exponential transmissivity BELOW ground. Nothing at the surface is involved:
+above-surface water does not conduct (T is clamped at the wtd=0 value, transient_groundwater.cpp:115),
+and the clamp never even engages -- the driver turns at -0.06 m, 0 of 41 reports above ground.
+
+STILL OPEN: WHY removal is necessary at all. Without it the driver rests at +0.042 m, the neighbour
+stays dry, and the valve never opens. Either remover alone restores the full cycle. A storativity
+buffer is the natural explanation (S measures 0.9896 at the rest point against porosity 0.25) but has
+not been shown causal, and a hand-rolled flux budget for the neighbour does NOT close -- it predicts
+the opposite of the measured trajectory, so it cannot be reasoned from. See task #111.
 
 It shows up in 32 of 14064 land cells -- 2-3 that actually reach the surface, plus neighbours. They
 are the HIGH, STEEP cells (median topo 1172 m against 428 domain-wide, median slope 0.264 against
