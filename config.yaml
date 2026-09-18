@@ -291,6 +291,38 @@ solver:
                                # step but does not choose it. Under mode: adaptive or ramp this is
                                # the STARTING step; report_interval x deltat is always the report
                                # span the run must land on exactly.
+    dt_min: "315.36s"         # the SMALLEST step the controller may take. REQUIRED whenever you write
+                               # mode: adaptive above -- there is no default, and the absence is deliberate.
+                               # 
+                               # WHY YOU ARE BEING ASKED. Every code surveyed does one of two things, and
+                               # neither is "guess for the user": SUNDIALS and PETSc ship NO floor, letting
+                               # the controller shrink without bound; MODFLOW 6 and ParFlow REQUIRE you to
+                               # state one as part of opting into adaptive stepping. WTM follows the second.
+                               # The floor is not a safety device -- an unconditional roundoff guard already
+                               # aborts a run whose step has collapsed to where t + dt == t, and it cannot be
+                               # switched off. What the floor decides is how much ACCURACY the run may lose
+                               # in silence, because a step clamped here runs LOOSER than error_tol asked
+                               # for. That is a policy, so it is yours.
+                               # 
+                               # CHOOSING ONE. 1e-5 of your dt is the usual answer and what is written here
+                               # (1e-5 x 31536000 s = 315.36 s) -- MODFLOW 6's own documented recommendation
+                               # for DTMIN, read in model time units. Five orders below the step, it cannot
+                               # engage on a healthy run; it engages on one already walking dt toward abort.
+                               # 
+                               # dt_min: "0s" DISABLES the floor -- the SUNDIALS/PETSc behaviour, and a real
+                               # choice rather than an opt-out. The controller may then shrink without bound,
+                               # and a collapsing step ABORTS with a legible message instead of being clamped
+                               # and carried on. Prefer it when you would rather a run die than quietly
+                               # return an answer at an accuracy you did not ask for.
+                               # 
+                               # WHEN IT BINDS THE RUN SAYS SO, in ordinary output rather than under a trace
+                               # flag: "N step(s) CLAMPED at solver.time_step.dt_min ... those steps ran at
+                               # accuracy LOOSER than solver.time_step.error_tol". Silence there would let a
+                               # run report a tolerance it did not meet.
+                               # 
+                               # OMITTING mode: adaptive above does NOT require this key -- a mode WTM
+                               # resolves for you gets no floor. The requirement attaches to the explicit
+                               # request, exactly as MODFLOW's attaches to adding the ATS package.
 #   error_tol:                 # target per-step local error, in metres of WATER like
                                # run.equilibrium_stop.tol -- an absolute depth, not a ratio.
                                # OMIT to track run.equilibrium_stop.tol, which is the derivation that
