@@ -77,8 +77,12 @@ mkcfg() { # $1 stem, $2 time_step.dt, $3 routing, $4 time_integration, $5 time.t
     local ti="${4:?mkcfg needs a time_integration -- an ABSENT one resolves to tr-bdf2, whose order is
                    also 2.0, so it would agree with the expectation for the wrong reason}"
     local tt="${5:?mkcfg needs a time.total}"
+    # The controller floor is DERIVED FROM THIS ARM'S dt, not fixed: a constant floor would bind at the
+    # small end of the ladder and bend the measured order. 1e-5 is MODFLOW 6's DTMIN recommendation.
+    local dtmin; dtmin=$(awk -v d="$dt" 'BEGIN{printf "%g", d*1e-5}')
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-        -e "s|@DT@|$dt|g" -e "s|@ROUTING@|$rt|g" -e "s|@INTEG@|$ti|g" -e "s|@TOTAL@|$tt|g" \
+        -e "s|@DT@|$dt|g" -e "s|@DTMIN@|${dtmin}s|g" -e "s|@ROUTING@|$rt|g" \
+        -e "s|@INTEG@|$ti|g" -e "s|@TOTAL@|$tt|g" \
         config.yaml > "$WORK/$1.yaml"
 }
 

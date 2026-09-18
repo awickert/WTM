@@ -23,7 +23,7 @@
 # actually used that scheme -- an absent key resolves to tr-bdf2, whose order is also 2.0, and would
 # agree with the expectation FOR THE WRONG REASON (#24, #37).
 #
-# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@, @ROUTING@, @TOTAL@.
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @INTEG@, @DT@, @DTMIN@, @ROUTING@, @TOTAL@.
 
 run:
   type: equilibrium
@@ -75,6 +75,11 @@ solver:
       max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
   time_step:
     dt: @DT@   # PER-ARM: the step whose estimate order is measured
+    dt_min: "@DTMIN@"   # PER-ARM, and it MUST track @DT@: required on an explicit mode: adaptive
+                        # (#109), but this suite refines dt across a ladder, so a CONSTANT floor would
+                        # start binding at the small end and bend the very order it measures. run.sh
+                        # computes 1e-5 x @DT@, five orders below the step, so it cannot engage --
+                        # and error_tol 1e9 already guarantees no step is rejected.
     mode: adaptive
     error_tol: "1e9"
     grow: 1.0
