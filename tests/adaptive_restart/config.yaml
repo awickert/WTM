@@ -78,6 +78,8 @@ solver:
                      # equilibrium, and the controller's step choices are part of how that regime
                      # is reached -- so who sizes the step is stated, not left to a default
     dt: 2419200
+    dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
     error_tol: 0.1   # the resolved adaptive target
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
     shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)

@@ -73,6 +73,8 @@ solver:
                      # `fixed` for their cross-rank floor -- Study C asserts an EQUILIBRIUM clamp depth,
                      # which is a dt-independent quantity, so the controller is free to size the step.
     dt: 31536000
+    dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
     error_tol: 0.5   # baseline (tests/CONFIG_BASELINE.md)
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
     shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)

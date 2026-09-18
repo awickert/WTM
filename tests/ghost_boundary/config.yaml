@@ -97,6 +97,8 @@ solver:
   time_step:
     mode: adaptive   # what `anderson` resolves to
     dt: 2419200
+    dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
     error_tol: 0.1   # THE RESOLVED VALUE. The controller's default TRACKS equilibrium_stop.tol
                      # (CreateSNES.cpp), which is 0 here; 0.1 is what that yields. Stated rather
                      # than inherited, and VERIFIED to be the same input -- see the commit message

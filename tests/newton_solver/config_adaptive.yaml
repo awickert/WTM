@@ -72,6 +72,8 @@ solver:
   time_step:
     mode: adaptive
     dt: 31536000
+    dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
     error_tol: 0.5   # baseline (tests/CONFIG_BASELINE.md); ACTIVE here -- the controller steers on it
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
     shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)

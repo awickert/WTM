@@ -70,6 +70,8 @@ solver:
     mode: adaptive   # PER-ARM: the newton arm needs `ramp` (it does not converge from cold without
                      # dt-continuation), which is why naming the method forces naming this too
     dt: 2419200
+    dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
     error_tol: 0.0001   # the resolved target. TIGHT: three solvers must agree to ~1e-4, so each must
                         # converge tighter than the tolerance the comparison uses
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
