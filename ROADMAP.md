@@ -172,12 +172,42 @@ Two of these were mis-filed here, one has grown, and three are confirmed exactly
 | **58** | **CLOSED 2026-09-17 on a MEASUREMENT.** See the run below. Its rate-vs-exposure finding stands as a permanent record. |
 | **59** | **CLOSED 2026-09-17.** Item (b) is measured away by the same run. Item (a) – FSM activity cannot predict the error, because exposure is a property of the trajectory *ahead* – stands permanently and must not be rebuilt. |
 | **77** | Confirmed, and its premise is now the shipped default: `active_set` is the default collector (`resolve_defaults.cpp:31`) and `CONFIG_BASELINE.md:29` already cites this measurement. A record, no action claimed. |
-| **84** | **Grown.** Recounted mechanically (`grep -rnoE '\$\{[A-Z_]*TOL[A-Z_]*:-[^}]*\}' tests/*/run.sh`): **30 across 20 suites**, up from 24 across 19. And "partly mechanised by `tol_margin.py`" was optimistic – that file is referenced by **nothing**, and `run_all.sh` does not call it. |
-| **85** | Confirmed verbatim. All 7 references still open with `shape=` and nothing else: no commit, no config, no date, no reason. |
+| **84** | **ADVANCED 2026-09-18 (`16b5a5f`), not closed.** The count stands: **30 tolerances across 20 suites** (`grep -rnoE '\$\{[A-Z_]*TOL[A-Z_]*:-[^}]*\}' tests/*/run.sh`). `tol_margin.py` is now WIRED IN – `run_all.sh` tees each suite to a scan directory and ranks at the end – so the ranking it was written to produce has been seen for the first time. From a PARTIAL 10-suite scan: 22 assertions print a value beside a tolerance and **6 run within 10× of failing**. One (`newton_solver`, 2.01×) has had its bound DERIVED from a measured sweep; **five remain**, named below. The ranking is only as complete as the scan – a full `run_all.sh` (blocked on `#109`) ranks all 30. |
+| **85** | **CLOSED 2026-09-18 (`fc2529b`).** Verified first as written – all 7 references carried `shape=` and nothing else. Now each reference carries provenance, a regold must STATE A REASON (`generate()` exits 2 without one), and `check()` prints that provenance on failure. |
 | **90** | **CLOSED 2026-09-18**, all three parts. (a) resolved by MEASUREMENT, not rewording: `impulse` + `fixed` is the one pairing all three collectors can take (the two refusals bite on different axes), so three like-for-like arms were added with the collector as the ONLY variable – the pin's effect survives isolation at 2.672e-01 m. The task had guessed this was unreachable. (b) the header advertised a DELETED assertion; (c) it called active-set "experimental and off by default (`-wtm_active_set`)", wrong three ways. Suite 5 of 5 green. |
-| **98** | Confirmed: `a_as` and `c_as` still resolve identically, `ARM_TOL=1e-5` on both. NEW: `a_as`'s label still prints "[loose tol, see note]", promising a distinction it no longer has. |
+| **98** | **CLOSED 2026-09-18.** Confirmed as written (`a_as`/`c_as` resolved identically at `ARM_TOL=1e-5`), then **three** redundant arms were deleted, not two – `tr_as` was missed by the original filing. The coverage gap left behind (`#16`'s configuration) is closed by a new arm, and a model defect surfaced in the process. |
 
 `#50`'s doc half also sits here.
+
+#### The five thin margins that remain — `#84`'s worklist
+
+Verbatim from `tests/tol_margin.py` over a **partial, 10-suite** scan (`active_set`, `budget_closure`,
+`dt_sensitivity`, `ghost_boundary`, `golden`, `newton_solver`, `postfsm_metric`, `runoff_collector`,
+`storage_equivalence`, `variable_porosity`). Recorded here because the scan directory was `/tmp` and
+would not have survived a reboot.
+
+```
+   2.01x  newton_solver          PASS  SAME ROOT  Anderson vs Newton at equilibrium: max|dV| = 4.271e-02 m
+   2.84x  budget_closure         PASS  Newton + continuation x implicit (impulse) cumulative=2.49e-07
+   6.30x  variable_porosity      OK    AGREEMENT  cc vs tr-bdf2: max|dV| = 1.984e-03 m water volume (tol 0.0125)
+   6.61x  variable_porosity      OK    BUDGET tr  |exact residual|/recharge = 1.513e-06 (tol 1e-05)
+   7.81x  budget_closure         PASS  Newton, unset -> active_set [tight solve] cumulative=6.00e-09
+   9.42x  variable_porosity      OK    BUDGET cc  |exact residual|/recharge = 1.062e-06 (tol 1e-05)
+```
+
+The first is DONE: `AGREE_TOL` in `tests/newton_solver/run.sh` went 0.05 → 0.086, derived from a measured
+sweep — and the derivation matters more than the number, because **the hypothesis for where that bound
+should come from was WRONG.** Sweep; do not assume. The other five are the worklist.
+
+**The rule for all five: DERIVE the bound** — from the run's own solver tolerance, from the precision of
+the quantity, or from a measured spread — **never loosen it to buy margin.** A tolerance is what decides
+pass/fail, so one set too loose is a vacuous test reporting success.
+
+One line was reported UNPARSED (`budget_closure`, the routing-off arm): `0.3` in the *label* matched the
+tool's magnitude rule better than the `1.42e-08` actually compared. The label has since been fixed
+(`run.sh:425` now reads "runoff share still booked"), so a re-scan should rank it. The tool no longer
+calls a line FAILING when its suite printed PASS — that disagreement is the parse being wrong, and a
+false alarm in the one output whose job is ranking real risk is worse than over-reporting.
 
 #### The decisive run that closed `#58` and `#59`
 
