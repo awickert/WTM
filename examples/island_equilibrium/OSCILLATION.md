@@ -1,6 +1,6 @@
 # Why corsica never reaches equilibrium
 
-**Status: the behaviour is fully characterised and the mechanism is NOT known.** Six candidate
+**Status: the behaviour is fully characterised and the mechanism is NOT known.** SEVEN candidate
 mechanisms have been excluded by measurement and five explanations of my own have been refuted. This
 document records all of it, because the exclusions cost a measurement each and are the part worth not
 repeating.
@@ -64,8 +64,8 @@ clamp never engages here: 0 of 41 reports have the driver above ground.
 | 3 | time discretisation | 4× `dt` refinement from an identical restart moves the amplitude by **≤0.5%** (ratios 0.995 / 0.997 / 1.000) |
 | 4 | operator splitting | ruled out by the same sweep once measured: `FSMTRACE` shows FSM runs once per **step** (40 calls in 40 steps), so refining `dt` refined the coupling 4× too |
 | 5 | which removal mechanism | `active_set` / `explicit` / `implicit` give spans 24.4966 / 24.4085 / 24.4877 m, same phase, same 8 of 41 reports at the surface |
-| 7 | the lagged FSM→recharge source (`continuous` feeds step *n*'s delta to step *n+1*) | measured directly from the two raster series: the step-to-step relative change in that source is **1.58e-06** (median, settled), against a 24 m groundwater swing. It decays ~3× per step from a 17.6% transient peak. FSM's output is constant because the lakes are — volume 4751.58 → 4751.71 over 54 steps |
 | 6 | a lagged nonlinear coefficient | `benchmark/twocell_numerics` shows a lagged `T` **does** manufacture a limit cycle — but on the real model a 10 000× tighter solve (`water_volume_tol` 1e-8→1e-12, `residual_gate` 1e-5→1e-9, both confirmed resolved) leaves it at **24.4915 → 24.4914 m, ratio 1.0000** |
+| 7 | the lagged FSM→recharge source (`continuous` feeds step *n*'s delta to step *n+1*) | measured directly from the two raster series: the step-to-step relative change in that source is **1.58e-06** (median, settled), against a 24 m groundwater swing. It decays ~3× per step from a 17.6% transient peak. FSM's output is constant because the lakes are — volume 4751.58 → 4751.71 over 54 steps |
 
 ## Refuted explanations of mine
 
