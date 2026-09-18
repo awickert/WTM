@@ -68,6 +68,9 @@ solver:
   time_step:
     mode: @MODE@   # PER-ARM: fixed | adaptive | ramp -- see the translation note in the header
     dt: 604800   # one week, matching production
+    dt_min: "6.048s"   # 1e-5 x dt. REQUIRED by the one @MODE@ = adaptive arm (of 8); the six fixed
+                       # arms parse and ignore it, and the ramp arm honours it. A literal rather than
+                       # a per-arm token because dt above is a literal -- one week, matching production.
 dev:
   storage_form: @STORAGE@   # PER-ARM: secant | volume
   under_relaxation: 1
