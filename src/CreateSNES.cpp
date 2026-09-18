@@ -340,16 +340,18 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     user_context.dtc_shrink     = params.dtc_shrink;
     // config-owned (solver.dt_max); an unset key leaves THIS block's own default in place
     if (params.dtc_dt_max_set) user_context.dtc_dt_max = params.dtc_dt_max;
-    // ...and solver.time_step.dt_min, the FLOOR. DEFAULT = 1e-5 x params.deltat, i.e. 1e-5 of the
-    // configured step. THIS VALUE IS A PROPOSAL, not a convention I found: no surveyed code ships a
-    // guessed default (SUNDIALS and PETSc disable it; MODFLOW 6 and ParFlow REQUIRE the user to state
-    // it). The 1e-5 is MODFLOW 6's own documented recommendation for DTMIN -- "a small value, such as
-    // 1.e-5" (utl-ats.dfn) -- read in model time units, and WTM's model time unit is the year, which
-    // its shipped deltat of 31536000 s states outright. On that default step the floor is ~315 s, five
-    // orders below any step the controller takes in practice, so it binds only on a run that is already
-    // walking dt down toward abort.
-    // NOT derived from dt_max, and not from the current time: no surveyed code does either.
-    user_context.dtc_dt_min = 1.0e-5 * params.deltat;
+    // ...and solver.time_step.dt_min, the FLOOR. THERE IS NO DEFAULT, and the absence is the decision
+    // (Andy, 2026-09-19): the survey that used to justify a guess said no surveyed code ships one.
+    // SUNDIALS and PETSc disable the floor outright; MODFLOW 6 and ParFlow REQUIRE the user to state it
+    // as part of opting into adaptive stepping. WTM follows the second, so an EXPLICIT
+    // solver.time_step.mode: adaptive without dt_min is refused in parameters.cpp, where the reasoning
+    // and the precedent are written down. A RESOLVED adaptive run (the key absent) keeps 0 here, the
+    // SUNDIALS/PETSc behaviour: no floor, with WTM.cpp's unconditional roundoff guard still in force.
+    //
+    // The guessed default this replaces was 1e-5 x params.deltat -- MODFLOW 6's recommended MAGNITUDE
+    // for DTMIN, but applied where MODFLOW asks a question rather than answering one. It never bound on
+    // any run in the tree (nothing asserts the clamp, nothing sets the key), and it cost 28 suite
+    // configs a restatement of a number nobody had chosen. See #109.
     if (params.dtc_dt_min_set) user_context.dtc_dt_min = params.dtc_dt_min;
     user_context.dtc_easy_iters = params.dtc_easy_iters;
     // ...and max_retries with them. It was LEFT BEHIND when the other four were moved here: the adaptive

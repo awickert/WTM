@@ -620,6 +620,44 @@ Parameters::Parameters(const std::string& config_file) {
         "config: solver.time_step.mode: ramp is the Newton path's continuation ramp and only runs with "
         "solver.method: newton (this run asks for " + (solver_method.empty() ? std::string("anderson") : solver_method) +
         "). Use solver.time_step.mode: adaptive or fixed, or set solver.method: newton.");
+  // ASKING FOR THE CONTROLLER MEANS OWNING ITS FLOOR. An explicit solver.time_step.mode: adaptive must
+  // state solver.time_step.dt_min. There is no guessed default, and that is a decision with a survey
+  // behind it rather than a convention I assumed:
+  //
+  //   SUNDIALS, PETSc     ship NO floor (hmin = 0) -- the controller is free to shrink without bound
+  //   MODFLOW 6, ParFlow  REQUIRE the user to state one, as part of opting into adaptive stepping
+  //                       (MODFLOW 6's ATS is a package you ADD, and dtmin is required inside it;
+  //                       ParFlow's TimeStep.Type = Growth likewise carries its own bounds)
+  //
+  // WTM followed the second, on Andy's call (2026-09-19). The floor is a POLICY about how much accuracy
+  // a run may silently lose -- a clamped step runs LOOSER than solver.time_step.error_tol asked for --
+  // and a guessed default makes that choice on the user's behalf and then hides it. It also had a
+  // measurable cost: 28 suite configs had to restate a number nobody had chosen, which is what the
+  // declared-config rule was reporting when it failed them (#109).
+  //
+  // THE GATE IS THE EXPLICIT KEY, not the resolved mode, and the distinction is load-bearing: `adaptive`
+  // is what an ordinary run RESOLVES TO a few lines below, so requiring it there would refuse the
+  // simplest config in the tree. That also matches the precedent exactly -- in MODFLOW and ParFlow the
+  // requirement attaches to opting IN, not to the scheme being in force -- and it matches the three
+  // sibling checks above, which all gate on time_step_mode_set for the same reason.
+  //
+  // A RESOLVED adaptive run therefore has NO floor, i.e. the SUNDIALS/PETSc behaviour. Nothing is
+  // unprotected by that: WTM.cpp's unconditional roundoff guard (t + dt == t) is independent of this key
+  // and cannot be switched off, and dtc_max_retries still bounds the reject loop. The floor buys a clean
+  // clamp-and-warn where the alternative is a legible abort -- it is not what stands between the run and
+  // an infinite loop.
+  if (time_step_mode_set && time_step_mode == "adaptive" && !dtc_dt_min_set)
+    throw std::runtime_error(
+        "config: solver.time_step.mode: adaptive requires solver.time_step.dt_min -- the smallest step "
+        "the controller may take. There is no default, deliberately: the floor decides how much accuracy "
+        "a run may silently lose (a clamped step runs LOOSER than solver.time_step.error_tol requested), "
+        "so it is yours to state rather than ours to guess. MODFLOW 6 and ParFlow require it the same "
+        "way, as part of opting into adaptive stepping. A usual choice is 1e-5 of your step -- MODFLOW 6's "
+        "own documented recommendation for DTMIN, read in model time units -- which for this run's "
+        "solver.time_step.dt would be \"" + fmt::format("{:g}s", deltat * 1.0e-5) + "\". Set dt_min: \"0s\" to "
+        "disable the floor entirely (the SUNDIALS/PETSc behaviour): the controller may then shrink without "
+        "bound, and a collapsing step aborts with a legible message rather than being clamped.");
+
   // RESOLVE AN ABSENT KEY. It yields twice over: to Newton's ramp, which owns the step size on that
   // path, and to fixed stepping under the implicit collector, which an error controller cannot drive
   // at all (see the refusal just above).
