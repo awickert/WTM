@@ -16,6 +16,15 @@ cd "$(dirname "$0")"
 
 GEN=0
 [[ "${1:-}" == "--generate" ]] && { GEN=1; shift; }
+# A REGOLD MUST SAY WHY, and it must say so BEFORE any run starts rather than after the references
+# have already been overwritten. The reason is written into every file this invocation rewrites.
+if [[ $GEN -eq 1 && -z "${GOLDEN_REASON:-}" ]]; then
+    echo "ERROR: --generate needs GOLDEN_REASON set to one line saying why these references are being" >&2
+    echo "  regenerated. It is written into each file (#85). Example:" >&2
+    echo "    GOLDEN_REASON='#105 booked the neumann_toposlope off-map flux; every arm moved' \\" >&2
+    echo "      tests/golden/run.sh --generate" >&2
+    exit 2
+fi
 WTM=$(readlink -f "${1:-../../build/wtm.x}")
 shift || true
 RANKS="${*:-1 2 4 6 8}"   # cross-rank check counts (run_all.sh passes the tier's set); default = full sweep
@@ -205,7 +214,13 @@ for name in "${CASES[@]}"; do
         if ! run_case "$name" 1; then
             echo "  REFUSING to regenerate $name from a run that did not finish" >&2; fail=1; continue
         fi
-        python3 golden.py generate "$PREFIX" "$REFDIR/${name}.txt"
+        # PASS THE PROVENANCE, and REQUIRE THE REASON (#85). A reference IS the assertion, so it has
+        # to be able to say what produced it: the binary's commit, the config (hashed, so a later
+        # check can tell whether the settings moved), the date, and WHY it was regenerated. #55
+        # regolded five references each with a stated reason -- and every one of those reasons lived
+        # only in a commit message, so the files could not say why they had changed.
+        python3 golden.py generate "$PREFIX" "$REFDIR/${name}.txt" \
+                "$WORK/${name}_n1.yaml" "$GOLDEN_REASON" "$(wtm_binary_commit "$WTM")"
     else
         for n in $RANKS; do
             if ! run_case "$name" "$n"; then

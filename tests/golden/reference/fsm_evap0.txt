@@ -1,4 +1,12 @@
 # WTM golden reference; shape=16x16 (rows x cols); values row-major, %.17g
+# provenance (#85): NOT RECORDED AT GENERATION -- this reference predates the provenance header,
+#   added 2026-09-18. Its origin is recoverable only from git history:
+#     git log --follow -- tests/golden/reference/fsm_evap0.txt
+#   Five of the seven references were regolded under #55, each with a stated reason in its commit
+#   message; that is where those reasons live. The next legitimate regold writes a full provenance
+#   block here automatically, and golden.py now REFUSES to regenerate without a reason.
+#   VALUES BELOW ARE UNCHANGED -- only these comment lines were added. load_ref() skips every `#`
+#   line, so nothing this file asserts is affected.
 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 0.0 -22.84813498269989 -9.219757367811923 -7.975570389675099 -7.895356439794057 -7.8913810219233085 -7.891219588262075 -7.891213980766992 -7.891213980766992 -7.891219588262075 -7.8913810219233085 -7.895356439794057 -7.975570389675099 -9.219757367811951 -22.848134982699918 0.0
 0.0 -15.644155091708399 -0.7182796463716983 -0.036748764772880804 -0.023503169090787424 -0.02323795715440724 -0.023232558290430916 -0.02323244238407085 -0.023232442384113483 -0.023232558290430916 -0.02323795715440724 -0.023503169090815845 -0.036748764772880804 -0.7182796463722099 -15.644155091708654 0.0

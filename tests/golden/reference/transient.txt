@@ -1,4 +1,12 @@
 # WTM golden reference; shape=16x16 (rows x cols); values row-major, %.17g
+# provenance (#85): NOT RECORDED AT GENERATION -- this reference predates the provenance header,
+#   added 2026-09-18. Its origin is recoverable only from git history:
+#     git log --follow -- tests/golden/reference/transient.txt
+#   Five of the seven references were regolded under #55, each with a stated reason in its commit
+#   message; that is where those reasons live. The next legitimate regold writes a full provenance
+#   block here automatically, and golden.py now REFUSES to regenerate without a reason.
+#   VALUES BELOW ARE UNCHANGED -- only these comment lines were added. load_ref() skips every `#`
+#   line, so nothing this file asserts is affected.
 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 0.0 -25.204895174592636 -10.530962972572723 -8.725356145800362 -8.566414657225948 -8.5555998959304 -8.554998285159215 -8.554969846061411 -8.554969845393302 -8.554998281560728 -8.55559989231429 -8.566414656457582 -8.725356145709796 -10.530962972563216 -25.2048951745912 0.0
 0.0 -17.21680597507141 -1.1033835771871878 -0.055944679975596046 -0.03418607895362413 -0.0336885225287773 -0.03367481339196843 -0.03367437210067692 -0.03367437209267621 -0.033674813348866905 -0.03368852248543419 -0.03418607894438708 -0.055944679973237044 -1.1033835771412015 -17.216805975043144 0.0
