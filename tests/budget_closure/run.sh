@@ -287,7 +287,18 @@ echo "-- active-set exfiltration constraint --"
 # run, under the implicit collector this fixture pins. See benchmark/scheme_bench/README.md, where
 # active-set alone is shown to already remove the FSM between-step shock (ratio 0.985 -> 3.6e-13) that
 # fsm_coupling: continuous exists to address.
-DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=active_set ARM_TOL=1e-5 check "Anderson + active-set [loose tol, see note]" a_as
+# NO ARM RUNS HERE ANY MORE, and that is the point of the note above rather than a gap (#98).
+# This section used to run `a_as` at continuous/adaptive/tr-bdf2/active_set. So do `tr_as` in the
+# TR-BDF2 section and `c_as` in the collector sweep -- three arms resolving to ONE accounting path
+# and returning ONE number, cumulative=4.61e-09 worst-per-cycle=3.87e-08, to every digit. Three
+# headings promised three checks and delivered one 20 yr run three times.
+#
+# THE TEST IS OF ACCOUNTING, NOT OF PHYSICS: it asks whether the accumulated per-step terms match
+# the storage change the solve actually produced. An arm therefore earns its place by exercising
+# an ACCOUNTING PATH no other arm does -- a different storage form, source route, or removal
+# route. Same path means same assembly means the same residual, so a second arm adds nothing.
+# The surviving arm is `c_as` in the collector sweep below; everything this section asserts about
+# active-set conservation is asserted there, at the same tolerance, by the same run.
 echo
 # TR-BDF2 used to live below this line, under a "no single-step identity" heading, asserting that it
 # reported the exact residual as `nan`. That was true and worth pinning while the two stages' balances
@@ -303,11 +314,14 @@ echo
 # genuinely has no per-step identity.
 echo "-- TR-BDF2 (two stages, telescoped) --"
 STORAGE=volume ROUTING=continuous MODE=fixed INTEG=tr-bdf2 check "TR-BDF2" s_tr
-# The combination that was leaking, and the reason this arm exists: active-set puts a multiplier in
-# BOTH stages, and only the step combination E = C1*E1 + E2 conserves. Same loose per-arm tolerance as
-# the backward-Euler active-set arm above, and for the same reason -- the multiplier is recovered from
-# the residual, so it carries the solve's tolerance, not a conservation defect.
-DT_TOL=0.5 ROUTING=continuous MODE=adaptive COLL=active_set INTEG=tr-bdf2 ARM_TOL=1e-5 check "TR-BDF2 + active-set [loose tol]" tr_as
+# THE TR-BDF2 x ACTIVE-SET LEAK, and where its regression test now lives. Active-set puts a
+# multiplier in BOTH stages and only the step combination E = C1*E1 + E2 conserves; that
+# combination was leaking 9.5% of recharge until it was derived (src/tr_bdf2_coefficients.hpp).
+# This section used to run `tr_as` for it -- continuous/adaptive/tr-bdf2/active_set -- which is
+# the SAME accounting path as `c_as` in the collector sweep below, returning the same
+# cumulative=4.61e-09 worst-per-cycle=3.87e-08. One run, so one arm: `c_as` is the regression
+# test for this leak as much as it is the collector sweep's active-set entry. The history is kept
+# here because this is where a reader looks for it, and deleting the arm must not delete the why.
 echo
 # ADAPTIVE dt. These exist because the exact budget was NOT checked under adaptive dt by anything, and
 # it did not close: the controller wrote the NEXT step's dt into user_context.deltat before the step's
@@ -388,9 +402,27 @@ echo
 # ("NOW CLOSES: promote to check()").
 echo "-- collector sweep (conservation must not depend on the enforcement) --"
 DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=active_set ARM_TOL=1e-5 check "Anderson x active_set"      c_as 
-STORAGE=volume ROUTING=continuous MODE=fixed INTEG=tr-bdf2 COLL=implicit                check "Anderson x implicit"        c_im 
+# IMPLICIT is covered by `s_tr` in the TR-BDF2 section above, not re-run here. `implicit` cannot
+# take mode: adaptive (refused by name -- its per-step error GROWS as dt shrinks), so at this
+# suite's settings it can only run fixed/tr-bdf2/continuous/volume, which is exactly what `s_tr`
+# is. The two were byte-identical, both returning cumulative=1.58e-09 worst-per-cycle=3.61e-08.
+#
+# NOTE THIS SWEEP CANNOT HOLD EVERYTHING EQUAL, and unlike tests/active_set (#90) it does not need
+# to. `implicit` forces fixed, `explicit` forces impulse -- the same reachability constraint --
+# so the arms differ in mode and routing as well as collector. That would invalidate a claim of
+# collector INDEPENDENCE; it does not invalidate this suite's claim, which is that each distinct
+# accounting path closes its own books. Different paths are the subject, not a confound.
 DT_TOL=0.5 ROUTING=continuous MODE=adaptive INTEG=tr-bdf2 COLL=off                     check "Anderson x off"             c_off
 DT_TOL=0.5 ROUTING=impulse MODE=adaptive INTEG=tr-bdf2 COLL=explicit                check "Anderson x explicit"        c_ex 
+# ROUTING: OFF -- FSM NEVER RUNS, AND THE RUNOFF SHARE STILL HAS TO BE BOOKED. Added 2026-09-18
+# (#98) because this accounting path had NO budget coverage anywhere in the suite, and it is
+# the path a real mass defect already took: #16, "runoff_ratio with FSM OFF silently discards
+# that share of P-ET, unrecorded". With routing: off the runoff_ratio share (0.3 here) never
+# enters the FSM route at all, so it must be accounted on another route or vanish -- exactly
+# the question this suite exists to ask, and the one configuration it was not asking it in.
+# Four suites DO check the exact residual with routing: off (variable_porosity, ghost_boundary
+# x2, log_schema) and every one of them runs runoff_ratio 0, so none of them covers it.
+DT_TOL=0.5 ROUTING=off MODE=adaptive INTEG=tr-bdf2 COLL=active_set check "Anderson x routing off (runoff 0.3, FSM never runs)" c_rof
 # `legacy` on Anderson keeps the band sink AND the clamp, and its per-cycle residual is
 # TOLERANCE-LIMITED rather than defective -- the same signature as the active-set arm above. Verified
 # by scaling the solve on this fixture:

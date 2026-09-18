@@ -603,7 +603,16 @@ static void emit_coverage_fingerprint(const Parameters& params, const AppCtx& uc
     << " runoff_ratio=" << (params.runoff_ratio_on ? 1 : 0)
     << " infiltration=" << (params.infiltration_on ? 1 : 0)
     << " recharge_path=" << ((!params.fsm_on || !params.infiltration_on) ? "distributed" : "serial")
-    << " coupling=" << (g_fsm_continuous ? "continuous" : "impulse")
+    // `off` IS A THIRD STATE, not the absence of the other two. This used to read
+    // (g_fsm_continuous ? "continuous" : "impulse"), which has no `off` case, so a run with
+    // surface_water.routing: off emitted `fsm=0 coupling=impulse` -- a fingerprint naming a coupling
+    // mechanism that never ran, in the same line that says FSM is off. Same defect class as #89,
+    // which merged `mode` and `fsm_coupling` because the split let you write a contradiction.
+    // It survived because no suite had ever asked for a routing: off fingerprint --
+    // budget_closure c_rof (#98) is the first, and it caught this on its first run.
+    // resolve_defaults.cpp already recorded the correct three-way value for full_config.yaml;
+    // this line is now consistent with it.
+    << " coupling=" << (!params.fsm_on ? "off" : (g_fsm_continuous ? "continuous" : "impulse"))
     << " boundary=" << (g_land_boundary_dirichlet ? "dirichlet" : "neumann")
     << " ranks=" << size
     << "\n";
