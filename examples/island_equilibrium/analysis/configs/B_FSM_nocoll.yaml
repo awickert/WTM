@@ -1,0 +1,62 @@
+run:
+  type: equilibrium
+  initial_water_table: '/home/awickert/models/WTM/examples/island_equilibrium/_work_corsica/anderson_fixed_dt31536000_eq_n1_000002000_20000yr.tif'
+  equilibrium_stop:
+    tol: 0        # config.yaml's shipped default, in metres of WATER
+    metric: frac
+    frac: 0.001       # stop once fewer than this fraction of cells still move
+
+time:
+  total: "400yr"
+                    # total must be an integer number of report spans and a non-annual dt
+                    # does not divide a year
+  report_interval: "10"
+  save_every_n_reports: 1
+io:
+  source: '/home/awickert/models/WTM/examples/island_equilibrium/_work_corsica'
+  region: 'corsica'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  directory: 'ANALYSIS_DIR/runs/calm/B_FSM_nocoll_prov'
+  outfile_prefix: 'ANALYSIS_DIR/runs/calm/B_FSM_nocoll_'
+  run_log: 'ANALYSIS_DIR/runs/calm/B_FSM_nocoll.txt'
+  verbosity: normal
+  if_exists: overwrite
+boundaries:
+  land: neumann_toposlope
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05
+    logistic_width: 0.1
+  extinction_depth: 8
+  tapers:
+    surface_transition: true
+    depth_extinction: true
+surface_water:
+  routing: continuous    # LOAD-BEARING -- see the docstring
+  runoff_ratio: raster   # was `runoff_ratio_on 1`: use the runoff_ratio layer this demo writes
+  infiltration_during_flow: false
+  collection:
+    method: off
+solver:
+  method: anderson
+  time_integration: tr-bdf2
+  convergence:
+    metric: volume         # the shipped default (#61): the per-solve step judged in WATER
+    water_volume_tol: 1.0e-8
+  smoothing:
+    ksat_surface: 0
+    ksat_soilbottom: 0
+    storativity_surface: 0.01
+  time_step:
+    mode: fixed
+    dt: 31536000      # exactly as given; nothing may change it
+parallel:
+  threads_per_rank: 1

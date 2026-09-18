@@ -45,3 +45,51 @@ lateral net predicts it wets *without* surface removal, which is the opposite of
 trajectory. The estimate ignores the real finite-volume discretisation, the per-face areas and the
 within-cycle timing. It is adequate for the 1.16×-versus-8.1× contrast in `valve2.py` and **not**
 adequate for a budget. Re-derive from the model's own fluxes before building on it.
+
+## REPRODUCING ANY OF IT — read this before running a script
+
+**The scripts point at data that no longer exists.** They were written against
+`/tmp/claude-1000/dtsweep` and `/tmp/claude-1000/calm`, which do not survive a reboot, and against
+`../_work_corsica`, which is gitignored and therefore local to whichever machine produced it. Committing
+the scripts without saying this would leave someone editing paths for an hour before discovering there
+is nothing behind them.
+
+**The configs ARE preserved**, in `configs/` — 17 of them, one per ablation arm, with the vanished
+`/tmp` paths replaced by an `ANALYSIS_DIR` placeholder you must substitute. They are the expensive part
+to reconstruct; the runs themselves are one command each.
+
+### The order that matters
+
+Everything except the first step starts from **one restart raster**: the settled 20000 yr state,
+`_work_corsica/anderson_fixed_dt31536000_eq_n1_000002000_20000yr.tif` (498 448 bytes). Every ablation
+is a 400 yr continuation from it, which is why they are cheap and the spin-up is not.
+
+```
+# 1. THE EXPENSIVE ONE, hours. Produces the restart state and the 2001 snapshots
+#    remeasure.py / space.py / timeseries.py / lakes.py read.
+python3 examples/island_equilibrium/demo.py corsica --solver anderson --equilibrium --ranks
+
+# 2. EVERY ABLATION, ~10-30 min each. Substitute ANALYSIS_DIR in the config first.
+sed -i "s|ANALYSIS_DIR|$PWD/examples/island_equilibrium/analysis|" <config>
+./build/wtm.x examples/island_equilibrium/analysis/configs/<arm>.yaml
+```
+
+### Which config produced which result
+
+| config | arm | what it showed |
+|---|---|---|
+| `a_dt1`, `b_dt025` | `dt` 1 yr vs 0.25 yr | amplitude ratio 0.995–1.000 — **`dt`-invariant** |
+| `c_active_set`, `c_explicit`, `c_implicit` | three collectors at `impulse`/`fixed` | spans 24.4966 / 24.4085 / 24.4877 — the removal law does not matter |
+| `nofsm` | `routing: off` AND `collection: off` | the driver rests at +0.042 m — **removal is necessary** |
+| `A_noFSM_as`, `B_FSM_nocoll` | the two removers split | either one alone restores the full cycle |
+| `calm`, `lowP`, `fdb` | `E_ow` 0.15, `P` 0.16, `fdepth_b` 15 | `E_ow` refuted; the other two were **invalid** — a domain-wide change from a state equilibrated under the old one is a transient, not a limit cycle |
+| `ext1`, `ext30` | extinction depth 1 m / 30 m | **bit-identical** — `A(wtd)` multiplies `(E_eff−P)₊`, zero here |
+| `pond` | 10 cm ponding allowance (a SOURCE PATCH, not a config — see `#111`) | span changes 0.003%, and the cell never uses it |
+| `tight` | `water_volume_tol` 1e-12, `residual_gate` 1e-9 | ratio 1.0000 — the solve was already converged |
+| `lag` | `post_groundwater` on, every step | the FSM source is stale by 1.58e-06 settled, 17.6% in transient |
+| `tr` | FSM trace on | FSM runs once per **step**, not per cycle |
+
+`pond` cannot be reproduced from its config alone: it needed a one-line patch to `WTM.cpp:499`
+(`std::max(0.0, ...)` → `std::max(0.10, ...)`), the writer `continuous` actually uses. The first
+attempt patched `transient_groundwater.cpp:2336` instead and measured nothing, because that writer is
+not on this path.
