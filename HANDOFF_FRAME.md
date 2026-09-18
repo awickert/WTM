@@ -111,6 +111,28 @@ monotonically.**
 coverage table'`, never by index. It needs a full `tests/run_all.sh`, which doubles as the end-to-end
 green check. **Blocked on `#109` first**, or it will simply report the `dt_min` failures.
 
+## NEXT-SESSION GOALS, in order
+
+1. **`#109` — the last gate.** Add `solver.time_step.dt_min` to every adaptive-path suite config.
+   Value is `1e-5 × dt` (`CreateSNES.cpp:352`), verified twice against observed values (`2522.88 s` at
+   `dt` 252288000, `315.36 s` at `dt` 31536000). ~26 files are mechanical; 3 name `mode: adaptive` but
+   sit beside ramp/fixed siblings and must be READ, not grepped; 1 (`estimator_order`) has a templated
+   `dt: @DT@` and needs a decision — an explicit value per arm, or #92's OPTIONAL marker.
+   **PARKED BY ANDY — do not start without asking.**
+2. **A full `tests/run_all.sh`.** Only after (1), or it just reports the `dt_min` failures. It is both
+   the end-to-end green check nothing has had since these changes AND the run that regenerates the
+   stashed `README.md` coverage table. It also now produces the COMPLETE tolerance ranking for `#84`,
+   since `tol_margin` is wired in.
+3. **`#84`'s five remaining thin margins.** The worked example is in `tests/newton_solver/run.sh`, and
+   its warning is the point: the hypothesis for where that bound *should* come from was WRONG, so
+   sweep rather than assume.
+4. **`#112`** if wanted — the plan is complete, including the byte-identical guard to build FIRST.
+5. **`#111`'s last candidate** if wanted — FSM's overland TRANSPORT of half the water budget, the one
+   pathway absent from every reduction that settled.
+
+**What is NOT a goal:** at-scale validation; re-running corsica/newton to the cap; proposing a sixth
+mechanism for the oscillation without testing one of the named candidates first.
+
 ## READINESS
 
 If this file, git history and the task list survive, the state is reconstructible and verifiable
