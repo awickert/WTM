@@ -26,9 +26,9 @@ Closed 2026-09-17/18: **#60** (its missing case FOUND), **#85**, **#90**, **#98*
 ## THE RULES THAT GOVERN HOW TO WORK HERE
 
 - **Do not run the full suite at will.** Run the affected suites.
-- **Do not flatter Andy.** Memory `feedback_no_flattery_tell_it_straight.md`, added 2026-09-18 with
-  measured counts. Attribute the METHOD, never credit the PERSON. Test: would I write the line if the
-  result had gone the other way?
+- **Do not flatter Andy.** Now in `~/.claude/CLAUDE.md` (GLOBAL, not project memory — Andy moved it
+  there 2026-09-18 because it governs all work, not WTM). Attribute the METHOD, never credit the
+  PERSON. Test: would I write the line if the result had gone the other way?
 - **Commit each logical change as it completes.** Pushing, tagging, releasing, version bumps and
   closing issues ALWAYS need explicit current-message authorisation; committing never does.
 - **Report the DELTA on the list**, not the process. Open with the score.
