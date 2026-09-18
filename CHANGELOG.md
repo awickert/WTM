@@ -83,6 +83,47 @@ defects to be worked around, and the second and third can invalidate a naive dt-
 
 ### Changed
 
+- **BREAKING – `solver.time_step.mode: adaptive` now REQUIRES `solver.time_step.dt_min`.** A config
+  that states the adaptive mode and omits the floor is refused by name, with the reason and a
+  suggested value computed from its own `dt`. The key previously carried a default of `1e-5 × dt`,
+  which has been **removed**.
+
+  The change is about who owns a decision, not about a number. Every code surveyed does one of two
+  things and neither is to guess on the user's behalf: **SUNDIALS and PETSc** ship no floor at all,
+  letting the controller shrink without bound; **MODFLOW 6 and ParFlow** require the user to state
+  one as part of opting into adaptive stepping - MODFLOW's `DTMIN` lives inside the ATS package you
+  add, ParFlow's bounds inside the `TimeStep.Type` you select. WTM now follows the second.
+
+  What settled it is that the floor is **not the safety mechanism it resembles**. An unconditional
+  roundoff guard - independent of this key and impossible to switch off - already aborts any run
+  whose step has collapsed to where `t + dt == t`, with Hairer's `dop853`/`radau5` and ParFlow as
+  precedent; `max_retries` bounds the reject loop besides. What the floor actually decides is how
+  much **accuracy a run may lose in silence**, because a step clamped at the floor runs looser than
+  the `error_tol` that was requested. That is a policy, and a guessed default made the user's policy
+  choice for them and then hid it.
+
+  `dt_min: "0s"` is a first-class choice rather than an opt-out: it disables the floor - the
+  SUNDIALS/PETSc behaviour - so a collapsing step aborts legibly instead of being clamped and carried
+  on. Prefer it if you would rather a run die than quietly return an answer at an accuracy you did
+  not ask for. When a floor does bind, the run says so in ordinary output, naming the number of
+  clamped steps and that they ran looser than `error_tol`.
+
+  **The requirement attaches to the explicit key, not to the resolved mode**, and the distinction
+  matters: `adaptive` is what an ordinary run resolves to when `mode` is omitted, so requiring it
+  there would refuse the simplest possible config. A resolved adaptive run therefore gets the
+  SUNDIALS/PETSc behaviour - no floor - while writing the mode down means owning its bounds.
+
+  **To migrate:** add `dt_min: "<seconds>s"` beside any `mode: adaptive` you have written. `1e-5 × dt`
+  reproduces the old behaviour exactly and is MODFLOW 6's own recommendation; `"0s"` disables the
+  floor. The refusal message computes the first of these for your config and prints it.
+
+  Everything in the tree that states the mode was migrated with it - 27 suite configs, the annotated
+  `config.yaml`, `examples/island_equilibrium/demo.py` and `benchmark/scheme_bench` - all at
+  `1e-5 × dt`, so **no result moved**: `tests/golden` passes all 35 runs against unchanged
+  references. Two suites derive the floor per arm rather than fixing it, because a constant floor
+  would bind at the fine end of a `dt` ladder and bend what is being measured - `tests/estimator_order`
+  still observes order `p = 1.99 2.00 2.00`.
+
 - **BREAKING – the per-solve convergence test is now judged in WATER VOLUME, not head.** New
   default `solver.convergence.metric: volume` (`head` is the off-switch). The step that ends a solve is
   measured as |S·Δwtd| -- water volume per unit area, so a depth in metres, not m³ -- rather than |Δh|, so all three "close enough" gates - this one,
