@@ -64,6 +64,7 @@ clamp never engages here: 0 of 41 reports have the driver above ground.
 | 3 | time discretisation | 4× `dt` refinement from an identical restart moves the amplitude by **≤0.5%** (ratios 0.995 / 0.997 / 1.000) |
 | 4 | operator splitting | ruled out by the same sweep once measured: `FSMTRACE` shows FSM runs once per **step** (40 calls in 40 steps), so refining `dt` refined the coupling 4× too |
 | 5 | which removal mechanism | `active_set` / `explicit` / `implicit` give spans 24.4966 / 24.4085 / 24.4877 m, same phase, same 8 of 41 reports at the surface |
+| 7 | the lagged FSM→recharge source (`continuous` feeds step *n*'s delta to step *n+1*) | measured directly from the two raster series: the step-to-step relative change in that source is **1.58e-06** (median, settled), against a 24 m groundwater swing. It decays ~3× per step from a 17.6% transient peak. FSM's output is constant because the lakes are — volume 4751.58 → 4751.71 over 54 steps |
 | 6 | a lagged nonlinear coefficient | `benchmark/twocell_numerics` shows a lagged `T` **does** manufacture a limit cycle — but on the real model a 10 000× tighter solve (`water_volume_tol` 1e-8→1e-12, `residual_gate` 1e-5→1e-9, both confirmed resolved) leaves it at **24.4915 → 24.4914 m, ratio 1.0000** |
 
 ## Refuted explanations of mine
@@ -110,6 +111,8 @@ Everything that settled omitted the same things. In the order I would take them:
 
 1. **FSM's surface routing of the `runoff_ratio` share downhill.** Half the net `P − E` (0.06 m/yr)
    leaves as runoff and is redistributed by FSM. No reduction here modelled that transport at all.
+   Note this is the **transport**, not the one-step lag in handing it over — the lag is excluded above
+   (row 7). What is untested is that half the water budget moves overland and no reduction had it.
 2. The ET tapers and the open-water switch.
 3. Full-domain boundaries rather than a fixed ring.
 
