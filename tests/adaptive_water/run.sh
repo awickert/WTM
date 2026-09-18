@@ -42,6 +42,9 @@ emit() { # $1 stem, $2 time_integration, $3 time_step.mode, $4 equilibrium_stop.
   if [ "$sm" = fixed ]; then
       dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
              -e "/^    max_retries:/d" -e "/^    norm:/d"
+             # dt_min goes with the dials, and unlike error_tol it is DELETED rather than set:
+             # under `fixed` no controller runs, so the model resolves no floor at all.
+             -e "/^    dt_min:/,+2d"
              # error_tol is still RECORDED under fixed -- at a different value -- so it is SET, not
              # deleted. Only the controller dials disappear.
              -e "s|^    error_tol: .*|    error_tol: 0.1   # the value resolved under mode: fixed|")

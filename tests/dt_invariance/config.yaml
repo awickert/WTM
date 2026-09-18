@@ -72,6 +72,9 @@ solver:
   time_step:
     mode: @STEPMODE@   # PER-ARM: fixed, or adaptive at two step tolerances
     dt: 31536000
+    dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # THREE LINES with these comments -- run.sh range-deletes them under `fixed`.
     error_tol: @ERRTOL@   # PER-ARM: the adaptive target. 0.5 loose, 0.02 tight -- the two give
                           # different solve COUNTS, which is the variable this suite is invariant to
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)

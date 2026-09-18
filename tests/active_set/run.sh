@@ -77,6 +77,10 @@ emit() { # $1 stem, $2 collection.method, $3 time_step.mode, $4 routing  (ALL RE
   if [ "$sm" = fixed ]; then
       dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
              -e "/^    max_retries:/d" -e "/^    norm:/d"
+             # dt_min is a CONTROLLER key too: under `fixed` neither the adaptive branch nor the
+             # ramp runs, so nothing resolves it and declaring it would be EXTRA. The key spans
+             # THREE lines in config.yaml (value + two comment lines), hence the range delete.
+             -e "/^    dt_min:/,+2d"
              -e "s|^    error_tol: .*|    error_tol: 0.1   # the value resolved under mode: fixed|")
   fi
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \

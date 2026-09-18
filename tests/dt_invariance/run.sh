@@ -54,7 +54,9 @@ mkcfg() { # $1 stem, $2 runoff_ratio, $3 time_step.mode, $4 error_tol   (ALL REQ
     local dials=()
     if [ "$sm" = fixed ]; then
         dials=(-e "/^    grow:/d" -e "/^    shrink:/d" -e "/^    grow_if_niter_leq:/d"
-               -e "/^    max_retries:/d" -e "/^    norm:/d")
+               -e "/^    max_retries:/d" -e "/^    norm:/d"
+               # dt_min too -- a floor only exists while a controller is running (#109).
+               -e "/^    dt_min:/,+2d")
     fi
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
         -e "s|@RR@|$rr|g" -e "s|@STEPMODE@|$sm|g" -e "s|@ERRTOL@|$et|g" \
