@@ -67,7 +67,11 @@ solver:
     mode: adaptive   # what the model resolves here; the same on every arm
     dt: 2419200
     dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
-                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # WTM's own scale-free choice, and what the removed default computed. NOT
+                        # MODFLOW's recommendation, whose 1e-5 is an ABSOLUTE length in model time
+                        # units, recommended for reporting alignment rather than accuracy. MODFLOW
+                        # and ParFlow are the precedent for REQUIRING a floor, not for its value.
+                        # See benchmark/BDF2_ADAPTIVE_DESIGN.md.
     error_tol: 1e-08   # the resolved target. TIGHT because this suite compares against ANALYTIC
                        # solutions, so the discretisation must not contribute to the error being judged
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)

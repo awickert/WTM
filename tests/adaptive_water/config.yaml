@@ -81,7 +81,11 @@ solver:
                      # controller dials below, because under `fixed` the model records none of them
     dt: 2419200
     dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
-                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # WTM's own scale-free choice, and what the removed default computed. NOT
+                        # MODFLOW's recommendation, whose 1e-5 is an ABSOLUTE length in model time
+                        # units, recommended for reporting alignment rather than accuracy. MODFLOW
+                        # and ParFlow are the precedent for REQUIRING a floor, not for its value.
+                        # See benchmark/BDF2_ADAPTIVE_DESIGN.md.
                         # THREE LINES with these comments -- run.sh range-deletes them under `fixed`.
     error_tol: 0.5   # the resolved adaptive target
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)

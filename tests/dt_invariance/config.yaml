@@ -73,7 +73,11 @@ solver:
     mode: @STEPMODE@   # PER-ARM: fixed, or adaptive at two step tolerances
     dt: 31536000
     dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
-                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # WTM's own scale-free choice, and what the removed default computed. NOT
+                        # MODFLOW's recommendation, whose 1e-5 is an ABSOLUTE length in model time
+                        # units, recommended for reporting alignment rather than accuracy. MODFLOW
+                        # and ParFlow are the precedent for REQUIRING a floor, not for its value.
+                        # See benchmark/BDF2_ADAPTIVE_DESIGN.md.
                         # THREE LINES with these comments -- run.sh range-deletes them under `fixed`.
     error_tol: @ERRTOL@   # PER-ARM: the adaptive target. 0.5 loose, 0.02 tight -- the two give
                           # different solve COUNTS, which is the variable this suite is invariant to

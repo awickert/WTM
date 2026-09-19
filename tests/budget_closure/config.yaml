@@ -87,7 +87,11 @@ solver:
     mode: adaptive   # resolved, not asked for: tr-bdf2 (and bdf2 asked adaptive) get the controller
     dt: 31536000
     dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
-                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # WTM's own scale-free choice, and what the removed default computed. NOT
+                        # MODFLOW's recommendation, whose 1e-5 is an ABSOLUTE length in model time
+                        # units, recommended for reporting alignment rather than accuracy. MODFLOW
+                        # and ParFlow are the precedent for REQUIRING a floor, not for its value.
+                        # See benchmark/BDF2_ADAPTIVE_DESIGN.md.
     error_tol: @DT_TOL@   # PER-ARM: 0.5 is the resolved default; tr_as_ad pins 0.01 so the controller
                           # actually SUBDIVIDES instead of accepting every step (#20)
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
