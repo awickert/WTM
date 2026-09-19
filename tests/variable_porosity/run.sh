@@ -22,8 +22,11 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
 PY="${PY:-python3}"
 TOL="${TOL:-0.0125}"        # metres OF WATER VOLUME; cross-integrator agreement
-# |exact_budget_residual| / recharge. MEASURED on this fixture at a fixed span: cc 1.06e-06,
-# tr 1.57e-06, so 1e-5 leaves ~6x margin. Both arms cover identical simulated time.
+# |exact_budget_residual| / recharge. MEASURED on this fixture at a fixed span: cc 1.062e-06,
+# tr 1.513e-06, so 1e-5 leaves 9.4x and 6.6x margin. Both arms cover identical simulated time.
+# RE-MEASURED 2026-09-19 (#84) and the tr figure had drifted: recorded as 1.57e-06, actually
+# 1.513e-06. cc was exact. Both reproduce BIT-IDENTICALLY across runs, so this bound carries no
+# flake risk -- it ranks "thin" only because it was DERIVED tightly, which is what derived means.
 BUDGET_TOL="${BUDGET_TOL:-1e-5}"
 make_work varphi
 export OMP_NUM_THREADS=1
