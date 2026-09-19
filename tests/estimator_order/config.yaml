@@ -75,11 +75,27 @@ solver:
       max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
   time_step:
     dt: @DT@   # PER-ARM: the step whose estimate order is measured
-    dt_min: "@DTMIN@"   # PER-ARM, and it MUST track @DT@: required on an explicit mode: adaptive
-                        # (#109), but this suite refines dt across a ladder, so a CONSTANT floor would
-                        # start binding at the small end and bend the very order it measures. run.sh
-                        # computes 1e-5 x @DT@, five orders below the step, so it cannot engage --
-                        # and error_tol 1e9 already guarantees no step is rejected.
+    dt_min: "@DTMIN@"   # PER-ARM, tracking @DT@ -- required on an explicit mode: adaptive (#109).
+                        # run.sh computes 1e-5 x @DT@.
+                        #
+                        # THE JUSTIFICATION FIRST WRITTEN HERE WAS FALSE, and is corrected rather than
+                        # deleted because it is the kind of claim that reads as obviously true. It said
+                        # a CONSTANT floor "would start binding at the small end and bend the very order
+                        # it measures." Measured against this suite's own ladder (run.sh: 31536000
+                        # 7884000 1971000 492750), a MODFLOW-literal 315.36 s floor sits 1562x BELOW the
+                        # FINEST rung. It would have to be ~1500x larger to touch anything.
+                        #
+                        # Two further reasons it could not bind, either: grow and shrink are both 1.0
+                        # below, which forces factor == 1.0 exactly, so dt_next can only fall under the
+                        # floor if dt_now already has; and error_tol 1e9 means no step is ever rejected,
+                        # so the floor-reject path is dead code here.
+                        #
+                        # MEASURED at the finest rung with three floors -- 4.928s (1e-5 x dt), 315.36s,
+                        # and 1e6s, the last being TWICE the configured step: every traced step still ran
+                        # at 4.9275e+05 s and est was bit-identical at 5.271545375e-07, because
+                        # report_interval 1 makes cycle_duration == dt and WTM.cpp clamps every step to
+                        # it. The scaling is kept for consistency with the rest of the tree, NOT because
+                        # this suite needs it.
     mode: adaptive
     error_tol: "1e9"
     grow: 1.0
