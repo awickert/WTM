@@ -69,7 +69,14 @@ solver:
     mode: @STEPMODE@   # PER-ARM: newton needs `ramp`; the anderson arms take adaptive
     dt: 2419200
     dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
-                        # MODFLOW 6's DTMIN recommendation, and what the removed default computed.
+                        # 1e-5 x dt is WTM's own scale-free choice (MODFLOW's 1e-5 is an ABSOLUTE
+                        # length, for reporting alignment -- see BDF2_ADAPTIVE_DESIGN.md).
+                        # NOTE: this suite also runs a `ramp` arm, and dt_min is NOT consulted there --
+                        # every read is inside `if (use_dt_adaptive && have_est)`
+                        # (transient_groundwater.cpp:2173). CreateSNES.cpp:305 assigns it on the ramp
+                        # path, so it is RECORDED in full_config.yaml and the declared-config rule is
+                        # satisfied, but it steers nothing. Kept as one literal for both arms because
+                        # that is what makes declared == resolved on each; not because ramp uses it.
     error_tol: 1e-08   # the resolved target. TIGHT because this suite compares two grids cell by
                        # cell, so the solve must not contribute to the difference being judged
     grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
