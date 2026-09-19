@@ -195,6 +195,29 @@ would not have survived a reboot.
    9.42x  variable_porosity      OK    BUDGET cc  |exact residual|/recharge = 1.062e-06 (tol 1e-05)
 ```
 
+**AUDITED 2026-09-19, all six lines, by re-running both suites.** Every value reproduced its scan
+figure EXACTLY, so these quantities are deterministic and no margin here carries flake risk. The
+classification that matters:
+
+| line | verdict |
+|---|---|
+| `newton_solver` 2.01× | **DERIVED** — `AGREE_TOL` 0.05 → 0.086 from a measured sweep (`16b5a5f`) |
+| `budget_closure` 2.84× | **ALREADY DERIVED** — table at `run.sh:471-478`, taken at `snes_stol` 1e-10 "past the solver floor, so this is the model and not the solve". Reproduces `2.491e-07`/`3.521e-07` exactly |
+| `budget_closure` 7.81× | **ALREADY DERIVED** — `snes_stol` swept 1e-8/1e-10/1e-12 at `run.sh:455-466`, shown to FLOOR at 1e-10, with the reason the arm was broken at 1e-8 (solver noise 1.780e-04 exceeded the 1e-4 closure being asserted). Reproduces exactly |
+| `variable_porosity` 6.61× / 9.42× | **ALREADY DERIVED** — `BUDGET_TOL`'s derivation sits beside it. Its `tr` figure had drifted (1.57e-06 recorded, 1.513e-06 actual) and is refreshed |
+| `variable_porosity` 6.30× | **NOT DERIVED — the only real one.** `TOL=0.0125` carries a label, not a derivation |
+
+**THE LESSON, and it changes how the rest of `#84` should be read: a tolerance ranks thin PRECISELY
+WHEN IT WAS DERIVED TIGHTLY.** Five of six top-ranked margins were already done properly; they rank
+high *because* someone did the work. `tol_margin` ranks by margin alone, so it will keep surfacing the
+well-derived bounds first and burying genuinely loose ones further down. The defect `#84` exists to
+catch is a bound set too **loose** — a vacuous test reporting success — and margin alone does not
+point at it. A better signal would be **thin AND undocumented**: cross-reference whether a derivation
+appears near the tolerance. Not built; proposed.
+
+**Still open regardless:** the scan covered 10 suites and ranked 22 of 30 tolerances. Eight, in the
+unscanned suites, have never been ranked at all.
+
 The first is DONE: `AGREE_TOL` in `tests/newton_solver/run.sh` went 0.05 → 0.086, derived from a measured
 sweep — and the derivation matters more than the number, because **the hypothesis for where that bound
 should come from was WRONG.** Sweep; do not assume. The other five are the worklist.
