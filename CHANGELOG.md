@@ -114,15 +114,24 @@ defects to be worked around, and the second and third can invalidate a naive dt-
   SUNDIALS/PETSc behaviour - no floor - while writing the mode down means owning its bounds.
 
   **To migrate:** add `dt_min: "<seconds>s"` beside any `mode: adaptive` you have written. `1e-5 × dt`
-  reproduces the old behaviour exactly and is MODFLOW 6's own recommendation; `"0s"` disables the
-  floor. The refusal message computes the first of these for your config and prints it.
+  reproduces the old behaviour exactly; `"0s"` disables the floor. The refusal message computes the
+  first of these for your config and prints it.
+
+  On the **value**, WTM cites nobody: `1e-5 × dt` is a scale-free choice, so the floor keeps the same
+  margin below the step at any step size. MODFLOW 6's `dtmin` recommendation of `1e-5` is an *absolute
+  length* in model time units, recommended so simulated time lands on stress-period ends - an alignment
+  concern that does not arise in WTM, which lands on its report boundary by an unconditional clamp
+  (`src/WTM.cpp:813-815`) that the floor cannot override. The measured justification, and the verbatim
+  citation, are in `benchmark/BDF2_ADAPTIVE_DESIGN.md`. What MODFLOW and ParFlow *are* cited for is
+  requiring a floor rather than shipping one.
 
   Everything in the tree that states the mode was migrated with it - 27 suite configs, the annotated
   `config.yaml`, `examples/island_equilibrium/demo.py` and `benchmark/scheme_bench` - all at
   `1e-5 × dt`, so **no result moved**: `tests/golden` passes all 35 runs against unchanged
-  references. Two suites derive the floor per arm rather than fixing it, because a constant floor
-  would bind at the fine end of a `dt` ladder and bend what is being measured - `tests/estimator_order`
-  still observes order `p = 1.99 2.00 2.00`.
+  references, and `tests/estimator_order` still observes order `p = 1.99 2.00 2.00`.
+
+  **The floor has never bound anywhere in this tree**, under this policy or the one it replaced: no
+  suite, golden file or stored benchmark log contains the clamp message, and no test exercises it.
 
 - **BREAKING – the per-solve convergence test is now judged in WATER VOLUME, not head.** New
   default `solver.convergence.metric: volume` (`head` is the off-switch). The step that ends a solve is
