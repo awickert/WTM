@@ -1656,7 +1656,25 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // ...and the FLOOR beside the ceiling. Omitted when this was added, which tests/config_schema
   // caught: it fails when a schema key is never written to full_config.yaml, because a provenance
   // record that silently drops a key a run resolved is worse than no record.
-  if (uc.dtc_dt_min > 0.0) f << "    dt_min: \"" << cfg_num(uc.dtc_dt_min) << "s\"\n";
+  // GUARDED ON "THE USER STATED IT", not on the value being positive. The old `> 0.0` test dropped
+  // dt_min: "0s" -- documented as a first-class choice, meaning "no floor, abort rather than clamp" --
+  // so a run that DELIBERATELY disabled the floor produced provenance indistinguishable from a run that
+  // never resolved one. A provenance record that cannot tell a choice from an absence is the defect
+  // this file exists to prevent.
+  //
+  // AND on a controller RUNNING, so a `fixed` run that happens to carry the key does not claim to have
+  // resolved a floor of 0 -- under fixed, no controller reads it and there is no floor to report.
+  //
+  // KNOWN TENSION, recorded rather than resolved: this still emits on the Newton-RAMP path, where
+  // CreateSNES.cpp:305 assigns the value but nothing reads it (every read is inside
+  // `if (use_dt_adaptive && have_est)`, transient_groundwater.cpp:2173). By the rule stated a few lines
+  // below -- each key emitted under the condition of the code that READS it -- ramp should not emit it.
+  // It is not changed here because two suites (boundary_consistency, solver_consistency) share ONE
+  // config across adaptive and ramp arms and rely on the key being recorded on both to satisfy
+  // declared == resolved. Fixing it properly means per-arm deletion on the ramp side, which is a
+  // separate change from closing the "0s" hole.
+  if (params.dtc_dt_min_set && (uc.use_dt_adaptive || uc.use_newton_continuation))
+    f << "    dt_min: \"" << cfg_num(uc.dtc_dt_min) << "s\"\n";
   // THE STEP-CONTROLLER DIALS, and like dt_max they are emitted ONLY WHEN A CONTROLLER IS RUNNING.
   //
   // This file promises, in its own header, to be "re-runnable as-is". It was not: on a FIXED-STEP run
