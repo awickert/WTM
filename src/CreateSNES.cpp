@@ -348,10 +348,37 @@ void InitialiseSNES(AppCtx& user_context, Parameters& params) {
     // and the precedent are written down. A RESOLVED adaptive run (the key absent) keeps 0 here, the
     // SUNDIALS/PETSc behaviour: no floor, with WTM.cpp's unconditional roundoff guard still in force.
     //
-    // The guessed default this replaces was 1e-5 x params.deltat -- MODFLOW 6's recommended MAGNITUDE
-    // for DTMIN, but applied where MODFLOW asks a question rather than answering one. It never bound on
-    // any run in the tree (nothing asserts the clamp, nothing sets the key), and it cost 28 suite
-    // configs a restatement of a number nobody had chosen. See #109.
+    // The guessed default this replaces was 1e-5 x params.deltat. It never bound on any run in the tree
+    // (nothing asserts the clamp, nothing sets the key), and it cost 27 suite configs a restatement of a
+    // number nobody had chosen. See #109.
+    //
+    // WHAT MODFLOW ACTUALLY RECOMMENDS, since this was mis-cited here and in ~35 other places before
+    // being checked against the source (utl-ats.dfn, perioddata/dtmin, verified 2026-09-19 against
+    // MODFLOW-USGS/modflow6 develop): "dtmin must be a small value in order to ensure that simulation
+    // times end at the end of stress periods and the end of the simulation. A small value, such as
+    // 1.e-5, is recommended." That is an ABSOLUTE LENGTH in model time units -- dtmin sits beside dt0
+    // and dtmax, all three described as lengths -- and the reason is REPORTING ALIGNMENT, not accuracy.
+    // It is NOT a ratio to the step, and WTM's 1e-5 x dt is therefore NOT what MODFLOW recommends
+    // except where dt happens to be one year.
+    //
+    // AND ITS RATIONALE DOES NOT TRANSFER. WTM lands on a report boundary by an unconditional clamp --
+    // WTM.cpp: `if (deltat > remaining) deltat = remaining;` at the top of every adaptive iteration,
+    // consulting nothing, applied AFTER this floor sized the step. The clamp always wins, so the floor
+    // cannot make a cycle end early or late; a too-large floor ABORTS legibly at the floor-reject guard
+    // instead. Verified by forcing dt_min = 2.6e8 s against a 2.52288e8 s cycle: the run aborted, it did
+    // not mis-land.
+    //
+    // SO WHY A RATIO AT ALL. Not borrowed authority -- a measured property: the floor must stay orders
+    // below the steps the controller actually takes, AT ANY STEP SIZE. Measured on this tree, the
+    // smallest step taken sits 2800x (xrank_adaptive) to 16000x (adaptive_water) above 1e-5 x dt, and
+    // neither run clamps once. A fixed 315.36 s would hold that margin at dt = 1 yr and lose it
+    // entirely at an hourly step, where it would sit ~11x below dt and bind constantly.
+    //
+    // READ ONLY ON THE ADAPTIVE PATH. Every read of dtc_dt_min is inside
+    // `if (use_dt_adaptive && have_est)` (transient_groundwater.cpp:2173). The assignment above at :305
+    // on the Newton-ramp path therefore RECORDS a floor that is never consulted -- it reaches
+    // full_config.yaml and nothing else. Stated because two suite configs carry dt_min beside a ramp arm
+    // on the mistaken belief that ramp honours it.
     if (params.dtc_dt_min_set) user_context.dtc_dt_min = params.dtc_dt_min;
     user_context.dtc_easy_iters = params.dtc_easy_iters;
     // ...and max_retries with them. It was LEFT BEHIND when the other four were moved here: the adaptive
