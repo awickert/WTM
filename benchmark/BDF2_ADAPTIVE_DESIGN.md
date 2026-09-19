@@ -612,3 +612,86 @@ exercises), then layer FSM coupling on top as a later phase.
    a GW step is safe/accurate between surface-routing events; carry BDF2 history across FSM
    kicks (FSM only moves surface water, so sub-surface history is continuous); Strang-split if
    the operator-split error dominates. Test `fsm_on`.
+
+---
+
+## The step-size floor: `solver.time_step.dt_min`
+
+**Policy: no default. An explicit `solver.time_step.mode: adaptive` must state a floor.** Decided
+2026-09-19. A resolved adaptive mode (the key omitted) gets no floor, which is the SUNDIALS/PETSc
+behaviour. `dt_min: "0s"` disables it explicitly.
+
+### What the surveyed codes do
+
+| code | floor |
+|---|---|
+| SUNDIALS, PETSc | none — the controller may shrink without bound |
+| MODFLOW 6, ParFlow | **required** from the user, as part of opting into adaptive stepping |
+
+WTM follows the second. MODFLOW 6's `dtmin` lives inside the ATS package you *add*; ParFlow's bounds
+inside the `TimeStep.Type` you select. The requirement attaches to opting in — which is why WTM
+attaches it to the explicit key and not to the resolved mode.
+
+### The citation, verbatim — and what it does NOT say
+
+`doc/mf6io/mf6ivar/dfn/utl-ats.dfn`, `perioddata` block, `name dtmin`
+(github.com/MODFLOW-USGS/modflow6, verified against `develop` 2026-09-19;
+local copy `sha256 35b7f3be982c271cb3a03138657e97d0dcc598a0b418579558e6c854ba539086`):
+
+> is the minimum time step **length** for this period. This value must be greater than zero and less
+> than dtmax. **dtmin must be a small value in order to ensure that simulation times end at the end of
+> stress periods and the end of the simulation. A small value, such as 1.e-5, is recommended.**
+
+Two things follow that were repeatedly mis-stated in this repo before the file was read:
+
+1. **`1e-5` is an ABSOLUTE LENGTH**, in the model's time units. `dtmin` sits beside `dt0` and `dtmax`,
+   all three described as lengths. It is **not** a ratio to the step. WTM's `1e-5 × dt` coincides with
+   it only where `dt` is exactly one model time unit — one year, here.
+2. **The stated reason is reporting alignment, not accuracy.**
+
+### Why MODFLOW's rationale does not transfer to WTM
+
+WTM lands on a report boundary by an **unconditional clamp**, at the top of every adaptive iteration,
+consulting nothing — and applied *after* the floor sized that step:
+
+```cpp
+// src/WTM.cpp:813-815
+const double remaining = cycle_duration - t;
+if (user_context.deltat > remaining) user_context.deltat = remaining;
+```
+
+`dt_taken` is snapshotted from the clamped value (`:832`) and added to `t` (`:851`), so the last step
+of every cycle is exactly the remainder. The clamp always wins over the floor, so **`dt_min` cannot
+make a cycle end early or late.** A too-large floor aborts legibly at the floor-reject guard instead —
+verified by forcing `dt_min = 2.6e8 s` against a `2.52288e8 s` cycle and observing an abort, not a
+mis-landing.
+
+Exhaustively: every read of `dtc_dt_min` is inside `if (use_dt_adaptive && have_est)`
+(`transient_groundwater.cpp:2173`), and none of them touches `t`, `report_seconds`, `report_steps` or
+any output cadence. **There is no path by which the floor affects reporting alignment.** (A corollary:
+the assignment on the Newton-**ramp** path, `CreateSNES.cpp:305`, records a floor nothing consults.)
+
+### Why a RATIO, then — the argument WTM can support on its own
+
+The floor must stay orders below the steps the controller actually takes, **at any step size**. A
+ratio is scale-free; an absolute is not.
+
+| fixture | configured `dt` | floor at `1e-5 × dt` | smallest step observed | margin | clamps |
+|---|---|---|---|---|---|
+| `tests/xrank_adaptive` | 252 288 000 s | 2522.88 s | 7.066638689e+06 s | 2 801× | 0 |
+| `tests/adaptive_water` | 2 419 200 s | 24.192 s | 3.953957520e+05 s | 16 344× | 0 |
+| `examples/…` corsica `--equilibrium` | 31 536 000 s | 315.36 s | 1.711743771e+05 s | 543× | 0 |
+
+A fixed `315.36 s` holds that margin at `dt` = 1 yr and loses it entirely at an hourly step, where it
+would sit ~11× below `dt` and bind constantly. The ratio keeps it everywhere.
+
+### What is NOT established
+
+- **The floor has never bound anywhere in this tree.** `grep -rln "CLAMPED at"` matches only
+  `src/WTM.cpp` and `config.yaml` — no suite, no golden, no stored benchmark log. **No test exercises
+  the clamp, and none would notice if it started firing**: the message is printed and never checked.
+- Everything above is measured on test fixtures and one 30″ island. It is not established for a
+  production-scale run.
+- MODFLOW's *internal* ordering — the hypothesis that it applies its floor after truncating to the
+  period end, which is what would make its documented sentence true — is **unverified**. `ats.f90` was
+  not read. Nothing here depends on it.
