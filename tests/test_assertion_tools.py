@@ -107,6 +107,8 @@ check("a FAIL line need not parenthesise its bound (bug 3)",
       P.is_bite("FAIL: adaptive=0.0001, water=0.0018 m water volume exceed tol 0.0016 m water"), True)
 check("a parenthesised FAIL line counts too",
       P.is_bite("  FAIL AGREEMENT  cc vs tr: max|dV| = 1.98e-03 (tol 0.001)"), True)
+check("a FLOOR's failure is a bite too -- it says (min X), never tol (#121)",
+      P.is_bite("  FAIL BITE (collectors diverge without active-set): max|dV| = 1.0e-04 m (min 0.0125)"), True)
 check("a crash is NOT a bite", P.is_bite("ERROR: could not open file with GDAL!"), False)
 check("a missing fixture is NOT a bite", P.is_bite("FAIL: inputs/topography.tif not found"), False)
 
@@ -118,12 +120,15 @@ with tempfile.TemporaryDirectory() as d:
     open(os.path.join(suite, "run.sh"), "w").write(textwrap.dedent('''\
         # no derivation here, just units
         TOL="${TOL:-1e-6}"
+        BITE_MIN="${BITE_MIN:-0.0125}"
         # MEASURED 2026-09-04 by scaling the solve: 5.733e-08 at snes_stol 1e-8, floors at 1e-10.
         ROUTING=continuous COLL="" METHOD=newton ARM_TOL=1e-4 check "Newton, unset -> active_set [tight solve]" d_ntu
         '''))
     bounds, labels = H.source_evidence(d)
+    check("a FLOOR named *_MIN is found, not only *_TOL (#121)",
+          sorted(n for n, _, _, _ in bounds.get("fake", [])), ["BITE_MIN", "TOL"])
     check("a bound with no derivation above it reads UNDERIVED",
-          [b[2] for b in bounds.get("fake", [])], [False])
+          [b[2] for b in bounds.get("fake", [])], [False, False])
     check("the ARM's derivation is found (bug 1)",
           [l[1] for l in labels.get("fake", [])], [True])
     check("the arm LABEL survives an empty quoted argument (bug 2)",

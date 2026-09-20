@@ -63,7 +63,11 @@ _NUM = re.compile(r"[-+]?(?:[0-9]+\.?[0-9]*[eE][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+
 #     TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 # and an anchored pattern found only the first, so the second was never probed and never
 # reported. Scanned with finditer over the whole line instead.
-_DEF = re.compile(r'([A-Z_]*TOL[A-Z_]*)="\$\{\1:-([^}]*)\}"')
+# NAMES CONTAINING TOL *OR* MIN/MAX/FLOOR/BAR. Requiring TOL made every FLOOR invisible: a lower
+# bound is naturally called BITE_MIN or DISTINCT_MIN, never *_TOL, so active_set's four
+# non-vacuity guards were promoted to overridable defaults (#121) and the scanner still
+# reported "no bounds found". The bite guards are exactly the ones this must not miss.
+_DEF = re.compile(r'([A-Z_]*(?:TOL|MIN|MAX|FLOOR|BAR)[A-Z_]*)="\$\{\1:-([^}]*)\}"')
 _SPREAD = re.compile(r"^\s*#\s*SPREAD:\s*(\S+)", re.M)
 # Evidence that somebody measured something near the bound, rather than typing a round number.
 _EVIDENCE = re.compile(r"[0-9]\.?[0-9]*[eE][+-]?[0-9]|MEASURED|DERIVED|swept|sweep|floor|noise", re.I)

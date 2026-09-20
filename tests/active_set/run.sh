@@ -45,6 +45,18 @@ INP="$FSMDIR/inputs"
 make_work as
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
+# BITE GUARDS -- the floors that prove this suite is not passing on nothing. Named and made
+# overridable (#121) so assertion_probe can RAISE them and confirm each one still fails when
+# it should. A literal buried in a condition cannot be reached from outside, so its liveness
+# was simply unknown -- and a dead bite guard means the whole suite reports success while
+# comparing nothing (#34/#91/#96). These are chosen to sit unmistakably above noise, NOT
+# tuned: raise one only with a measurement, never to make a run pass.
+DISTINCT_MIN="${DISTINCT_MIN:-1e-6}"   # active_set must differ from BOTH plain collectors
+BITE_MIN="${BITE_MIN:-0.0125}"   # the two plain collectors must diverge, else the comparison is empty
+LAKE_MIN="${LAKE_MIN:-1.0}"   # a lake must survive the active-set pin, not be flattened to zero
+# DERIVED, unlike the three above: the sibling BITE measured 0.1590 m, and this bar is that / 36.
+LF_BITE_MIN="${LF_BITE_MIN:-0.0044}"   # like-for-like: the collectors must still diverge in isolation
+
 
 # ARM ASYMMETRY, NOW VISIBLE. The three arms do NOT differ only in the collector: `explicit` runs
 # routing: impulse while the other two run continuous. That is not a change -- it is what has always
@@ -131,13 +143,17 @@ IP=$(ls "$WORK"/imp_plain_*.tif | tail -1); EP=$(ls "$WORK"/exp_plain_*.tif | ta
 IA=$(ls "$WORK"/as_*.tif | tail -1)
 LFA=$(ls "$WORK"/lf_as_*.tif | tail -1); LFE=$(ls "$WORK"/lf_exp_*.tif | tail -1)
 LFI=$(ls "$WORK"/lf_imp_*.tif | tail -1)
-TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" "$PY" - "$IP" "$EP" "$IA" "$LFA" "$LFE" "$LFI" <<'PY'
+TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" \
+  DISTINCT_MIN="$DISTINCT_MIN" BITE_MIN="$BITE_MIN" LAKE_MIN="$LAKE_MIN" LF_BITE_MIN="$LF_BITE_MIN" \
+  "$PY" - "$IP" "$EP" "$IA" "$LFA" "$LFE" "$LFI" <<'PY'
 import sys, numpy as np, rasterio, os
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 ip, ep, ia, lfa, lfe, lfi = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:7]]
 def interior(a): return a[1:-1, 1:-1]
 ip, ep, ia, lfa, lfe, lfi = map(interior, (ip, ep, ia, lfa, lfe, lfi))
+distinct_min = float(os.environ["DISTINCT_MIN"]); bite_min = float(os.environ["BITE_MIN"])
+lake_min = float(os.environ["LAKE_MIN"]); lf_bite_min = float(os.environ["LF_BITE_MIN"])
 lake_head = float(ia.max())
 phi_i = interior(VOL.read_band(os.environ["PHI"]))
 bite      = float(VOL.volume_diff(ip, ep, phi_i).max())
@@ -147,16 +163,16 @@ ok = True
 def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
-check("LAKE PERSISTS (head kept, not flattened)", lake_head > 1.0,
-      f"max wtd with active-set = {lake_head:.4f} m (lake stage; the pre-lake-aware pin gave 0)")
-check("DISTINCT (active-set is not either plain collector)", differs > 1e-6,
-      f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m")
+check("LAKE PERSISTS (head kept, not flattened)", lake_head > lake_min,
+      f"max wtd with active-set = {lake_head:.4f} m (min {lake_min}) -- lake stage; the pre-lake-aware pin gave 0")
+check("DISTINCT (active-set is not either plain collector)", differs > distinct_min,
+      f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m (min {distinct_min})")
 # 0.0125 m OF WATER VOLUME = the old 0.05 head floor x0.25, and here that IS correct: MEASURED
 # head 1.7992 vs volume 0.4498, ratio exactly 0.250, so this comparison is purely subsurface and
 # the 36x margin is preserved exactly. Checked rather than assumed -- the same scaling was WRONG
 # on runoff_collector and newton_solver, where the governing cell sits at the surface.
-check("BITE (collectors diverge without active-set)", bite > 0.0125,
-      f"max|ΔV(implicit) - ΔV(explicit)| (no active-set) = {bite:.4f} m water volume")
+check("BITE (collectors diverge without active-set)", bite > bite_min,
+      f"max|ΔV(implicit) - ΔV(explicit)| without active-set = {bite:.4f} m water volume (min {bite_min})")
 
 # LIKE-FOR-LIKE (#90): the same two claims, with the collector as the ONLY variable. The three arms
 # above are forced to differ in routing and step mode as well (continuous x explicit and adaptive x
@@ -173,9 +189,9 @@ check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > 1
 # The bar is that measurement divided by 36, which is the SAME RELATIVE MARGIN the sibling BITE check
 # carries (0.4498 measured against a 0.0125 bar) -- the only precedent in this suite, so the two
 # checks fail at the same fraction of their own signal rather than at two unrelated round numbers.
-check("LIKE-FOR-LIKE BITE (collectors diverge, collector the ONLY variable)", lf_bite > 0.0044,
-      f"max|ΔV(explicit) - ΔV(implicit)| = {lf_bite:.4f} m water volume at impulse/fixed"
-      f" (bar 0.0044 = measured 0.1590 / 36, the sibling check's margin)")
+check("LIKE-FOR-LIKE BITE (collectors diverge, collector the ONLY variable)", lf_bite > lf_bite_min,
+      f"max|ΔV(explicit) - ΔV(implicit)| at impulse/fixed = {lf_bite:.4f} m water volume"
+      f" (min {lf_bite_min}) -- the bar is the sibling check's measured signal / 36")
 print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)

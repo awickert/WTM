@@ -83,7 +83,12 @@ def is_bite(line):
     single print format from 39 independently written suites -- an earlier version required a
     parenthesised bound on the FAIL line itself and read a real bite as INCONCLUSIVE.
     """
-    return "FAIL" in line and "tol" in line.lower()
+    # EITHER MARKER. Requiring "tol" made every FLOOR's failure invisible -- a lower bound prints
+    # "(min 1.0)", never "tol" -- so all four of active_set's non-vacuity guards reported
+    # INCONCLUSIVE after being made probeable. The bite guards are precisely the ones whose
+    # liveness we most need, and they were the ones this could not see.
+    low = line.lower()
+    return "FAIL" in line and ("tol" in low or "(min " in low)
 
 
 def assertions(text):
