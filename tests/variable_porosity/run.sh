@@ -21,7 +21,38 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/varphi_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 PY="${PY:-python3}"
-TOL="${TOL:-0.0125}"        # metres OF WATER VOLUME; cross-integrator agreement
+# Metres OF WATER VOLUME; cross-integrator agreement (cc = backward-euler vs tr-bdf2).
+#
+# DERIVED 2026-09-19 (#84) FROM A MEASURED SPREAD, because the obvious anchor is WRONG. The natural
+# hypothesis -- that two integrators agree to within the adaptive step target, so the bound should be
+# k x solver.time_step.error_tol -- was tested and REFUTED. Sweeping error_tol over 8x, everything
+# else held, both arms rebuilt from config.yaml:
+#
+#     error_tol   max|dV| cc-vs-tr   ratio to prev
+#       1.0         1.1588e-03            --
+#       0.5         1.9838e-03        0.584x     <- the value this suite asserts against
+#       0.25        1.1213e-03        1.769x
+#       0.125       2.1561e-03        0.520x
+#
+# NOT MONOTONE, and tightening the target made agreement WORSE twice. The disagreement PLATEAUS at
+# 1.1e-03 .. 2.2e-03 rather than tracking the controller, which config.yaml already explains at
+# error_tol: it is a PER-STEP LOCAL target and "does not bound the error of the answer". Two schemes
+# of different order accumulate differently over a fixed span no matter how the steps are chosen.
+#
+# So the bound is 3x the WORST case of that spread: 3 x 2.1561e-03 = 6.47e-03, set to 0.0065 (3.01x).
+# The previous 0.0125 was a label with no derivation behind it, at 5.8x the same worst case.
+#
+# WHY 3x AND NOT TIGHTER: run-to-run variation here is ZERO -- this suite is serial, and 1.9838e-03
+# reproduces bit-identically across runs and across the dt_min work. So margin buys nothing against
+# flakiness; it buys robustness against legitimate future drift, and the sweep is the only empirical
+# handle on how much this quantity moves when something legitimate changes (1.9x, under an 8x change
+# in the controller target). 3x covers that with room. Tighter would be defensible and was considered
+# (2x = 4.3e-03); 3x is the chosen margin, not a measured one.
+#
+# WHAT IT IS NOT INSURED AGAINST, stated so nobody assumes otherwise: the RUN SPAN. Disagreement
+# between a 1st- and a 2nd-order scheme accumulates, so this bound is derived AT time.total
+# 604800000s and is invalid if that changes. Re-derive with the sweep above, do not scale it.
+TOL="${TOL:-0.0065}"
 # |exact_budget_residual| / recharge. MEASURED on this fixture at a fixed span: cc 1.062e-06,
 # tr 1.513e-06, so 1e-5 leaves 9.4x and 6.6x margin. Both arms cover identical simulated time.
 # RE-MEASURED 2026-09-19 (#84) and the tr figure had drifted: recorded as 1.57e-06, actually
