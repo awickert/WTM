@@ -89,8 +89,8 @@ phi = VOL.read_band(os.environ["PHI"])
 dt_tol = float(os.environ["DT_TOL"]); bite = float(os.environ["BITE_MIN"])
 act = float(VOL.volume_diff(ac, af, phi).max())   # active-set: dt sensitivity (should be ~0)
 leg = float(VOL.volume_diff(lc, lf, phi).max())   # implicit siphon: dt sensitivity (should be large)
-print(f"  DT-INDEPENDENT : active-set        max|ΔV(1yr) - ΔV(0.25yr)| = {act:.3e} m water  (<= {dt_tol})")
-print(f"  BITES          : implicit siphon   max|ΔV(1yr) - ΔV(0.25yr)| = {leg:.3e} m water  (>= {bite})")
+print(f"  DT-INDEPENDENT : active-set        max|ΔV(1yr) - ΔV(1/4 yr)| = {act:.3e} m water  (tol {dt_tol})")
+print(f"  BITES          : implicit siphon   max|ΔV(1yr) - ΔV(1/4 yr)| = {leg:.3e} m water  (min {bite})")
 ok = act <= dt_tol and leg >= bite
 print("PASS: the active-set exfiltration constraint gives a dt-independent equilibrium; implicit does not (test bites)"
       if ok else "FAIL")

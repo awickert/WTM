@@ -71,10 +71,11 @@ above = float(gat.max()); below_ok = bool((gat <= surf_tol).all())
 at_surface = bool(abs(above) <= surf_tol)       # gathered: table pinned at the surface (exfiltration constraint, SNES-tol overshoot)
 mb = abs(dR - dS - dO); rel = mb / max(abs(dR), 1e-30)
 pile = float(pil.max())                          # without gathering: piles far above the surface
-print(f"  SETTLING       : gathered final per-cycle |Δwtd| = {os.environ['GSETTLE']} m (<= {tol})")
-print(f"  GATHERING      : gathered max wtd = {above:.3e} m (<= {surf_tol}, at surface), all wtd<={surf_tol}: {below_ok}")
-print(f"  MASS BALANCE   : dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
-print(f"  BITE           : no-gathering (ponding) max wtd = {pile:.3e} m (piles above surface; routing prevents this)")
+print(f"  SETTLING       : gathered final per-cycle |Δwtd| = {os.environ['GSETTLE']} m (tol {tol})")
+print(f"  GATHERING      : gathered max wtd = {above:.3e} m, all at/below surface: {below_ok} (tol {surf_tol})")
+print(f"  MASS BALANCE   : dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
+print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol {mbtol})")
+print(f"  BITE           : no-gathering (ponding) max wtd = {pile:.3e} m, piles above surface as routing prevents (min {pile_min})")
 ok = below_ok and at_surface and rel < mbtol and pile >= pile_min
 print("PASS: direct-to-runoff gathers the excess and holds wtd=0; budget closes; without it the water piles"
       if ok else "FAIL")
