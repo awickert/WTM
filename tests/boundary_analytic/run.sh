@@ -97,7 +97,10 @@ xs, ws = x[1:], slpf[1:]
 cs = np.polyfit(xs, ws, 2); s_resid = float(np.max(np.abs(ws - np.polyval(cs, xs)))); s_vertex = float(-cs[1]/(2*cs[0]))
 head = slpf + slope * np.arange(NX)            # h = wtd + topo, topo = slope * col
 h_grad_edge = float((head[-1] - head[-2]))     # head gradient at the no-flow edge (should be ~ slope, not 0)
-print(f"  NEUMANN slope (topo={slope}/cell): wtd parabola residual = {s_resid:.3e} m (tol {tol})")
+# TERRAIN SLOPE AFTER THE MARKER. As "(topo={slope}/cell)" it is a bare decimal sitting before the
+# bound, and 0.05 outranks a 3.5e-08 residual under the magnitude rule -- the assertion was being
+# compared against its own label. Introduced here today; caught by the probe reporting DID NOT BITE.
+print(f"  NEUMANN slope: wtd parabola residual = {s_resid:.3e} m (tol {tol}) -- terrain {slope}/cell")
 print(f"  NEUMANN slope vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(s_vertex - noflow_face):.3f} (tol 0.1)")
 print(f"  NEUMANN slope edge head gradient vs terrain slope: |offset| = {abs(h_grad_edge - slope):.4f} (tol 0.02)")
 if (bad('sloped residual', s_resid, s_resid <= tol) or bad('sloped vertex', s_vertex, abs(s_vertex - noflow_face) <= 0.1)

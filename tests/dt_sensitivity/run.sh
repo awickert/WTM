@@ -92,7 +92,16 @@ leg = float(VOL.volume_diff(lc, lf, phi).max())   # implicit siphon: dt sensitiv
 print(f"  DT-INDEPENDENT : active-set        max|ΔV(1yr) - ΔV(1/4 yr)| = {act:.3e} m water  (tol {dt_tol})")
 print(f"  BITES          : implicit siphon   max|ΔV(1yr) - ΔV(1/4 yr)| = {leg:.3e} m water  (min {bite})")
 ok = act <= dt_tol and leg >= bite
-print("PASS: the active-set exfiltration constraint gives a dt-independent equilibrium; implicit does not (test bites)"
-      if ok else "FAIL")
+if ok:
+    print("PASS: the active-set exfiltration constraint gives a dt-independent equilibrium; implicit does not (test bites)")
+else:
+    # NAME WHAT FAILED. The bare word "FAIL" left a reader to work out which of the two clauses broke,
+    # and left any tool unable to tell a failed assertion from a crash. Same fix as limit_cycle.
+    if act > dt_tol:
+        print(f"  FAIL  DT-INDEPENDENT: active-set moved across the dt change, max|ΔV| = {act:.3e} m water (tol {dt_tol})")
+    if leg < bite:
+        print(f"  FAIL  BITES: the implicit siphon did NOT move across the dt change, max|ΔV| = {leg:.3e} m water (min {bite})")
+        print("        Without that contrast the dt-independence claim above proves nothing.")
+    print("FAIL")
 sys.exit(0 if ok else 1)
 PY
