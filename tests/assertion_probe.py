@@ -74,10 +74,14 @@ def assertions(text):
         vt = _value_and_tol(line)
         if not vt:
             continue
-        val, tol = vt
+        # THREE fields, not two: the shared parser gained a `floor` flag when (min X) was added, and
+        # this consumer was not updated with it. Sharing the parser is still right -- "what counts as
+        # an assertion" must have ONE definition -- but a shared return shape has to be changed in
+        # both places at once, and it was not.
+        val, tol, floor = vt
         if tol <= 0:
             continue
-        out[_NUMS.sub("#", line.strip())] = (val, tol, line.strip())
+        out[_NUMS.sub("#", line.strip())] = (val, tol, line.strip(), floor)
     return out
 
 
@@ -128,12 +132,16 @@ def bite(suite, baseline):
             print(f"  {name:<14} governs no assertion that printed -- CANNOT PROBE (tol {val:g} "
                   f"appears on no line). That is itself worth knowing.")
             continue
-        worst = max(v[0] for v in governed.values())
+        is_floor = any(v[3] for v in governed.values())
+        # TIGHTEN IN THE DIRECTION THAT BITES. A ceiling bites when the bound drops BELOW the measured
+        # value; a floor bites when it is raised ABOVE it. Using one direction for both would have
+        # loosened every floor and reported "DID NOT BITE" on assertions that are perfectly live.
+        worst = min(v[0] for v in governed.values()) if is_floor else max(v[0] for v in governed.values())
         if worst <= 0:
             print(f"  {name:<14} its assertions all measured exactly 0 -- no tighter bound exists. "
                   f"Vacuity here is nonvacuous.py's question, not this one.")
             continue
-        tight = worst * 0.9
+        tight = worst * 1.1 if is_floor else worst * 0.9
         rc, out = run_suite(suite, {name: repr(tight)})
         # A FAIL LINE NEED NOT CARRY "(tol X)". Requiring that was too strict and reported
         # adaptive_water as INCONCLUSIVE when its bound had in fact bitten: that suite prints the
