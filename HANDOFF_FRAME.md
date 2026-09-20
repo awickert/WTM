@@ -16,7 +16,11 @@ SCOPE** — do not reintroduce it as an open item.
 | # | state |
 |---|---|
 | 77 | a measurement on the record, no action claimed. Not open. |
-| **84** | **ADVANCED, not complete.** `tol_margin.py` is now wired into `run_all.sh` and ranks for the first time; the thinnest bound is derived. FIVE thin margins remain, and most of the ~30 tolerances are unexamined. A ranked worklist, not an unknown. |
+| **84** | **SUPERSEDED 2026-09-20 by #113-#116.** It was question 4 of six. The framework is now `tests/ASSERTION_HEALTH.md`. |
+| **113** | **Q6 — measure `spread`. DO THIS FIRST:** without it a headroom number cannot be read either way, which is the confusion that produced the framework. |
+| **114** | **Q4 — derive every UNDERIVED bound.** Blocked by #113. Twice now the "obvious" anchor for a bound has been measured WRONG; sweep, do not assume. |
+| **115** | **Q5 — the bite harness.** Prove each assertion can fail. The mechanism already exists: every tolerance is an overridable shell default. |
+| **116** | Linkage: 6 of 22 assertions tie to no bound, so they are invisible to the framework. |
 | **109** | **PARKED BY ANDY.** `solver.time_step.dt_min` is missing from every adaptive-path suite config, so those suites exit 3 on the declared-config rule. **This is the only thing between us and a green `run_all.sh`.** Value is computable: `1e-5 × dt` (`CreateSNES.cpp:352`), verified against the observed `2522.88 s` and `315.36 s`. |
 | **111** | The corsica oscillation: fully characterised, mechanism NOT known. See `examples/island_equilibrium/OSCILLATION.md`. Not a work item unless the last candidate is to be tested. |
 | **112** | **PARKED PLAN** by Andy: iterate the FSM→recharge coupling within a step. Full design written, including the enumerated rollback state and the byte-identical guard to build first. |
