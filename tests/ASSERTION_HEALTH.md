@@ -110,6 +110,28 @@ suite; it belongs in an occasional audit, not in `run_all.sh`.
 bound, because the derivation behind it was wrong. Only someone who knows the physics catches that.
 The machinery here exists to spend that attention where it is needed, not to replace it.
 
+## 5a. Two shapes of bound: ceiling and floor
+
+Not every bound is an upper limit. `fsm_conservation` asserts `lake > 1.0` ("a lake must persist")
+and `state_gap > 1e-3` ("the two couplings really differ"). **These are the NON-VACUITY guards** --
+the checks that stop a suite passing while comparing nothing -- so leaving them unreadable would hide
+exactly the guards that matter most.
+
+| printed | assertion | headroom |
+|---|---|---|
+| `(tol X)` | `value <= X` | `X / value` |
+| `(min X)` | `value >= X` | `value / X` |
+
+**Headroom is defined so that > 1 means "passes with room" in both shapes**, which is what keeps one
+column comparable across the two. Printing a floor as `(tol X)` would have been read as a ceiling and
+reported as FAILING a test that was working.
+
+One implementation note, because it is a real difference and not an oversight: a floor takes the
+number NEAREST the marker, while a ceiling takes the largest candidate of magnitude <= 1. That
+`<= 1` rule exists to keep cell indices and absolute magnitudes out of a *ratio* comparison, and a
+floor's value is expected to be large -- `max wtd = 9.9212 m (min 1.0)` has its only candidate above
+1, so the ceiling rule returned nothing at all.
+
 ## 5b. Three things that are not a pass, and only one of them is a failure
 
 Some suites assert `value > tol`. Collapsing them all under `xfail` loses the distinction that

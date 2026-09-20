@@ -50,6 +50,13 @@ catches that.
 import re, sys, os, glob
 
 _TOL = re.compile(r"\(tol\s*([0-9.eE+-]+)\)")
+# A FLOOR, NOT A CEILING. Some assertions are `value >= X`: "a lake must persist", "the two arms must
+# really differ". They are the NON-VACUITY guards -- the checks that stop a suite passing while
+# comparing nothing -- so leaving them unreadable would hide exactly the guards that matter most.
+# Printing them as `(tol X)` would have been read as `value <= X` and reported as FAILING.
+# headroom is defined symmetrically: value/X for a floor, X/value for a ceiling. In both, > 1 means
+# the assertion passes with room, so one column stays comparable across both shapes.
+_MIN = re.compile(r"\(min\s*([0-9.eE+-]+)\)")
 _NUM = re.compile(r"[-+]?(?:[0-9]+\.?[0-9]*[eE][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+)")
 # NAME="${NAME:-VALUE}" -- the convention every suite uses for an overridable bound.
 _DEF = re.compile(r'^([A-Z_]*TOL[A-Z_]*)="\$\{\1:-([^}]*)\}"')
@@ -71,11 +78,28 @@ def _value_and_tol(line):
     reported three passing conservation checks as failing.
     """
     t = _TOL.search(line)
+    floor = False
+    if not t:
+        t = _MIN.search(line)
+        floor = True
     if not t:
         return None
     try:
         tol = float(t.group(1))
     except ValueError:
+        return None
+    # A FLOOR TAKES THE NEAREST NUMBER, NOT THE LARGEST SMALL ONE. The `magnitude <= 1` rule below
+    # exists to keep cell indices and absolute magnitudes out of a RATIO comparison, and a floor's
+    # value is expected to be LARGE -- "max wtd = 9.9212 m (min 1.0)" has its only candidate above 1,
+    # so that rule returned nothing at all. For a floor the number immediately before the marker is
+    # the compared one; these lines are short and state one quantity.
+    if floor:
+        ns = _NUM.findall(line[: t.start()])
+        for n in reversed(ns):
+            try:
+                return abs(float(n)), tol, True
+            except ValueError:
+                continue
         return None
     cands = []
     for n in _NUM.findall(line[: t.start()]):
@@ -89,7 +113,7 @@ def _value_and_tol(line):
             cands.append(v)
     if not cands:
         return None
-    return max(cands), tol
+    return (max(cands), tol, floor)
 
 
 def source_evidence(tests_dir):
@@ -194,10 +218,11 @@ def main():
             vt = _value_and_tol(line)
             if not vt:
                 continue
-            val, tol = vt
+            val, tol, floor = vt
             if tol <= 0:
                 continue
-            headroom = float("inf") if val == 0 else tol / val
+            headroom = (val / tol if tol else float("inf")) if floor else \
+                       (float("inf") if val == 0 else tol / val)
             low = line.lower()
             # THREE DIFFERENT THINGS, and collapsing them loses the one that matters.
             #   pinned      a KNOWN DEFECT, measured and held so it cannot vanish unnoticed. The test
