@@ -83,9 +83,10 @@ mb = abs(dR - dS - dO)                            # steady-state runoff mass-bal
 rel = mb / max(abs(dR), 1e-30)
 phi = VOL.read_band(os.environ["PHI"])
 agree = float(VOL.volume_diff(cc, bd, phi).max())
-print(f"  COMPLEMENTARITY: max wtd = {above:.3e} (=0 exfiltration constraint), all wtd<=0: {below_ok}")
-print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e} (rel {rel:.2e})")
-print(f"  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume")
+print(f"  COMPLEMENTARITY: max wtd = {above:.3e} m (=0 exfiltration constraint), all wtd<=0: {below_ok} (tol {tol})")
+print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
+print(f"  MASS BALANCE (runoff): |residual|/recharge = {rel:.3e} (tol {mbtol})")
+print(f"  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol {tol})")
 # dev.under_relaxation. Asserted at EXACTLY zero: "off" that is only nearly off is worse than no off
 # switch, because every result taken with it is quietly a different model.
 d_rx1  = float(np.max(np.abs(rx1 - cc)))
