@@ -108,14 +108,20 @@ def final(stem):
 
 print(f"  a converged answer must not depend on the tolerance: {os.environ['SHIPPED']} vs {os.environ['TIGHT']}")
 print(f"  {'dt (wk)':>8s}  {'expect':>6s}   max|dV| (water)   verdict")
-failed, hist = [], []
+failed, hist, worst = [], [], []
 for stem, dt, kind in arms:
     a, b = final(f"{stem}_ship"), final(f"{stem}_tight")
     m = np.ones_like(a, bool); m[:, 0] = False          # land only; the ocean column is pinned
     d = float(VOL.volume_diff(a, b, phi)[m].max())
     if d > tol: failed.append((dt, d, kind))
     if kind == "band": hist.append(dt)
-    print(f"  {int(dt)/604800:8.4f}  {kind:>6s}   {d:.4e}        {'agree' if d <= tol else 'DISAGREE'}")
+    worst.append(d)
+    # THE BOUND IS NOT ON THIS LINE, deliberately. The dt column prints as "1.0000" -- a bare decimal
+    # that outranks the measured value under the parser's magnitude rule, so a bound stated here would
+    # be read against the TIMESTEP. The table stays as a table; the assertion gets its own line below.
+    print(f"  {int(dt)/604800:8.4f}  {kind:>6s}   max|dV| = {d:.4e}   {'agree' if d <= tol else 'DISAGREE'}")
+
+print(f"  every arm agrees across the tolerance change: worst max|dV| = {max(worst):.4e} m water (tol {tol})")
 
 # EVERY ARM MUST AGREE. This was an xfail until #104 was fixed (the water-step verdict is now refused
 # while the residual is above solver.convergence.residual_gate x its initial value). The `band` label is

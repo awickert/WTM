@@ -160,7 +160,10 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
         echo "        $WORK/${tag}_*.log: an estimate of exactly 0 at two rungs gives log(0/0)."
         fail=1; return
     fi
-    local ok; ok=$(python3 -c "print(1 if abs($pfin-($want))<=$PTOL else 0)")
+    # The DEVIATION is what PTOL bounds, so compute it once and print it. Both come from one
+    # python call rather than two: this runs per arm, per ladder.
+    local ok dev
+    read -r ok dev <<<"$(python3 -c "d=abs($pfin-($want)); print(1 if d<=$PTOL else 0, '%.4f'%d)")"
     if [ "$mode" = xfail ]; then
         # For an xfail arm $want is an UPPER BOUND on |p|, not a target. The hole is that the estimate
         # carries NO order at all -- it is not "order 0" in the sense of a clean constant. Measured:
@@ -170,7 +173,9 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
         # (The previous target-form assertion, ~0.00 +/- 0.2, was never actually tested -- see the probe.)
         local under; under=$(python3 -c "print(1 if abs($pfin) < $want else 0)")
         if [ "$under" = 1 ]; then
-            echo "  xfail   $label: p =$line  (finest $pfin, |p| < $want) -- KNOWN HOLE, still no order"
+            # |p| FIRST, ladder LAST. The ladder values are bare decimals and would outrank $pfin
+            # under the parser magnitude rule if they came before the marker.
+            echo "  xfail   $label: |p| = $pfin (tol $want) -- KNOWN HOLE, still no order; ladder p =$line"
         else
             echo "  FAIL  $label: p =$line  (finest $pfin) -- the estimate now carries an ORDER (|p| >= $want)."
             echo "        If the estimator has been repaired this is GOOD NEWS: promote this arm to"
@@ -180,9 +185,9 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
         fi
     else
         if [ "$ok" = 1 ]; then
-            echo "  PASS  $label: p =$line  (finest $pfin, expected ~$want +/- $PTOL)"
+            echo "  PASS  $label: p =$line  (finest $pfin, expected ~$want) |p - expected| = $dev (tol $PTOL)"
         else
-            echo "  FAIL  $label: p =$line  (finest $pfin, expected ~$want +/- $PTOL)"
+            echo "  FAIL  $label: p =$line  (finest $pfin, expected ~$want) |p - expected| = $dev (tol $PTOL)"
             fail=1
         fi
     fi

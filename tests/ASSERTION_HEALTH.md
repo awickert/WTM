@@ -132,6 +132,41 @@ number NEAREST the marker, while a ceiling takes the largest candidate of magnit
 floor's value is expected to be large -- `max wtd = 9.9212 m (min 1.0)` has its only candidate above
 1, so the ceiling rule returned nothing at all.
 
+## 5c. Seven assertions the convention cannot express, and never will
+
+A full scan of every assertion in the twelve onboarded suites (2026-09-20) found 22 numeric bounds
+-- 18 ceilings, 4 floors -- and **7 gates with no numeric bound at all**:
+
+```
+direct_to_runoff:  below_ok, at_surface
+flicker_evap:      below_ok, taper_alone
+limit_cycle:       below_ok, exfiltration, relax_ok
+```
+
+These are predicates: *every cell is at or below the surface*; *under-relaxation at a = 1.0 changes
+nothing*. There is no threshold to state, so three of the six questions simply do not apply:
+
+- **Q4 (derive the bound)** -- there is no bound.
+- **Q6 (measure spread)** -- there is no number to watch drift.
+- **Q5 (can it fail?)** -- **the bite harness cannot reach them.** It works by tightening a bound from
+  outside; a predicate has none. Proving one of these can fail means perturbing THE MODEL, not the test.
+
+**This is a limit of the framework, not a to-do.** It is written down because a silent gap is how a
+count becomes a lie: "22 assertions checked" is true and also leaves seven unexamined. Whether a
+predicate is worth checking by model perturbation is a separate question and a more expensive one.
+
+**A NOTE ON WRITING THE LINES THEMSELVES.** Three assertions were mis-read on their first attempt
+because a bare decimal elsewhere on the line outranked the measured value -- `ΔV(0.25yr)` in a label,
+a `1.0000` dt column, a ladder of p-values. This is the documented failure mode, and its documented
+remedy is to FIX THE LINE, not to teach the parser. In practice:
+
+- put the compared quantity immediately before the marker, and nothing else numeric after it;
+- move context (ladders, breakdowns, per-scheme detail) to a separate line or after the marker;
+- print the DEVIATION when the assertion bounds a deviation -- `|p - expected| = 0.0021 (tol 0.2)`
+  rather than leaving a reader to subtract two printed numbers;
+- never put the bound itself in the prose before the marker: it is a number <= 1 and the parser will
+  happily compare the assertion against itself.
+
 ## 5b. Three things that are not a pass, and only one of them is a failure
 
 Some suites assert `value > tol`. Collapsing them all under `xfail` loses the distinction that
