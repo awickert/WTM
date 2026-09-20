@@ -135,7 +135,14 @@ def bite(suite, baseline):
             continue
         tight = worst * 0.9
         rc, out = run_suite(suite, {name: repr(tight)})
-        failed = [l for l in out.splitlines() if "FAIL" in l and _value_and_tol(l)]
+        # A FAIL LINE NEED NOT CARRY "(tol X)". Requiring that was too strict and reported
+        # adaptive_water as INCONCLUSIVE when its bound had in fact bitten: that suite prints the
+        # value and tolerance on one line and its verdict on ANOTHER --
+        #     FAIL: adaptive=0.0001, water=0.0018 m water volume exceed tol 0.0016 m water
+        # no parentheses, different line. Requiring the word `tol` on the FAIL line keeps the
+        # discrimination that matters -- a crash or a missing fixture does not mention a tolerance --
+        # without also requiring one print format across 39 independently written suites.
+        failed = [l for l in out.splitlines() if "FAIL" in l and "tol" in l.lower()]
         if failed:
             print(f"  {name:<14} BITES   at {tight:.3e} (was {val:g}): {failed[0].strip()[:62]}")
         elif rc != 0:
