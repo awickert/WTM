@@ -85,6 +85,9 @@ tol = float(os.environ["TOL"])
 d_cc_tr, d_cc_bv, d_tr_bv, d_self = mx(cc,tr), mx(cc,bv), mx(tr,bv), mx(cc,cc_co)
 print(f"  cc self (coarse vs fine dt, water): {d_self:.4f} m  (cc is dt-converged)")
 print(f"  cross-scheme max|dV| (water) at fine dt:  cc-tr={d_cc_tr:.4f}  cc-bdf2v={d_cc_bv:.4f} (order trunc.)  tr-bdf2v={d_tr_bv:.4f} m")
+# ONLY cc-tr GATES THE VERDICT (`if d_cc_tr <= tol` below); the other two are reported for context.
+# Stating the bound on the line carrying the OTHER pairs would claim they are asserted, and they are not.
+print(f"  cross-scheme agreement asserted (cc vs tr at fine dt): max|dV| = {d_cc_tr:.4e} m water (tol {tol})")
 if d_cc_tr <= tol:
     print(f"PASS: cc and tr agree within {tol} m at a surface-crossing interior (was ~3.7 m before the volume-based recharge fix)")
     sys.exit(0)

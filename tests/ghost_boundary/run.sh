@@ -152,6 +152,10 @@ print(f"  2. steady-state agreement vs cc:  tr={d_tr:.2e}  bdf2v={d_bv:.2e}  new
 MPI_TOL_FACTOR = 5.0
 mpi_tol = MPI_TOL_FACTOR * float(os.environ["WATER_TOL"])   # config's solver.convergence.water_volume_tol
 print(f"     (MPI bound = {MPI_TOL_FACTOR:g}x the run's own solver water tolerance = {mpi_tol:g} m; see run.sh)")
+print(f"  1. MPI determinism  cc n=1 vs n={n}: max|d| = {d_mpi:.2e} m (tol {mpi_tol:g})")
+# The verdict is on the WORST scheme, so the worst is what carries the bound. The per-scheme line
+# above stays: a single worst-case number hides which scheme is the one drifting.
+print(f"  2. steady-state agreement vs cc (worst of tr/bdf2v/newton): max|d| = {max(d_tr, d_bv, d_nw):.2e} m (tol {tol})")
 ok = (d_mpi <= mpi_tol) and max(d_tr, d_bv, d_nw) <= tol
 print("PASS" if ok else "FAIL", "(steady-state / MPI agreement under the ghost boundary)")
 sys.exit(0 if ok else 1)
@@ -171,7 +175,7 @@ JR=$("$WTM" "$WORK/jac.yaml" $GB -snes_test_jacobian 2>&1 \
 if [ -z "$JR" ]; then
   echo "  3. Newton Jacobian FD: FAIL (no ratio produced)"; fail=1
 else
-  echo "  3. Newton Jacobian FD (ghost ON): max ||J-Jfd||/||J|| = $JR  (ceiling $JTOL)"
+  echo "  3. Newton Jacobian FD (ghost ON): max ||J-Jfd||/||J|| = $JR  (tol $JTOL)"
   awk -v r="$JR" -v t="$JTOL" 'BEGIN{exit !(r+0 <= t+0)}' \
     && echo "  PASS (off-map land-slope tangent matches finite differences)" \
     || { echo "  FAIL (Jacobian off-map tangent inconsistent)"; fail=1; }
@@ -193,6 +197,7 @@ fi
 # close tighter than the solves that produced it. Measured 8.3964e-10 against 5e-08, ~60x of margin; the
 # defect it guards was eleven orders above that.
 BUDGET_TOL="$(awk -F: '/water_volume_tol:/{v=$2; sub(/^[ \t]+/,"",v); sub(/[ \t].*$/,"",v); print v; exit}' config.yaml)"
+BUDGET_BOUND="$(awk -v t="$BUDGET_TOL" 'BEGIN{printf "%g", 5*t}')"   # the bound both budget checks apply
 RESID=$("$PY" -c '
 import sys
 L=[l for l in open(sys.argv[1]) if l.strip()]
@@ -220,7 +225,7 @@ if awk -v b="$BC_FLUX" 'BEGIN{exit !(b+0 > 1.0)}'; then :; else
 fi
 if awk -v r="$RESID" -v t="$BUDGET_TOL" 'BEGIN{exit !(r+0 <= 5*t+0)}'; then
   echo "  4. off-map ghost flux BOOKED: |boundary_inflow_gw|/recharge = $BC_FLUX (the term is live, not zero)"
-  echo "  4. boundary budget closes: |exact residual|/recharge = $RESID  (bound 5x solver tol)"
+  echo "  4. boundary budget closes: |exact residual|/recharge = $RESID  (tol $BUDGET_BOUND)"
   echo "  PASS (the land boundary's off-map flux is accounted, not leaked)"
 else
   echo "  4. boundary budget: |exact residual|/recharge = $RESID  EXCEEDS 5x the solver tolerance $BUDGET_TOL" >&2
@@ -261,7 +266,7 @@ r=float(d["total_recharge_added"])
 print("%.6e" % (abs(float(d["exact_budget_residual"]))/r) if r else "nan")
 ' "$WORK/as_bc.txt")
   if awk -v r="$RESID_AS" -v t="$BUDGET_TOL" 'BEGIN{exit !(r+0 <= 5*t+0)}'; then
-    echo "  5. constrained boundary closes: active_set, |exact residual|/recharge = $RESID_AS"
+    echo "  5. constrained boundary closes: active_set, |exact residual|/recharge = $RESID_AS  (tol $BUDGET_BOUND)"
     echo "  PASS (the active-set multiplier does not swallow the boundary flux)"
   else
     echo "  5. constrained boundary: active_set |exact residual|/recharge = $RESID_AS EXCEEDS 5x $BUDGET_TOL" >&2
