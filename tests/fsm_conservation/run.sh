@@ -24,6 +24,16 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 INP="$FSMDIR/inputs"
 make_work fscons
 TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
+# THE OTHER FOUR BOUNDS, promoted from literals buried in their conditions (#121). A literal cannot
+# be reached from outside, so assertion_probe could not tighten it and the liveness of four of this
+# suite's five assertions was simply unknown -- including BOTH non-vacuity guards below.
+#
+# NOT MEANT TO BE TUNED. Each sits unmistakably clear of noise rather than at a measured margin;
+# raise one only with a measurement, never to make a run pass.
+EXTERNAL_TOL="${EXTERNAL_TOL:-1e-6}"   # col 19 is EXTERNAL water: the coupling cannot change it at all
+CLOSURE_TOL="${CLOSURE_TOL:-1e-2}"     # |budget_residual|/recharge at the end of the impulse run
+STATE_GAP_MIN="${STATE_GAP_MIN:-1e-3}" # BITE GUARD: the two couplings must really be different runs
+LAKE_MIN="${LAKE_MIN:-1.0}"            # BITE GUARD: standing water must survive, not be drained away
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/fsm_conservation/config.yaml, read and edited directly rather
@@ -53,10 +63,14 @@ cfg s -e "s|^  routing: impulse|  routing: continuous|"
   || { echo "SOURCE-COUPLING RUN FAILED"; tail -5 "$WORK/s.log"; exit 2; }
 
 TIF=$(ls "$WORK"/c_*.tif | tail -1)
-TOL="$TOL" TESTS="$(readlink -f ..)" "$PY" - "$WORK/c.txt" "$TIF" "$WORK/s.txt" <<'PY'
+TOL="$TOL" EXTERNAL_TOL="$EXTERNAL_TOL" CLOSURE_TOL="$CLOSURE_TOL" \
+  STATE_GAP_MIN="$STATE_GAP_MIN" LAKE_MIN="$LAKE_MIN" \
+  TESTS="$(readlink -f ..)" "$PY" - "$WORK/c.txt" "$TIF" "$WORK/s.txt" <<'PY'
 import sys, os, numpy as np, rasterio
 txt, tif, txt_src = sys.argv[1], sys.argv[2], sys.argv[3]
 tol = float(os.environ["TOL"])
+external_tol = float(os.environ["EXTERNAL_TOL"]); closure_tol = float(os.environ["CLOSURE_TOL"])
+state_gap_min = float(os.environ["STATE_GAP_MIN"]); lake_min = float(os.environ["LAKE_MIN"])
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_log as LOG               # columns BY NAME; see tests/log_schema
 I    = LOG.index_map(txt)
@@ -82,8 +96,8 @@ check("CONSERVATION (per-cycle balance closes)", worst < tol,
 # 0.40 -- |V - wtd| <= 2.4e-05 m in every case, against a threshold of 1.0 m. Below the surface the two
 # differ by the porosity (wtd = -1.0 m gives V = -0.050 m at phi 0.05), which is why the conversion
 # matters elsewhere and not here. Converting would multiply by 1.0 and change no verdict.
-check("LAKE PERSISTS (standing water kept; V == wtd above the surface)", lake > 1.0,
-      f"max wtd = {lake:.4f} m of water volume, above-surface V == wtd (min 1.0)")
+check("LAKE PERSISTS (standing water kept; V == wtd above the surface)", lake > lake_min,
+      f"max wtd = {lake:.4f} m of water volume, above-surface V == wtd (min {lake_min})")
 
 # EXTERNAL INPUT IS COUPLING-INDEPENDENT.
 #
@@ -111,15 +125,15 @@ S14    = np.array([float(r[13]) for r in rows])
 S14s   = np.array([float(r[13]) for r in rows_s])
 n = min(len(R19), len(R19s))
 rel19 = float(np.max(np.abs(R19s[:n] - R19[:n]) / np.where(np.abs(R19[:n]) > 0, np.abs(R19[:n]), 1.0)))
-check("EXTERNAL INPUT coupling-independent (col 19)", rel19 < 1e-6,
-      f"max relative difference impulse vs continuous = {rel19:.3e} (tol 1e-6)")
+check("EXTERNAL INPUT coupling-independent (col 19)", rel19 < external_tol,
+      f"max relative difference impulse vs continuous = {rel19:.3e} (tol {external_tol})")
 
 # NON-VACUITY. The check above is only meaningful if the two arms are actually different runs. If a
 # future change made the couplings converge to the same trajectory, column 19 would match trivially and
 # the assertion would pass while testing nothing. Require the STATES to differ materially.
 state_gap = float(np.max(np.abs(S14s[:n] - S14[:n])) / max(np.max(np.abs(S14[:n])), 1.0))
-check("NON-VACUOUS (the two couplings really differ)", state_gap > 1e-3,
-      f"max |d stored_volume| / |impulse| = {state_gap:.3e} (min 1e-3)")
+check("NON-VACUOUS (the two couplings really differ)", state_gap > state_gap_min,
+      f"max |d stored_volume| / |impulse| = {state_gap:.3e} (min {state_gap_min})")
 
 # ABSOLUTE CLOSURE, and the reason a per-cycle check could not stand in for it.
 #
@@ -148,8 +162,8 @@ check("NON-VACUOUS (the two couplings really differ)", state_gap > 1e-3,
 R9    = np.array([float(r[8])  for r in rows])
 resid = np.array([float(r[15]) for r in rows])
 closure = abs(float(resid[-1])) / float(R9[-1]) if R9[-1] > 0 else float("inf")
-check("ABSOLUTE CLOSURE (impulse arm, end of run)", closure < 1e-2,
-      f"|budget_residual|/recharge = {closure:.3e} (tol 1e-2)")
+check("ABSOLUTE CLOSURE (impulse arm, end of run)", closure < closure_tol,
+      f"|budget_residual|/recharge = {closure:.3e} (tol {closure_tol})")
 
 print("PASS: FSM path conserves water per cycle and keeps the lake" if ok else "FAIL")
 sys.exit(0 if ok else 1)

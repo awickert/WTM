@@ -155,7 +155,21 @@ def bite(suite, baseline):
         print(f"  no `NAME=\"${{NAME:-VALUE}}\"` bounds found in {suite}/run.sh -- nothing to tighten.")
         return
     for name, val, _derived, _sp in mine:
-        governed = {k: v for k, v in baseline.items() if v[1] == val}
+        # MATCH BY VALUE *AND* SHAPE. Value alone conflates two different bounds that happen to share
+        # a default: xrank_growth has FLAT_MAX=10.0 (a ceiling) and DISTINCT_MIN=10.0 (a floor), so
+        # the probe grabbed both, decided the pair was a floor, and RAISED the ceiling -- loosening it
+        # and then reporting "THE KNOB IS NOT CONNECTED" about a live assertion.
+        # The name carries the shape: *_MIN is a floor, everything else a ceiling. That is the same
+        # convention the suites already follow, so it is read rather than invented.
+        want_floor = name.endswith("_MIN") or "_MIN_" in name
+        governed = {k: v for k, v in baseline.items() if v[1] == val and v[3] == want_floor}
+        if not governed:
+            governed = {k: v for k, v in baseline.items() if v[1] == val}
+            if governed:
+                print(f"  {name:<14} matches {len(governed)} assertion(s) by value {val:g} but none of "
+                      f"the expected shape ({'floor' if want_floor else 'ceiling'}) -- CANNOT PROBE "
+                      f"without the bound's NAME on the line.")
+                continue
         if not governed:
             print(f"  {name:<14} governs no assertion that printed -- CANNOT PROBE (tol {val:g} "
                   f"appears on no line). That is itself worth knowing.")

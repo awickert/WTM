@@ -58,7 +58,12 @@ for region in eq neq; do
   emit "$region" b 1.0  2.0     # 20x deeper centre, 20x wider transition
 done
 
-TESTS="$(readlink -f ..)" "$PY" - "$WORK" <<'PY'
+# BITE GUARD, promoted from a literal (#121) so assertion_probe can RAISE it and confirm the
+# check still fails when it should. A dead guard here means the suite passes on nothing.
+# Chosen to sit clear of noise, NOT tuned: raise it only with a measurement.
+CONTROL_MIN="${CONTROL_MIN:-1e-3}"   # the sigmoid parameters MUST matter where owe != ET
+
+CONTROL_MIN="$CONTROL_MIN" TESTS="$(readlink -f ..)" "$PY" - "$WORK" <<'PY'
 import sys, os, glob, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
@@ -83,8 +88,9 @@ check("TRANSITION IS INERT when lake evap == ET", d_eq == 0.0,
 
 # CONTROL. Without this the check above would pass just as well if the sigmoid parameters
 # were ignored outright, or if both runs had silently failed into the same state.
-check("CONTROL: the parameters DO matter when owe != ET", d_neq > 1e-3,
-      f"same comparison on the unequal region = {d_neq:.6e} m (> 1e-3)")
+control_min = float(os.environ["CONTROL_MIN"])
+check("CONTROL: the parameters DO matter when owe != ET", d_neq > control_min,
+      f"same comparison on the unequal region = {d_neq:.6e} m (min {control_min})")
 
 print("PASS: the ET/open-water transition is inert exactly when there is nothing to transition"
       if ok else "FAIL")

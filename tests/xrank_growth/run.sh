@@ -37,6 +37,14 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f ../golden/inputs_runoff)
 make_work xrg
 NRANK="${NRANK:-6}"; PY="${PY:-python3}"
+# PROMOTED FROM LITERALS (#121). The shell form is what makes them reachable: assertion_probe
+# reads run.sh for `NAME="${NAME:-VALUE}"`, so an os.environ.get default inside the python block
+# would be invisible to it -- the bound would exist and still be unprobeable.
+# The last two are BITE GUARDS: without them "impulse drift is flat" would pass just as well if
+# BOTH regimes were flat, i.e. if the test had stopped distinguishing anything.
+FLAT_MAX="${FLAT_MAX:-10.0}"          # impulse drift must stay flat: last/first below this
+COMPOUND_MIN="${COMPOUND_MIN:-3.0}"   # BITE GUARD: continuous drift must actually compound
+DISTINCT_MIN="${DISTINCT_MIN:-10.0}"  # BITE GUARD: the two regimes must be far apart at the end
 export OMP_NUM_THREADS=1
 
 for coup in continuous impulse; do for n in 1 "$NRANK"; do
@@ -51,7 +59,8 @@ for coup in continuous impulse; do for n in 1 "$NRANK"; do
     || { echo "RUN FAILED: $t"; tail -5 "$WORK/$t.log"; exit 2; }
 done; done
 
-NRANK="$NRANK" "$PY" - "$WORK" <<'PY'
+NRANK="$NRANK" FLAT_MAX="$FLAT_MAX" COMPOUND_MIN="$COMPOUND_MIN" DISTINCT_MIN="$DISTINCT_MIN" \
+  "$PY" - "$WORK" <<'PY'
 import sys, os, glob, numpy as np, rasterio
 work = sys.argv[1]; N = os.environ["NRANK"]
 def series(t):
@@ -79,14 +88,16 @@ check("PRECONDITION both couplings ran and drifted", all(len(v) >= 2 for v in dr
 # THRESHOLDS ARE CHOICES, so they are named. Measured: impulse grows 1.8x over the run, continuous
 # 8.7x, and continuous ends 453x above impulse. The bounds below sit well clear of all three, so they
 # assert the REGIME (flat vs compounding) rather than pinning any measured value.
+flat_max = float(os.environ["FLAT_MAX"]); compound_min = float(os.environ["COMPOUND_MIN"])
+distinct_min = float(os.environ["DISTINCT_MIN"])
 gi = drift["impulse"][-1] / drift["impulse"][0]
 gc = drift["continuous"][-1] / drift["continuous"][0]
-check("impulse drift is FLAT (reset each step from rank 0)", gi < 10.0,
-      f"last/first = {gi:.2f} (< 10)")
-check("continuous drift COMPOUNDS (no reset)", gc > 3.0,
-      f"last/first = {gc:.2f} (> 3)")
-check("the two regimes are distinguishable", drift["continuous"][-1] / drift["impulse"][-1] > 10.0,
-      f"continuous/impulse at the final report = {drift['continuous'][-1] / drift['impulse'][-1]:.0f}x (> 10)")
+check("impulse drift is FLAT (reset each step from rank 0)", gi < flat_max,
+      f"last/first = {gi:.2f} (tol {flat_max})")
+check("continuous drift COMPOUNDS (no reset)", gc > compound_min,
+      f"last/first = {gc:.2f} (min {compound_min})")
+check("the two regimes are distinguishable", drift["continuous"][-1] / drift["impulse"][-1] > distinct_min,
+      f"continuous/impulse at the final report = {drift['continuous'][-1] / drift['impulse'][-1]:.1f} (min {distinct_min})")
 
 print("PASS: cross-rank drift is flat under impulse and compounding under continuous, as the "
       "rank-0 rescatter predicts" if ok else "FAIL")
