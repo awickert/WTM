@@ -96,6 +96,17 @@ print(f"  UNDER-RELAXATION a=0.5 DIFFERS: max|Δwtd| vs baseline = {d_rx05:.3e} 
 relax_ok = (d_rx1 == 0.0) and (d_rx05 > 0.0)
 
 ok = below_ok and exfiltration and rel < mbtol and agree < tol and relax_ok
-print("PASS: settles; wtd<=0 with a pinned exfiltration constraint; runoff+ocean close the budget; schemes agree" if ok else "FAIL")
+if ok:
+    print("PASS: settles; wtd<=0 with a pinned exfiltration constraint; runoff+ocean close the budget; schemes agree")
+else:
+    # NAME WHAT FAILED. This printed the bare word "FAIL", leaving a reader to compare four printed
+    # numbers against four bounds by hand to find out which one broke -- and leaving any tool unable
+    # to tell a failed assertion from a crash. Each clause now reports itself with its own bound.
+    if not below_ok:    print(f"  FAIL  COMPLEMENTARITY: some cell is above the surface (tol {tol})")
+    if not exfiltration: print(f"  FAIL  EXFILTRATION: no cell is pinned at the surface, max wtd = {above:.3e} m (tol {tol})")
+    if rel >= mbtol:    print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol {mbtol})")
+    if agree >= tol:    print(f"  FAIL  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol {tol})")
+    if not relax_ok:    print(f"  FAIL  UNDER-RELAXATION: a=1.0 moved the answer by {d_rx1:.3e} m, or a=0.5 did not differ ({d_rx05:.3e} m)")
+    print("FAIL")
 sys.exit(0 if ok else 1)
 PY

@@ -59,7 +59,11 @@ _TOL = re.compile(r"\(tol\s*([0-9.eE+-]+)\)")
 _MIN = re.compile(r"\(min\s*([0-9.eE+-]+)\)")
 _NUM = re.compile(r"[-+]?(?:[0-9]+\.?[0-9]*[eE][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+)")
 # NAME="${NAME:-VALUE}" -- the convention every suite uses for an overridable bound.
-_DEF = re.compile(r'^([A-Z_]*TOL[A-Z_]*)="\$\{\1:-([^}]*)\}"')
+# NOT ANCHORED AT LINE START: several suites put two bounds on one line --
+#     TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
+# and an anchored pattern found only the first, so the second was never probed and never
+# reported. Scanned with finditer over the whole line instead.
+_DEF = re.compile(r'([A-Z_]*TOL[A-Z_]*)="\$\{\1:-([^}]*)\}"')
 _SPREAD = re.compile(r"^\s*#\s*SPREAD:\s*(\S+)", re.M)
 # Evidence that somebody measured something near the bound, rather than typing a round number.
 _EVIDENCE = re.compile(r"[0-9]\.?[0-9]*[eE][+-]?[0-9]|MEASURED|DERIVED|swept|sweep|floor|noise", re.I)
@@ -142,15 +146,16 @@ def source_evidence(tests_dir):
 
         b, l = [], []
         for i, line in enumerate(lines):
-            m = _DEF.match(line.strip())
-            if m:
-                try:
-                    val = float(m.group(2))
-                except ValueError:
-                    continue
+            ms = list(_DEF.finditer(line))
+            if ms:
                 blk = block_above(i)
                 sp = _SPREAD.search(blk)
-                b.append((m.group(1), val, bool(_EVIDENCE.search(blk)), sp.group(1) if sp else None))
+                for m in ms:
+                    try:
+                        val = float(m.group(2))
+                    except ValueError:
+                        continue
+                    b.append((m.group(1), val, bool(_EVIDENCE.search(blk)), sp.group(1) if sp else None))
                 continue
             # An arm invocation: a quoted label long enough to be distinctive. Short strings like
             # "off" or a stem would match half the output lines.
