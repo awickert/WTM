@@ -33,7 +33,8 @@
 # model cannot currently supply, and the collector that flickers is `explicit`, which is not the
 # production method. Do not spend time here to turn it green, and do not let it gate anything.
 #
-# The suite already exits 0 on the known xfail. The two exit-1 paths below are RATCHETS, not failures
+# The suite already exits 0 on the UNVERIFIED outcome. The two exit-1 paths below are RATCHETS, not
+# failures
 # of the identity: one fires if the defect disappears, the other if its size moves. They exist so a
 # change announces itself rather than passing quietly, and they stay -- but under the standing above,
 # either one is a prompt to read and re-record, not a defect to fix.
@@ -48,7 +49,7 @@
 # oscillation -- "equilibrium reached (frac metric) ... stopping at cycle 4 of 30" while that very cycle
 # carries 0.0606 m of within-cycle motion across 56 of 88 cells.
 #
-# Do not read this xfail as "the flicker is an acceptable background condition". Read it as: two defects
+# Do not read this as "the flicker is an acceptable background condition". Read it as: two defects
 # are stacked here, and the outer one (#103) is why the inner one (#102) cannot be measured. The fixture's docstring asks for "coastal cells cross wtd=0 ...
 # but the table does not flicker", and measurement says those two are not simultaneously reachable here:
 #     collection.method: explicit    crosses the surface, flickers, does not settle in 460 yr
@@ -147,18 +148,18 @@ print(f"  field: wtd {land.min():.4f} .. {land.max():.4f} m, {int((land == 0.0).
 # XFAIL, WITH A GUARD. See the long note above for the measurements; the short version is that this
 # fixture CANNOT currently satisfy the two preconditions its own docstring sets -- cells crossing wtd=0
 # AND a non-flickering table -- so the identity is NOT verified in the regime where S != Sy.
-XFAIL_FLOOR = 1.0e-4   # my choice: an order below the smallest crossing-regime value measured (2.39e-03)
+MOVED_FLOOR = 1.0e-4   # my choice: an order below the smallest crossing-regime value measured (2.39e-03)
 if d <= tol:
     print("UNEXPECTED PASS: the identity now holds in the surface-crossing regime.")
-    print("  This is the outcome the xfail is waiting for -- but do not just delete the xfail. Re-read the")
+    print("  This is the outcome this suite is waiting for -- but do not just delete the guard. Re-read the")
     print("  note above, confirm the table is genuinely non-flickering (within-cycle max|dw| at the surface")
     print("  cells, not just per-cycle), and record what changed. Failing so it cannot pass unnoticed.")
     sys.exit(1)
-if d < XFAIL_FLOOR:
-    print(f"FAIL: {d:.3e} m is below the xfail floor {XFAIL_FLOOR:g} but above the target {tol}.")
+if d < MOVED_FLOOR:
+    print(f"FAIL: {d:.3e} m is below the ratchet floor {MOVED_FLOOR:g} but above the target {tol}.")
     print("  The defect has MOVED. Re-measure rather than re-tune the floor.")
     sys.exit(1)
-print(f"  xfail   KNOWN: {d:.3e} m > target {tol} m -- S·Δh vs ΔV in the surface-crossing regime")
+print(f"  unverified  NOT ASKED: {d:.3e} m vs target {tol} m -- this suite does not exercise S·Δh vs ΔV\n              in the surface-crossing regime at all, so the identity is neither confirmed nor denied")
 print("  The identity is UNVERIFIED here, not disproven: the table flickers, which is the documented")
 print("  exception. Quiet cell sizes put every cell far from the surface, where S != Sy is not exercised.")
 sys.exit(0)

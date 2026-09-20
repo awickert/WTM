@@ -146,7 +146,7 @@ def source_evidence(tests_dir):
     return bounds, labels
 
 
-def classify(headroom, derived, spread, inverted=False):
+def classify(headroom, derived, spread, inverted=False, unverified=False):
     """The verdict. ASSERTION_HEALTH.md sec. 3: spread INVERTS how headroom reads.
 
     `spread?` is not an accusation. It means the headroom is low and nobody has recorded whether the
@@ -158,8 +158,10 @@ def classify(headroom, derived, spread, inverted=False):
     # scale as the others, so it is labelled and excluded rather than ranked. Before this, such a
     # line was simply unparseable and therefore invisible -- safe but accidental. The moment a suite
     # printed its bound in the readable form, the tool would have called a working xfail a FAILURE.
+    if unverified:
+        return "NOT ASKED"         # a coverage gap wearing a test's clothes -- see sec. 5b
     if inverted:
-        return "xfail"
+        return "pinned"            # a known defect, measured and held
     if derived is None:
         return "unlinked"          # printed tol tied to no arm and no default
     if not derived:
@@ -196,7 +198,17 @@ def main():
             if tol <= 0:
                 continue
             headroom = float("inf") if val == 0 else tol / val
-            inverted = "xfail" in line.lower()
+            low = line.lower()
+            # THREE DIFFERENT THINGS, and collapsing them loses the one that matters.
+            #   pinned      a KNOWN DEFECT, measured and held so it cannot vanish unnoticed. The test
+            #               asked its question and got a bad answer. That is a working test.
+            #   unverified  the fixture CANNOT EXERCISE THE CLAIM. The test never asked. Not a
+            #               failure -- an absence of evidence, and therefore a COVERAGE GAP that
+            #               must not be counted as a test.
+            # Andy, 2026-09-20: "It is not a failure. It is just that the test is not asking the
+            # question. We should not use xfail in this case."
+            unverified = "unverified" in low or "not asked" in low
+            inverted = ("xfail" in low) or unverified
             # ARM FIRST, then the shared default: an arm that explains its own bound is the
             # more specific statement, and the label match is exact rather than value-matched.
             derived = spread = None
@@ -211,7 +223,7 @@ def main():
                     spread = spread or hits[0][3]
                 elif derived is None and not arm:
                     derived = spread = None
-            rows.append((headroom, suite, line.strip(), derived, spread, inverted))
+            rows.append((headroom, suite, line.strip(), derived, spread, inverted, unverified))
     if not rows:
         return 0
     rows.sort(key=lambda r: r[0])
@@ -225,7 +237,8 @@ def main():
     misparsed = [r for r in rows if r[0] < 1.0 and verdicted(r[2]) and not r[5]]
     rows = [r for r in rows if r not in misparsed]
 
-    under = [r for r in rows if r[4 - 1] is False]
+    under = [r for r in rows if r[3] is False]
+    notasked = [r for r in rows if r[6]]
     unlinked = [r for r in rows if r[3] is None]
     nospread = [r for r in rows if r[3] and r[4] is None]
 
@@ -234,9 +247,12 @@ def main():
     print("  headroom is a VIRTUE on a bit-reproducible quantity and a risk only on a varying one.")
     print(f"  {len(under)} carry no detectable derivation. {len(nospread)} have no declared SPREAD,")
     print("  so their headroom cannot yet be read either way.")
+    if notasked:
+        print(f"  {len(notasked)} are NOT ASKED -- the fixture cannot exercise the claim. These are")
+        print("  COVERAGE GAPS, not tests, and must not be counted as either passing or failing.")
     print()
     print(f"      {'headroom':>10}  {'verdict':<10} {'suite':<22} assertion")
-    for headroom, suite, line, derived, spread, inverted in rows:
+    for headroom, suite, line, derived, spread, inverted, unverified in rows:
         # An inverted assertion's headroom is below 1 BY DESIGN, so printing "(FAIL)" beside it
         # would say the opposite of the truth. It gets no number: the ratio is not on the same
         # scale as the others and ranking it against them would be meaningless.
@@ -248,7 +264,7 @@ def main():
             h = "       inf"
         else:
             h = f"{headroom:10.2f}"
-        print(f"      {h}  {classify(headroom, derived, spread, inverted):<10} {suite:<22} {line[:78]}")
+        print(f"      {h}  {classify(headroom, derived, spread, inverted, unverified):<10} {suite:<22} {line[:78]}")
 
     if unlinked:
         print()
@@ -258,7 +274,7 @@ def main():
         print()
         print(f"  {len(misparsed)} NOT RANKED: the suite printed a pass but this parse puts them below")
         print("  their tolerance, so the parse is wrong -- usually a bare number in the LABEL.")
-        for _, suite, line, _, _, _ in misparsed:
+        for _, suite, line, _, _, _, _ in misparsed:
             print(f"      {suite:<22} {line[:78]}")
     return 0
 

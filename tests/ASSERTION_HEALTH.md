@@ -110,21 +110,37 @@ suite; it belongs in an occasional audit, not in `run_all.sh`.
 bound, because the derivation behind it was wrong. Only someone who knows the physics catches that.
 The machinery here exists to spend that attention where it is needed, not to replace it.
 
-## 5b. Inverted assertions (xfail) -- a fourth case the axis does not cover
+## 5b. Three things that are not a pass, and only one of them is a failure
 
-Some suites assert `value > tol`: a KNOWN defect, recorded so it cannot vanish unnoticed, where
-exceeding the bound is the EXPECTED state and falling below it is the alarm. `tests/storage_equivalence`
-is the clearest -- `d <= tol` prints "UNEXPECTED PASS" and exits 1.
+Some suites assert `value > tol`. Collapsing them all under `xfail` loses the distinction that
+matters most, so they are separated:
 
-**Headroom is meaningless for these.** It is below 1 by design, so ranking them against ordinary
-assertions compares two different things, and printing "(FAIL)" beside one says the opposite of the
-truth. They are labelled `xfail`, given no headroom number, and excluded from the ranking.
+| label | what it means | is the test working? |
+|---|---|---|
+| **`pinned`** | a KNOWN DEFECT, measured and held so it cannot vanish unnoticed. `budget_closure` names the task in `XTASK`; `newton_solver` pins a Jacobian mismatch; `estimator_order` records that BDF2-on-V has no order with FSM on | **yes.** It asked its question and got a bad answer, and it will shout if the answer moves |
+| **`NOT ASKED`** | the fixture CANNOT EXERCISE THE CLAIM. `storage_equivalence` cannot satisfy its own stated preconditions, so the identity is *neither confirmed nor denied* | **no.** This is a COVERAGE GAP wearing a test's clothes |
 
-**Why this is written down rather than just fixed:** an xfail line currently carries no parenthesised
-bound, so it parses as nothing and is invisible. That is safe BY ACCIDENT. The moment such a suite is
-brought into the print convention -- which is exactly what #117 does -- the tool would begin reading a
-correctly-working xfail as a failure. Five of the sixteen already-visible suites contain xfail arms,
-and three of the twelve to be onboarded do.
+> Andy, 2026-09-20: *"It is not a failure. It is just that the test is not asking the question. We
+> should not use xfail in this case."*
+
+**Why the distinction is the whole point.** `pinned` and `NOT ASKED` produce the same tidy line in a
+test log forever. But `pinned` is evidence and `NOT ASKED` is the absence of it, and absence of
+evidence is exactly the defect class this framework exists to catch -- the same shape as `#34`, `#91`
+and `#96`, where suites ran green while comparing identically-constant fields. A suite that never
+asks its question will report a stable status until someone reads the prose underneath it.
+
+**So `NOT ASKED` is counted against COVERAGE, not as a test.** `assertion_health.py` reports it in its
+own line and excludes it from both the passing and failing counts. Before this, `storage_equivalence`
+appeared as a working suite in every figure quoted from these tools.
+
+**Headroom is meaningless for both**, and is printed as `n/a` rather than as a ratio below 1 -- which
+would have read as "(FAIL)" beside a test behaving exactly as designed.
+
+**A note on how this was nearly missed.** These lines carry no parenthesised bound today, so they
+parse as nothing and never reach the classifier. That safety was ACCIDENTAL. `#117` exists to bring
+unreadable suites INTO the print convention, which would have turned an accidental invisibility into
+an active misreading -- on the first suite queued for editing. Five of the sixteen already-visible
+suites contain such arms; three of the twelve queued do.
 
 ## 6. How to read `assertion_health.py`'s output
 
