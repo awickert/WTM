@@ -157,7 +157,18 @@ print(f"  1. MPI determinism  cc n=1 vs n={n}: max|d| = {d_mpi:.2e} m (tol {mpi_
 # above stays: a single worst-case number hides which scheme is the one drifting.
 print(f"  2. steady-state agreement vs cc (worst of tr/bdf2v/newton): max|d| = {max(d_tr, d_bv, d_nw):.2e} m (tol {tol})")
 ok = (d_mpi <= mpi_tol) and max(d_tr, d_bv, d_nw) <= tol
-print("PASS" if ok else "FAIL", "(steady-state / MPI agreement under the ghost boundary)")
+if ok:
+    print("PASS (steady-state / MPI agreement under the ghost boundary)")
+else:
+    # NAME WHAT FAILED (#119). A bare "FAIL" left a reader to compare the printed numbers
+    # against their bounds by hand, and left the bite harness unable to tell a failed
+    # assertion from a crash -- so every bound here reported INCONCLUSIVE.
+    if d_mpi > mpi_tol:
+        print(f"  FAIL  MPI determinism: cc n=1 vs n={n} differ by {d_mpi:.2e} m (tol {mpi_tol:g})")
+    if max(d_tr, d_bv, d_nw) > tol:
+        worst = max((d_tr, "tr"), (d_bv, "bdf2v"), (d_nw, "newton"))
+        print(f"  FAIL  steady-state agreement: {worst[1]} differs from cc by {worst[0]:.2e} m (tol {tol})")
+    print("FAIL (steady-state / MPI agreement under the ghost boundary)")
 sys.exit(0 if ok else 1)
 PY
 [ $? -ne 0 ] && fail=1
@@ -178,7 +189,7 @@ else
   echo "  3. Newton Jacobian FD (ghost ON): max ||J-Jfd||/||J|| = $JR  (tol $JTOL)"
   awk -v r="$JR" -v t="$JTOL" 'BEGIN{exit !(r+0 <= t+0)}' \
     && echo "  PASS (off-map land-slope tangent matches finite differences)" \
-    || { echo "  FAIL (Jacobian off-map tangent inconsistent)"; fail=1; }
+    || { echo "  FAIL  Jacobian off-map tangent inconsistent: max ||J-Jfd||/||J|| = $JR (tol $JTOL)"; fail=1; }
 fi
 
 # ---- 4. THE BOUNDARY THAT CARRIES FLUX MUST ALSO BALANCE (#105, #54 item 3) -------------------------

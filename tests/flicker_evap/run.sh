@@ -101,7 +101,15 @@ else:
           f"is the only thing that brought the table back")
 
 ok = below_ok and rel < mbtol and taper_alone
-print("PASS: smooth taper settles the surface-crossing flicker; no ponding remains; budget closes with evaporation"
-      if ok else "FAIL")
+if ok:
+    print("PASS: smooth taper settles the surface-crossing flicker; no ponding remains; budget closes with evaporation")
+else:
+    # NAME WHAT FAILED (#119). A bare "FAIL" left a reader to compare the printed numbers
+    # against their bounds by hand, and left the bite harness unable to tell a failed
+    # assertion from a crash -- so every bound here reported INCONCLUSIVE.
+    if not below_ok:     print(f"  FAIL  NO PONDING: water stands above the surface, max wtd = {above:.3e} m (tol {q})")
+    if rel >= mbtol:     print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol {mbtol})")
+    if not taper_alone:  print(f"  FAIL  TAPER ALONE: a collector removed {dS:.4e} m of water, so the taper is not what settled it")
+    print("FAIL")
 sys.exit(0 if ok else 1)
 PY
