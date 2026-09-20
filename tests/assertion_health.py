@@ -146,13 +146,20 @@ def source_evidence(tests_dir):
     return bounds, labels
 
 
-def classify(headroom, derived, spread):
+def classify(headroom, derived, spread, inverted=False):
     """The verdict. ASSERTION_HEALTH.md sec. 3: spread INVERTS how headroom reads.
 
     `spread?` is not an accusation. It means the headroom is low and nobody has recorded whether the
     quantity varies, so the number cannot be read either way yet -- declare `# SPREAD: 0` beside the
     bound once it has been checked, and it becomes `sharp`.
     """
+    # AN XFAIL ASSERTS THE OPPOSITE: `value > tol` is the EXPECTED state, recording a known defect
+    # so it cannot vanish unnoticed. Its headroom is below 1 BY DESIGN and means nothing on the same
+    # scale as the others, so it is labelled and excluded rather than ranked. Before this, such a
+    # line was simply unparseable and therefore invisible -- safe but accidental. The moment a suite
+    # printed its bound in the readable form, the tool would have called a working xfail a FAILURE.
+    if inverted:
+        return "xfail"
     if derived is None:
         return "unlinked"          # printed tol tied to no arm and no default
     if not derived:
@@ -189,6 +196,7 @@ def main():
             if tol <= 0:
                 continue
             headroom = float("inf") if val == 0 else tol / val
+            inverted = "xfail" in line.lower()
             # ARM FIRST, then the shared default: an arm that explains its own bound is the
             # more specific statement, and the label match is exact rather than value-matched.
             derived = spread = None
@@ -203,7 +211,7 @@ def main():
                     spread = spread or hits[0][3]
                 elif derived is None and not arm:
                     derived = spread = None
-            rows.append((headroom, suite, line.strip(), derived, spread))
+            rows.append((headroom, suite, line.strip(), derived, spread, inverted))
     if not rows:
         return 0
     rows.sort(key=lambda r: r[0])
@@ -214,7 +222,7 @@ def main():
     # 0.00x because 0.3 in the LABEL beat the 6.73e-08 being compared. A false alarm in the one output
     # whose job is ranking real risk is worse than over-reporting.
     verdicted = lambda l: any(w in l for w in ("PASS", "OK  ", "ok  ", " OK "))
-    misparsed = [r for r in rows if r[0] < 1.0 and verdicted(r[2])]
+    misparsed = [r for r in rows if r[0] < 1.0 and verdicted(r[2]) and not r[5]]
     rows = [r for r in rows if r not in misparsed]
 
     under = [r for r in rows if r[4 - 1] is False]
@@ -228,10 +236,19 @@ def main():
     print("  so their headroom cannot yet be read either way.")
     print()
     print(f"      {'headroom':>10}  {'verdict':<10} {'suite':<22} assertion")
-    for headroom, suite, line, derived, spread in rows:
-        h = "  0.00 (FAIL)" if headroom < 1 else ("       inf" if headroom == float("inf")
-                                                  else f"{headroom:10.2f}")
-        print(f"      {h}  {classify(headroom, derived, spread):<10} {suite:<22} {line[:78]}")
+    for headroom, suite, line, derived, spread, inverted in rows:
+        # An inverted assertion's headroom is below 1 BY DESIGN, so printing "(FAIL)" beside it
+        # would say the opposite of the truth. It gets no number: the ratio is not on the same
+        # scale as the others and ranking it against them would be meaningless.
+        if inverted:
+            h = "       n/a"
+        elif headroom < 1:
+            h = "  0.00 (FAIL)"
+        elif headroom == float("inf"):
+            h = "       inf"
+        else:
+            h = f"{headroom:10.2f}"
+        print(f"      {h}  {classify(headroom, derived, spread, inverted):<10} {suite:<22} {line[:78]}")
 
     if unlinked:
         print()
@@ -241,7 +258,7 @@ def main():
         print()
         print(f"  {len(misparsed)} NOT RANKED: the suite printed a pass but this parse puts them below")
         print("  their tolerance, so the parse is wrong -- usually a bare number in the LABEL.")
-        for _, suite, line, _, _ in misparsed:
+        for _, suite, line, _, _, _ in misparsed:
             print(f"      {suite:<22} {line[:78]}")
     return 0
 

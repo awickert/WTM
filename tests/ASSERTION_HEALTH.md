@@ -110,6 +110,22 @@ suite; it belongs in an occasional audit, not in `run_all.sh`.
 bound, because the derivation behind it was wrong. Only someone who knows the physics catches that.
 The machinery here exists to spend that attention where it is needed, not to replace it.
 
+## 5b. Inverted assertions (xfail) -- a fourth case the axis does not cover
+
+Some suites assert `value > tol`: a KNOWN defect, recorded so it cannot vanish unnoticed, where
+exceeding the bound is the EXPECTED state and falling below it is the alarm. `tests/storage_equivalence`
+is the clearest -- `d <= tol` prints "UNEXPECTED PASS" and exits 1.
+
+**Headroom is meaningless for these.** It is below 1 by design, so ranking them against ordinary
+assertions compares two different things, and printing "(FAIL)" beside one says the opposite of the
+truth. They are labelled `xfail`, given no headroom number, and excluded from the ranking.
+
+**Why this is written down rather than just fixed:** an xfail line currently carries no parenthesised
+bound, so it parses as nothing and is invisible. That is safe BY ACCIDENT. The moment such a suite is
+brought into the print convention -- which is exactly what #117 does -- the tool would begin reading a
+correctly-working xfail as a failure. Five of the sixteen already-visible suites contain xfail arms,
+and three of the twelve to be onboarded do.
+
 ## 6. How to read `assertion_health.py`'s output
 
 It sorts by headroom and reports both ends, labelled by what they mean rather than by a single word:
