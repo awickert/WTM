@@ -63,6 +63,29 @@ def run_suite(suite, env_extra=None, timeout=7200):
         return 127, f"(could not run: {e})"
 
 
+def tighten(worst, is_floor):
+    """The bound to retry with, so the assertion is forced to fail.
+
+    EXTRACTED TO BE TESTABLE. This was three characters inside bite(), reachable only by running a
+    real suite, and it was WRONG for floors: a ceiling bites when the bound drops BELOW the measured
+    value, a floor when it is RAISED ABOVE it. Lowering both would loosen every floor and then report
+    "THE KNOB IS NOT CONNECTED" about assertions that are perfectly live -- and in this tree the
+    floors are the non-vacuity guards, so the accusation lands in the worst possible place.
+    """
+    return worst * 1.1 if is_floor else worst * 0.9
+
+
+def is_bite(line):
+    """Does this output line show an ASSERTION failing, as opposed to the suite breaking?
+
+    EXTRACTED TO BE TESTABLE. A non-zero exit proves nothing: a missing fixture, a build mismatch or
+    a crash all produce one. Requiring the word `tol` keeps that discrimination without demanding a
+    single print format from 39 independently written suites -- an earlier version required a
+    parenthesised bound on the FAIL line itself and read a real bite as INCONCLUSIVE.
+    """
+    return "FAIL" in line and "tol" in line.lower()
+
+
 def assertions(text):
     """{stable key: (value, tol, line)} for every assertion line in a suite's output.
 
@@ -141,7 +164,7 @@ def bite(suite, baseline):
             print(f"  {name:<14} its assertions all measured exactly 0 -- no tighter bound exists. "
                   f"Vacuity here is nonvacuous.py's question, not this one.")
             continue
-        tight = worst * 1.1 if is_floor else worst * 0.9
+        tight = tighten(worst, is_floor)
         rc, out = run_suite(suite, {name: repr(tight)})
         # A FAIL LINE NEED NOT CARRY "(tol X)". Requiring that was too strict and reported
         # adaptive_water as INCONCLUSIVE when its bound had in fact bitten: that suite prints the
@@ -150,7 +173,7 @@ def bite(suite, baseline):
         # no parentheses, different line. Requiring the word `tol` on the FAIL line keeps the
         # discrimination that matters -- a crash or a missing fixture does not mention a tolerance --
         # without also requiring one print format across 39 independently written suites.
-        failed = [l for l in out.splitlines() if "FAIL" in l and "tol" in l.lower()]
+        failed = [l for l in out.splitlines() if is_bite(l)]
         if failed:
             print(f"  {name:<14} BITES   at {tight:.3e} (was {val:g}): {failed[0].strip()[:62]}")
         elif rc != 0:

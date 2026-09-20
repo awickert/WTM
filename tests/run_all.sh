@@ -110,6 +110,10 @@ run "unit: run-log header + trace parsing" ./log_schema/run.sh "$WTM"
 # between the suite and a slow drift back to head norms once the conversion stops being recent.
 run "unit: lint (head norms, dead continuations)" ./lint_norms.sh
 run "unit: DMDA gather + storage + geometry" ./run_unit_tests.sh "$TDMDA"
+# THE TOOLS THAT JUDGE THE OTHER TESTS, checked before any of them run. Seconds, no model: these
+# are string functions. Five bugs were found in them by USE on the day they were written, one of
+# which failed silently and accused the non-vacuity guards of being disconnected.
+run "unit: assertion tools (assertion_health / assertion_probe)" ./test_assertion_tools.py
 run "ghost-cell MPI"           ./ghost_cell/run_test.sh "$WTM"
 run "mass-balance MPI"         "$ROOT/benchmark/mass_balance_test.sh" "$WTM" "$MASSBAL_N"
 run "MPI consistency matrix"   ./mpi_consistency/run.sh "$WTM" $MPI_RANKS
