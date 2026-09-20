@@ -77,6 +77,26 @@ check("low headroom with spread unknown is unreadable, not damning",
 check("no derivation is the strongest signal, whatever the headroom",
       H.classify(5000.0, False, "0", False, False), "UNDERIVED")
 
+# --- the ambiguity lint (#118): more than one plausible answer on the line --------------------------
+# Every case below is a REAL line from this tree, five of them lines that actually misparsed.
+check("clean line is not ambiguous",
+      H.ambiguous("  max|dV| = 1.984e-03 m water volume (tol 0.0125)"), False)
+check("a decimal in the label is ambiguous -- dt_sensitivity",
+      H.ambiguous("  max|ΔV(1yr) - ΔV(0.25yr)| = 1.2e-14 m water  (tol 0.00025)"), True)
+check("a decimal in the label is ambiguous -- boundary_analytic",
+      H.ambiguous("  NEUMANN slope (topo=0.05/cell): residual = 3.479e-08 m (tol 1e-06)"), True)
+check("a table column is ambiguous -- tolerance_independence",
+      H.ambiguous("    1.0000   fixed   max|dV| = 3.1000e-06   agree (tol 0.0001)"), True)
+check("a multi-term breakdown is ambiguous -- limit_cycle's mass balance",
+      H.ambiguous("  dRech=4.4e-04 dSurf=2.1e-04 residual=1.1e-05 (tol 1e-3)"), True)
+check("the BOUND itself in the prose is ambiguous -- direct_to_runoff",
+      H.ambiguous("  gathered max wtd = 4.2e-03 m (<= 0.5, at surface) (tol 0.5)"), True)
+# A floor takes the number NEAREST the marker, so an earlier candidate cannot outrank it.
+check("floors are exempt -- their rule is nearest, not largest",
+      H.ambiguous("  0.25 yr arm: max wtd = 9.9212 m (min 1.0)"), False)
+check("a bare integer is not a candidate, so it cannot make a line ambiguous",
+      H.ambiguous("  ran 1yr over 8 cycles: rel = 4.0e-09 (tol 1e-06)"), False)
+
 # --- the bite: direction, and what counts ---------------------------------------------------------
 # BUG 5. The one that fails quietly.
 check("tighten a CEILING downward", P.tighten(1.0e-3, False), 0.9e-3)

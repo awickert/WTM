@@ -120,6 +120,60 @@ def _value_and_tol(line):
     return (max(cands), tol, floor)
 
 
+def ambiguous(line):
+    """Does more than one number on this line plausibly answer "what was compared"? (#118)
+
+    THE FAILURE IT CATCHES, six times in one day and twice from my own edits: the parser takes the
+    largest candidate of magnitude <= 1 before the marker, so a small decimal anywhere in the PROSE
+    outranks the measurement and the assertion is compared against its own label.
+
+        "ΔV(0.25yr) = 1.2e-14 m (tol 2.5e-04)"        -> 0.25 wins, from the label
+        "(topo=0.05/cell): residual = 3.5e-08 (tol 1e-06)" -> 0.05 wins, from the label
+        "  1.0000  fixed  max|dV| = 3.1e-06 (tol 1e-04)"   -> the TIMESTEP column wins
+
+    IT DOES NOT NEED TO KNOW WHICH NUMBER IS RIGHT -- only that there is more than one plausible
+    answer, which is a fact about the line rather than a judgment about the suite. That is what makes
+    it mechanical. It therefore over-reports: a line with two candidates whose largest happens to be
+    the compared one is flagged and is fine. Over-reporting costs a glance; the failure it prevents
+    is a silently wrong number in the one output whose job is ranking risk.
+
+    FLOORS ARE EXEMPT: their rule takes the number NEAREST the marker, not the largest, so a second
+    candidate earlier in the line cannot outrank it.
+    """
+    t = _TOL.search(line)
+    if not t:
+        return False                      # floors use the nearest-number rule; nothing to confuse
+    small = []
+    for n in _NUM.findall(line[: t.start()]):
+        if "." not in n and "e" not in n and "E" not in n:
+            continue
+        try:
+            v = abs(float(n))
+        except ValueError:
+            continue
+        if v <= 1.0:
+            small.append(v)
+    if len(small) < 2:
+        return False
+    # THE TEST IS DISAGREEMENT BETWEEN THE TWO PLAUSIBLE RULES, not merely "more than one number".
+    # A first version flagged 17 of 22 lines, most of them harmless: budget_closure prints
+    # "cumulative=2.49e-07 worst-per-cycle=3.52e-07" and the largest IS the asserted one. Correct --
+    # but correct by luck, and too noisy to act on.
+    # A well-formed line puts the compared quantity immediately before the bound. So the line is
+    # ambiguous exactly when LARGEST and NEAREST pick different numbers: that is the case where the
+    # parser's rule and a reader's eye would disagree, and every historical misparse has this shape.
+    if max(small) != small[-1]:
+        return True
+    # AND THE CASE THE DISAGREEMENT RULE MISSES: the BOUND repeated in the prose. direct_to_runoff
+    # printed "gathered max wtd = 4.2e-03 m (<= 0.5, at surface) (tol 0.5)", where 0.5 is both the
+    # nearest candidate AND the largest, so the two rules agree -- on the wrong number. A candidate
+    # equal to the bound is the bound, not a measurement.
+    try:
+        tol = abs(float(t.group(1)))
+    except ValueError:
+        return False
+    return any(v == tol for v in small)
+
 def source_evidence(tests_dir):
     """(bounds, labels) per suite: where a derivation could be, read from each suite's run.sh.
 
@@ -239,6 +293,7 @@ def main():
             # question. We should not use xfail in this case."
             unverified = "unverified" in low or "not asked" in low
             inverted = ("xfail" in low) or unverified
+            amb = ambiguous(line)
             # ARM FIRST, then the shared default: an arm that explains its own bound is the
             # more specific statement, and the label match is exact rather than value-matched.
             derived = spread = None
@@ -253,7 +308,7 @@ def main():
                     spread = spread or hits[0][3]
                 elif derived is None and not arm:
                     derived = spread = None
-            rows.append((headroom, suite, line.strip(), derived, spread, inverted, unverified))
+            rows.append((headroom, suite, line.strip(), derived, spread, inverted, unverified, amb))
     if not rows:
         return 0
     rows.sort(key=lambda r: r[0])
@@ -277,12 +332,19 @@ def main():
     print("  headroom is a VIRTUE on a bit-reproducible quantity and a risk only on a varying one.")
     print(f"  {len(under)} carry no detectable derivation. {len(nospread)} have no declared SPREAD,")
     print("  so their headroom cannot yet be read either way.")
+    ambs = [r for r in rows if r[7]]
+    if ambs:
+        print(f"  {len(ambs)} AMBIGUOUS -- more than one number before the bound could be the one")
+        print("  compared, so the value reported for them may be from the LABEL (#118). Fix the LINE:")
+        for r in ambs:
+            print(f"      {r[1]:<22} {r[2][:74]}")
+        print()
     if notasked:
         print(f"  {len(notasked)} are NOT ASKED -- the fixture cannot exercise the claim. These are")
         print("  COVERAGE GAPS, not tests, and must not be counted as either passing or failing.")
     print()
     print(f"      {'headroom':>10}  {'verdict':<10} {'suite':<22} assertion")
-    for headroom, suite, line, derived, spread, inverted, unverified in rows:
+    for headroom, suite, line, derived, spread, inverted, unverified, amb in rows:
         # An inverted assertion's headroom is below 1 BY DESIGN, so printing "(FAIL)" beside it
         # would say the opposite of the truth. It gets no number: the ratio is not on the same
         # scale as the others and ranking it against them would be meaningless.
@@ -304,7 +366,7 @@ def main():
         print()
         print(f"  {len(misparsed)} NOT RANKED: the suite printed a pass but this parse puts them below")
         print("  their tolerance, so the parse is wrong -- usually a bare number in the LABEL.")
-        for _, suite, line, _, _, _, _ in misparsed:
+        for _, suite, line, _, _, _, _, _ in misparsed:
             print(f"      {suite:<22} {line[:78]}")
     return 0
 
