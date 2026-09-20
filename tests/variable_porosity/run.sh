@@ -52,12 +52,18 @@ PY="${PY:-python3}"
 # WHAT IT IS NOT INSURED AGAINST, stated so nobody assumes otherwise: the RUN SPAN. Disagreement
 # between a 1st- and a 2nd-order scheme accumulates, so this bound is derived AT time.total
 # 604800000s and is invalid if that changes. Re-derive with the sweep above, do not scale it.
+# SPREAD: 0   verified 2026-09-20 by assertion_probe.py -- bit-identical across repeat runs, so
+#             headroom here measures SENSITIVITY only and can never flake. BITES at 1.786e-03
+#             (assertion_probe tightened the bound below the measured value and the suite failed).
 TOL="${TOL:-0.0065}"
 # |exact_budget_residual| / recharge. MEASURED on this fixture at a fixed span: cc 1.062e-06,
 # tr 1.513e-06, so 1e-5 leaves 9.4x and 6.6x margin. Both arms cover identical simulated time.
 # RE-MEASURED 2026-09-19 (#84) and the tr figure had drifted: recorded as 1.57e-06, actually
 # 1.513e-06. cc was exact. Both reproduce BIT-IDENTICALLY across runs, so this bound carries no
 # flake risk -- it ranks "thin" only because it was DERIVED tightly, which is what derived means.
+# SPREAD: 0   verified 2026-09-20 by assertion_probe.py -- bit-identical across repeat runs, so
+#             headroom here measures SENSITIVITY only and can never flake. BITES at 1.362e-06
+#             (assertion_probe tightened the bound below the measured value and the suite failed).
 BUDGET_TOL="${BUDGET_TOL:-1e-5}"
 make_work varphi
 export OMP_NUM_THREADS=1
