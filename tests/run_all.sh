@@ -60,9 +60,11 @@ trap 'rm -f "$LOCK"' EXIT
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$(mktemp /tmp/wtm_coverage_XXXX)}"
 : > "$WTM_COVERAGE_LOG"
 
-# TOLERANCE MARGINS. Every suite's output is teed to a file so tol_margin.py can read it at the end.
+# ASSERTION HEALTH. Every suite's output is teed to a file so assertion_health.py can read it at the end.
+# It reports headroom (tol/value) AND whether each bound carries a derivation -- see ASSERTION_HEALTH.md,
+# which defines the vocabulary and states why headroom alone is not a verdict.
 # Same shape as the coverage log above, and for the same reason: the information is already being
-# printed, and the only thing missing was somewhere to put it. tests/tol_margin.py has existed since
+# printed, and the only thing missing was somewhere to put it. Its predecessor tol_margin.py existed since
 # #84 was opened and NOTHING CALLED IT -- not run_all.sh, not any suite -- so the ranking it produces
 # had never been seen. A tolerance decides PASS/FAIL, so one set too loose is a vacuous test reporting
 # success; this is the instrument that finds those, and it was sitting unused.
@@ -197,8 +199,8 @@ python3 ./coverage_matrix.py "$WTM_COVERAGE_LOG" -o ./COVERAGE.md --readme "$ROO
 # it is to ask what the bound should have been DERIVED from.
 echo
 echo "===== tolerance margins ====="
-python3 ./tol_margin.py "$WTM_TOLSCAN_DIR" \
-    || echo "tol_margin: FAILED to scan (see the error above)"
+python3 ./assertion_health.py "$WTM_TOLSCAN_DIR" \
+    || echo "assertion_health: FAILED to scan (see the error above)"
 
 [[ $fail -eq 0 ]] && echo "ALL SUITES PASSED" || { echo "SOME SUITES FAILED" >&2; }
 # MACHINE-READABLE TERMINATOR. Whoever is watching this run needs to know it ENDED, and telling that
