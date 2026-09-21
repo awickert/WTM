@@ -26,6 +26,11 @@ make_work fscons
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured max |dbudget_residual|/drecharge over the last 5 cycles =
+#   1.332e-08. Headroom 7500x, so this is BLUNT -- it would not see per-cycle closure degrade by
+#   three orders. Recorded rather than retightened: the value is the discretisation's own
+#   conservation law holding to solver precision, and moving the bound changes what the suite
+#   accepts. The multiplier is a CONVENTION.
 TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # THE OTHER FOUR BOUNDS, promoted from literals buried in their conditions (#121). A literal cannot
@@ -36,10 +41,24 @@ TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 # raise one only with a measurement, never to make a run pass.
 EXTERNAL_TOL="${EXTERNAL_TOL:-1e-6}"   # col 19 is EXTERNAL water: the coupling cannot change it at all
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured |budget_residual|/recharge = 2.084e-03 at the end of the
+#   impulse run -- FOUR ORDERS LARGER than the per-cycle residual above (1.332e-08), because the
+#   impulse coupling delivers FSM's water between steps rather than inside the step's source term,
+#   so the cumulative total carries a first-order-in-dt coupling error the per-cycle telescoping
+#   does not. Headroom 4.8x. This bound and TOL sit on the same suite and must NOT be equalised:
+#   they measure different things, and the gap between them IS the coupling error.
 CLOSURE_TOL="${CLOSURE_TOL:-1e-2}"     # |budget_residual|/recharge at the end of the impulse run
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED bite guard: measured max |d stored_volume| / |impulse| = 4.455e-02
+#   -- the two couplings differ by 4.5% of the impulse arm's stored volume. The degenerate case is
+#   exactly 0.0 (the arms silently resolving to the same configuration, which is how three suites
+#   went vacuous before). Floor at 1e-3 is 45x below the measurement.
 STATE_GAP_MIN="${STATE_GAP_MIN:-1e-3}" # BITE GUARD: the two couplings must really be different runs
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured max wtd = 9.8876 m of standing water. The degenerate
+#   case is MEASURED, not assumed -- before the lake-aware pin, the same assertion gave exactly 0
+#   (see active_set's LAKE_MIN, which records the same history). The floor at 1.0 m sits 9.9x below
+#   the lake and well above a drained zero.
 LAKE_MIN="${LAKE_MIN:-1.0}"            # BITE GUARD: standing water must survive, not be drained away
 export OMP_NUM_THREADS=1
 
