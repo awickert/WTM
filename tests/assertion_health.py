@@ -347,6 +347,41 @@ def classify(headroom, derived, spread, inverted=False, unverified=False):
     return "derived" if headroom >= 10 else "spread?"
 
 
+def resolve(suite, line, bname, tol, bounds, labels):
+    """Link an assertion line to the bound whose health it reports. See the precedence note."""
+    # PRECEDENCE, STRONGEST EVIDENCE FIRST. These two comments used to contradict each
+    # other -- one said ARM FIRST, the code did NAME first and then let the arm CLOBBER it.
+    # The arm won on a SUBSTRING match against an EXACT name match, so an arm's derivation
+    # silently credited a bound it never derived. Measured on one sweep: 26 rows clobbered,
+    # 5 verdicts flipped -- 3 underived bounds reported as derived (the dangerous
+    # direction: Q4 work that looks done) and 2 derived ones reported as UNDERIVED.
+    #
+    # An exact name is the strongest link there is, and since #119 the line prints it. The
+    # arm label is a FALLBACK for lines that do not, where a substring match is all there
+    # is -- and it is genuinely loose: serial_recharge's column headers ("9
+    # total_recharge_added") match the label scanner and would otherwise speak for
+    # SERIAL_TOL.
+    derived = spread = None
+    if bname:
+        named = [b for b in bounds.get(suite, []) if b[0] == bname]
+        if len(named) == 1:
+            derived, spread = named[0][2], named[0][3]
+    arm = []
+    if derived is None:
+        arm = [a for a in labels.get(suite, []) if a[0] in line]
+        if arm:
+            best = max(arm, key=lambda a: len(a[0]))
+            derived, spread = best[1], best[2]
+    if not derived:
+        hits = [b for b in bounds.get(suite, []) if b[1] == tol]
+        if len(hits) == 1:
+            derived = derived or hits[0][2]
+            spread = spread or hits[0][3]
+        elif derived is None and not arm:
+            derived = spread = None
+    return derived, spread
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -389,26 +424,7 @@ def main():
             unverified = "unverified" in low or "not asked" in low
             inverted = ("xfail" in low) or unverified
             amb = ambiguous(line)
-            # ARM FIRST, then the shared default: an arm that explains its own bound is the
-            # more specific statement, and the label match is exact rather than value-matched.
-            derived = spread = None
-            # NAME FIRST, and it is EXACT. Value-matching was the root of six linkage defects; when
-            # the line names its bound there is nothing left to infer.
-            if bname:
-                named = [b for b in bounds.get(suite, []) if b[0] == bname]
-                if len(named) == 1:
-                    derived, spread = named[0][2], named[0][3]
-            arm = [a for a in labels.get(suite, []) if a[0] in line]
-            if arm:
-                best = max(arm, key=lambda a: len(a[0]))
-                derived, spread = best[1], best[2]
-            if not derived:
-                hits = [b for b in bounds.get(suite, []) if b[1] == tol]
-                if len(hits) == 1:
-                    derived = derived or hits[0][2]
-                    spread = spread or hits[0][3]
-                elif derived is None and not arm:
-                    derived = spread = None
+            derived, spread = resolve(suite, line, bname, tol, bounds, labels)
             rows.append((headroom, suite, line.strip(), derived, spread, inverted, unverified, amb))
     if not rows:
         return 0

@@ -214,6 +214,20 @@ with tempfile.TemporaryDirectory() as d:
     check("a terse one-line SPREAD note is read too", got_sp.get("REAL_TOL"), "0")
 
 
+# --- linkage precedence: an EXACT name beats a SUBSTRING arm match ---------------------------------
+# THE BUG THIS PINS: the code resolved the name, then let any arm label that appeared as a substring
+# of the line OVERWRITE it -- so an arm's derivation credited a bound it never derived. Measured on
+# one sweep: 26 rows clobbered, 5 verdicts flipped, 3 of them in the dangerous direction (an
+# UNDERIVED bound reported as derived, i.e. Q4 work that looks finished and is not).
+B = {"s": [("AGREE_TOL", 0.1, False, "0"), ("OTHER_TOL", 7.0, True, "0")]}
+A = {"s": [("AGREE implicit vs explicit", True, None)]}
+line = "  OK   AGREE implicit vs explicit: max|dV| = 3.509e-02 m (tol AGREE_TOL=0.1)"
+check("an exact bound name outranks an arm label that merely appears in the line",
+      H.resolve("s", line, "AGREE_TOL", 0.1, B, A), (False, "0"))
+check("the arm label is still used when the line names no bound",
+      H.resolve("s", line, None, 999.0, B, A), (True, None))
+
+
 print()
 if fails:
     print(f"ASSERTION TOOLS: {len(fails)} FAILED -- {', '.join(fails)}")
