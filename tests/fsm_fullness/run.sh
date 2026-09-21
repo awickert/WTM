@@ -51,8 +51,15 @@ SP=$(ls "$WORK"/plain_*.tif | tail -1); SK=$(ls "$WORK"/skim_*.tif | tail -1); S
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured |stage - sill| = 0.000 m (skim lake surface 97.000 m,
+#   known outlet sill 97.0 m). Unlike fsm_cascade there is only ONE sill here, so the geometric
+#   scale is the outlet itself: 0.2 m is the depth error that would still leave the lake spilling
+#   over the same outlet. The bound is a CONVENTION at that scale, and the measurement is exact.
 SILL_TOL="${SILL_TOL:-0.2}"   # |stage - 97 m sill|, and |skim - plain|
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured max|dwtd| n=1 vs n=4 = 0.000e+00 m, bit-identical across
+#   the decomposition. Same reasoning as fsm_cascade's MPI_TOL -- a tolerance rather than `== 0`,
+#   at ~1e-11 relative on an O(100 m) field.
 MPI_TOL="${MPI_TOL:-1e-9}"   # n=1 vs n=4 water table
 NDEP="$NDEP" SILL_TOL="$SILL_TOL" MPI_TOL="$MPI_TOL" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" "$SK4" <<'PY'
 import sys, os, numpy as np, rasterio
