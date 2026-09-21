@@ -23,13 +23,32 @@ make_work dtr
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured gathered final per-cycle |dwtd| = 0.000e+00 m -- the run
+#   reaches a genuine fixed point, not a small residual motion. There is no broken arm HERE to
+#   separate against, so the bound is a convention. For scale, and marked as a CROSS-SUITE
+#   reference rather than a measurement on this fixture: a lakeshore limit cycle on a
+#   surface-crossing domain shows per-cycle motion of order 1e-2 m (flicker_evap, active_set), two
+#   orders above this bound.
 TOL="${TOL:-1e-4}"          # metres; settled if final per-cycle |Δwtd| below this
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured gathered max wtd = 2.324e-01 m against 9.207e+02 m for
+#   the same fixture with gathering off (the BITE arm below). The bound sits 2.15x above the
+#   gathered value and 3 orders below the piled one. It is NOT the SNES tolerance: the solve is
+#   converged to water_volume_tol 1e-08, and the residual 0.23 m of standing water is physical --
+#   water the routing has not yet moved -- so the bound is sized to the fixture, not the solver.
 SURF_TOL="${SURF_TOL:-0.5}" # metres; implicit pins the table at the surface to the SNES tolerance (a small
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                             # cm-dm overshoot, no clamp backstop) -- a exfiltration constraint, not a pile
+# DERIVED 2026-09-22, SEPARATING: measured no-gathering max wtd = 9.207e+02 m against 2.324e-01 m
+#   with gathering on. The floor sits 4.3x above the gathered value and 920x below the piled one,
+#   inside a gap whose both edges this suite measures.
 PILE_MIN="${PILE_MIN:-1.0}" # metres; without gathering the table piles far above this
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED, and BLUNT -- say so rather than leave it in a passing suite:
+#   measured |residual|/recharge = 2.520e-07, so the bound is 4000x the measurement. It would not
+#   notice closure degrading by two orders. The multiplier is a CONVENTION; the measurement is not.
+#   The floor under the residual is the per-solve water tolerance (water_volume_tol 1e-08 in this
+#   suite's config.yaml) accumulated over the run, which is why 2.5e-07 and not zero.
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
