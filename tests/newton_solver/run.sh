@@ -183,9 +183,9 @@ for coll in active_set explicit; do
     if [ -z "$R" ]; then
         echo "  FAIL  JACOBIAN   $coll -- no ratio produced"; fail=1
     elif awk -v r="$R" -v t="$JTOL" 'BEGIN{exit !(r+0 <= t+0)}'; then
-        echo "  PASS  JACOBIAN   $coll: ||J-Jfd||/||J|| = $R  (ceiling $JTOL)"
+        echo "  PASS  JACOBIAN   $coll: ||J-Jfd||/||J|| = $R (tol JTOL=$JTOL)"
     else
-        echo "  FAIL  JACOBIAN   $coll: ||J-Jfd||/||J|| = $R  exceeds $JTOL"; fail=1
+        echo "  FAIL  JACOBIAN   $coll: ||J-Jfd||/||J|| = $R (tol JTOL=$JTOL)"; fail=1
     fi
 done
 
