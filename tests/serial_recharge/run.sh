@@ -102,13 +102,41 @@ fi
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, and the scale is the RUN LOG'S PRINT PRECISION, not the physics:
+#   the log carries 12 significant digits, so the finest relative difference it can even express is
+#   ~1e-12. The bound sits one order above that. Measured relative difference on the INPUT channels
+#   is 0.000e+00 -- serial and distributed recharge agree exactly. At the stream default of 6
+#   digits this same comparison missed by ~5e-7, which is why the precision is pinned and why this
+#   tolerance must never be loosened to paper over a real accounting error.
 SERIAL_TOL="${SERIAL_TOL:-1e-11}"   # serial vs distributed recharge, relative
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured worst relative gap for col 9 == col 19 + col 20 is
+#   2.636e-12, giving 3.8x of headroom -- one of the sharpest bounds here. Same scale as
+#   SERIAL_TOL: 12-digit print precision puts the floor at ~1e-12, and the split cannot be shown to
+#   be exact any tighter than the log can print it.
 SPLIT_TOL="${SPLIT_TOL:-1e-11}"     # col 9 == col 19 + col 20, the split must be exact
-SERIAL_TOL="$SERIAL_TOL" SPLIT_TOL="$SPLIT_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion; see this file's first bound.
+# PROMOTED 2026-09-22. These two were Python locals (`tol = 1e-12 if exact else 1e-9`) inside the
+# heredoc below, so #121's sweep could not see them and the assertions printed bare literals. The
+# derivation was already written further down, at EXACT_COLS; it is summarised here beside each.
+#
+# DERIVED, ONE-SIDED: the INPUT channels come out EXACT across decompositions (measured rel diff
+#   0.000e+00), which is the sharp test of the rank-0-only accumulator. 1e-12 is the finest the
+#   run log's 12 significant digits can express, so this is as tight as the evidence allows.
+MPI_EXACT_TOL="${MPI_EXACT_TOL:-1e-12}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion; see this file's first bound.
+# DERIVED, ONE-SIDED: state-derived sums cannot be exact here -- the final water table itself is not
+#   bit-identical across decompositions (measured max|dwtd| = 2.824e-10 m), the active-set
+#   constraint's known last-bit sensitivity, so sums over it differ by ~1e-10 relative. Observed
+#   worst: col 12 at 1.974e-10, col 14 at 8.434e-11, giving ~5x. THE TWO CLASSES ARE NOT
+#   INTERCHANGEABLE: loosening the exact class would discard the only exact check in this suite.
+MPI_CLOSE_TOL="${MPI_CLOSE_TOL:-1e-9}"
+SERIAL_TOL="$SERIAL_TOL" SPLIT_TOL="$SPLIT_TOL" MPI_EXACT_TOL="$MPI_EXACT_TOL" \
+  MPI_CLOSE_TOL="$MPI_CLOSE_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
 import os, sys
 W, N = os.environ["WORK"], os.environ["NRANKS"]
 serial_tol = float(os.environ["SERIAL_TOL"]); split_tol = float(os.environ["SPLIT_TOL"])
+mpi_exact_tol = float(os.environ["MPI_EXACT_TOL"]); mpi_close_tol = float(os.environ["MPI_CLOSE_TOL"])
 COLS = [(8, "9  total_recharge_added"), (9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
         (12, "13 total_ocean_outflow"), (13, "14 stored_volume"), (17, "18 total_evap_removed"),
         (18, "19 recharge_direct"), (19, "20 runoff_to_surface")]
@@ -144,19 +172,21 @@ print(f"\n  n=1 vs n={N}:")
 for idx, name in COLS:
     rel = abs(sN[idx] - s1[idx]) / (abs(s1[idx]) or 1.0)
     exact = idx in EXACT_COLS
-    tol = 1e-12 if exact else 1e-9
+    tol = mpi_exact_tol if exact else mpi_close_tol
     ok = rel < tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  {'MPI-EXACT ' if exact else 'MPI-CLOSE '} {name:<26} "
-          f"{s1[idx]:>16.9e}  rel diff {rel:.3e}  (tol {tol:.0e})")
+          f"{s1[idx]:>16.9e}  rel diff {rel:.3e}  (tol {'MPI_EXACT_TOL' if exact else 'MPI_CLOSE_TOL'}={tol:.0e})")
 
 # 4. Internal consistency of the two channels on this path.
 # The run log prints 12 significant digits (irf.cpp), so this identity is checkable near machine
 # precision. At the stream default of 6 it missed by ~5e-7, which is indistinguishable from a real
 # accounting error -- the tolerance here should never be loosened to paper that over.
-ok = all(abs(r[8] - (r[18] + r[19])) <= split_tol * max(1.0, abs(r[8])) for r in (s1, sN))
+worst = max(abs(r[8] - (r[18] + r[19])) / max(1.0, abs(r[8])) for r in (s1, sN))
+ok = worst <= split_tol
 fail |= not ok
-print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20")
+print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20, worst relative "
+      f"gap {worst:.3e} (tol SPLIT_TOL={split_tol})")
 
 # 5. NO DRIFT between the two copies of the split. Gated on the INPUT channels only; see the header.
 if d1 is None:
