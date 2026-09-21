@@ -164,8 +164,12 @@ else:
     ok = rel.max() < cell_tol
     fail |= not ok
     j, i = np.unravel_index(np.argmax(rel), rel.shape)
-    print(f"  {'PASS' if ok else 'FAIL'}  PER-CELL   max rel error {rel.max():.3e} at (row {j}, col {i}) "
-          f"expected {expect[j, i]:.6f} m, got {got[j, i]:.6f} m  (tol CELL_TOL={cell_tol})")
+    # COMPARED VALUE NEAREST THE BOUND. It used to print expected/got AFTER the error, and those
+    # are ~0.5 m against an error of ~3e-07, so the bound was read against the WRONG number -- and
+    # the ambiguity lint could not see it, because the wrong value was both nearest and largest.
+    # The worked cell stays, after the bound, where context belongs.
+    print(f"  {'PASS' if ok else 'FAIL'}  PER-CELL   max rel error {rel.max():.3e} (tol CELL_TOL={cell_tol})"
+          f" at (row {j}, col {i}): expected {expect[j, i]:.6f} m, got {got[j, i]:.6f} m")
 
     # Axis-swap probe: state it explicitly rather than trusting the per-cell check to imply it.
     swapped = np.abs(got - expect.T) / np.maximum(np.abs(expect.T), 1e-30)

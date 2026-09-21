@@ -110,8 +110,13 @@ def _value_and_tol(line):
     # so that rule returned nothing at all. For a floor the number immediately before the marker is
     # the compared one; these lines are short and state one quantity.
     if floor:
-        ns = _NUM.findall(line[: t.start()])
-        for n in reversed(ns):
+        # A BARE INTEGER IS NEVER THE COMPARED VALUE -- the same rule the ceiling path applies, and
+        # it was missing here purely because floors were added later. Without it "1yr" in a label
+        # contributed a 1 that outranked the measurement in the lint, and could have been returned
+        # as the value on a line whose real quantity came earlier.
+        for n in reversed(_NUM.findall(line[: t.start()])):
+            if "." not in n and "e" not in n and "E" not in n:
+                continue
             try:
                 return abs(float(n)), tol, True, t.group(1)
             except ValueError:
@@ -128,6 +133,18 @@ def _value_and_tol(line):
         if v <= 1.0:
             cands.append(v)
     if not cands:
+        # NO CANDIDATE <= 1. The magnitude rule keeps absolute quantities out of a RATIO comparison,
+        # but a ratio may legitimately exceed 1: xrank_growth asserts "last/first = 2747.06
+        # (tol FLAT_MAX=10.0)" and that parsed to NOTHING, so the line vanished and its bound was
+        # unprobeable. Fall back to the number NEAREST the marker, as a floor does.
+        # CONSERVATIVE BY CONSTRUCTION: this path runs only where the previous code returned None,
+        # so no line that parses today can change its answer.
+        for n in reversed(_NUM.findall(line[: t.start()])):
+            if "." in n or "e" in n or "E" in n:
+                try:
+                    return abs(float(n)), tol, False, t.group(1)
+                except ValueError:
+                    continue
         return None
     return (max(cands), tol, floor, t.group(1))
 
@@ -154,7 +171,24 @@ def ambiguous(line):
     """
     t = _TOL.search(line)
     if not t:
-        return False                      # floors use the nearest-number rule; nothing to confuse
+        # FLOORS ARE NOT EXEMPT. I had written "floors use the nearest-number rule; nothing to
+        # confuse" and never tested it. Measured: "max wtd = 9.9212 m over 5 cells (min 1.0)" parses
+        # to 5.0, and "spread = 18.0x ... 0.5 threshold (min 5.0)" parses to 0.5 -- reporting a
+        # PASSING assertion at headroom 0.1. The nearest number is not always the compared one.
+        # The SAME disagreement test applies: a reader's eye goes to the most prominent value, the
+        # parser takes the nearest, and the line is ambiguous exactly when those differ.
+        t = _MIN.search(line)
+        if not t:
+            return False
+        ns = []
+        for n in _NUM.findall(line[: t.start()]):
+            if "." not in n and "e" not in n and "E" not in n:
+                continue          # same rule as the value path: an integer is not a measurement
+            try:
+                ns.append(abs(float(n)))
+            except ValueError:
+                pass
+        return len(ns) > 1 and max(ns) != ns[-1]
     small = []
     for n in _NUM.findall(line[: t.start()]):
         if "." not in n and "e" not in n and "E" not in n:

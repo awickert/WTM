@@ -81,6 +81,28 @@ check("two bounds sharing a value are told apart by name",
 check("the bare form still parses -- nothing breaks mid-migration",
       H._value_and_tol("  max|dV| = 1.98e-03 m (tol 0.0065)")[3], None)
 
+# --- #122: assumptions that only held because ceilings were the only shape ---------------------
+# A CEILING MAY EXCEED 1. The magnitude rule keeps absolute quantities out of a ratio comparison,
+# but xrank_growth's "last/first" ratio is 2747 and the line parsed to NOTHING.
+check("a ceiling above 1 still parses (falls back to nearest)",
+      H._value_and_tol("  last/first = 2747.06 (tol FLAT_MAX=10.0)"), (2747.06, 10.0, False, "FLAT_MAX"))
+check("the <=1 rule still wins when a candidate exists",
+      H._value_and_tol("  idx 23: rel = 4.0e-09 (tol T=1e-06)")[0], 4.0e-09)
+# FLOORS ARE NOT EXEMPT FROM THE AMBIGUITY LINT. I asserted they were and never tested it.
+# A TRAILING COUNT IS NOT AMBIGUOUS -- it is EXCLUDED. The bare-integer rule ("a count, an index or
+# a duration is never the compared value") was applied only to ceilings, because floors were added
+# later; making it uniform fixes this case at the root rather than flagging it.
+check("a floor with a trailing count parses the measurement, not the count (#122)",
+      H._value_and_tol("  max wtd = 9.9212 m over 5 cells (min LAKE_MIN=1.0)")[0], 9.9212)
+check("...and is therefore not ambiguous",
+      H.ambiguous("  max wtd = 9.9212 m over 5 cells (min LAKE_MIN=1.0)"), False)
+check("a bare integer in a floor's label cannot outrank the value (#122)",
+      H.ambiguous("  max|ΔV(1yr) - ΔV(quarter-yr)| = 3.4e-02 m (min BITE_MIN=0.001)"), False)
+check("a floor with a trailing decimal IS ambiguous (#122)",
+      H.ambiguous("  spread = 18.0x across the grid, 0.5 threshold (min SPREAD_MIN=5.0)"), True)
+check("a clean floor is still not ambiguous",
+      H.ambiguous("  max wtd = 9.9212 m (min LAKE_MIN=1.0)"), False)
+
 # --- shapes that are not a pass and only one of which is a failure -------------------------------
 check("xfail is `pinned`, not a failure", H.classify(0.5, True, "0", True, False), "pinned")
 check("unverified is a COVERAGE GAP, not a failure", H.classify(0.5, True, "0", True, True), "NOT ASKED")
