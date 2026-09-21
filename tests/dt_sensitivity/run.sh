@@ -49,6 +49,10 @@ DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 
 # slackening this conversion exists to prevent. Set independently, it keeps the ORIGINAL strictness.
 PY="${PY:-python3}"
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED bite guard: measured implicit-siphon max|dV(1yr) - dV(quarter-yr)|
+#   = 2.248e-01 m of water, 2.25x above the floor. This is the assertion that the implicit
+#   collector IS dt-dependent; if it ever stops moving with dt the comparison it guards is empty,
+#   so the degenerate value is 0 and the floor sits an order above it.
 BITE_MIN="${BITE_MIN:-0.1}"   # metres OF WATER VOLUME; the control sits at 2.248e-01, a 2.25x margin (400x DT_TOL)
 export OMP_NUM_THREADS=1
 
