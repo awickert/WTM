@@ -60,6 +60,12 @@ make_work estorder
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, and it bounds a CONVERGENCE ORDER, not a physical quantity:
+#   measured |p - expected| = 0.0000 at the finest rung for all three arms (ladders 1.99 2.00 2.00
+#   and 1.98 1.99 2.00 against an expected 2.0). The bound is 0.2 because an observed order is a
+#   ratio of differences and is noisy away from the asymptotic regime -- the COARSE arm right below
+#   shows exactly that, p = 1.87 2.87 5.95 2.26, and is deliberately NOT asserted. 0.2 is the width
+#   that admits a genuine second-order scheme while excluding first order (|1.0 - 2.0| = 1.0).
 PTOL="${PTOL:-0.2}"        # how far the observed order may sit from its expected value
 export OMP_NUM_THREADS=1
 
@@ -188,9 +194,9 @@ arm() { # $1 label, $2 integrator FLAG, $3 fsm_on, $4 expected p, $5 mode, [$6 i
         fi
     else
         if [ "$ok" = 1 ]; then
-            echo "  PASS  $label: p =$line  (finest $pfin, expected ~$want) |p - expected| = $dev (tol $PTOL)"
+            echo "  PASS  $label: |p - expected| = $dev (tol PTOL=$PTOL) -- ladder p =$line, finest $pfin, expected ~$want"
         else
-            echo "  FAIL  $label: p =$line  (finest $pfin, expected ~$want) |p - expected| = $dev (tol $PTOL)"
+            echo "  FAIL  $label: |p - expected| = $dev (tol PTOL=$PTOL) -- ladder p =$line, finest $pfin, expected ~$want"
             fail=1
         fi
     fi
