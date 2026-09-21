@@ -90,8 +90,36 @@ done
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured worst deviation from the configured 20 yr = 0.000e+00,
+#   and worst gap between arms = 0.000e+00. Every arm lands on the requested span exactly, which it
+#   must -- WTM clamps the last step to the report boundary (WTM.cpp, `if (deltat > remaining)`).
+#   The bound is a tolerance rather than `== 0` so the check does not rest on float equality, at a
+#   scale (1e-9 yr = 32 ms) far below any step this suite takes.
 SPAN_TOL="${SPAN_TOL:-1e-9}"   # every arm must cover the same simulated span
-SPAN_TOL="$SPAN_TOL" WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion; see this file's first bound.
+# PROMOTED 2026-09-22. These three were Python locals inside the heredoc below, so #121's promotion
+# sweep -- which looks for NAME="${NAME:-...}" -- could not see them, and the assertions printed
+# bare literals no override could reach. Their derivations were already written; they are restated
+# above each one here, where the health tool reads them.
+#
+# DERIVED, ONE-SIDED: the input channels are EXACTLY invariant on this fixture (measured spread/rech
+#   = 0.000e+00) because this fixture's recharge does not depend on the water table -- which is what
+#   makes them a clean probe. The bound is a tolerance rather than `== 0` so the check does not rest
+#   on float equality.
+INPUT_TOL="${INPUT_TOL:-1e-9}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion; see this file's first bound.
+# DERIVED, ONE-SIDED: the FATE channels are NOT exactly invariant -- arms differ on the SPLIT of
+#   water between fates while agreeing on the total, which is the point of the FATES CANCEL
+#   assertion above. Measured worst spread/rech across arms is 2.076e-03, so the bound carries 4.8x.
+#   This is the binding one of the three and must NOT be equalised with INPUT_TOL: they measure
+#   different claims, and the gap between them is the physics.
+FATE_TOL="${FATE_TOL:-1e-2}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion; see this file's first bound.
+# DERIVED, ONE-SIDED: conservation floor -- measured max |col17|/recharge over all arms and both
+#   couplings was 3.5e-07, so the bound carries ~3x.
+CONSERVE_TOL="${CONSERVE_TOL:-1e-6}"
+SPAN_TOL="$SPAN_TOL" INPUT_TOL="$INPUT_TOL" FATE_TOL="$FATE_TOL" CONSERVE_TOL="$CONSERVE_TOL" \
+  WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os, sys, glob
 W = os.environ["WORK"]
 sys.path.insert(0, os.environ["TESTS"])
@@ -107,12 +135,12 @@ def col(name): return (I[name], f"{I[name] + 1} {name}")
 INPUTS = [col("recharge_direct"), col("runoff_to_surface"), col("total_recharge_added")]
 TRAJ   = [col("total_loss_to_ocean"), col("total_surface_removed"),
           col("total_ocean_outflow"), col("stored_volume"), col("total_evap_removed")]
-# Tolerances MEASURED on this fixture. The input channels are exactly invariant here because this
-# fixture's recharge does not depend on the water table, which is what makes them a clean probe --
-# asserted below so the test cannot silently stop discriminating.
-TOL_INPUT, TOL_TRAJ = 1e-9, 1e-2
-# Conservation floor: measured max |col17|/recharge over all arms and both couplings was 3.5e-07.
-TOL_CONSERVE = 1e-6
+# Tolerances MEASURED on this fixture -- now read from the environment so they are overridable and
+# so assertion_probe.py can tighten them. The derivations sit beside the definitions in the shell
+# section above.
+TOL_INPUT = float(os.environ["INPUT_TOL"])
+TOL_TRAJ = float(os.environ["FATE_TOL"])
+TOL_CONSERVE = float(os.environ["CONSERVE_TOL"])
 EXPECT_YEARS = 20.0  # must match `total_time` in mkcfg above
 
 def last(stem):
@@ -158,13 +186,19 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     # ABSOLUTE elapsed time, not just agreement between arms: the config asks for 20 yr, so every arm
     # must report 20 yr. Agreement alone would pass happily if all three were off by the same
     # cycles_done off-by-one, and every rate a reader derives from this file divides by this number.
-    ok = max(abs(e - EXPECT_YEARS) for e in elapsed) < span_tol
+    # THE DEVIATION GOES LAST, after the per-arm list: the list holds values near 20, which would
+    # outrank a 1e-9 deviation under both the largest- and nearest-number rules.
+    off = max(abs(e - EXPECT_YEARS) for e in elapsed)
+    ok = off < span_tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  elapsed time is the configured "
-          f"{EXPECT_YEARS:g} yr in every arm {[round(e, 6) for e in elapsed]}")
-    ok = max(abs(e - elapsed[0]) for e in elapsed) < span_tol
+          f"{EXPECT_YEARS:g} yr in every arm {[round(e, 6) for e in elapsed]}, worst "
+          f"deviation {off:.3e} yr (tol SPAN_TOL={span_tol})")
+    gap = max(abs(e - elapsed[0]) for e in elapsed)
+    ok = gap < span_tol
     fail |= not ok
-    print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  every arm covers the same elapsed time")
+    print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  every arm covers the same elapsed time, "
+          f"worst gap {gap:.3e} yr (tol SPAN_TOL={span_tol})")
     ok = len(set(solves)) > 1
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  solve counts actually differ {solves} "
@@ -178,7 +212,7 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
         s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_INPUT
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread/rech {s:.3e}  (tol {TOL_INPUT:.0e})")
+        print(f"  {'PASS' if ok else 'FAIL'}  INPUT   {name:<26} spread/rech {s:.3e}  (tol INPUT_TOL={TOL_INPUT:.0e})")
 
     # col 9 must be exactly the sum of the two channels, in every arm.
     ok = all(abs(r[I["total_recharge_added"]] - (r[I["recharge_direct"]] + r[I["runoff_to_surface"]]))
@@ -232,7 +266,7 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
         s = spread([r[idx] for r in rows], RECH)
         ok = s < TOL_TRAJ
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  FATE    {name:<26} spread/rech {s:.3e}  (tol {TOL_TRAJ:.0e})")
+        print(f"  {'PASS' if ok else 'FAIL'}  FATE    {name:<26} spread/rech {s:.3e}  (tol FATE_TOL={TOL_TRAJ:.0e})")
     print()
 
 print("DT INVARIANCE: " + ("ALL PASSED" if not fail else "FAILED"))
