@@ -130,6 +130,11 @@ VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1
 # confirm the assertion still fails when it should. A bound nothing can exercise is unchecked.
 # The TARGET is 0.25 -- the fixture's porosity, which is physics and stays a literal. What is
 # promoted is the TOLERANCE on the deviation from it.
+# DERIVED 2026-09-22, ONE-SIDED, against an ANALYTIC target: measured |median(water_L2/snorm) -
+#   phi| = 1.958e-05 with 51x of headroom. The target is not fitted -- on a purely subsurface
+#   fixture the water-volume norm is exactly porosity times the head norm, so the ratio must equal
+#   phi = 0.25 identically. The residual 2e-05 is the median over cells of a ratio that is exact
+#   only in the continuum, so the bound measures discretisation, not tuning.
 RATIO_TOL="${RATIO_TOL:-1e-3}"   # |median(water/snorm) - phi| on the subsurface fixture
 TOL="$TOL" RATIO_TOL="$RATIO_TOL" PHI="$(readlink -f inputs/sconsist_porosity.tif)" TESTS="$(readlink -f ..)" \
   "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
