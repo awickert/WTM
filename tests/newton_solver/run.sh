@@ -61,6 +61,12 @@ make_work newton
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, sized by the HARDER of two arms that share it: explicit measures
+#   ||J-Jfd||/||J|| = 7.36e-08 (135878x headroom) while active_set measures 4.15e-03 (2.41x). The
+#   bound is set for active_set and is nearly tight there. The gap is not sloppiness: active_set's
+#   residual is SEMISMOOTH, so a finite-difference Jacobian straddling the kink is genuinely
+#   inexact and 1e-8 agreement is not available at any step size. One tolerance covering both arms
+#   must therefore sit at the semismooth scale, which is what 1e-2 is.
 JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it well above 1e-8
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head (#61/#65).
