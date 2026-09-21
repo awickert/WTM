@@ -81,6 +81,31 @@ _SPREAD = re.compile(r"^\s*#\s*SPREAD:\s*(\S+)", re.M)
 _EVIDENCE = re.compile(r"[0-9]\.?[0-9]*[eE][+-]?[0-9]|MEASURED|DERIVED|swept|sweep|floor|noise", re.I)
 
 
+def _strip_spread(blk):
+    """Remove the `# SPREAD:` note, and only it, before looking for a DERIVATION.
+
+    Q6 (does the value wobble?) and Q4 (where did the bound come from?) are SEPARATE
+    questions, and the note that answers the first says "measured ... by
+    assertion_probe.py" -- which _EVIDENCE matches on the word MEASURED. Left in, every
+    bound carrying a spread note reads as derived, and #114's worklist went from 49 to
+    ZERO the moment the notes were written. A tool that reports no work left because of
+    its own annotation is worse than one that reports nothing.
+
+    The note is the SPREAD line plus its hanging-indent continuations (`#` then several
+    spaces), so a real derivation written in the same block still counts.
+    """
+    out, skipping = [], False
+    for ln in blk.split("\n"):
+        if re.match(r"^\s*#\s*SPREAD:", ln):
+            skipping = True
+            continue
+        if skipping and re.match(r"^\s*#\s{4,}\S", ln):
+            continue
+        skipping = False
+        out.append(ln)
+    return "\n".join(out)
+
+
 def _value_and_tol(line):
     """(worst-case value, tol) for a line stating both, else None.
 
@@ -277,7 +302,7 @@ def source_evidence(tests_dir):
                         val = float(m.group(2))
                     except ValueError:
                         continue
-                    b.append((m.group(1), val, bool(_EVIDENCE.search(blk)), sp.group(1) if sp else None))
+                    b.append((m.group(1), val, bool(_EVIDENCE.search(_strip_spread(blk))), sp.group(1) if sp else None))
                 continue
             # An arm invocation: a quoted label long enough to be distinctive. Short strings like
             # "off" or a stem would match half the output lines.
@@ -289,7 +314,7 @@ def source_evidence(tests_dir):
             for lab in [q for q in re.findall(r'"([^"]*)"', line) if len(q) >= 18 and "$" not in q]:
                 blk = block_above(i)
                 sp = _SPREAD.search(blk)
-                l.append((lab, bool(_EVIDENCE.search(blk)), sp.group(1) if sp else None))
+                l.append((lab, bool(_EVIDENCE.search(_strip_spread(blk))), sp.group(1) if sp else None))
         if b:
             bounds[suite] = b
         if l:

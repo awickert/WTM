@@ -189,6 +189,31 @@ with tempfile.TemporaryDirectory() as d:
     check("the arm LABEL survives an empty quoted argument (bug 2)",
           [l[0] for l in labels.get("fake", [])], ["Newton, unset -> active_set [tight solve]"])
 
+# --- the SPREAD note must not be read as a DERIVATION (they answer different questions) -----------
+# THE BUG THIS PINS: _EVIDENCE matches MEASURED case-insensitively, and the note answering Q6 says
+# "measured ... by assertion_probe.py". Writing the notes therefore marked every bound derived, and
+# the UNDERIVED worklist collapsed from 49 to ZERO -- the tool reporting no work left because of its
+# own annotation. Q6 and Q4 are separate questions and must be read separately.
+with tempfile.TemporaryDirectory() as d:
+    suite = os.path.join(d, "fake2"); os.makedirs(suite)
+    open(os.path.join(suite, "run.sh"), "w").write(textwrap.dedent('''\
+        # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+        #             Headroom here therefore measures SENSITIVITY, never flake risk; see
+        #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+        TOL="${TOL:-1e-6}"
+        # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file\'s first bound.
+        # DERIVED 2026-09-19: swept the solve and the residual floors at 5.7e-08; 3x that.
+        REAL_TOL="${REAL_TOL:-1.7e-7}"
+        '''))
+    bounds, _ = H.source_evidence(d)
+    got = {n: der for n, _, der, _ in bounds.get("fake2", [])}
+    check("a SPREAD note alone does NOT count as a derivation", got.get("TOL"), False)
+    check("a real derivation beside a SPREAD note still counts", got.get("REAL_TOL"), True)
+    got_sp = {n: sp for n, _, _, sp in bounds.get("fake2", [])}
+    check("the SPREAD value is still read from the stripped note", got_sp.get("TOL"), "0")
+    check("a terse one-line SPREAD note is read too", got_sp.get("REAL_TOL"), "0")
+
+
 print()
 if fails:
     print(f"ASSERTION TOOLS: {len(fails)} FAILED -- {', '.join(fails)}")
