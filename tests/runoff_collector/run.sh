@@ -102,16 +102,38 @@ XS=$(ls "$WORK"/xsoil_mode_*.tif | tail -1)
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, SEPARATING: measured |unset - active_set| = 0.000e+00 m -- EXACTLY zero, as
+#   the claim (`unset` resolves to the same code path) requires. The scale comes from the other
+#   side: the smallest difference any genuinely different arm in this suite shows is |xs - off| =
+#   14.66 m. So 1e-6 m sits 7 orders below the nearest real difference and above exact equality.
+#   It is stated as a tolerance rather than `== 0` so the assertion does not rest on float equality.
 UNSET_TOL="${UNSET_TOL:-1e-6}"       # `unset` must resolve to active_set BIT-FOR-BIT
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured max|dV(implicit) - dV(explicit)| = 3.509e-02 m. The two
+#   collectors genuinely disagree by this much on this fixture -- that is physics, not error, so
+#   there is no broken-side value to separate from. Bound 0.1 = 2.85x the measurement, a CONVENTION
+#   not a measurement. It is the sharpest bound in this suite and will move if the fixture changes.
 AGREE_TOL="${AGREE_TOL:-0.1}"        # implicit vs explicit, m of water
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured `extended_soil` max wtd = 177.80 m, against 0.0000e+00 m
+#   for a collector that actually collects (the `explicit` arm, same suite, same fixture). The floor
+#   sits 35.6x below the piling value and separates it from a collected zero.
 XS_MIN="${XS_MIN:-5.0}"              # BITE GUARD: `off` must visibly pile water above the surface
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured |xs - off| = 14.66 m. BLUNT BY DESIGN and worth saying
+#   so -- headroom is 1.5e7, so this floor catches only the two arms becoming bit-identical. That
+#   IS the failure it names (the sweep collapsing two arms into one); it is not a size check, and
+#   nothing here should be read as bounding how far apart the two modes ought to be.
 XS_DIFF_MIN="${XS_DIFF_MIN:-1e-6}"   # BITE GUARD: `off` must differ from the collector arms
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: `explicit` clamps the table to the surface and measures
+#   0.0000e+00 m exactly. `off` on the same fixture piles to 192.46 m. The bound, 1e-4 m = 0.1 mm,
+#   sits 6 orders below the unclamped value, so any regression that stops clamping crosses it by a
+#   factor of ~2e6. Both edges are MEASURED; no convention enters.
 EXPLICIT_TOL="${EXPLICIT_TOL:-1e-4}"  # `explicit` clamps the table to the surface, so max wtd ~ 0
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured `off` max wtd = 192.46 m against 0.0000e+00 m for
+#   `explicit` on the same fixture. The floor sits 38.5x below the piling value.
 OFF_PILE_MIN="${OFF_PILE_MIN:-5.0}"   # BITE GUARD: `off` must pile water well above the surface
 OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" \
   UNSET_TOL="$UNSET_TOL" AGREE_TOL="$AGREE_TOL" XS_MIN="$XS_MIN" XS_DIFF_MIN="$XS_DIFF_MIN" EXPLICIT_TOL="$EXPLICIT_TOL" OFF_PILE_MIN="$OFF_PILE_MIN" \
