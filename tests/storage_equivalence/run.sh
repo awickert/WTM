@@ -159,7 +159,10 @@ if d < MOVED_FLOOR:
     print(f"FAIL: {d:.3e} m is below the ratchet floor {MOVED_FLOOR:g} but above the target {tol}.")
     print("  The defect has MOVED. Re-measure rather than re-tune the floor.")
     sys.exit(1)
-print(f"  unverified  NOT ASKED: {d:.3e} m vs target {tol} m -- this suite does not exercise S·Δh vs ΔV\n              in the surface-crossing regime at all, so the identity is neither confirmed nor denied")
+# CARRIES THE MARKER so the tooling can SEE it. Without "(tol NAME=value)" this line parses as
+# nothing, and the suite contributed zero assertions -- which is how the NOT ASKED category went
+# untested against a real line: it had only ever been exercised on a synthetic one.
+print(f"  unverified  NOT ASKED: {d:.3e} m (tol TOL={tol}) -- this suite does not exercise S·Δh vs ΔV\n              in the surface-crossing regime at all, so the identity is neither confirmed nor denied")
 print("  The identity is UNVERIFIED here, not disproven: the table flickers, which is the documented")
 print("  exception. Quiet cell sizes put every cell far from the surface, where S != Sy is not exercised.")
 sys.exit(0)

@@ -79,10 +79,14 @@ emit neu bcons    neumann_toposlope   anderson tr-bdf2        adaptive ; "$WTM" 
 emit nwt bcons    dirichlet_sea_level newton   backward-euler ramp     ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
+# PROMOTED FROM A LITERAL (#121): reachable from outside so assertion_probe can tighten
+# it and confirm the assertion still fails when it should.
+NEWTON_TOL="${NEWTON_TOL:-1e-6}"   # newton vs the analytic boundary solution
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" PHI="$INP/bcons_porosity.tif" TESTS="$(readlink -f ..)" \
-  "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
+  NEWTON_TOL="$NEWTON_TOL" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
 import sys, os, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
+newton_tol = float(os.environ["NEWTON_TOL"])
 import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 
 dir_, pad, neu, nwt = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
@@ -95,7 +99,7 @@ newton = float(VOL.volume_diff(nwt, dir_, phi).max())    # newton vs anderson di
 print(f"  dirichlet ghost vs old padding:  max|ΔV| = {match:.3e} m water volume  (tol MATCH_TOL={mtol})")
 print(f"  dirichlet vs neumann_toposlope:  max|ΔV| = {diff:.3e} m water  (must exceed {dmin})")
 print(f"  newton vs anderson (dirichlet):  max|ΔV| = {newton:.3e} m water volume  (tol 1e-6)")
-ok = match <= mtol and diff >= dmin and newton <= 1e-6
+ok = match <= mtol and diff >= dmin and newton <= newton_tol
 if ok:
     print("PASS: land-edge ghost Dirichlet == old sea-level padding, distinct from Neumann, and Newton agrees")
     sys.exit(0)

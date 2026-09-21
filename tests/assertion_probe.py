@@ -179,6 +179,17 @@ def bite(suite, baseline):
             print(f"  {name:<14} governs no assertion that printed -- CANNOT PROBE (tol {val:g} "
                   f"appears on no line). That is itself worth knowing.")
             continue
+        # AN INVERTED ASSERTION CANNOT BE MADE TO FAIL BY TIGHTENING. An xfail or a NOT ASKED line
+        # EXPECTS to exceed its bound, so squeezing the bound only confirms what it already says --
+        # and the probe would then report "THE KNOB IS NOT CONNECTED" about a line that is working
+        # exactly as designed. Its liveness comes from the RATCHETS beside it (storage_equivalence
+        # has two exit-1 guards: an UNEXPECTED PASS and a defect-has-moved floor), not from here.
+        inv = [v for v in governed.values() if "xfail" in v[2].lower()
+               or "not asked" in v[2].lower() or "unverified" in v[2].lower()]
+        if inv:
+            print(f"  {name:<14} INVERTED (xfail / NOT ASKED) -- tightening cannot make it fail, and "
+                  f"that is not a defect. Its liveness rests on the ratchets beside it.")
+            continue
         is_floor = any(v[3] for v in governed.values())
         # TIGHTEN IN THE DIRECTION THAT BITES. A ceiling bites when the bound drops BELOW the measured
         # value; a floor bites when it is raised ABOVE it. Using one direction for both would have

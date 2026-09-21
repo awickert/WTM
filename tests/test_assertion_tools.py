@@ -161,6 +161,12 @@ check("a FLOOR's failure is a bite too -- it says (min X), never tol (#121)",
 check("a crash is NOT a bite", P.is_bite("ERROR: could not open file with GDAL!"), False)
 check("a missing fixture is NOT a bite", P.is_bite("FAIL: inputs/topography.tif not found"), False)
 
+# An inverted assertion must not be reported as a dead knob (found on storage_equivalence).
+check("an xfail line is recognisable as inverted",
+      "xfail" in "  xfail  KNOWN: 2.4e-03 m (tol TOL=2.5e-07)".lower(), True)
+check("a NOT ASKED line is recognisable as inverted",
+      "not asked" in "  unverified  NOT ASKED: 2.386e-03 m (tol TOL=2.5e-07)".lower(), True)
+
 # --- the derivation scan: where a derivation actually lives ---------------------------------------
 with tempfile.TemporaryDirectory() as d:
     suite = os.path.join(d, "fake"); os.makedirs(suite)

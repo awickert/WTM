@@ -74,9 +74,10 @@ def check(name, cond, detail):
 # measuring a different claim. The other two checks need no conversion either: `rel` is already
 # dimensionless (a budget ratio), and the MPI check is an IDENTITY (n=1 == n=4), which is unit-agnostic.
 check("CHAIN LEVELS (A->97 sill, B->95 sill)", abs(sA - 97.0) < sill_tol and abs(sB - 95.0) < sill_tol,
-      f"pit A surface = {sA:.3f} m (sill 97), basin B surface = {sB:.3f} m (sill 95)")
+      f"max|stage - sill| = {max(abs(sA - 97.0), abs(sB - 95.0)):.3f} m (tol SILL_TOL={sill_tol})"
+      f" -- pit A {sA:.3f} m vs sill 97, basin B {sB:.3f} m vs sill 95")
 check("CONSERVATION (per-cycle balance closes)", rel < cons_tol,
-      f"max |Δbudget_residual|/Δrecharge = {rel:.3e}")
+      f"max |Δbudget_residual|/Δrecharge = {rel:.3e} (tol CONS_TOL={cons_tol})")
 check("MPI CONSISTENT (n=1 == n=4)", mpi < mpi_tol, f"max|Δwtd| = {mpi:.3e} m (tol MPI_TOL={mpi_tol})")
 print("PASS: cascade A->B->ocean routes to the correct sills, conserving and MPI-consistent"
       if ok else "FAIL")

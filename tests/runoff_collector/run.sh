@@ -133,14 +133,15 @@ check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
 # check is the one that catches a default flip, so it compares against the active_set run rather than
 # hard-coding a number.
 check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < unset_tol,
-      f"max wtd = {un_mx:.4f} m (== active_set {as_mx:.4f} m; implicit would be {im_mx:.4f} m)")
+      f"|unset - active_set| = {abs(un_mx - as_mx):.3e} m (tol UNSET_TOL={unset_tol})"
+      f" -- unset {un_mx:.4f} m, active_set {as_mx:.4f} m, implicit would be {im_mx:.4f} m")
 # 0.1 m OF WATER VOLUME, kept at the old numeric bound rather than scaled by phi. MEASURED: the
 # governing cell sits at wtd = +0.038, AT THE SURFACE, where dV/dwtd -> 1, so head 3.8356e-02 and
 # volume 3.5087e-02 differ by a factor of 0.915, not 0.25. A blind x0.25 set the bound to 0.025 and
 # failed a test that had not regressed. Holding 0.1 keeps the original margin (2.6x -> 2.85x) and is
 # 4x STRICTER below ground, so it loosens nothing.
 check("AGREE implicit vs explicit",         agree < agree_tol,
-      f"max|ΔV(implicit) - ΔV(explicit)| = {agree:.3e} m water volume")
+      f"max|ΔV(implicit) - ΔV(explicit)| = {agree:.3e} m water volume (tol AGREE_TOL={agree_tol})")
 
 # --- extended_soil: mode, alias, supersession -----------------------------------------------------
 xs_mx = float(interior(xs).max())
@@ -152,7 +153,12 @@ xs_banner = int(os.environ["XSBANNER"]) > 0
 # extended_soil silently degrades to plain `off`.
 check("EXT_SOIL mode (piles, announces, and is NOT `off`)",
       xs_mx > xs_min and xs_banner and abs(xs_mx - of_mx) > xs_diff_min,
-      f"max wtd = {xs_mx:.2f} m (off = {of_mx:.2f} m), banner printed = {xs_banner}")
+      # ONE BOUND PER LINE. Two markers on one line means the parser sees only the first, so the
+# second bound reads as unprobeable -- rule 1 in ASSERTION_HEALTH.md sec 5d, and here it is the
+# mechanism rather than the style that requires it.
+      f"max wtd = {xs_mx:.2f} m (min XS_MIN={xs_min}) -- off = {of_mx:.2f} m, banner {xs_banner}")
+check("EXT_SOIL differs from `off` (the two are not the same arm)", abs(xs_mx - of_mx) > xs_diff_min,
+      f"|xs - off| = {abs(xs_mx - of_mx):.3e} m (min XS_DIFF_MIN={xs_diff_min})")
 print("PASS: runoff_collector modes behave as specified" if ok else "FAIL")
 sys.exit(0 if ok else 1)
 PY

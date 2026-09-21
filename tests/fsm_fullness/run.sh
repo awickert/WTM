@@ -69,12 +69,13 @@ check("HIERARCHY (metadepression, not a lone leaf)", ndep >= 3,
 # elevations to each other. HIERARCHY is a COUNT of depressions. The MPI check is an IDENTITY.
 # Nothing here is a water-depth measurement, so there is nothing to convert.
 check("SPILL LEVEL (skim fills to the 97 m sill)", abs(sk - 97.0) < sill_tol,
-      f"skim lake surface = {sk:.3f} m (known outlet sill = 97.0)")
+      f"|stage - sill| = {abs(sk - 97.0):.3f} m (tol SILL_TOL={sill_tol})"
+      f" -- skim lake surface {sk:.3f} m, known outlet sill 97.0 m")
 check("SKIM == PLAIN (skim neither drains nor over-fills)", abs(sk - pl) < sill_tol,
       f"skim {sk:.3f} vs plain {pl:.3f} m")
 mpi = float(np.abs(wk - wk4).max())
 check("SKIM MPI-CONSISTENT (n=1 == n=4)", mpi < mpi_tol,
-      f"max|Δwtd| n1 vs n4 = {mpi:.3e} m")
+      f"max|Δwtd| n1 vs n4 = {mpi:.3e} m (tol MPI_TOL={mpi_tol})")
 print("PASS: nested hierarchy walked; lake-aware skim reaches the correct spill equilibrium"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
