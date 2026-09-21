@@ -16,12 +16,15 @@ make_work rechtest
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
-TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
+# DERIVED (this restates the #84 note that already sat BELOW this line -- moved above it, VERBATIM and unedited,
+#   because the health tool reads only the comment block PRECEDING a definition and so reported a
+#   derived bound as UNDERIVED. Measured 2026-09-22: cc vs tr at fine dt = 3.5636e-04 m, 35x.)
 # WHERE 0.0125 COMES FROM, and what it is against (#84). It is a REGRESSION PIN, not a precision claim:
 # before the volume-based recharge fix, cc and tr landed ~3.7 m apart on this fixture, and the bound only
 # has to sit far below that. Observed at the week-20 comparison point on this fixture, in water:
 #   cc-tr = 0.0004    cc-bdf2v = 0.0000    tr-bdf2v = 0.0003    cc coarse-vs-fine = 0.0000
 # so the pin has ~30x headroom over the live signal and ~300x margin under the defect it guards.
+TOL="${TOL:-0.0125}"         # cross-scheme agreement required at fine dt
 PY="${PY:-python3}"
 
 # THE CONFIG IS A FILE NOW (#83): tests/recharge_consistency/config.yaml. Every setting the run
