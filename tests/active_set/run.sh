@@ -56,13 +56,25 @@ export OMP_NUM_THREADS=1
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 DISTINCT_MIN="${DISTINCT_MIN:-1e-6}"   # active_set must differ from BOTH plain collectors
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED bite guard: measured max|dV(implicit) - dV(explicit)| WITHOUT
+#   active-set = 0.4498 m of water volume. The guard exists because the comparison it protects is
+#   empty if the two plain collectors agree; the degenerate case is therefore exactly 0. Floor
+#   0.0125 sits 36x below the measurement.
 BITE_MIN="${BITE_MIN:-0.0125}"   # the two plain collectors must diverge, else the comparison is empty
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: measured max wtd with active-set = 9.9212 m. The broken value is
+#   MEASURED history, not a guess: the pre-lake-aware pin flattened this to exactly 0, which is what
+#   the assertion line still records. The floor at 1.0 m sits 9.9x below the lake stage.
 LAKE_MIN="${LAKE_MIN:-1.0}"   # a lake must survive the active-set pin, not be flattened to zero
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # DERIVED, unlike the three above: the sibling BITE measured 0.1590 m, and this bar is that / 36.
 LF_BITE_MIN="${LF_BITE_MIN:-0.0044}"   # like-for-like: the collectors must still diverge in isolation
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED, and BLUNT by design: measured min|active_set - {explicit,implicit}|
+#   = 2.672e-01 m with routing and step mode HELD, so headroom is 2.7e5. Like XS_DIFF_MIN in
+#   runoff_collector, this floor asks only whether active_set has collapsed onto one of the plain
+#   collectors -- a yes/no question, not a size question. Nothing here bounds how far apart they
+#   ought to be.
 LF_DISTINCT_MIN="${LF_DISTINCT_MIN:-1e-6}"   # like-for-like: active_set must differ from both, in isolation
 
 
