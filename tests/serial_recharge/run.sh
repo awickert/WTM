@@ -96,9 +96,14 @@ else
     fail=1
 fi
 
-WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
+# PROMOTED FROM A LITERAL (#121) so assertion_probe can tighten it and confirm the assertion
+# still fails when it should. A literal in a condition cannot be reached from outside, so its
+# liveness was unknown; a bound nothing can exercise is a bound nothing has checked.
+SERIAL_TOL="${SERIAL_TOL:-1e-11}"   # serial vs distributed recharge, relative
+SERIAL_TOL="$SERIAL_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
 import os, sys
 W, N = os.environ["WORK"], os.environ["NRANKS"]
+serial_tol = float(os.environ["SERIAL_TOL"])
 COLS = [(8, "9  total_recharge_added"), (9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
         (12, "13 total_ocean_outflow"), (13, "14 stored_volume"), (17, "18 total_evap_removed"),
         (18, "19 recharge_direct"), (19, "20 runoff_to_surface")]
@@ -155,10 +160,12 @@ else:
     print("\n  serial vs distributed recharge/runoff split:")
     for idx, name in [(8, "9  total_recharge_added"), (18, "19 recharge_direct"), (19, "20 runoff_to_surface")]:
         rel = abs(d1[idx] - s1[idx]) / (abs(s1[idx]) or 1.0)
-        ok = rel < 1e-11
+        ok = rel < serial_tol
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  NO-DRIFT   {name:<26} serial {s1[idx]:>16.9e}  "
-              f"distributed {d1[idx]:>16.9e}  rel {rel:.3e}")
+        # COMPARED VALUE NEXT TO ITS BOUND; the two raw columns follow as context (rules 1 and 2,
+        # ASSERTION_HEALTH.md sec 5d). Printed before it they are two more candidate numbers.
+        print(f"  {'PASS' if ok else 'FAIL'}  NO-DRIFT   {name:<26} rel {rel:.3e} "
+              f"(tol SERIAL_TOL={serial_tol}) -- serial {s1[idx]:.9e} distributed {d1[idx]:.9e}")
     print("\n  (info) downstream columns -- NOT gated, the arms differ in infiltration too:")
     for idx, name in COLS:
         if idx in (8, 18, 19):

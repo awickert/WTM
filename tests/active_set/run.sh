@@ -56,6 +56,7 @@ BITE_MIN="${BITE_MIN:-0.0125}"   # the two plain collectors must diverge, else t
 LAKE_MIN="${LAKE_MIN:-1.0}"   # a lake must survive the active-set pin, not be flattened to zero
 # DERIVED, unlike the three above: the sibling BITE measured 0.1590 m, and this bar is that / 36.
 LF_BITE_MIN="${LF_BITE_MIN:-0.0044}"   # like-for-like: the collectors must still diverge in isolation
+LF_DISTINCT_MIN="${LF_DISTINCT_MIN:-1e-6}"   # like-for-like: active_set must differ from both, in isolation
 
 
 # ARM ASYMMETRY, NOW VISIBLE. The three arms do NOT differ only in the collector: `explicit` runs
@@ -144,7 +145,7 @@ IA=$(ls "$WORK"/as_*.tif | tail -1)
 LFA=$(ls "$WORK"/lf_as_*.tif | tail -1); LFE=$(ls "$WORK"/lf_exp_*.tif | tail -1)
 LFI=$(ls "$WORK"/lf_imp_*.tif | tail -1)
 TESTS="$(readlink -f ..)" PHI="$INP/fsm_test_porosity.tif" \
-  DISTINCT_MIN="$DISTINCT_MIN" BITE_MIN="$BITE_MIN" LAKE_MIN="$LAKE_MIN" LF_BITE_MIN="$LF_BITE_MIN" \
+  DISTINCT_MIN="$DISTINCT_MIN" BITE_MIN="$BITE_MIN" LAKE_MIN="$LAKE_MIN" LF_BITE_MIN="$LF_BITE_MIN" LF_DISTINCT_MIN="$LF_DISTINCT_MIN" \
   "$PY" - "$IP" "$EP" "$IA" "$LFA" "$LFE" "$LFI" <<'PY'
 import sys, numpy as np, rasterio, os
 sys.path.insert(0, os.environ["TESTS"])
@@ -154,6 +155,7 @@ def interior(a): return a[1:-1, 1:-1]
 ip, ep, ia, lfa, lfe, lfi = map(interior, (ip, ep, ia, lfa, lfe, lfi))
 distinct_min = float(os.environ["DISTINCT_MIN"]); bite_min = float(os.environ["BITE_MIN"])
 lake_min = float(os.environ["LAKE_MIN"]); lf_bite_min = float(os.environ["LF_BITE_MIN"])
+lf_distinct_min = float(os.environ["LF_DISTINCT_MIN"])
 lake_head = float(ia.max())
 phi_i = interior(VOL.read_band(os.environ["PHI"]))
 bite      = float(VOL.volume_diff(ip, ep, phi_i).max())
@@ -180,7 +182,7 @@ check("BITE (collectors diverge without active-set)", bite > bite_min,
 # three run at routing: impulse and mode: fixed -- the one pairing all three collectors can take.
 lf_distinct = min(float(np.max(np.abs(lfa - lfe))), float(np.max(np.abs(lfa - lfi))))
 lf_bite     = float(VOL.volume_diff(lfe, lfi, phi_i).max())
-check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > 1e-6,
+check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > lf_distinct_min,
       f"min|active_set - {{explicit,implicit}}| = {lf_distinct:.3e} m, routing and step mode HELD")
 # THE LIKE-FOR-LIKE BITE BAR, 0.0044 m, AND WHERE IT COMES FROM. It is NOT the 0.0125 m above: that
 # was measured on the continuous/adaptive arms and does not transfer, and carrying it over would have

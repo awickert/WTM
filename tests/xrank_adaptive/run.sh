@@ -78,10 +78,15 @@ for n in $RANKS; do
 done
 
 PY=${PYTHON:-python3}
-TESTS="$(readlink -f ..)" "$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
+# PROMOTED FROM A LITERAL (#121) so assertion_probe can tighten it and confirm the assertion
+# still fails when it should. A literal in a condition cannot be reached from outside, so its
+# liveness was unknown; a bound nothing can exercise is a bound nothing has checked.
+XRANK_TOL="${XRANK_TOL:-1e-9}"   # cross-rank agreement of the final water table
+XRANK_TOL="$XRANK_TOL" TESTS="$(readlink -f ..)" "$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
 import sys, glob, os
 import numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
+xrank_tol = float(os.environ["XRANK_TOL"])
 import wtm_volume as VOL              # latest_output: refuses a match from a DIFFERENT stem
 work, ranks = sys.argv[1], [int(r) for r in sys.argv[2:]]
 ok = True
@@ -145,7 +150,8 @@ for n in ranks[1:]:
 r = last(ref)
 for n in ranks[1:]:
     d = float(np.nanmax(np.abs(last(n) - r)))
-    check(f"final water table n={ref} vs n={n}", d < 1e-9, f"max|delta| = {d:.3e} m (tol 1e-09)")
+    check(f"final water table n={ref} vs n={n}", d < xrank_tol,
+          f"max|delta| = {d:.3e} m (tol XRANK_TOL={xrank_tol})")
 
 sys.exit(0 if ok else 1)
 PYEOF

@@ -122,10 +122,16 @@ run volgov anderson
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)
-TOL="$TOL" PHI="$(readlink -f inputs/sconsist_porosity.tif)" TESTS="$(readlink -f ..)" \
+# PROMOTED FROM A LITERAL (#121): reachable from outside, so assertion_probe can tighten it and
+# confirm the assertion still fails when it should. A bound nothing can exercise is unchecked.
+# The TARGET is 0.25 -- the fixture's porosity, which is physics and stays a literal. What is
+# promoted is the TOLERANCE on the deviation from it.
+RATIO_TOL="${RATIO_TOL:-1e-3}"   # |median(water/snorm) - phi| on the subsurface fixture
+TOL="$TOL" RATIO_TOL="$RATIO_TOL" PHI="$(readlink -f inputs/sconsist_porosity.tif)" TESTS="$(readlink -f ..)" \
   "$PY" - "$AN" "$PI" "$NE" "$VC" "$WORK/volconv.log" "$VG" <<'PY'
 import sys, os, re, numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
+ratio_tol = float(os.environ["RATIO_TOL"])
 import wtm_volume as VOL                      # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 an, pi, ne = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 vc_tif, vc_log, vg_tif = sys.argv[4], sys.argv[5], sys.argv[6]
@@ -173,7 +179,7 @@ vcheck("RECON == snorm (the reconstruction tracks PETSc's step)", worst < 1e-3,
 # the one above, so a broken reconstruction fails exactly one of them rather than both or neither.
 ratios = [w / h for _, h, _, w in rows if h > 0]
 r_med = float(np.median(ratios))
-vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) < 1e-3,
+vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) < ratio_tol,
        f"median water_L2 / snorm = {r_med:.6f} (phi = 0.25)")
 
 # ANSWER-NEUTRALITY, which is what makes the diagnostic safe to leave on. Without _govern it must only
