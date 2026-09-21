@@ -35,12 +35,20 @@ QUIET="${QUIET:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below 
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, SEPARATING, and the gap is NINE ORDERS: the managed (taper on) arm settles to
+#   1.8053e-11 m of per-cycle motion while the bare (taper off) arm sustains 2.838e-02 m -- a limit
+#   cycle that does not decay. The floor at 0.015 sits 1.9x below the flickering value. Sharp, and
+#   deliberately so: if the fixture ever stops flickering this test proves nothing, and the guard
+#   should fail loudly rather than pass quietly.
 BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cycle stays far above QUIET.
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                             # Set to PRESERVE THE ORIGINAL MARGIN rather than by scaling the old number:
                             # 1.0 against an achieved 1.79714 head was 1.80x, and 0.015 against an achieved
                             # 0.0283872 volume is 1.89x. Scaling 1.0 by 0.25 would have demanded 0.25 from a
                             # control that only reaches 0.0284, failing a fixture that has not changed.
+# DERIVED 2026-09-22, ONE-SIDED and BLUNT: measured |residual|/recharge = 2.125e-07, so the bound
+#   is 4700x the measurement and blind to closure degrading by two orders. Same shape and same
+#   value as direct_to_runoff's MB_TOL, and blunt for the same reason. Recorded, not retightened.
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
@@ -71,8 +79,14 @@ awk -v v="$msettle" -v q="$QUIET" 'BEGIN{exit !(v+0 <= q+0)}' \
 # BITE (bare): the hard-switch run must NOT settle (limit cycle keeps the per-cycle change large).
 BC=$(wtm_col "$WORK/bare.txt" abs_change_volume_max) || exit 1
 bsettle=$(grep -E '^[0-9]' "$WORK/bare.txt" | tail -1 | awk -v c="$BC" '{print $c}')
-awk -v v="$bsettle" -v b="$BITE_MIN" 'BEGIN{exit !(v+0 >= b+0)}' \
-  || { echo "FAIL: bare (taper off) SETTLED (final |S*Δwtd|=$bsettle < $BITE_MIN) -- fixture no longer flickers; test does not bite"; exit 1; }
+# PRINTS ON PASS TOO. Written as a bare `awk || { ... }` this guard was silent whenever it held,
+# so the one number proving the fixture still flickers never reached the log and the bound could
+# not be read by tests/assertion_health.py at all.
+if awk -v v="$bsettle" -v b="$BITE_MIN" 'BEGIN{exit !(v+0 >= b+0)}'; then
+  echo "  PASS  BITE           : bare (taper off) still flickers, final |S*Δwtd| = $bsettle m (min BITE_MIN=$BITE_MIN)"
+else
+  echo "FAIL: bare (taper off) SETTLED (final |S*Δwtd|=$bsettle < $BITE_MIN) -- fixture no longer flickers; test does not bite"; exit 1
+fi
 
 MAN=$(ls "$WORK"/managed_*.tif | tail -1)
 # MASS BALANCE from the last two cycles: cols 9 (recharge), 18 (evap), 12 (surface_removed), 13 (ocean_outflow)
