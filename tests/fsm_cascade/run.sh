@@ -45,10 +45,23 @@ SK=$(ls "$WORK"/skim_*.tif | tail -1); SK4=$(ls "$WORK"/skim4_*.tif | tail -1)
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED with a GEOMETRIC scale: measured max|stage - sill| = 0.000 m
+#   exactly -- both lakes land on their sills to the printed precision (pit A 97.000 vs 97, basin B
+#   95.000 vs 95). The bound is sized by the fixture, not by the measurement: the two sills in this
+#   chain are 2 m apart, so 0.2 m is 10x below the smallest distance that could let a lake settle
+#   on the WRONG sill and still pass.
 SILL_TOL="${SILL_TOL:-0.2}"   # |stage - sill| for each lake in the chain
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED and the BLUNTEST bound in the tree: measured max
+#   |dbudget_residual|/drecharge = 3.047e-13 against a bound of 1e-4, i.e. 3.3e8 of headroom. It
+#   would not notice per-cycle closure degrading by EIGHT orders. Recorded, not retightened --
+#   changing it changes what the suite accepts, which is a decision and not a documentation fix.
 CONS_TOL="${CONS_TOL:-1e-4}"   # per-cycle budget closure, relative
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured max|dwtd| between n=1 and n=4 = 0.000e+00 m -- the
+#   decomposition is bit-identical, as a correct halo exchange requires. Stated as a tolerance
+#   rather than `== 0` so the assertion does not rest on float equality; at the O(100 m) scale of
+#   this field, 1e-9 m is ~1e-11 relative, close to what double precision can even represent.
 MPI_TOL="${MPI_TOL:-1e-9}"   # n=1 vs n=4 water table
 SILL_TOL="$SILL_TOL" CONS_TOL="$CONS_TOL" MPI_TOL="$MPI_TOL" "$PY" - "$INP/fsm_cascade_t0_topography.tif" "$SK" "$SK4" "$WORK/skim.txt" <<'PY'
 import sys, os, numpy as np, rasterio
