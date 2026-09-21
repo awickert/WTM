@@ -110,12 +110,18 @@ CELL_TOL="${CELL_TOL:-1e-6}"       # per-cell relative error against the closed-
 SWAP_MIN="${SWAP_MIN:-1e-3}"       # BITE GUARD: the transposed forcing must visibly NOT fit
 SPREAD_MIN="${SPREAD_MIN:-5.0}"    # BITE GUARD: the forcing must actually vary across the domain
 LEDGER_TOL="${LEDGER_TOL:-1e-12}"  # column ledger closure, at arithmetic precision
+# The SPLIT TARGET 3/7 is the fixture's geometry and stays a literal; SPLIT_TOL bounds the
+# distance from it. MOVED_MIN is a BITE GUARD: the forcing must actually move the table.
+MOVED_MIN="${MOVED_MIN:-0.5}"      # BITE GUARD: the perturbation must visibly move the table
+SPLIT_TOL="${SPLIT_TOL:-1e-6}"     # |split - 3/7| and |same_in - 1|, the routing fractions
 
 WORK="$WORK" INP="$INP" CELL_TOL="$CELL_TOL" SWAP_MIN="$SWAP_MIN" SPREAD_MIN="$SPREAD_MIN" \
-  LEDGER_TOL="$LEDGER_TOL" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+  LEDGER_TOL="$LEDGER_TOL" MOVED_MIN="$MOVED_MIN" SPLIT_TOL="$SPLIT_TOL" \
+  TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os as _os
 cell_tol = float(_os.environ["CELL_TOL"]); swap_min = float(_os.environ["SWAP_MIN"])
 spread_min = float(_os.environ["SPREAD_MIN"]); ledger_tol = float(_os.environ["LEDGER_TOL"])
+moved_min = float(_os.environ["MOVED_MIN"]); split_tol = float(_os.environ["SPLIT_TOL"])
 import glob, os, sys
 import numpy as np
 import rasterio
@@ -188,7 +194,7 @@ if b1 is None or len(rows) < 3:
     print("  FAIL  REDISTRIBUTION -- missing output"); fail = 1
 else:
     moved = np.abs(b1 - b0)
-    ok = moved.max() > 0.5
+    ok = moved.max() > moved_min
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  the mound actually spreads "
           f"(max |dwtd| {moved.max():.3f} m, rms {np.sqrt((moved**2).mean()):.3f} m)")
@@ -226,7 +232,7 @@ for RI in (1, 2, 4):
         print(f"  FAIL  CADENCE    report_interval {RI}: missing output"); fail = 1; continue
     split = b[19] / b[18] if b[18] else float("nan")   # col20 / col19
     same_in = b[8] / a[8] if a[8] else float("nan")    # col9(rr=0.3) / col9(rr=0)
-    ok = abs(split - 3.0 / 7.0) < 1e-6 and abs(same_in - 1.0) < 1e-6
+    ok = abs(split - 3.0 / 7.0) < split_tol and abs(same_in - 1.0) < split_tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CADENCE    report_interval {RI}: col20/col19 = {split:.6f} "
           f"(want 3/7 = 0.428571), total input vs runoff_ratio=0 = {same_in:.6f} (want 1.000000)")

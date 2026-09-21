@@ -38,8 +38,17 @@ mpirun -n 4 "$WTM" "$WORK/skim4.yaml" \
   || { echo "RUN FAILED: skim4"; tail -3 "$WORK/skim4.err"; exit 2; }
 
 SK=$(ls "$WORK"/skim_*.tif | tail -1); SK4=$(ls "$WORK"/skim4_*.tif | tail -1)
-"$PY" - "$INP/fsm_cascade_t0_topography.tif" "$SK" "$SK4" "$WORK/skim.txt" <<'PY'
-import sys, numpy as np, rasterio
+# PROMOTED FROM LITERALS (#121): reachable from outside so assertion_probe can tighten each
+# and confirm the assertion still fails when it should.
+# THE SILL ELEVATIONS (97 m, 95 m) STAY LITERAL -- they are the fixture's geometry, not tuning
+# knobs. What is promoted is the TOLERANCE on the distance from them.
+SILL_TOL="${SILL_TOL:-0.2}"   # |stage - sill| for each lake in the chain
+CONS_TOL="${CONS_TOL:-1e-4}"   # per-cycle budget closure, relative
+MPI_TOL="${MPI_TOL:-1e-9}"   # n=1 vs n=4 water table
+SILL_TOL="$SILL_TOL" CONS_TOL="$CONS_TOL" MPI_TOL="$MPI_TOL" "$PY" - "$INP/fsm_cascade_t0_topography.tif" "$SK" "$SK4" "$WORK/skim.txt" <<'PY'
+import sys, os, numpy as np, rasterio
+sill_tol = float(os.environ["SILL_TOL"]); cons_tol = float(os.environ["CONS_TOL"])
+mpi_tol = float(os.environ["MPI_TOL"])
 topo, wk, wk4 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
 txt = sys.argv[4]
 def surf(region):
@@ -64,11 +73,11 @@ def check(name, cond, detail):
 # sill" cannot be expressed as a volume without the basin hypsometry, and a volume bound here would be
 # measuring a different claim. The other two checks need no conversion either: `rel` is already
 # dimensionless (a budget ratio), and the MPI check is an IDENTITY (n=1 == n=4), which is unit-agnostic.
-check("CHAIN LEVELS (A->97 sill, B->95 sill)", abs(sA - 97.0) < 0.2 and abs(sB - 95.0) < 0.2,
+check("CHAIN LEVELS (A->97 sill, B->95 sill)", abs(sA - 97.0) < sill_tol and abs(sB - 95.0) < sill_tol,
       f"pit A surface = {sA:.3f} m (sill 97), basin B surface = {sB:.3f} m (sill 95)")
-check("CONSERVATION (per-cycle balance closes)", rel < 1e-4,
+check("CONSERVATION (per-cycle balance closes)", rel < cons_tol,
       f"max |Δbudget_residual|/Δrecharge = {rel:.3e}")
-check("MPI CONSISTENT (n=1 == n=4)", mpi < 1e-9, f"max|Δwtd| = {mpi:.3e} m")
+check("MPI CONSISTENT (n=1 == n=4)", mpi < mpi_tol, f"max|Δwtd| = {mpi:.3e} m (tol MPI_TOL={mpi_tol})")
 print("PASS: cascade A->B->ocean routes to the correct sills, conserving and MPI-consistent"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)

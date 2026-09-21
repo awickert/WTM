@@ -96,9 +96,19 @@ IM=$(ls "$WORK"/implicit_*.tif | tail -1); EX=$(ls "$WORK"/explicit_*.tif | tail
 OF=$(ls "$WORK"/off_*.tif | tail -1);      UN=$(ls "$WORK"/unset_*.tif | tail -1)
 AS=$(ls "$WORK"/aset_*.tif | tail -1)
 XS=$(ls "$WORK"/xsoil_mode_*.tif | tail -1)
+# PROMOTED FROM LITERALS (#121). The last two are BITE GUARDS: without them the `unset` and
+# `off` arms would pass just as well if every collector produced the same answer, which is
+# exactly the state this suite exists to rule out.
+UNSET_TOL="${UNSET_TOL:-1e-6}"       # `unset` must resolve to active_set BIT-FOR-BIT
+AGREE_TOL="${AGREE_TOL:-0.1}"        # implicit vs explicit, m of water
+XS_MIN="${XS_MIN:-5.0}"              # BITE GUARD: `off` must visibly pile water above the surface
+XS_DIFF_MIN="${XS_DIFF_MIN:-1e-6}"   # BITE GUARD: `off` must differ from the collector arms
 OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" \
+  UNSET_TOL="$UNSET_TOL" AGREE_TOL="$AGREE_TOL" XS_MIN="$XS_MIN" XS_DIFF_MIN="$XS_DIFF_MIN" \
   TESTS="$(readlink -f ..)" PHI="$INP/rcoll_porosity.tif" "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" "$XS" <<'PY'
 import sys, os, numpy as np, rasterio
+unset_tol = float(os.environ["UNSET_TOL"]); agree_tol = float(os.environ["AGREE_TOL"])
+xs_min = float(os.environ["XS_MIN"]); xs_diff_min = float(os.environ["XS_DIFF_MIN"])
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 im, ex, of, un, aset, xs = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:7]]
@@ -122,14 +132,14 @@ check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
 # UNSET must track the CURRENT default, which is active_set (it was implicit until 2026-08-25). This
 # check is the one that catches a default flip, so it compares against the active_set run rather than
 # hard-coding a number.
-check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < 1e-6,
+check("UNSET (defaults to active_set)", abs(un_mx - as_mx) < unset_tol,
       f"max wtd = {un_mx:.4f} m (== active_set {as_mx:.4f} m; implicit would be {im_mx:.4f} m)")
 # 0.1 m OF WATER VOLUME, kept at the old numeric bound rather than scaled by phi. MEASURED: the
 # governing cell sits at wtd = +0.038, AT THE SURFACE, where dV/dwtd -> 1, so head 3.8356e-02 and
 # volume 3.5087e-02 differ by a factor of 0.915, not 0.25. A blind x0.25 set the bound to 0.025 and
 # failed a test that had not regressed. Holding 0.1 keeps the original margin (2.6x -> 2.85x) and is
 # 4x STRICTER below ground, so it loosens nothing.
-check("AGREE implicit vs explicit",         agree < 0.1,
+check("AGREE implicit vs explicit",         agree < agree_tol,
       f"max|ΔV(implicit) - ΔV(explicit)| = {agree:.3e} m water volume")
 
 # --- extended_soil: mode, alias, supersession -----------------------------------------------------
@@ -141,7 +151,7 @@ xs_banner = int(os.environ["XSBANNER"]) > 0
 # DIFFERENT pile. Asserting "differs from off" keeps this arm from passing on a build where
 # extended_soil silently degrades to plain `off`.
 check("EXT_SOIL mode (piles, announces, and is NOT `off`)",
-      xs_mx > 5.0 and xs_banner and abs(xs_mx - of_mx) > 1e-6,
+      xs_mx > xs_min and xs_banner and abs(xs_mx - of_mx) > xs_diff_min,
       f"max wtd = {xs_mx:.2f} m (off = {of_mx:.2f} m), banner printed = {xs_banner}")
 print("PASS: runoff_collector modes behave as specified" if ok else "FAIL")
 sys.exit(0 if ok else 1)

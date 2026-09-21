@@ -44,8 +44,15 @@ mpirun -n 4 "$WTM" "$WORK/skim4.yaml" \
 
 NDEP=$(grep "FSM fullness" "$WORK/skim.err" | tail -1 | sed 's#.*/ \([0-9]*\) depressions.*#\1#')
 SP=$(ls "$WORK"/plain_*.tif | tail -1); SK=$(ls "$WORK"/skim_*.tif | tail -1); SK4=$(ls "$WORK"/skim4_*.tif | tail -1)
-NDEP="$NDEP" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" "$SK4" <<'PY'
+# PROMOTED FROM LITERALS (#121): reachable from outside so assertion_probe can tighten each
+# and confirm the assertion still fails when it should.
+# THE SILL ELEVATIONS (97 m, 95 m) STAY LITERAL -- they are the fixture's geometry, not tuning
+# knobs. What is promoted is the TOLERANCE on the distance from them.
+SILL_TOL="${SILL_TOL:-0.2}"   # |stage - 97 m sill|, and |skim - plain|
+MPI_TOL="${MPI_TOL:-1e-9}"   # n=1 vs n=4 water table
+NDEP="$NDEP" SILL_TOL="$SILL_TOL" MPI_TOL="$MPI_TOL" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" "$SK4" <<'PY'
 import sys, os, numpy as np, rasterio
+sill_tol = float(os.environ["SILL_TOL"]); mpi_tol = float(os.environ["MPI_TOL"])
 topo, wp, wk, wk4 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:5]]
 def surfmax(w):
     p = w > 1e-6
@@ -61,12 +68,12 @@ check("HIERARCHY (metadepression, not a lone leaf)", ndep >= 3,
 # LAKE SURFACE ELEVATIONS against a 97 m topographic sill, and SKIM == PLAIN compares two such
 # elevations to each other. HIERARCHY is a COUNT of depressions. The MPI check is an IDENTITY.
 # Nothing here is a water-depth measurement, so there is nothing to convert.
-check("SPILL LEVEL (skim fills to the 97 m sill)", abs(sk - 97.0) < 0.2,
+check("SPILL LEVEL (skim fills to the 97 m sill)", abs(sk - 97.0) < sill_tol,
       f"skim lake surface = {sk:.3f} m (known outlet sill = 97.0)")
-check("SKIM == PLAIN (skim neither drains nor over-fills)", abs(sk - pl) < 0.2,
+check("SKIM == PLAIN (skim neither drains nor over-fills)", abs(sk - pl) < sill_tol,
       f"skim {sk:.3f} vs plain {pl:.3f} m")
 mpi = float(np.abs(wk - wk4).max())
-check("SKIM MPI-CONSISTENT (n=1 == n=4)", mpi < 1e-9,
+check("SKIM MPI-CONSISTENT (n=1 == n=4)", mpi < mpi_tol,
       f"max|Δwtd| n1 vs n4 = {mpi:.3e} m")
 print("PASS: nested hierarchy walked; lake-aware skim reaches the correct spill equilibrium"
       if ok else "FAIL")
