@@ -102,7 +102,20 @@ for RI in 1 2 4; do
 done
 [[ $fail -eq 0 ]] || { echo "LOCAL LEDGER: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" INP="$INP" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+# PROMOTED FROM LITERALS (#121). The second is a BITE GUARD: without it the per-cell check above
+# would pass just as well on a fixture whose axes are indistinguishable -- it asserts that the
+# TRANSPOSED forcing does NOT fit, so a real orientation error could not hide.
+# Not meant to be tuned: each sits clear of noise. Raise one only with a measurement.
+CELL_TOL="${CELL_TOL:-1e-6}"       # per-cell relative error against the closed-form column
+SWAP_MIN="${SWAP_MIN:-1e-3}"       # BITE GUARD: the transposed forcing must visibly NOT fit
+SPREAD_MIN="${SPREAD_MIN:-5.0}"    # BITE GUARD: the forcing must actually vary across the domain
+LEDGER_TOL="${LEDGER_TOL:-1e-12}"  # column ledger closure, at arithmetic precision
+
+WORK="$WORK" INP="$INP" CELL_TOL="$CELL_TOL" SWAP_MIN="$SWAP_MIN" SPREAD_MIN="$SPREAD_MIN" \
+  LEDGER_TOL="$LEDGER_TOL" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+import os as _os
+cell_tol = float(_os.environ["CELL_TOL"]); swap_min = float(_os.environ["SWAP_MIN"])
+spread_min = float(_os.environ["SPREAD_MIN"]); ledger_tol = float(_os.environ["LEDGER_TOL"])
 import glob, os, sys
 import numpy as np
 import rasterio
@@ -143,23 +156,23 @@ else:
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  table stays below the surface "
           f"(max wtd {w1.max():.3f} m) -- the analytic form needs it")
     spread = expect.max() / expect.min()
-    ok = spread > 5.0
+    ok = spread > spread_min
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  forcing varies {spread:.1f}x across the grid "
-          f"(a uniform field could not detect misplacement)")
+          f"(min SPREAD_MIN={spread_min}) -- a uniform field could not detect misplacement")
 
-    ok = rel.max() < 1e-6
+    ok = rel.max() < cell_tol
     fail |= not ok
     j, i = np.unravel_index(np.argmax(rel), rel.shape)
     print(f"  {'PASS' if ok else 'FAIL'}  PER-CELL   max rel error {rel.max():.3e} at (row {j}, col {i}) "
-          f"expected {expect[j, i]:.6f} m, got {got[j, i]:.6f} m  (tol 1e-6)")
+          f"expected {expect[j, i]:.6f} m, got {got[j, i]:.6f} m  (tol CELL_TOL={cell_tol})")
 
     # Axis-swap probe: state it explicitly rather than trusting the per-cell check to imply it.
     swapped = np.abs(got - expect.T) / np.maximum(np.abs(expect.T), 1e-30)
-    ok = swapped.max() > 1e-3
+    ok = swapped.max() > swap_min
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  AXIS-SWAP  the transposed forcing does NOT fit "
-          f"(max rel {swapped.max():.3e}) -- so this arm can tell the axes apart")
+          f"(max rel {swapped.max():.3e}) (min SWAP_MIN={swap_min}) -- so this arm can tell the axes apart")
 
 # ---------------------------------------------------------------- B. REDISTRIBUTION
 print("\n-- B. REDISTRIBUTION: closed domain, zero forcing; volume must hold while the table moves --")
@@ -192,10 +205,10 @@ else:
     # show up here immediately.
     vol = [x[13] for x in rows]
     drift = max(abs(v - vol[0]) for v in vol) / (abs(vol[0]) or 1.0)
-    ok = drift < 1e-12
+    ok = drift < ledger_tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  CONSERVED  stored_volume drift over {len(vol)} cycles "
-          f"{drift:.3e} (tol 1e-12); volume {vol[0]:.9e} m^3")
+          f"{drift:.3e} (tol LEDGER_TOL={ledger_tol}); volume {vol[0]:.9e} m^3")
 
 # ---------------------------------------------------------------- C. CADENCE
 print("\n-- C. CADENCE: the routed input channel must track elapsed time, not coupling frequency --")
