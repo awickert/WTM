@@ -19,6 +19,13 @@ make_work adw
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured max|dV| between the water-depth metric and cc = 0.0018 m
+#   of water volume, so the bound carries 6.9x of headroom. THE VALUE IS INHERITED, NOT DERIVED
+#   HERE: 0.0125 is shared with recharge_consistency and snapshot_restart, and variable_porosity
+#   measured the same-shaped bound on its own fixture, set 0.0065 at 3x the worst case, and
+#   recorded that 0.0125 there had been "a label with no derivation behind it". That refutation was
+#   for THAT fixture and does not transfer, but it is the reason this bound is flagged rather than
+#   blessed: re-basing it on 0.0018 is a decision about what the suite accepts, not a doc fix.
 TOL="${TOL:-0.0125}"     # cross-scheme steady-state agreement, in water
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
