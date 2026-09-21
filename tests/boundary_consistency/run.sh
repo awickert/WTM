@@ -25,8 +25,17 @@ make_work bcons
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, SEPARATING, and the gap here is ELEVEN ORDERS: two implementations of the
+#   SAME boundary condition (dirichlet ghost, old padding) agree to 5.446e-12 m of water volume,
+#   while a genuinely DIFFERENT condition (neumann_toposlope, the DIFF_MIN arm below) differs by
+#   4.645e-01 m. Both edges are measured in this run. The bound sits inside that gap with 459x of
+#   headroom above the agreeing pair.
 MATCH_TOL="${MATCH_TOL:-2.5e-9}" # dirichlet-vs-padding agreement, in water (was 1e-8 head)
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING, same measured gap read from the other side: dirichlet vs
+#   neumann_toposlope differ by 4.645e-01 m of water where two spellings of one BC agree to
+#   5.446e-12 m. The floor sits 4.6x below the real difference and 10 orders above the agreement,
+#   so it fires exactly when the selector stops selecting.
 DIFF_MIN="${DIFF_MIN:-0.1}"      # metres OF WATER VOLUME; dirichlet-vs-neumann must differ by at least this.
                                  # DELIBERATELY LEFT AT 0.1 rather than scaled to 0.025. This is a floor the
                                  # separation must EXCEED, so keeping the number while the measured value
@@ -86,6 +95,11 @@ DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NE
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # PROMOTED FROM A LITERAL (#121): reachable from outside so assertion_probe can tighten
 # it and confirm the assertion still fails when it should.
+# DERIVED 2026-09-22, SEPARATING but BLUNT: Newton and Anderson on the same Dirichlet problem agree
+#   to 5.365e-12 m, so headroom is 1.9e5. Left as is deliberately -- the failure this guards
+#   against is a wrong off-map Dirichlet tangent in the Jacobian, which does not produce a slightly
+#   larger number: it moves the answer to the 1e-1 scale of the DIFF_MIN arm. A bound anywhere in
+#   the eleven-order gap catches it, so the headroom is not the property that matters here.
 NEWTON_TOL="${NEWTON_TOL:-1e-6}"   # newton vs the analytic boundary solution
 MATCH_TOL="$MATCH_TOL" DIFF_MIN="$DIFF_MIN" PHI="$INP/bcons_porosity.tif" TESTS="$(readlink -f ..)" \
   NEWTON_TOL="$NEWTON_TOL" "$PY" - "$DIR" "$PAD" "$NEU" "$NWT" <<'PY'
