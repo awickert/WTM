@@ -111,16 +111,39 @@ done
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 CELL_TOL="${CELL_TOL:-1e-6}"       # per-cell relative error against the closed-form column
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: with the forcing transposed the max relative error is 2.507e+00;
+#   with it the right way round the same statistic is 2.963e-07 (the PER-CELL assertion above, same
+#   run). Seven orders separate fitting from not fitting, and the floor sits inside that gap. This
+#   is what makes the PER-CELL check non-vacuous: a test that cannot tell the axes apart would pass
+#   on a grid-shaped coincidence.
 SWAP_MIN="${SWAP_MIN:-1e-3}"       # BITE GUARD: the transposed forcing must visibly NOT fit
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING: this fixture's forcing varies 18.0x across the grid. The
+#   degenerate case is not a guess -- a uniform field has ratio exactly 1.0, and misplacing water in
+#   one would be undetectable. The floor sits between 1.0 and 18.0. Headroom 3.6x, so it will fire
+#   if the fixture is ever flattened toward uniform.
 SPREAD_MIN="${SPREAD_MIN:-5.0}"    # BITE GUARD: the forcing must actually vary across the domain
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED, at arithmetic precision: measured RELATIVE drift over 20 cycles =
+#   0.000e+00 on a volume of -2.162948390e+11 m^3. The scale is double-precision epsilon, 2.2e-16;
+#   the bound is ~4500 epsilons, leaving room for 20 cycles of accumulation while staying 4 orders
+#   below anything physical. The multiplier is a CONVENTION; the floor under it is not.
 LEDGER_TOL="${LEDGER_TOL:-1e-12}"  # column ledger closure, at arithmetic precision
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # The SPLIT TARGET 3/7 is the fixture's geometry and stays a literal; SPLIT_TOL bounds the
 # distance from it. MOVED_MIN is a BITE GUARD: the forcing must actually move the table.
+# DERIVED 2026-09-22, ONE-SIDED, and this is the SHARPEST bound in the tree: measured max |dwtd| =
+#   0.511 m against a floor of 0.5 -- 2% of headroom. It passes, and with spread measured at zero
+#   the 2% is 2% of a bit-reproducible number, so this is sharp rather than fragile (sec. 3). But
+#   it is the bound most likely to fire on an unrelated fixture change, and whoever sees it fail
+#   should re-measure the mound before assuming a regression. The degenerate case is a mound that
+#   does not spread at all, i.e. 0.0.
 MOVED_MIN="${MOVED_MIN:-0.5}"      # BITE GUARD: the perturbation must visibly move the table
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED: measured worst deviation 2.433e-08 -- |col20/col19 - 3/7| -- at
+#   every report_interval. Headroom 41x. The 3/7 target is the fixture's own routing geometry and
+#   stays a literal; only the distance from it is bounded here. The deviation is NOT zero, and the
+#   line used to print the ratio rounded to 0.428571, which looked exact and hid it.
 SPLIT_TOL="${SPLIT_TOL:-1e-6}"     # |split - 3/7| and |same_in - 1|, the routing fractions
 
 WORK="$WORK" INP="$INP" CELL_TOL="$CELL_TOL" SWAP_MIN="$SWAP_MIN" SPREAD_MIN="$SPREAD_MIN" \
@@ -204,8 +227,12 @@ else:
     moved = np.abs(b1 - b0)
     ok = moved.max() > moved_min
     fail |= not ok
+    # ORDER MATTERS: the compared value sits LAST, immediately before its bound. Written the other
+    # way round the nearest number is the rms, and the health tool reads THAT as the measurement --
+    # a 0.30x headroom reported on a test that is passing.
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  the mound actually spreads "
-          f"(max |dwtd| {moved.max():.3f} m, rms {np.sqrt((moved**2).mean()):.3f} m)")
+          f"(rms {np.sqrt((moved**2).mean()):.3f} m, max |dwtd| {moved.max():.3f} m) "
+          f"(min MOVED_MIN={moved_min})")
 
     # Nothing enters or leaves, so every input/loss channel must be identically zero. If any is not,
     # the volume check below would be comparing against a moving target.
@@ -240,10 +267,16 @@ for RI in (1, 2, 4):
         print(f"  FAIL  CADENCE    report_interval {RI}: missing output"); fail = 1; continue
     split = b[19] / b[18] if b[18] else float("nan")   # col20 / col19
     same_in = b[8] / a[8] if a[8] else float("nan")    # col9(rr=0.3) / col9(rr=0)
-    ok = abs(split - 3.0 / 7.0) < split_tol and abs(same_in - 1.0) < split_tol
+    dev = max(abs(split - 3.0 / 7.0), abs(same_in - 1.0))
+    ok = dev < split_tol
     fail |= not ok
-    print(f"  {'PASS' if ok else 'FAIL'}  CADENCE    report_interval {RI}: col20/col19 = {split:.6f} "
-          f"(want 3/7 = 0.428571), total input vs runoff_ratio=0 = {same_in:.6f} (want 1.000000)")
+    # REPORTED AS DEVIATIONS, not as the raw ratios. The ratios (0.428571 and 1.000000) are both
+    # LARGER than the deviation being bounded, so with them on the line the largest-number and
+    # nearest-number rules disagree and the health tool read the test as comparing 1.0 against
+    # 1e-6. The targets are named in words instead; nothing is lost and the line parses.
+    print(f"  {'PASS' if ok else 'FAIL'}  CADENCE    report_interval {RI}: col20/col19 - 3/7 = "
+          f"{split - 3.0 / 7.0:+.3e}, total-input ratio - 1 = {same_in - 1.0:+.3e}; "
+          f"worst {dev:.3e} (tol SPLIT_TOL={split_tol})")
 
 print("\nLOCAL LEDGER: " + ("ALL PASSED" if not fail else "FAILED"))
 sys.exit(1 if fail else 0)
