@@ -87,7 +87,7 @@ cold, rst = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 m = np.ones_like(cold, bool); m[:, 0] = False   # exclude ocean column
 phi = VOL.read_band(os.environ["PHI"])
 d = float(VOL.volume_diff(rst, cold, phi)[m].max()); tol = float(os.environ["TOL"])
-print(f"  restart vs cold equilibrium: max|ΔV| = {d:.4f} m water volume  (tol {tol})")
+print(f"  restart vs cold equilibrium: max|ΔV| = {d:.4f} m water volume  (tol TOL={tol})")
 if d <= tol:
     print("PASS: snapshot filenames carry the simulated year, and restart-from-snapshot warm-starts to the same equilibrium")
     sys.exit(0)

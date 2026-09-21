@@ -90,7 +90,7 @@ check("TRANSITION IS INERT when lake evap == ET", d_eq == 0.0,
 # were ignored outright, or if both runs had silently failed into the same state.
 control_min = float(os.environ["CONTROL_MIN"])
 check("CONTROL: the parameters DO matter when owe != ET", d_neq > control_min,
-      f"same comparison on the unequal region = {d_neq:.6e} m (min {control_min})")
+      f"same comparison on the unequal region = {d_neq:.6e} m (min CONTROL_MIN={control_min})")
 
 print("PASS: the ET/open-water transition is inert exactly when there is nothing to transition"
       if ok else "FAIL")

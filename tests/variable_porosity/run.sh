@@ -112,14 +112,14 @@ print(f"  porosity across the domain: {phi[m].min():.3f} .. {phi[m].max():.3f}")
 # --- AGREEMENT, in water volume -----------------------------------------------------------------
 dv = VOL.volume_diff(cc, tr, phi)
 check("AGREEMENT", float(dv[m].max()) <= tol,
-      f"cc vs tr-bdf2: max|dV| = {dv[m].max():.3e} m water volume (tol {tol})")
+      f"cc vs tr-bdf2: max|dV| = {dv[m].max():.3e} m water volume (tol TOL={tol})")
 
 # --- BUDGET ---------------------------------------------------------------------------------------
 for stem in ("cc", "tr"):
     log = LOG.read_log(f"{W}/{stem}.txt")
     rech = abs(log.last("total_recharge_added")) or 1.0
     rel  = abs(log.last("exact_budget_residual")) / rech
-    check(f"BUDGET {stem}", rel <= btol, f"|exact residual|/recharge = {rel:.3e} (tol {btol})")
+    check(f"BUDGET {stem}", rel <= btol, f"|exact residual|/recharge = {rel:.3e} (tol BUDGET_TOL={btol})")
 
 # --- DISCRIMINATES: head and volume must disagree about which cell is worst -----------------------
 # This is what makes the fixture worth having. On every uniform-phi fixture these two argmaxes are

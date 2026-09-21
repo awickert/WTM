@@ -93,7 +93,7 @@ m = np.ones_like(cc, bool); m[:, 0] = False   # exclude the ocean column
 d_ad = float(VOL.volume_diff(ad, cc, phi)[m].max()); d_wa = float(VOL.volume_diff(wa, cc, phi)[m].max())
 tol = float(os.environ["TOL"])
 print(f"  adaptive (tr-bdf2+dt_adaptive) vs cc: max|ΔV| = {d_ad:.4f} m water")
-print(f"  water-depth metric vs cc:            max|ΔV| = {d_wa:.4f} m water volume  (tol {tol})")
+print(f"  water-depth metric vs cc:            max|ΔV| = {d_wa:.4f} m water volume  (tol TOL={tol})")
 if d_ad <= tol and d_wa <= tol:
     print("PASS: adaptive dt and the pure-water-depth stop metric both reach cc's equilibrium")
     sys.exit(0)

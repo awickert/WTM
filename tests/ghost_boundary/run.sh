@@ -155,7 +155,7 @@ print(f"     (MPI bound = {MPI_TOL_FACTOR:g}x the run's own solver water toleran
 print(f"  1. MPI determinism  cc n=1 vs n={n}: max|d| = {d_mpi:.2e} m (tol {mpi_tol:g})")
 # The verdict is on the WORST scheme, so the worst is what carries the bound. The per-scheme line
 # above stays: a single worst-case number hides which scheme is the one drifting.
-print(f"  2. steady-state agreement vs cc (worst of tr/bdf2v/newton): max|d| = {max(d_tr, d_bv, d_nw):.2e} m (tol {tol})")
+print(f"  2. steady-state agreement vs cc (worst of tr/bdf2v/newton): max|d| = {max(d_tr, d_bv, d_nw):.2e} m (tol TOL={tol})")
 ok = (d_mpi <= mpi_tol) and max(d_tr, d_bv, d_nw) <= tol
 if ok:
     print("PASS (steady-state / MPI agreement under the ghost boundary)")
@@ -167,7 +167,7 @@ else:
         print(f"  FAIL  MPI determinism: cc n=1 vs n={n} differ by {d_mpi:.2e} m (tol {mpi_tol:g})")
     if max(d_tr, d_bv, d_nw) > tol:
         worst = max((d_tr, "tr"), (d_bv, "bdf2v"), (d_nw, "newton"))
-        print(f"  FAIL  steady-state agreement: {worst[1]} differs from cc by {worst[0]:.2e} m (tol {tol})")
+        print(f"  FAIL  steady-state agreement: {worst[1]} differs from cc by {worst[0]:.2e} m (tol TOL={tol})")
     print("FAIL (steady-state / MPI agreement under the ghost boundary)")
 sys.exit(0 if ok else 1)
 PY

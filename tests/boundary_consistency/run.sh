@@ -92,7 +92,7 @@ phi = VOL.read_band(os.environ["PHI"])
 match  = float(VOL.volume_diff(dir_, padi, phi).max())   # anderson dirichlet vs old padding, IN WATER VOLUME VOLUME
 diff   = float(VOL.volume_diff(dir_, neu, phi).max())    # dirichlet vs neumann, IN WATER VOLUME VOLUME
 newton = float(VOL.volume_diff(nwt, dir_, phi).max())    # newton vs anderson dirichlet, IN WATER VOLUME VOLUME
-print(f"  dirichlet ghost vs old padding:  max|ΔV| = {match:.3e} m water volume  (tol {mtol})")
+print(f"  dirichlet ghost vs old padding:  max|ΔV| = {match:.3e} m water volume  (tol MATCH_TOL={mtol})")
 print(f"  dirichlet vs neumann_toposlope:  max|ΔV| = {diff:.3e} m water  (must exceed {dmin})")
 print(f"  newton vs anderson (dirichlet):  max|ΔV| = {newton:.3e} m water volume  (tol 1e-6)")
 ok = match <= mtol and diff >= dmin and newton <= 1e-6

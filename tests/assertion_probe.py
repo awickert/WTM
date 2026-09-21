@@ -106,10 +106,10 @@ def assertions(text):
         # this consumer was not updated with it. Sharing the parser is still right -- "what counts as
         # an assertion" must have ONE definition -- but a shared return shape has to be changed in
         # both places at once, and it was not.
-        val, tol, floor = vt
+        val, tol, floor, bname = vt
         if tol <= 0:
             continue
-        out[_NUMS.sub("#", line.strip())] = (val, tol, line.strip(), floor)
+        out[_NUMS.sub("#", line.strip())] = (val, tol, line.strip(), floor, bname)
     return out
 
 
@@ -161,8 +161,13 @@ def bite(suite, baseline):
         # and then reporting "THE KNOB IS NOT CONNECTED" about a live assertion.
         # The name carries the shape: *_MIN is a floor, everything else a ceiling. That is the same
         # convention the suites already follow, so it is read rather than invented.
-        want_floor = name.endswith("_MIN") or "_MIN_" in name
-        governed = {k: v for k, v in baseline.items() if v[1] == val and v[3] == want_floor}
+        # BY NAME WHEN THE LINE GIVES ONE -- exact, and it ends the guessing that caused six
+        # separate linkage defects. Shape-and-value matching stays as the fallback for a line that
+        # has not been converted yet, so nothing breaks mid-migration.
+        governed = {k: v for k, v in baseline.items() if v[4] == name}
+        if not governed:
+            want_floor = name.endswith("_MIN") or "_MIN_" in name
+            governed = {k: v for k, v in baseline.items() if v[1] == val and v[3] == want_floor}
         if not governed:
             governed = {k: v for k, v in baseline.items() if v[1] == val}
             if governed:

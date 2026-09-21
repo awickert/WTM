@@ -187,7 +187,7 @@ vcheck("DIAGNOSTIC IS ANSWER-NEUTRAL", d_vc == 0.0,
 # no-op either, or the switch would be untestable by construction.
 d_vg = float(VOL.volume_diff(rasterio.open(vg_tif).read(1).astype(float), an, phi)[m].max())
 vcheck("GOVERNING lands on the same equilibrium", d_vg <= tol,
-       f"max|ΔV(head-governed) - ΔV(water-governed)| = {d_vg:.3e} m water (tol {tol})")
+       f"max|ΔV(head-governed) - ΔV(water-governed)| = {d_vg:.3e} m water (tol TOL={tol})")
 vcheck("GOVERNING is not a no-op", d_vg > 0.0,
        f"the same figure is nonzero, so the criterion really did change the stopping")
 

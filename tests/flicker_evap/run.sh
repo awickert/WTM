@@ -82,11 +82,11 @@ dR, dE, dS, dO = map(float, sys.argv[2:6])
 q = float(os.environ["QUIET"]); mbtol = float(os.environ["MB_TOL"])
 above = float(man.max()); below_ok = bool((man <= q).all())
 mb = abs(dR - dE - dS - dO); rel = mb / max(abs(dR), 1e-30)
-print(f"  SETTLING       : managed max recent per-cycle |Δwtd| = {os.environ['MSETTLE']} m (tol {q}); "
+print(f"  SETTLING       : managed max recent per-cycle |Δwtd| = {os.environ['MSETTLE']} m (tol QUIET={q}); "
       f"bare (taper off) = {os.environ['BSETTLE']} m (limit cycle)")
-print(f"  NO PONDING     : max wtd = {above:.3e} m, ponding allowed and the taper drove it back (tol {q})")
+print(f"  NO PONDING     : max wtd = {above:.3e} m, ponding allowed and the taper drove it back (tol QUIET={q})")
 print(f"  MASS BALANCE   : dRech={dR:.4e} dEvap={dE:.4e} dSurf={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
-print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol {mbtol})")
+print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
 # THE DISCRIMINATOR, and the reason NO PONDING is worth asserting at all. surface_removed must be
 # EXACTLY zero: no collector took any water away, so the only thing that could have driven the table
 # back to wtd<=0 is the evaporation taper. Without this, NO PONDING passes whenever ANY enforcement is
@@ -107,8 +107,8 @@ else:
     # NAME WHAT FAILED (#119). A bare "FAIL" left a reader to compare the printed numbers
     # against their bounds by hand, and left the bite harness unable to tell a failed
     # assertion from a crash -- so every bound here reported INCONCLUSIVE.
-    if not below_ok:     print(f"  FAIL  NO PONDING: water stands above the surface, max wtd = {above:.3e} m (tol {q})")
-    if rel >= mbtol:     print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol {mbtol})")
+    if not below_ok:     print(f"  FAIL  NO PONDING: water stands above the surface, max wtd = {above:.3e} m (tol QUIET={q})")
+    if rel >= mbtol:     print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
     if not taper_alone:  print(f"  FAIL  TAPER ALONE: a collector removed {dS:.4e} m of water, so the taper is not what settled it")
     print("FAIL")
 sys.exit(0 if ok else 1)

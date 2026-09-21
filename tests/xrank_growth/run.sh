@@ -93,11 +93,11 @@ distinct_min = float(os.environ["DISTINCT_MIN"])
 gi = drift["impulse"][-1] / drift["impulse"][0]
 gc = drift["continuous"][-1] / drift["continuous"][0]
 check("impulse drift is FLAT (reset each step from rank 0)", gi < flat_max,
-      f"last/first = {gi:.2f} (tol {flat_max})")
+      f"last/first = {gi:.2f} (tol FLAT_MAX={flat_max})")
 check("continuous drift COMPOUNDS (no reset)", gc > compound_min,
-      f"last/first = {gc:.2f} (min {compound_min})")
+      f"last/first = {gc:.2f} (min COMPOUND_MIN={compound_min})")
 check("the two regimes are distinguishable", drift["continuous"][-1] / drift["impulse"][-1] > distinct_min,
-      f"continuous/impulse at the final report = {drift['continuous'][-1] / drift['impulse'][-1]:.1f} (min {distinct_min})")
+      f"continuous/impulse at the final report = {drift['continuous'][-1] / drift['impulse'][-1]:.1f} (min DISTINCT_MIN={distinct_min})")
 
 print("PASS: cross-rank drift is flat under impulse and compounding under continuous, as the "
       "rank-0 rescatter predicts" if ok else "FAIL")

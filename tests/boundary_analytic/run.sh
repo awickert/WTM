@@ -77,14 +77,14 @@ xi, hi = x[1:-1], dirf[1:-1]; x0, x1 = x[0], x[-1]
 basis = (xi - x0) * (x1 - xi); A = float(np.sum(basis * hi) / np.sum(basis * basis))
 d_resid = float(np.max(np.abs(hi - A * basis)))
 d_edges = float(max(abs(dirf[0]), abs(dirf[-1])))
-print(f"  DIRICHLET (ocean both ends): parabola residual = {d_resid:.3e} m (tol {tol})")
-print(f"  DIRICHLET (ocean both ends): |h| at ocean ends = {d_edges:.3e} m (tol {tol})")
+print(f"  DIRICHLET (ocean both ends): parabola residual = {d_resid:.3e} m (tol FIT_TOL={tol})")
+print(f"  DIRICHLET (ocean both ends): |h| at ocean ends = {d_edges:.3e} m (tol FIT_TOL={tol})")
 if bad('dirichlet residual', d_resid, d_resid <= tol) or bad('|h| at ocean ends', d_edges, d_edges <= tol): ok = False
 
 # --- NEUMANN (flat): half-parabola over the land cells; zero-gradient vertex at the no-flow face ---
 xn, hn = x[1:], neuf[1:]
 c = np.polyfit(xn, hn, 2); n_resid = float(np.max(np.abs(hn - np.polyval(c, xn)))); vertex = float(-c[1]/(2*c[0]))
-print(f"  NEUMANN flat  (ocean-left, land no-flow right): parabola residual = {n_resid:.3e} m (tol {tol})")
+print(f"  NEUMANN flat  (ocean-left, land no-flow right): parabola residual = {n_resid:.3e} m (tol FIT_TOL={tol})")
 # The DEVIATION is what is compared, so the deviation is what is printed -- the reader should not have
 # to subtract two numbers to see whether an assertion is close to its bound.
 print(f"  NEUMANN flat  vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(vertex - noflow_face):.3f} (tol 0.1)")
@@ -100,7 +100,7 @@ h_grad_edge = float((head[-1] - head[-2]))     # head gradient at the no-flow ed
 # TERRAIN SLOPE AFTER THE MARKER. As "(topo={slope}/cell)" it is a bare decimal sitting before the
 # bound, and 0.05 outranks a 3.5e-08 residual under the magnitude rule -- the assertion was being
 # compared against its own label. Introduced here today; caught by the probe reporting DID NOT BITE.
-print(f"  NEUMANN slope: wtd parabola residual = {s_resid:.3e} m (tol {tol}) -- terrain {slope}/cell")
+print(f"  NEUMANN slope: wtd parabola residual = {s_resid:.3e} m (tol FIT_TOL={tol}) -- terrain {slope}/cell")
 print(f"  NEUMANN slope vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(s_vertex - noflow_face):.3f} (tol 0.1)")
 print(f"  NEUMANN slope edge head gradient vs terrain slope: |offset| = {abs(h_grad_edge - slope):.4f} (tol 0.02)")
 if (bad('sloped residual', s_resid, s_resid <= tol) or bad('sloped vertex', s_vertex, abs(s_vertex - noflow_face) <= 0.1)

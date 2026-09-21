@@ -74,11 +74,11 @@ pile = float(pil.max())                          # without gathering: piles far 
 # FORMATTED, not interpolated raw. The shell hands this over as the string "0", and a bare
 # integer is exactly what the parser discards -- a count or an index is never a measurement --
 # so a PERFECT result made the line unparseable and the bound unprobeable.
-print(f"  SETTLING       : gathered final per-cycle |Δwtd| = {float(os.environ['GSETTLE']):.3e} m (tol {tol})")
-print(f"  GATHERING      : gathered max wtd = {above:.3e} m, all at/below surface: {below_ok} (tol {surf_tol})")
+print(f"  SETTLING       : gathered final per-cycle |Δwtd| = {float(os.environ['GSETTLE']):.3e} m (tol TOL={tol})")
+print(f"  GATHERING      : gathered max wtd = {above:.3e} m, all at/below surface: {below_ok} (tol SURF_TOL={surf_tol})")
 print(f"  MASS BALANCE   : dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
-print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol {mbtol})")
-print(f"  BITE           : no-gathering (ponding) max wtd = {pile:.3e} m, piles above surface as routing prevents (min {pile_min})")
+print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
+print(f"  BITE           : no-gathering (ponding) max wtd = {pile:.3e} m, piles above surface as routing prevents (min PILE_MIN={pile_min})")
 ok = below_ok and at_surface and rel < mbtol and pile >= pile_min
 if ok:
     print("PASS: direct-to-runoff gathers the excess and holds wtd=0; budget closes; without it the water piles")
@@ -86,10 +86,10 @@ else:
     # NAME WHAT FAILED (#119). A bare "FAIL" left a reader to compare the printed numbers
     # against their bounds by hand, and left the bite harness unable to tell a failed
     # assertion from a crash -- so every bound here reported INCONCLUSIVE.
-    if not below_ok:       print(f"  FAIL  GATHERING: water stands above the surface, max wtd = {above:.3e} m (tol {surf_tol})")
-    if not at_surface:     print(f"  FAIL  AT SURFACE: the table is not pinned at the surface, max wtd = {above:.3e} m (tol {surf_tol})")
-    if rel >= mbtol:       print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol {mbtol})")
-    if pile < pile_min:    print(f"  FAIL  BITE: without gathering the table did NOT pile, max wtd = {pile:.3e} m (min {pile_min})")
+    if not below_ok:       print(f"  FAIL  GATHERING: water stands above the surface, max wtd = {above:.3e} m (tol SURF_TOL={surf_tol})")
+    if not at_surface:     print(f"  FAIL  AT SURFACE: the table is not pinned at the surface, max wtd = {above:.3e} m (tol SURF_TOL={surf_tol})")
+    if rel >= mbtol:       print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
+    if pile < pile_min:    print(f"  FAIL  BITE: without gathering the table did NOT pile, max wtd = {pile:.3e} m (min PILE_MIN={pile_min})")
     print("  Without that contrast the gathering claim above proves nothing.")
     print("FAIL")
 sys.exit(0 if ok else 1)

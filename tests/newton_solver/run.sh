@@ -248,7 +248,7 @@ ok = d.max() < tol
 # printed before the bound it sits NEAREST it, so a reader's eye lands on the wrong number while the
 # parser takes the largest. The two rules disagreeing is exactly what #118's lint flags.
 print(f"  {'PASS' if ok else 'FAIL'}  SAME ROOT  Anderson vs Newton at equilibrium: "
-      f"max|dV| = {d.max():.3e} m water volume (tol {tol}); rms = {np.sqrt((d**2).mean()):.3e}")
+      f"max|dV| = {d.max():.3e} m water volume (tol AGREE_TOL={tol}); rms = {np.sqrt((d**2).mean()):.3e}")
 sys.exit(0 if ok else 1)
 PY
 

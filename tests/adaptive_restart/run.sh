@@ -65,7 +65,7 @@ ar, base = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:3]]
 phi = VOL.read_band(os.environ["PHI"])
 m = np.ones_like(ar, bool); m[:, 0] = False   # exclude the ocean column
 d = float(VOL.volume_diff(ar, base, phi)[m].max()); tol = float(os.environ["TOL"])
-print(f"  adaptive-restart vs plain Anderson: max|ΔV| = {d:.3e} m water volume  (tol {tol})")
+print(f"  adaptive-restart vs plain Anderson: max|ΔV| = {d:.3e} m water volume  (tol TOL={tol})")
 if d <= tol:
     print("PASS: solver.anderson.restart.enabled runs to equilibrium and matches plain Anderson"); sys.exit(0)
 print(f"FAIL: adaptive-restart differs from plain Anderson by {d:.3e} > tol {tol} m water"); sys.exit(1)

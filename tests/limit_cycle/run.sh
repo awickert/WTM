@@ -83,10 +83,10 @@ mb = abs(dR - dS - dO)                            # steady-state runoff mass-bal
 rel = mb / max(abs(dR), 1e-30)
 phi = VOL.read_band(os.environ["PHI"])
 agree = float(VOL.volume_diff(cc, bd, phi).max())
-print(f"  COMPLEMENTARITY: max wtd = {above:.3e} m (=0 exfiltration constraint), all wtd<=0: {below_ok} (tol {tol})")
+print(f"  COMPLEMENTARITY: max wtd = {above:.3e} m (=0 exfiltration constraint), all wtd<=0: {below_ok} (tol TOL={tol})")
 print(f"  MASS BALANCE (runoff): dRech={dR:.4e} dSurf_removed={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
-print(f"  MASS BALANCE (runoff): |residual|/recharge = {rel:.3e} (tol {mbtol})")
-print(f"  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol {tol})")
+print(f"  MASS BALANCE (runoff): |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
+print(f"  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol TOL={tol})")
 # dev.under_relaxation. Asserted at EXACTLY zero: "off" that is only nearly off is worse than no off
 # switch, because every result taken with it is quietly a different model.
 d_rx1  = float(np.max(np.abs(rx1 - cc)))
@@ -102,10 +102,10 @@ else:
     # NAME WHAT FAILED. This printed the bare word "FAIL", leaving a reader to compare four printed
     # numbers against four bounds by hand to find out which one broke -- and leaving any tool unable
     # to tell a failed assertion from a crash. Each clause now reports itself with its own bound.
-    if not below_ok:    print(f"  FAIL  COMPLEMENTARITY: some cell is above the surface (tol {tol})")
-    if not exfiltration: print(f"  FAIL  EXFILTRATION: no cell is pinned at the surface, max wtd = {above:.3e} m (tol {tol})")
-    if rel >= mbtol:    print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol {mbtol})")
-    if agree >= tol:    print(f"  FAIL  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol {tol})")
+    if not below_ok:    print(f"  FAIL  COMPLEMENTARITY: some cell is above the surface (tol TOL={tol})")
+    if not exfiltration: print(f"  FAIL  EXFILTRATION: no cell is pinned at the surface, max wtd = {above:.3e} m (tol TOL={tol})")
+    if rel >= mbtol:    print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
+    if agree >= tol:    print(f"  FAIL  AGREEMENT cc vs bdf2v: max|ΔV| = {agree:.3e} m water volume (tol TOL={tol})")
     if not relax_ok:    print(f"  FAIL  UNDER-RELAXATION: a=1.0 moved the answer by {d_rx1:.3e} m, or a=0.5 did not differ ({d_rx05:.3e} m)")
     print("FAIL")
 sys.exit(0 if ok else 1)

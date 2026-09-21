@@ -49,14 +49,22 @@ catches that.
 """
 import re, sys, os, glob
 
-_TOL = re.compile(r"\(tol\s*([0-9.eE+-]+)\)")
+# THE BOUND MAY NAME ITSELF: "(tol TOL=0.0065)". The name makes the link to the shell default
+# EXACT instead of inferred, which is what six separate linkage defects were all caused by --
+# two bounds sharing a default value, several arms sharing one, a bound set as an inline env
+# prefix, a python-side default invisible to a run.sh scan, a name not matching the expected
+# pattern, and a bound after a semicolon. Each was patched by making the guess cleverer. The
+# name ends the guessing, and is the same move the declared-config rule made for configs (#79):
+# have the program state what it used rather than have a reader work it out.
+# The bare form stays readable so a suite is never broken by not having been converted yet.
+_TOL = re.compile(r"\(tol\s+(?:([A-Z_][A-Z_0-9]*)=)?([0-9.eE+-]+)\)")
 # A FLOOR, NOT A CEILING. Some assertions are `value >= X`: "a lake must persist", "the two arms must
 # really differ". They are the NON-VACUITY guards -- the checks that stop a suite passing while
 # comparing nothing -- so leaving them unreadable would hide exactly the guards that matter most.
 # Printing them as `(tol X)` would have been read as `value <= X` and reported as FAILING.
 # headroom is defined symmetrically: value/X for a floor, X/value for a ceiling. In both, > 1 means
 # the assertion passes with room, so one column stays comparable across both shapes.
-_MIN = re.compile(r"\(min\s*([0-9.eE+-]+)\)")
+_MIN = re.compile(r"\(min\s+(?:([A-Z_][A-Z_0-9]*)=)?([0-9.eE+-]+)\)")
 _NUM = re.compile(r"[-+]?(?:[0-9]+\.?[0-9]*[eE][+-]?[0-9]+|[0-9]*\.[0-9]+|[0-9]+)")
 # NAME="${NAME:-VALUE}" -- the convention every suite uses for an overridable bound.
 # NOT ANCHORED AT LINE START: several suites put two bounds on one line --
@@ -93,7 +101,7 @@ def _value_and_tol(line):
     if not t:
         return None
     try:
-        tol = float(t.group(1))
+        tol = float(t.group(2))
     except ValueError:
         return None
     # A FLOOR TAKES THE NEAREST NUMBER, NOT THE LARGEST SMALL ONE. The `magnitude <= 1` rule below
@@ -105,7 +113,7 @@ def _value_and_tol(line):
         ns = _NUM.findall(line[: t.start()])
         for n in reversed(ns):
             try:
-                return abs(float(n)), tol, True
+                return abs(float(n)), tol, True, t.group(1)
             except ValueError:
                 continue
         return None
@@ -121,7 +129,7 @@ def _value_and_tol(line):
             cands.append(v)
     if not cands:
         return None
-    return (max(cands), tol, floor)
+    return (max(cands), tol, floor, t.group(1))
 
 
 def ambiguous(line):
@@ -173,7 +181,7 @@ def ambiguous(line):
     # nearest candidate AND the largest, so the two rules agree -- on the wrong number. A candidate
     # equal to the bound is the bound, not a measurement.
     try:
-        tol = abs(float(t.group(1)))
+        tol = abs(float(t.group(2)))
     except ValueError:
         return False
     return any(v == tol for v in small)
@@ -281,7 +289,7 @@ def main():
             vt = _value_and_tol(line)
             if not vt:
                 continue
-            val, tol, floor = vt
+            val, tol, floor, bname = vt
             if tol <= 0:
                 continue
             headroom = (val / tol if tol else float("inf")) if floor else \
@@ -301,6 +309,12 @@ def main():
             # ARM FIRST, then the shared default: an arm that explains its own bound is the
             # more specific statement, and the label match is exact rather than value-matched.
             derived = spread = None
+            # NAME FIRST, and it is EXACT. Value-matching was the root of six linkage defects; when
+            # the line names its bound there is nothing left to infer.
+            if bname:
+                named = [b for b in bounds.get(suite, []) if b[0] == bname]
+                if len(named) == 1:
+                    derived, spread = named[0][2], named[0][3]
             arm = [a for a in labels.get(suite, []) if a[0] in line]
             if arm:
                 best = max(arm, key=lambda a: len(a[0]))

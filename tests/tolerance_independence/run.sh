@@ -121,7 +121,7 @@ for stem, dt, kind in arms:
     # be read against the TIMESTEP. The table stays as a table; the assertion gets its own line below.
     print(f"  {int(dt)/604800:8.4f}  {kind:>6s}   max|dV| = {d:.4e}   {'agree' if d <= tol else 'DISAGREE'}")
 
-print(f"  every arm agrees across the tolerance change: worst max|dV| = {max(worst):.4e} m water (tol {tol})")
+print(f"  every arm agrees across the tolerance change: worst max|dV| = {max(worst):.4e} m water (tol TOL={tol})")
 
 # EVERY ARM MUST AGREE. This was an xfail until #104 was fixed (the water-step verdict is now refused
 # while the residual is above solver.convergence.residual_gate x its initial value). The `band` label is

@@ -54,19 +54,32 @@ def check(name, got, want):
 
 # --- the parser: value, bound, shape ------------------------------------------------------------
 check("ceiling parses value and bound",
-      H._value_and_tol("  OK  CONSERVATION: max = 1.2e-07 (tol 1e-04)"), (1.2e-07, 1e-04, False))
+      H._value_and_tol("  OK  CONSERVATION: max = 1.2e-07 (tol 1e-04)"), (1.2e-07, 1e-04, False, None))
 check("floor parses, and is marked a floor",
-      H._value_and_tol("  OK  LAKE PERSISTS: max wtd = 9.9212 m (min 1.0)"), (9.9212, 1.0, True))
+      H._value_and_tol("  OK  LAKE PERSISTS: max wtd = 9.9212 m (min 1.0)"), (9.9212, 1.0, True, None))
 # BUG 4: the third field. A consumer unpacking two died on every line.
-check("parser returns THREE fields (bug 4)",
-      len(H._value_and_tol("  x = 0.5 (tol 1.0)")), 3)
+# BUG 4 was a consumer unpacking the wrong number of fields. The count changed AGAIN when the
+# bound learned to name itself, and this case caught it immediately -- which is the point.
+check("parser returns FOUR fields: value, bound, shape, name (bug 4)",
+      len(H._value_and_tol("  x = 0.5 (tol 1.0)")), 4)
 # A floor's value is normally ABOVE 1, which the ceiling rule (magnitude <= 1) discards outright.
 check("a floor may exceed 1 -- the ceiling rule would drop it",
-      H._value_and_tol("  max wtd = 65.7 m (min 1.0)"), (65.7, 1.0, True))
+      H._value_and_tol("  max wtd = 65.7 m (min 1.0)"), (65.7, 1.0, True, None))
 check("a bare integer is never the compared value",
-      H._value_and_tol("  ran 1yr: rel = 4.0e-09 (tol 1e-06)"), (4.0e-09, 1e-06, False))
+      H._value_and_tol("  ran 1yr: rel = 4.0e-09 (tol 1e-06)"), (4.0e-09, 1e-06, False, None))
 check("no bound on the line -> not an assertion",
       H._value_and_tol("  cc steady wtd: min -3.221 max 0.000 m"), None)
+
+# --- the bound naming itself: exact linkage, no inference -----------------------------------------
+check("a named ceiling yields its NAME",
+      H._value_and_tol("  max|dV| = 1.98e-03 m (tol TOL=0.0065)"), (1.98e-03, 0.0065, False, "TOL"))
+check("a named floor yields its NAME",
+      H._value_and_tol("  max wtd = 9.92 m (min LAKE_MIN=1.0)"), (9.92, 1.0, True, "LAKE_MIN"))
+check("two bounds sharing a value are told apart by name",
+      (H._value_and_tol("  a = 0.5 (tol FLAT_MAX=10.0)")[3],
+       H._value_and_tol("  b = 2.0e4 (min DISTINCT_MIN=10.0)")[3]), ("FLAT_MAX", "DISTINCT_MIN"))
+check("the bare form still parses -- nothing breaks mid-migration",
+      H._value_and_tol("  max|dV| = 1.98e-03 m (tol 0.0065)")[3], None)
 
 # --- shapes that are not a pass and only one of which is a failure -------------------------------
 check("xfail is `pinned`, not a failure", H.classify(0.5, True, "0", True, False), "pinned")

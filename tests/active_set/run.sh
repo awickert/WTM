@@ -164,15 +164,15 @@ def check(name, cond, detail):
     global ok
     print(f"  {'OK  ' if cond else 'FAIL'} {name}: {detail}"); ok = ok and cond
 check("LAKE PERSISTS (head kept, not flattened)", lake_head > lake_min,
-      f"max wtd with active-set = {lake_head:.4f} m (min {lake_min}) -- lake stage; the pre-lake-aware pin gave 0")
+      f"max wtd with active-set = {lake_head:.4f} m (min LAKE_MIN={lake_min}) -- lake stage; the pre-lake-aware pin gave 0")
 check("DISTINCT (active-set is not either plain collector)", differs > distinct_min,
-      f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m (min {distinct_min})")
+      f"min|active_set - {{implicit,explicit}}| = {differs:.3e} m (min DISTINCT_MIN={distinct_min})")
 # 0.0125 m OF WATER VOLUME = the old 0.05 head floor x0.25, and here that IS correct: MEASURED
 # head 1.7992 vs volume 0.4498, ratio exactly 0.250, so this comparison is purely subsurface and
 # the 36x margin is preserved exactly. Checked rather than assumed -- the same scaling was WRONG
 # on runoff_collector and newton_solver, where the governing cell sits at the surface.
 check("BITE (collectors diverge without active-set)", bite > bite_min,
-      f"max|ΔV(implicit) - ΔV(explicit)| without active-set = {bite:.4f} m water volume (min {bite_min})")
+      f"max|ΔV(implicit) - ΔV(explicit)| without active-set = {bite:.4f} m water volume (min BITE_MIN={bite_min})")
 
 # LIKE-FOR-LIKE (#90): the same two claims, with the collector as the ONLY variable. The three arms
 # above are forced to differ in routing and step mode as well (continuous x explicit and adaptive x
@@ -191,7 +191,7 @@ check("LIKE-FOR-LIKE DISTINCT (collector is the ONLY variable)", lf_distinct > 1
 # checks fail at the same fraction of their own signal rather than at two unrelated round numbers.
 check("LIKE-FOR-LIKE BITE (collectors diverge, collector the ONLY variable)", lf_bite > lf_bite_min,
       f"max|ΔV(explicit) - ΔV(implicit)| at impulse/fixed = {lf_bite:.4f} m water volume"
-      f" (min {lf_bite_min}) -- the bar is the sibling check's measured signal / 36")
+      f" (min LF_BITE_MIN={lf_bite_min}) -- the bar is the sibling check's measured signal / 36")
 print("PASS: lake-aware active-set keeps the lake's head and differs from both plain collectors"
       if ok else "FAIL")
 sys.exit(0 if ok else 1)
