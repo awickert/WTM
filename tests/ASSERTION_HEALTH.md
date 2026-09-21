@@ -234,6 +234,51 @@ Earned by getting each one wrong at least once:
    of inferred, and tells a reader which variable to override;
 6. a value of exactly zero still needs a decimal -- `0.000e+00`, never `0`.
 
+## 5d-bis. How to write a derivation (Q4)
+
+A derivation says **where the number came from**. It is not a restatement of what the bound
+measures -- every bound here already carries that on its definition line. Two shapes, and the first
+is far stronger.
+
+### Shape 1 -- a SEPARATING bound (use this whenever the suite provides it)
+
+Many suites run both a healthy arm and a broken-by-construction one, so they measure **both edges of
+the gap the bound sits in**. Then the derivation needs no convention at all:
+
+```
+# DERIVED 2026-09-22, SEPARATING: `explicit` clamps to the surface and measures 0.0000e+00 m
+#   exactly, while `off` in this same suite piles water to 192.46 m. The bound sits between two
+#   MEASURED values, 4 orders above the clamped one and 6 below the unclamped.
+```
+
+Nothing is assumed. A regression has to cross a gap whose far side was observed, not guessed.
+
+### Shape 2 -- a ONE-SIDED bound (only the healthy value is measurable)
+
+State the measurement, then say plainly that the multiplier is a **convention**:
+
+```
+# DERIVED 2026-09-22, ONE-SIDED: measured 2.520e-07 on this fixture. Bound 1e-3 = 4000x that,
+#   a CONVENTION not a measurement -- no arm here produces the broken value to bound against.
+```
+
+The words "a convention not a measurement" are the point. A multiplier dressed up as though it were
+derived is worse than an undocumented number, because it stops anyone looking again.
+
+### Say so when a bound is BLUNT
+
+If the headroom runs to thousands and the quantity is bit-reproducible, the bound cannot catch a
+small regression. That is a finding about the test, and it belongs in the derivation where the next
+reader will see it -- not quietly left in a passing suite.
+
+### What does NOT count as a derivation
+
+- Restating the units or the subject ("metres of water volume") -- that is the definition line.
+- "Seems reasonable", "conservative", "should be plenty".
+- A spread note. Q6 and Q4 are different questions; `_strip_spread` enforces the separation after
+  the notes' own wording ("measured ... by assertion_probe.py") marked 49 bounds derived by
+  accident.
+
 ## 5e. The sweep of 2026-09-21/22 — what was actually measured
 
 Every suite carrying a bound was run twice unchanged (Q6) and once per bound with that bound
