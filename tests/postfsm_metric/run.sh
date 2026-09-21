@@ -46,6 +46,12 @@ export OMP_NUM_THREADS=1
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, SEPARATING, and the assertion line carries both edges itself: the logged
+#   metric matches the POST-FSM recomputation to 4.445e-12 m (distributed) and 3.458e-12 m
+#   (serial), while against the PRE-FSM state the same comparison gives 3.585e+00 and 3.615e+00 m.
+#   Twelve orders separate reading the right state from reading the wrong one. The bound sits
+#   inside that gap with 225x of headroom above the matching pair -- and the pre-FSM number is
+#   exactly the defect #106 fixed, so the broken edge is measured history.
 TOL="${TOL:-1e-9}"
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # DIFF_MIN: how far apart the two STATES must get on at least one cycle for the comparison to be able
@@ -113,7 +119,7 @@ for stem in ("distributed", "serial"):
           f" below it this comparison asserts nothing)")
     check(f"{stem}: metric matches POST-FSM",
           worst_post <= TOL,
-          f"max |logged - recomputed(post-FSM)| = {worst_post:.3e} m (tol {TOL:g});"
+          f"max |logged - recomputed(post-FSM)| = {worst_post:.3e} m (tol TOL={TOL:g});"
           f" against pre-FSM it is {worst_pre:.3e}")
 
 print()
