@@ -199,6 +199,41 @@ unreadable suites INTO the print convention, which would have turned an accident
 an active misreading -- on the first suite queued for editing. Five of the sixteen already-visible
 suites contain such arms; three of the twelve queued do.
 
+## 5d. Two ways a line can be wrong about itself
+
+Both are reported, never fatal, and they are opposite failures of the same parse.
+
+**AMBIGUOUS (#118)** -- more than one number on the line could be the compared one, and the
+parser's rule disagrees with where a reader's eye lands. Six real cases, two of them introduced
+while writing this framework. The test is *largest vs nearest disagree*, plus the special case of
+the bound repeated in the prose.
+
+**NO VALUE (#123)** -- the line carries `(tol ...)` or `(min ...)`, so it CLAIMS to be an
+assertion, and the parser can extract nothing from it. Today that would make it vanish: skipped
+exactly like a line that was never an assertion, with the totals quietly shrinking.
+
+> `direct_to_runoff` printed `|Δwtd| = 0 m (tol 0.0001)`. A bare integer is discarded by design,
+> so a **perfect result** made the line unparseable and its bound unreachable. It was found by
+> accident -- the probe said "governs no assertion that printed" and that was chased rather than
+> accepted.
+
+The headline count is therefore stated as **"N assertions parsed, of M lines carrying a bound"**.
+If those differ, something is missing and says so.
+
+### The rules for writing an assertion line
+
+Earned by getting each one wrong at least once:
+
+1. put the compared quantity **immediately before** the marker, and nothing numeric after it;
+2. move ladders, breakdowns and per-scheme detail to their own line, or after the marker;
+3. print the **deviation** when the assertion bounds a deviation -- `|p - expected| = 0.0021
+   (tol PTOL=0.2)` rather than leaving a reader to subtract two printed numbers;
+4. never print the bound itself in the prose before the marker -- the parser will compare the
+   assertion against itself;
+5. name the bound: `(tol TOL=0.0065)`, not `(tol 0.0065)`. The name makes the link exact instead
+   of inferred, and tells a reader which variable to override;
+6. a value of exactly zero still needs a decimal -- `0.000e+00`, never `0`.
+
 ## 6. How to read `assertion_health.py`'s output
 
 It sorts by headroom and reports both ends, labelled by what they mean rather than by a single word:

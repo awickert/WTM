@@ -81,6 +81,20 @@ check("two bounds sharing a value are told apart by name",
 check("the bare form still parses -- nothing breaks mid-migration",
       H._value_and_tol("  max|dV| = 1.98e-03 m (tol 0.0065)")[3], None)
 
+# --- #123: a line that claims a bound but yields no value must not vanish -----------------------
+check("a line with a bound claims to be an assertion",
+      H.claims_bound("  SETTLING: |dwtd| = 0 m (tol TOL=0.0001)"), True)
+check("a line with no bound claims nothing",
+      H.claims_bound("  cc steady wtd: min -3.221 max 0.000 m"), False)
+# The exact case that prompted it: a PERFECT result printed as a bare integer.
+check("a bare-integer value yields nothing, so the line is reportable (#123)",
+      (H.claims_bound("  |dwtd| = 0 m (tol TOL=0.0001)"),
+       H._value_and_tol("  |dwtd| = 0 m (tol TOL=0.0001)")), (True, None))
+check("a nan value yields nothing too",
+      H._value_and_tol("  RATIO: value = nan (tol T=1e-06)"), None)
+check("a floor marker also counts as claiming a bound",
+      H.claims_bound("  max wtd = 9.9 m (min LAKE_MIN=1.0)"), True)
+
 # --- #122: assumptions that only held because ceilings were the only shape ---------------------
 # A CEILING MAY EXCEED 1. The magnitude rule keeps absolute quantities out of a ratio comparison,
 # but xrank_growth's "last/first" ratio is 2747 and the line parsed to NOTHING.

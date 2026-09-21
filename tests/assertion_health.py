@@ -149,6 +149,28 @@ def _value_and_tol(line):
     return (max(cands), tol, floor, t.group(1))
 
 
+def claims_bound(line):
+    """Does this line carry a bound marker at all? (#123)
+
+    A line containing "(tol ...)" or "(min ...)" is CLAIMING to be an assertion. If the parser then
+    extracts no value from it, that is a defect IN THE LINE -- and today it is indistinguishable
+    from a line that was never an assertion, because both are simply skipped.
+
+    THE CASE THAT PROMPTED THIS. direct_to_runoff printed
+
+        SETTLING : gathered final per-cycle |Δwtd| = 0 m (tol 0.0001)
+
+    A bare integer is discarded by design, so a line WITH a bound yielded no assertion. It was not
+    misread; it was ABSENT, and the totals shrank without saying so. I found it only because the
+    probe happened to report "governs no assertion that printed" and I chased that rather than
+    accepting it. A suite with no probeable bound looks exactly the same.
+
+    Other ways in, none of which had been checked: a value that happens to be whole and prints
+    without a decimal; a nan or inf; a format the number pattern misses.
+    """
+    return bool(_TOL.search(line) or _MIN.search(line))
+
+
 def ambiguous(line):
     """Does more than one number on this line plausibly answer "what was compared"? (#118)
 
@@ -312,7 +334,7 @@ def main():
     tests_dir = os.path.dirname(os.path.abspath(__file__))
     bounds, labels = source_evidence(tests_dir)
 
-    rows = []
+    rows, unparsed = [], []
     for p in paths:
         try:
             text = open(p, errors="ignore").read()
@@ -322,6 +344,8 @@ def main():
         for line in text.splitlines():
             vt = _value_and_tol(line)
             if not vt:
+                if claims_bound(line):
+                    unparsed.append((suite, line.strip()))
                 continue
             val, tol, floor, bname = vt
             if tol <= 0:
@@ -379,7 +403,8 @@ def main():
     unlinked = [r for r in rows if r[3] is None]
     nospread = [r for r in rows if r[3] and r[4] is None]
 
-    print(f"  {len(rows)} assertions state a value beside a tolerance. EVERY ONE IS LISTED -- this")
+    print(f"  {len(rows)} assertions parsed, of {len(rows) + len(unparsed)} lines carrying a bound.")
+    print("  EVERY ONE IS LISTED -- this")
     print("  carries no threshold. headroom = tol/value; see tests/ASSERTION_HEALTH.md for why a low")
     print("  headroom is a VIRTUE on a bit-reproducible quantity and a risk only on a varying one.")
     print(f"  {len(under)} carry no detectable derivation. {len(nospread)} have no declared SPREAD,")
@@ -410,6 +435,13 @@ def main():
             h = f"{headroom:10.2f}"
         print(f"      {h}  {classify(headroom, derived, spread, inverted, unverified):<10} {suite:<22} {line[:78]}")
 
+    if unparsed:
+        print(f"  {len(unparsed)} line(s) STATE A BOUND BUT YIELD NO VALUE (#123). A line carrying")
+        print("  (tol ...) or (min ...) is claiming to be an assertion; if no value can be read from")
+        print("  it, the line is at fault -- and it would otherwise vanish from every count silently:")
+        for suite, line in unparsed:
+            print(f"      {suite:<22} {line[:74]}")
+        print()
     if unlinked:
         print()
         print(f"  {len(unlinked)} could not be tied to a tolerance in any run.sh, so `derived` is unknown")
