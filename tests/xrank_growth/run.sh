@@ -45,10 +45,21 @@ NRANK="${NRANK:-6}"; PY="${PY:-python3}"
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, SEPARATING: impulse drift measures last/first = 2.05 while continuous drift,
+#   the arm right below, measures 103.23. The ceiling at 10 sits inside that measured gap -- 4.9x
+#   above flat, 10x below compounding -- so the pair of bounds cannot both pass if the two regimes
+#   ever collapse into one.
 FLAT_MAX="${FLAT_MAX:-10.0}"          # impulse drift must stay flat: last/first below this
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, SEPARATING, the same measured pair from the other side: continuous drift
+#   compounds to 103.23 where impulse stays at 2.05. The floor at 3.0 sits just above the flat
+#   value, 34x below the compounding one.
 COMPOUND_MIN="${COMPOUND_MIN:-3.0}"   # BITE GUARD: continuous drift must actually compound
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
+# DERIVED 2026-09-22, ONE-SIDED bite guard, BLUNT at 2747x: measured continuous/impulse = 27474.6
+#   at the final report. Like the other collapse guards in this tree it asks a yes/no question --
+#   have the two regimes become the same run -- and the degenerate value is 1.0, not something
+#   near the bound.
 DISTINCT_MIN="${DISTINCT_MIN:-10.0}"  # BITE GUARD: the two regimes must be far apart at the end
 export OMP_NUM_THREADS=1
 
