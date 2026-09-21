@@ -23,7 +23,11 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
 make_work fscons
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # THE OTHER FOUR BOUNDS, promoted from literals buried in their conditions (#121). A literal cannot
 # be reached from outside, so assertion_probe could not tighten it and the liveness of four of this
 # suite's five assertions was simply unknown -- including BOTH non-vacuity guards below.
@@ -31,8 +35,11 @@ TOL="${TOL:-1e-4}"; PY="${PY:-python3}"
 # NOT MEANT TO BE TUNED. Each sits unmistakably clear of noise rather than at a measured margin;
 # raise one only with a measurement, never to make a run pass.
 EXTERNAL_TOL="${EXTERNAL_TOL:-1e-6}"   # col 19 is EXTERNAL water: the coupling cannot change it at all
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 CLOSURE_TOL="${CLOSURE_TOL:-1e-2}"     # |budget_residual|/recharge at the end of the impulse run
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 STATE_GAP_MIN="${STATE_GAP_MIN:-1e-3}" # BITE GUARD: the two couplings must really be different runs
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 LAKE_MIN="${LAKE_MIN:-1.0}"            # BITE GUARD: standing water must survive, not be drained away
 export OMP_NUM_THREADS=1
 

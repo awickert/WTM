@@ -39,6 +39,9 @@ export OMP_NUM_THREADS=1
 # Seven orders of magnitude of empty space between the two groups: 1e-4 clears the worst clean arm by
 # ~1200x and sits ~14000x under the mildest failing one. There is no grey zone to calibrate into, which
 # is the only reason a round number is defensible here.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-1e-4}"
 
 # The tight tolerance the answer is judged against. 1e-12 is where the answer STOPS MOVING: measured,

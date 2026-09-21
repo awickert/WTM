@@ -61,6 +61,9 @@ done
 # BITE GUARD, promoted from a literal (#121) so assertion_probe can RAISE it and confirm the
 # check still fails when it should. A dead guard here means the suite passes on nothing.
 # Chosen to sit clear of noise, NOT tuned: raise it only with a measurement.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 CONTROL_MIN="${CONTROL_MIN:-1e-3}"   # the sigmoid parameters MUST matter where owe != ET
 
 CONTROL_MIN="$CONTROL_MIN" TESTS="$(readlink -f ..)" "$PY" - "$WORK" <<'PY'

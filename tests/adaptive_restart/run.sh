@@ -19,6 +19,9 @@ make_work arst
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not metres of head: the model
 # conserves water and judges every stopping criterion in water volume (#61), so an agreement bound belongs
 # in the same units. Uniform phi = 0.25 here, so this is the old 1e-3 m head bound x0.25 exactly.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-0.00025}"     # 0.25 mm of water; adaptive-restart vs plain-Anderson steady-state agreement
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1

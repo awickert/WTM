@@ -87,6 +87,9 @@ done
 
 # PROMOTED FROM A LITERAL (#121): reachable from outside so assertion_probe can tighten
 # it and confirm the assertion still fails when it should.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 SPAN_TOL="${SPAN_TOL:-1e-9}"   # every arm must cover the same simulated span
 SPAN_TOL="$SPAN_TOL" WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os, sys, glob

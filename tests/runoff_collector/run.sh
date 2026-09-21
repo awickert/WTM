@@ -99,11 +99,19 @@ XS=$(ls "$WORK"/xsoil_mode_*.tif | tail -1)
 # PROMOTED FROM LITERALS (#121). The last two are BITE GUARDS: without them the `unset` and
 # `off` arms would pass just as well if every collector produced the same answer, which is
 # exactly the state this suite exists to rule out.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 UNSET_TOL="${UNSET_TOL:-1e-6}"       # `unset` must resolve to active_set BIT-FOR-BIT
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 AGREE_TOL="${AGREE_TOL:-0.1}"        # implicit vs explicit, m of water
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 XS_MIN="${XS_MIN:-5.0}"              # BITE GUARD: `off` must visibly pile water above the surface
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 XS_DIFF_MIN="${XS_DIFF_MIN:-1e-6}"   # BITE GUARD: `off` must differ from the collector arms
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 EXPLICIT_TOL="${EXPLICIT_TOL:-1e-4}"  # `explicit` clamps the table to the surface, so max wtd ~ 0
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 OFF_PILE_MIN="${OFF_PILE_MIN:-5.0}"   # BITE GUARD: `off` must pile water well above the surface
 OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" \
   UNSET_TOL="$UNSET_TOL" AGREE_TOL="$AGREE_TOL" XS_MIN="$XS_MIN" XS_DIFF_MIN="$XS_DIFF_MIN" EXPLICIT_TOL="$EXPLICIT_TOL" OFF_PILE_MIN="$OFF_PILE_MIN" \

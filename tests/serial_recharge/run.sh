@@ -99,7 +99,11 @@ fi
 # PROMOTED FROM A LITERAL (#121) so assertion_probe can tighten it and confirm the assertion
 # still fails when it should. A literal in a condition cannot be reached from outside, so its
 # liveness was unknown; a bound nothing can exercise is a bound nothing has checked.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 SERIAL_TOL="${SERIAL_TOL:-1e-11}"   # serial vs distributed recharge, relative
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 SPLIT_TOL="${SPLIT_TOL:-1e-11}"     # col 9 == col 19 + col 20, the split must be exact
 SERIAL_TOL="$SERIAL_TOL" SPLIT_TOL="$SPLIT_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
 import os, sys

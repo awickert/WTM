@@ -20,10 +20,16 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/runoffgather_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 make_work dtr
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-1e-4}"          # metres; settled if final per-cycle |Δwtd| below this
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 SURF_TOL="${SURF_TOL:-0.5}" # metres; implicit pins the table at the surface to the SNES tolerance (a small
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                             # cm-dm overshoot, no clamp backstop) -- a exfiltration constraint, not a pile
 PILE_MIN="${PILE_MIN:-1.0}" # metres; without gathering the table piles far above this
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

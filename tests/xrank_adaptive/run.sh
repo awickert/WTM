@@ -81,6 +81,9 @@ PY=${PYTHON:-python3}
 # PROMOTED FROM A LITERAL (#121) so assertion_probe can tighten it and confirm the assertion
 # still fails when it should. A literal in a condition cannot be reached from outside, so its
 # liveness was unknown; a bound nothing can exercise is a bound nothing has checked.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 XRANK_TOL="${XRANK_TOL:-1e-9}"   # cross-rank agreement of the final water table
 XRANK_TOL="$XRANK_TOL" TESTS="$(readlink -f ..)" "$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
 import sys, glob, os

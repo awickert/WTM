@@ -28,6 +28,9 @@ make_work scons
 # conversion from the old 1e-3 m head bound is exactly x0.25 and nothing about what passes changes
 # today -- it starts to matter the moment porosity varies (it does in production) or the table
 # reaches the surface, where dV/dwtd runs from phi up to 1.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-0.00025}"    # 0.25 mm of water on a ~6 m mound (was 1e-3 m of head)
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
@@ -122,6 +125,7 @@ run volgov anderson
 
 AN=$(ls "$WORK"/anderson_*.tif | tail -1); PI=$(ls "$WORK"/picard_*.tif | tail -1); NE=$(ls "$WORK"/newton_*.tif | tail -1)
 VC=$(ls "$WORK"/volconv_*.tif | tail -1); VG=$(ls "$WORK"/volgov_*.tif | tail -1)
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # PROMOTED FROM A LITERAL (#121): reachable from outside, so assertion_probe can tighten it and
 # confirm the assertion still fails when it should. A bound nothing can exercise is unchecked.
 # The TARGET is 0.25 -- the fixture's porosity, which is physics and stays a literal. What is

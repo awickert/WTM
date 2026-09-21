@@ -106,13 +106,21 @@ done
 # would pass just as well on a fixture whose axes are indistinguishable -- it asserts that the
 # TRANSPOSED forcing does NOT fit, so a real orientation error could not hide.
 # Not meant to be tuned: each sits clear of noise. Raise one only with a measurement.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 CELL_TOL="${CELL_TOL:-1e-6}"       # per-cell relative error against the closed-form column
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 SWAP_MIN="${SWAP_MIN:-1e-3}"       # BITE GUARD: the transposed forcing must visibly NOT fit
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 SPREAD_MIN="${SPREAD_MIN:-5.0}"    # BITE GUARD: the forcing must actually vary across the domain
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 LEDGER_TOL="${LEDGER_TOL:-1e-12}"  # column ledger closure, at arithmetic precision
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # The SPLIT TARGET 3/7 is the fixture's geometry and stays a literal; SPLIT_TOL bounds the
 # distance from it. MOVED_MIN is a BITE GUARD: the forcing must actually move the table.
 MOVED_MIN="${MOVED_MIN:-0.5}"      # BITE GUARD: the perturbation must visibly move the table
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 SPLIT_TOL="${SPLIT_TOL:-1e-6}"     # |split - 3/7| and |same_in - 1|, the routing fractions
 
 WORK="$WORK" INP="$INP" CELL_TOL="$CELL_TOL" SWAP_MIN="$SWAP_MIN" SPREAD_MIN="$SPREAD_MIN" \

@@ -39,6 +39,9 @@ make_work budget
 # Defer to the suite's coverage log when run under run_all.sh, so the aggregated matrix sees these
 # arms; fall back to a per-run file so the resolution assertions still work standalone.
 export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-1e-6}"      # relative to the run's solver recharge
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1

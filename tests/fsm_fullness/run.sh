@@ -48,7 +48,11 @@ SP=$(ls "$WORK"/plain_*.tif | tail -1); SK=$(ls "$WORK"/skim_*.tif | tail -1); S
 # and confirm the assertion still fails when it should.
 # THE SILL ELEVATIONS (97 m, 95 m) STAY LITERAL -- they are the fixture's geometry, not tuning
 # knobs. What is promoted is the TOLERANCE on the distance from them.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 SILL_TOL="${SILL_TOL:-0.2}"   # |stage - 97 m sill|, and |skim - plain|
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 MPI_TOL="${MPI_TOL:-1e-9}"   # n=1 vs n=4 water table
 NDEP="$NDEP" SILL_TOL="$SILL_TOL" MPI_TOL="$MPI_TOL" "$PY" - "$INP/fsm_fullness_t0_topography.tif" "$SP" "$SK" "$SK4" <<'PY'
 import sys, os, numpy as np, rasterio

@@ -22,7 +22,11 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
 make_work bcons
 # metres OF WATER VOLUME (tests/wtm_volume.py), not head (#61/#65).
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 MATCH_TOL="${MATCH_TOL:-2.5e-9}" # dirichlet-vs-padding agreement, in water (was 1e-8 head)
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 DIFF_MIN="${DIFF_MIN:-0.1}"      # metres OF WATER VOLUME; dirichlet-vs-neumann must differ by at least this.
                                  # DELIBERATELY LEFT AT 0.1 rather than scaled to 0.025. This is a floor the
                                  # separation must EXCEED, so keeping the number while the measured value
@@ -79,6 +83,7 @@ emit neu bcons    neumann_toposlope   anderson tr-bdf2        adaptive ; "$WTM" 
 emit nwt bcons    dirichlet_sea_level newton   backward-euler ramp     ; "$WTM" "$WORK/nwt.yaml" $BB > "$WORK/nwt.log" 2>&1 || { echo "RUN FAILED: dirichlet(newton)"; tail -3 "$WORK/nwt.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); PAD=$(ls "$WORK"/pad_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); NWT=$(ls "$WORK"/nwt_*.tif | tail -1)
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # PROMOTED FROM A LITERAL (#121): reachable from outside so assertion_probe can tighten
 # it and confirm the assertion still fails when it should.
 NEWTON_TOL="${NEWTON_TOL:-1e-6}"   # newton vs the analytic boundary solution

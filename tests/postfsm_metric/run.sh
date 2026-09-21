@@ -43,7 +43,11 @@ export OMP_NUM_THREADS=1
 
 # TOL: the logged metric and the recomputed one are the SAME arithmetic on the same doubles, so they
 # agree to rounding. This is a reproduction tolerance, not a physics one.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-1e-9}"
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # DIFF_MIN: how far apart the two STATES must get on at least one cycle for the comparison to be able
 # to discriminate. Measured on this fixture: the two differ by O(1) m early in the run.
 DIFF_MIN="${DIFF_MIN:-1e-3}"

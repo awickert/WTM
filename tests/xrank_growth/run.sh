@@ -42,8 +42,13 @@ NRANK="${NRANK:-6}"; PY="${PY:-python3}"
 # would be invisible to it -- the bound would exist and still be unprobeable.
 # The last two are BITE GUARDS: without them "impulse drift is flat" would pass just as well if
 # BOTH regimes were flat, i.e. if the test had stopped distinguishing anything.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 FLAT_MAX="${FLAT_MAX:-10.0}"          # impulse drift must stay flat: last/first below this
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 COMPOUND_MIN="${COMPOUND_MIN:-3.0}"   # BITE GUARD: continuous drift must actually compound
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 DISTINCT_MIN="${DISTINCT_MIN:-10.0}"  # BITE GUARD: the two regimes must be far apart at the end
 export OMP_NUM_THREADS=1
 

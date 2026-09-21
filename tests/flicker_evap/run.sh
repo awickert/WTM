@@ -32,7 +32,11 @@ make_work fe
 # 0.0283872. The largest head swing sits in a low-storativity cell that moves almost no water, so the
 # "flicker" this fixture detects is far smaller in water than it looks in head.
 QUIET="${QUIET:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below this (managed reads exactly 0)
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cycle stays far above QUIET.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                             # Set to PRESERVE THE ORIGINAL MARGIN rather than by scaling the old number:
                             # 1.0 against an achieved 1.79714 head was 1.80x, and 0.015 against an achieved
                             # 0.0283872 volume is 1.89x. Scaling 1.0 by 0.25 would have demanded 0.25 from a

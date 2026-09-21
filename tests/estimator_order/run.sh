@@ -57,6 +57,9 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
 make_work estorder
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 PTOL="${PTOL:-0.2}"        # how far the observed order may sit from its expected value
 export OMP_NUM_THREADS=1
 

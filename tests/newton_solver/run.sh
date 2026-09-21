@@ -58,7 +58,11 @@ FSMDIR=$(readlink -f ../fsm_consistency)
 [[ -f "$FSMDIR/inputs/fsm_test_t0_topography.tif" ]] || ( cd "$FSMDIR" && python3 make_inputs.py >/dev/null )
 INP="$FSMDIR/inputs"
 make_work newton
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 JTOL="${JTOL:-1e-2}"      # ||J-Jfd||/||J|| ceiling; the piecewise kink keeps it well above 1e-8
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head (#61/#65).
 # THE VALUE DOES NOT SCALE BY phi HERE, and the reason is the point of the whole conversion: on
 # this fixture the move to water CHANGES WHICH CELL GOVERNS. Measured, Anderson vs Newton:

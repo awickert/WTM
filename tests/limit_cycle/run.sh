@@ -25,6 +25,9 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 INP=$(readlink -f inputs)
 make_work lc
 # TOL is metres OF WATER VOLUME (#61/#65), the old 1e-4 head bound x0.25 on this uniform phi=0.25 fixture.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 

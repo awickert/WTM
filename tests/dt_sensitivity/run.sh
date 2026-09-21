@@ -23,6 +23,9 @@ make_work dts
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head -- the model conserves water
 # and judges its stopping criteria in it (#61). Uniform phi = 0.25 here, so this is the old 1e-3 m
 # head bound x0.25 exactly. BITE_MIN below is derived from it, so it follows automatically.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 4x dt change (it is ~1e-14)
 # The POSITIVE CONTROL was the taper-1 band sink under runoff_collector=legacy, whose band width scaled
 # as 2*qmax*dt; both were retired 2026-09-01 (fork issue #7). `implicit` replaces it, and is the better
@@ -45,6 +48,7 @@ DT_TOL="${DT_TOL:-2.5e-4}"   # the active-set equilibrium must match across the 
 # looser assertion arriving as a side effect of a units fix, which is exactly the kind of silent
 # slackening this conversion exists to prevent. Set independently, it keeps the ORIGINAL strictness.
 PY="${PY:-python3}"
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 BITE_MIN="${BITE_MIN:-0.1}"   # metres OF WATER VOLUME; the control sits at 2.248e-01, a 2.25x margin (400x DT_TOL)
 export OMP_NUM_THREADS=1
 

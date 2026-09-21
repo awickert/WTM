@@ -51,11 +51,18 @@ export OMP_NUM_THREADS=1
 # was simply unknown -- and a dead bite guard means the whole suite reports success while
 # comparing nothing (#34/#91/#96). These are chosen to sit unmistakably above noise, NOT
 # tuned: raise one only with a measurement, never to make a run pass.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 DISTINCT_MIN="${DISTINCT_MIN:-1e-6}"   # active_set must differ from BOTH plain collectors
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 BITE_MIN="${BITE_MIN:-0.0125}"   # the two plain collectors must diverge, else the comparison is empty
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 LAKE_MIN="${LAKE_MIN:-1.0}"   # a lake must survive the active-set pin, not be flattened to zero
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 # DERIVED, unlike the three above: the sibling BITE measured 0.1590 m, and this bar is that / 36.
 LF_BITE_MIN="${LF_BITE_MIN:-0.0044}"   # like-for-like: the collectors must still diverge in isolation
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
 LF_DISTINCT_MIN="${LF_DISTINCT_MIN:-1e-6}"   # like-for-like: active_set must differ from both, in isolation
 
 

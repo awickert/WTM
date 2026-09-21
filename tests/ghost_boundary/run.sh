@@ -28,7 +28,11 @@ make_work ghostbc
 # metres OF WATER VOLUME (|V(wtd_a)-V(wtd_b)|, tests/wtm_volume.py), not head: the model conserves water
 # and judges every stopping criterion in water volume (#61/#65). Uniform phi = 0.25 on this fixture, so this
 # is the old 1e-3 head bound x0.25 exactly -- the same strictness, correctly labelled.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 TOL="${TOL:-2.5e-4}"      # STEADY-STATE cross-scheme agreement under the ghost boundary.
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                           # ITS OLD JUSTIFICATION WAS THE BUG (#34). It read: "NOT a cross-scheme bound:
                           # at the fixed point the schemes agree to 0.00e+00 by construction, so this
                           # tolerance is never the binding constraint". The 0.00e+00 was not "by

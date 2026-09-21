@@ -20,6 +20,9 @@ WTM="${1:-$(readlink -f ../../build/wtm.x)}"
 [[ -f inputs/anbcD_ta_topography.tif ]] || python3 make_inputs.py >/dev/null
 INP=$(readlink -f inputs)
 make_work anbc
+# SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
+#             Headroom here therefore measures SENSITIVITY, never flake risk; see
+#             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
 FIT_TOL="${FIT_TOL:-1e-6}"   # metres; max deviation of the water table from the closed-form parabola
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
