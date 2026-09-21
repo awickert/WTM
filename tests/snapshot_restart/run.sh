@@ -20,6 +20,12 @@ make_work snap
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED: measured max|dV| restart vs cold equilibrium = 0.0000 m of water
+#   volume -- a restart reproduces the cold run exactly, which is the whole claim. With the
+#   measurement at zero no multiplier can be derived from it, so this is a REGRESSION PIN: the
+#   value 0.0125 is inherited from the same family as adaptive_water and recharge_consistency (see
+#   the note there) and bounds nothing this fixture measures. It is doing real work all the same --
+#   any restart that does not reproduce would miss by metres, not by hundredths.
 TOL="${TOL:-0.0125}"; PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
