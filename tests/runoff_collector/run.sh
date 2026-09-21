@@ -103,12 +103,15 @@ UNSET_TOL="${UNSET_TOL:-1e-6}"       # `unset` must resolve to active_set BIT-FO
 AGREE_TOL="${AGREE_TOL:-0.1}"        # implicit vs explicit, m of water
 XS_MIN="${XS_MIN:-5.0}"              # BITE GUARD: `off` must visibly pile water above the surface
 XS_DIFF_MIN="${XS_DIFF_MIN:-1e-6}"   # BITE GUARD: `off` must differ from the collector arms
+EXPLICIT_TOL="${EXPLICIT_TOL:-1e-4}"  # `explicit` clamps the table to the surface, so max wtd ~ 0
+OFF_PILE_MIN="${OFF_PILE_MIN:-5.0}"   # BITE GUARD: `off` must pile water well above the surface
 OFFWARN="$OFFWARN" XSBANNER="$XSBANNER" \
-  UNSET_TOL="$UNSET_TOL" AGREE_TOL="$AGREE_TOL" XS_MIN="$XS_MIN" XS_DIFF_MIN="$XS_DIFF_MIN" \
+  UNSET_TOL="$UNSET_TOL" AGREE_TOL="$AGREE_TOL" XS_MIN="$XS_MIN" XS_DIFF_MIN="$XS_DIFF_MIN" EXPLICIT_TOL="$EXPLICIT_TOL" OFF_PILE_MIN="$OFF_PILE_MIN" \
   TESTS="$(readlink -f ..)" PHI="$INP/rcoll_porosity.tif" "$PY" - "$IM" "$EX" "$OF" "$UN" "$AS" "$XS" <<'PY'
 import sys, os, numpy as np, rasterio
 unset_tol = float(os.environ["UNSET_TOL"]); agree_tol = float(os.environ["AGREE_TOL"])
 xs_min = float(os.environ["XS_MIN"]); xs_diff_min = float(os.environ["XS_DIFF_MIN"])
+explicit_tol = float(os.environ["EXPLICIT_TOL"]); off_pile_min = float(os.environ["OFF_PILE_MIN"])
 sys.path.insert(0, os.environ["TESTS"])
 import wtm_volume as VOL              # ONE verified V(wtd); see tests/verify_wtm_volume.sh
 im, ex, of, un, aset, xs = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:7]]
@@ -125,10 +128,10 @@ def check(name, cond, detail):
     ok = ok and cond
 check("IMPLICIT (exfiltration constraint, not piled)", (0.0 - 1e-3 <= im_mx < 0.5) and im_seep > 0,
       f"max wtd = {im_mx:.4f} m, exfiltrating cells = {im_seep}")
-check("EXPLICIT (clamped to surface)",      abs(ex_mx) < 1e-4 and ex_seep > 0,
-      f"max wtd = {ex_mx:.4e} m, exfiltrating cells = {ex_seep}")
-check("OFF (piles + warns)",                of_mx > 5.0 and offwarn,
-      f"max wtd = {of_mx:.2f} m, warning printed = {offwarn}")
+check("EXPLICIT (clamped to surface)",      abs(ex_mx) < explicit_tol and ex_seep > 0,
+      f"max wtd = {ex_mx:.4e} m (tol EXPLICIT_TOL={explicit_tol}), exfiltrating cells = {ex_seep}")
+check("OFF (piles + warns)",                of_mx > off_pile_min and offwarn,
+      f"max wtd = {of_mx:.2f} m (min OFF_PILE_MIN={off_pile_min}), warning printed = {offwarn}")
 # UNSET must track the CURRENT default, which is active_set (it was implicit until 2026-08-25). This
 # check is the one that catches a default flip, so it compares against the active_set run rather than
 # hard-coding a number.

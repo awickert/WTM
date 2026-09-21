@@ -97,14 +97,14 @@ match  = float(VOL.volume_diff(dir_, padi, phi).max())   # anderson dirichlet vs
 diff   = float(VOL.volume_diff(dir_, neu, phi).max())    # dirichlet vs neumann, IN WATER VOLUME VOLUME
 newton = float(VOL.volume_diff(nwt, dir_, phi).max())    # newton vs anderson dirichlet, IN WATER VOLUME VOLUME
 print(f"  dirichlet ghost vs old padding:  max|ΔV| = {match:.3e} m water volume  (tol MATCH_TOL={mtol})")
-print(f"  dirichlet vs neumann_toposlope:  max|ΔV| = {diff:.3e} m water  (must exceed {dmin})")
-print(f"  newton vs anderson (dirichlet):  max|ΔV| = {newton:.3e} m water volume  (tol 1e-6)")
+print(f"  dirichlet vs neumann_toposlope:  max|ΔV| = {diff:.3e} m water (min DIFF_MIN={dmin})")
+print(f"  newton vs anderson (dirichlet):  max|ΔV| = {newton:.3e} m water volume (tol NEWTON_TOL={newton_tol})")
 ok = match <= mtol and diff >= dmin and newton <= newton_tol
 if ok:
     print("PASS: land-edge ghost Dirichlet == old sea-level padding, distinct from Neumann, and Newton agrees")
     sys.exit(0)
-if match > mtol:  print(f"FAIL: dirichlet vs padding {match:.3e} > tol {mtol} m water volume (the two should be the same BC)")
-if diff < dmin:   print(f"FAIL: dirichlet vs neumann {diff:.3e} m < {dmin} m (selector had no effect?)")
-if newton > 1e-6: print(f"FAIL: newton vs anderson {newton:.3e} m > 1e-6 m (Jacobian off-map Dirichlet tangent inconsistent?)")
+if match > mtol:  print(f"FAIL: dirichlet vs padding max|ΔV| = {match:.3e} m water volume (tol MATCH_TOL={mtol}) -- the two should be the same BC")
+if diff < dmin:   print(f"FAIL: dirichlet vs neumann max|ΔV| = {diff:.3e} m (min DIFF_MIN={dmin}) -- selector had no effect?")
+if newton > newton_tol: print(f"FAIL: newton vs anderson max|ΔV| = {newton:.3e} m (tol NEWTON_TOL={newton_tol}) -- Jacobian off-map Dirichlet tangent inconsistent?")
 sys.exit(1)
 PY

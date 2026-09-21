@@ -100,10 +100,11 @@ fi
 # still fails when it should. A literal in a condition cannot be reached from outside, so its
 # liveness was unknown; a bound nothing can exercise is a bound nothing has checked.
 SERIAL_TOL="${SERIAL_TOL:-1e-11}"   # serial vs distributed recharge, relative
-SERIAL_TOL="$SERIAL_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
+SPLIT_TOL="${SPLIT_TOL:-1e-11}"     # col 9 == col 19 + col 20, the split must be exact
+SERIAL_TOL="$SERIAL_TOL" SPLIT_TOL="$SPLIT_TOL" WORK="$WORK" NRANKS="$NRANKS" "$PY" - <<'PY'
 import os, sys
 W, N = os.environ["WORK"], os.environ["NRANKS"]
-serial_tol = float(os.environ["SERIAL_TOL"])
+serial_tol = float(os.environ["SERIAL_TOL"]); split_tol = float(os.environ["SPLIT_TOL"])
 COLS = [(8, "9  total_recharge_added"), (9, "10 total_loss_to_ocean"), (11, "12 total_surface_removed"),
         (12, "13 total_ocean_outflow"), (13, "14 stored_volume"), (17, "18 total_evap_removed"),
         (18, "19 recharge_direct"), (19, "20 runoff_to_surface")]
@@ -149,7 +150,7 @@ for idx, name in COLS:
 # The run log prints 12 significant digits (irf.cpp), so this identity is checkable near machine
 # precision. At the stream default of 6 it missed by ~5e-7, which is indistinguishable from a real
 # accounting error -- the tolerance here should never be loosened to paper that over.
-ok = all(abs(r[8] - (r[18] + r[19])) <= 1e-11 * max(1.0, abs(r[8])) for r in (s1, sN))
+ok = all(abs(r[8] - (r[18] + r[19])) <= split_tol * max(1.0, abs(r[8])) for r in (s1, sN))
 fail |= not ok
 print(f"  {'PASS' if ok else 'FAIL'}  CONSISTENT  col 9 == col 19 + col 20")
 

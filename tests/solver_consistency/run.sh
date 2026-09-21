@@ -180,7 +180,7 @@ vcheck("RECON == snorm (the reconstruction tracks PETSc's step)", worst < 1e-3,
 ratios = [w / h for _, h, _, w in rows if h > 0]
 r_med = float(np.median(ratios))
 vcheck("WATER/snorm RATIO == porosity (subsurface fixture)", abs(r_med - 0.25) < ratio_tol,
-       f"median water_L2 / snorm = {r_med:.6f} (phi = 0.25)")
+       f"|median(water_L2/snorm) - phi| = {abs(r_med - 0.25):.3e} (tol RATIO_TOL={ratio_tol}) -- median {r_med:.6f}, phi 0.25")
 
 # ANSWER-NEUTRALITY, which is what makes the diagnostic safe to leave on. Without _govern it must only
 # print; if it ever perturbs the solve, this is the arm that says so.
