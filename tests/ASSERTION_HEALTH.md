@@ -234,6 +234,42 @@ Earned by getting each one wrong at least once:
    of inferred, and tells a reader which variable to override;
 6. a value of exactly zero still needs a decimal -- `0.000e+00`, never `0`.
 
+## 5e. The sweep of 2026-09-21/22 — what was actually measured
+
+Every suite carrying a bound was run twice unchanged (Q6) and once per bound with that bound
+tightened (Q5). **32 suites.**
+
+### Q6: spread is ZERO, everywhere
+
+**Not one printed value moved between repeat runs — across every suite, roughly 60 assertions.**
+`budget_closure`'s 15, `dt_invariance`'s 14, `serial_recharge`'s 11, and every smaller set.
+
+That settles the inversion rule for this tree, as a measurement rather than an assumption: **headroom
+here cannot express flake risk, because nothing flakes.** It measures sensitivity alone, so a low
+headroom is a sharp test and a high one is a blunt instrument. Every reading of a headroom number in
+this repo rests on that.
+
+### Q5: what the bite check found
+
+| outcome | meaning |
+|---|---|
+| **BITES** | the bound was tightened below its measured value and the named assertion failed. It is live. |
+| **exactly 0** | the quantity is identically zero, so no tighter bound exists — `local_ledger`'s stored-volume drift, `fsm_conservation`'s external input, `dt_invariance`'s span, `serial_recharge`'s split. **Results, not gaps**, and each is backed by a guard that does bite. |
+| **INVERTED** | an xfail or NOT ASKED line. Tightening confirms what it already says; its liveness rests on the ratchets beside it. |
+| **CANNOT PROBE** | no assertion printed that bound. Every instance found was a missing marker, and every one was fixed. |
+
+**All 14 bite guards are live.** Each was an unreachable literal at the start of this work.
+
+### Two suites are outside the framework entirely, and correctly so
+
+- `golden` — `GOLDEN_STOL` is a SOLVER tolerance injected into each generated config, not an
+  assertion bound. It tightens the runs; it does not judge them. Verdicts come from stored
+  references via `golden.py`.
+- `combination_sweep` — `RAN_FLOOR` is a floor on a COUNT ("only N of 96 cells ran"). The parser
+  discards bare integers as values by design, so a count cannot be expressed as an assertion here.
+
+Neither is a gap. They are listed because a silent absence is how a count becomes a lie.
+
 ## 6. How to read `assertion_health.py`'s output
 
 It sorts by headroom and reports both ends, labelled by what they mean rather than by a single word:
