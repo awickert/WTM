@@ -42,6 +42,12 @@ export WTM_COVERAGE_LOG="${WTM_COVERAGE_LOG:-$WORK/coverage.txt}"
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, sized by the WORST ARM of a large matrix: every solver x
+#   integrator x collector combination is held to this one bound, and their per-cycle residuals
+#   range from 1.7e-10 (Picard BDF2-on-V) to 6.7e-08 (the tightest-headroom arm, 14.9x). The bound
+#   clears the worst of them by an order. Sizing it on the best arm would fail combinations that
+#   are conserving correctly -- the schemes legitimately differ in how their storage term is
+#   built, which is the reason this suite covers a matrix at all.
 TOL="${TOL:-1e-6}"      # relative to the run's solver recharge
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
@@ -175,7 +181,7 @@ for (r0, x0), (r1, x1) in zip(zip(rech, res), zip(rech[1:], res[1:])):
     rel    = abs(x1 - x0) / d_rech
     if rel > worst: worst, worst_cyc = rel, int(rows[0][0])
 ok = (cum < tol) and (worst < tol)
-print(f"  {'PASS' if ok else 'FAIL'}  {label:<34} cumulative={cum:.2e}  worst-per-cycle={worst:.2e}  (tol {tol:.0e})")
+print(f"  {'PASS' if ok else 'FAIL'}  {label:<34} cumulative={cum:.2e}  worst-per-cycle={worst:.2e}  (tol TOL={tol:.0e})")
 sys.exit(0 if ok else 1)
 PY
 }
