@@ -23,6 +23,12 @@ make_work anbc
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, and the binding arm is NEUMANN SLOPE: three arms use this bound
+#   and their residuals span two orders -- dirichlet 3.548e-10 m, neumann flat 3.427e-10 m,
+#   neumann slope 3.479e-08 m. The bound is sized by the worst of them (28.7x headroom), not by the
+#   best (2800x), because a single tolerance must clear the hardest case. The slope arm is larger
+#   because the terrain gradient (0.05/cell) makes the closed-form parabola an approximation there
+#   rather than an identity.
 FIT_TOL="${FIT_TOL:-1e-6}"   # metres; max deviation of the water table from the closed-form parabola
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
