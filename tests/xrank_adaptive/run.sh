@@ -84,6 +84,12 @@ PY=${PYTHON:-python3}
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
+# DERIVED 2026-09-22, ONE-SIDED, sized by the WORST rank count: n=2 gives 5.043e-11 m, n=6 gives
+#   4.978e-11 m, and n=4 is worst at 6.601e-11 m (15.2x headroom). These are NOT zero, unlike the
+#   fixed-step MPI checks in fsm_cascade -- the adaptive controller's step sequence depends on a
+#   reduction over ranks, so the decomposition changes the last digits of dt and the answer moves
+#   at the 1e-11 level. The bound is one order above that floor, and the floor is a real property
+#   of the adaptive path rather than something to be tightened away.
 XRANK_TOL="${XRANK_TOL:-1e-9}"   # cross-rank agreement of the final water table
 XRANK_TOL="$XRANK_TOL" TESTS="$(readlink -f ..)" "$PY" - "$WORK" $RANKS <<'PYEOF' || fail=1
 import sys, glob, os
