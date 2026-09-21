@@ -687,9 +687,27 @@ would sit ~11× below `dt` and bind constantly. The ratio keeps it everywhere.
 
 ### What is NOT established
 
-- **The floor has never bound anywhere in this tree.** `grep -rln "CLAMPED at"` matches only
-  `src/WTM.cpp` and `config.yaml` — no suite, no golden, no stored benchmark log. **No test exercises
-  the clamp, and none would notice if it started firing**: the message is printed and never checked.
+- ~~The floor has never bound anywhere in this tree.~~ **FALSE, corrected 2026-09-21.** It binds,
+  and fatally. `tests/boundary_consistency` runs at `error_tol: 1e-08` and the controller must take
+  steps below `24.192 s` to reach it; the floor refused and the run aborted:
+
+      step REJECTED at the floor -- dt = 24.192 s is at solver.time_step.dt_min = 24.192 s
+
+  Measured: `rc=2` at `24.192s`, `rc=0` at `0.001s`. **The model behaved correctly; the value was
+  wrong.** That suite is on a temporary `dt_min: "0s"` pending `#124`.
+
+  **The lesson the original claim missed: it is the ERROR TARGET, not the step size, that sets how
+  small `dt` must go** — so a floor derived from `dt` alone cannot know whether it is safe.
+
+  **And `error_tol` alone does not predict it either.** `tests/boundary_analytic` has the *same*
+  `1e-08` target and the *same* `24.192 s` floor and never engages it — verified, zero clamp or
+  reject lines. Whether the floor binds depends on the stiffness of the problem, not on the
+  setting. A static survey can only nominate candidates; **only running tells you.**
+
+- Of the 25 adaptive configs, **21 have now been run since `#109` and 21 pass.** The 9 not yet run
+  all sit at `error_tol` 0.1–0.5, the loosest in the tree, so they carry the least risk of this
+  failure — but that is an argument from the setting, which the paragraph above shows is not
+  decisive.
 - Everything above is measured on test fixtures and one 30″ island. It is not established for a
   production-scale run.
 - MODFLOW's *internal* ordering — the hypothesis that it applies its floor after truncating to the

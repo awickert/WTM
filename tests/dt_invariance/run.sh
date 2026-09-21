@@ -85,10 +85,14 @@ for rr_tag in "0:z" "0.3:r"; do
 done
 [[ $fail -eq 0 ]] || { echo "DT INVARIANCE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+# PROMOTED FROM A LITERAL (#121): reachable from outside so assertion_probe can tighten
+# it and confirm the assertion still fails when it should.
+SPAN_TOL="${SPAN_TOL:-1e-9}"   # every arm must cover the same simulated span
+SPAN_TOL="$SPAN_TOL" WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os, sys, glob
 W = os.environ["WORK"]
 sys.path.insert(0, os.environ["TESTS"])
+span_tol = float(os.environ["SPAN_TOL"])
 import wtm_log as LOG                 # columns BY NAME; the header is pinned by tests/log_schema
 YEAR = 31536000.0
 # COLUMNS BY NAME, not by literal index. These lists used to carry hand-written 0-based positions with
@@ -151,11 +155,11 @@ for p, rr, label in (("z", "0", "routed channel OFF (runoff_ratio 0)"),
     # ABSOLUTE elapsed time, not just agreement between arms: the config asks for 20 yr, so every arm
     # must report 20 yr. Agreement alone would pass happily if all three were off by the same
     # cycles_done off-by-one, and every rate a reader derives from this file divides by this number.
-    ok = max(abs(e - EXPECT_YEARS) for e in elapsed) < 1e-9
+    ok = max(abs(e - EXPECT_YEARS) for e in elapsed) < span_tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  elapsed time is the configured "
           f"{EXPECT_YEARS:g} yr in every arm {[round(e, 6) for e in elapsed]}")
-    ok = max(abs(e - elapsed[0]) for e in elapsed) < 1e-9
+    ok = max(abs(e - elapsed[0]) for e in elapsed) < span_tol
     fail |= not ok
     print(f"  {'PASS' if ok else 'FAIL'}  PRECONDITION  every arm covers the same elapsed time")
     ok = len(set(solves)) > 1

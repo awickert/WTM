@@ -68,7 +68,23 @@ solver:
   time_step:
     mode: @STEPMODE@   # PER-ARM: newton needs `ramp`; the anderson arms take adaptive
     dt: 2419200
-    dt_min: "24.192s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+    dt_min: "0s"   # TEMPORARY -- see #124. NO FLOOR: the controller may shrink without bound,
+                   # and a collapsing step aborts on the unconditional roundoff guard instead of
+                   # being clamped. That is the SUNDIALS/PETSc behaviour and a stated policy
+                   # (config.yaml), not an opt-out.
+                   #
+                   # WHY THIS SUITE CANNOT TAKE 1e-5 x dt. error_tol below is 1e-08, four orders
+                   # tighter than typical here because the suite compares two grids cell by cell.
+                   # The controller needs steps BELOW 24.192 s to reach that, and the floor
+                   # refused: "step REJECTED at the floor -- dt = 24.192 s is at
+                   # solver.time_step.dt_min = 24.192 s and cannot go lower". MEASURED: rc=2 at
+                   # 24.192s, rc=0 at 0.001s.
+                   #
+                   # THE ERROR TARGET SETS HOW SMALL dt MUST GO, not the step size -- so a floor
+                   # derived from dt alone is the wrong shape for a suite with a tight target.
+                   # #124 decides what the right shape is; this unblocks the suite meanwhile.
+                   # The old line, for the record: dt_min: "24.192s"  (1e-5 x dt)
+                   # 1e-5 x dt is
                         # 1e-5 x dt is WTM's own scale-free choice (MODFLOW's 1e-5 is an ABSOLUTE
                         # length, for reporting alignment -- see BDF2_ADAPTIVE_DESIGN.md).
                         # NOTE: this suite also runs a `ramp` arm, and dt_min is NOT consulted there --
