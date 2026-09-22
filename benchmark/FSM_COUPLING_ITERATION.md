@@ -96,6 +96,33 @@ path; this checks the default's physics.
 quantity that sizes the cap and the convergence tolerance, and "how far from equilibrium is this
 run" is the correct reading of any settled-regime number taken alongside it.
 
+**AMENDMENT 3 — Andy: is the tied-outlet choice arbitrary but CONSISTENT? Yes, and it changes the
+iteration design.**
+
+Deterministic by construction, in three layers: `src/dephier.hpp:449` states the rule ("If two or
+more cells are of equal elevation then the one added last"); `FSM_SERIAL_DESIGN.md` records the
+explicit tie-break ordering and the DH's Phase-C outlet sort, and notes that serial-on-rank-0
+PREVENTS rank-dependence, which the serial≡parallel equilibrium result depends on. Measured:
+`fsm_cascade` and `fsm_fullness` both give max|dwtd| n=1 vs n=4 = 0.000e+00, and the 2026-09-22
+sweep found spread = 0 on every assertion across 32 suites.
+
+So "arbitrary" means PHYSICALLY UNMOTIVATED, not unpredictable — the mirror-image island shows a
+stable, reproducible 8.43 m preference, not noise.
+
+**Consequences for the iteration, and the third one is a design improvement.**
+
+1. `F` is a genuine deterministic function of `w`, so the fixed-point framing is valid and nothing
+   hangs on randomness. A DETERMINISTIC period-2 orbit remains possible where the fixed point
+   straddles a spill threshold — which is not a new hazard, it is the flicker
+   (`FREE_SURFACE_FLICKER.md`: non-contraction of this same outer operator).
+2. The byte-identical guard is meaningful ONLY because of this. Against a nondeterministic `F` it
+   could not be written at all. Anderson on the outer loop likewise needs a deterministic operator.
+3. **CYCLE DETECTION CAN BE EXACT.** If `w^{k+2} == w^k` BITWISE, the iteration is provably in a
+   period-2 orbit: stop at once, report it, keep the better of the two states. No tolerance, no
+   heuristic, and no spending the whole cap to discover it. A few lines, and it turns the worst
+   failure mode from "silently burns k full GW solves going nowhere" into "says so on the first
+   repeat." This is only available because the tie-break is consistent.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
