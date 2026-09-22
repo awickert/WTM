@@ -82,6 +82,36 @@ for f in */run.sh *.sh; do
     fi
 done
 
+
+# #112 ROLLBACK COMPLETENESS. ../src/coupling_snapshot.hpp must carry EVERY `double total_*` accumulator
+# declared in ../src/ArrayPack.hpp. Adding a tenth to ArrayPack and forgetting the snapshot is the
+# SILENT MASS ERROR the design names: the coupling iteration would restore eight of nine and lose
+# water without a word. The C++ round-trip test cannot see this -- it only checks the fields it knows
+# about -- so the two SETS are compared here instead.
+ap=$(grep -oE '^\s*double\s+(total_[a-z_]+)' ../src/ArrayPack.hpp | grep -oE 'total_[a-z_]+' | sort -u)
+cs=$(grep -oE '^\s*double\s+(total_[a-z_]+)' ../src/coupling_snapshot.hpp | grep -oE 'total_[a-z_]+' | sort -u)
+nap=$(printf '%s\n' "$ap" | grep -c .)
+# NON-VACUOUS: two EMPTY sets compare equal, so a wrong path would report OK having checked
+# nothing. That is exactly how this check first passed while reading a file that did not exist.
+if [ "$nap" -eq 0 ]; then
+    echo "  FAIL  #112 rollback check found ZERO accumulators in ../src/ArrayPack.hpp -- it is" >&2
+    echo "        reading the wrong file, so it is checking nothing." >&2
+    fail=1
+elif [ "$ap" != "$cs" ]; then
+    echo "  FAIL  #112 rollback is INCOMPLETE -- ArrayPack and coupling_snapshot disagree:" >&2
+    diff <(printf '%s\n' "$ap") <(printf '%s\n' "$cs") | sed 's/^/        /' >&2
+    echo "        Add the field to ../src/coupling_snapshot.hpp (capture AND restore) and to the" >&2
+    echo "        round-trip test in src/test_coupling_snapshot.cpp, then raise kAccumulators." >&2
+    fail=1
+else
+    n=$(printf '%s\n' "$ap" | grep -c .)
+    echo "  OK   #112 ROLLBACK  coupling_snapshot carries all $n ArrayPack total_* accumulators"
+    k=$(grep -oE 'kAccumulators = [0-9]+' ../src/coupling_snapshot.hpp | grep -oE '[0-9]+')
+    if [ "$k" != "$n" ]; then
+        echo "  FAIL  #112 kAccumulators says $k but there are $n accumulators" >&2; fail=1
+    fi
+fi
+
 [ "$fail" -eq 0 ] && echo "LINT: no head-norm comparison, no continuation that continues into nothing" \
                   || echo "LINT: FAILED"
 exit $fail
