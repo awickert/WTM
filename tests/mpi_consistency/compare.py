@@ -8,6 +8,7 @@ diagnostics agree between the two runs (e.g. an n=1 run vs an n=N run). Exits 0
 if consistent, 1 otherwise. Raster values are compared exactly (the model is
 deterministic; MPI decomposition must not change the result).
 """
+import os
 import sys
 import glob
 import numpy as np
@@ -29,7 +30,11 @@ except ImportError:
 # field by >=0.1 m at boundaries, and the accounting bugs seen during this work
 # were O(1)-O(1e12)). Same-rank-count refactor regressions are checked
 # separately and must be bit-identical.
-WTD_TOL = 1e-6         # metres; above FP reduction noise, below any real error
+# READ FROM THE ENVIRONMENT so it is overridable and assertion_probe.py can tighten it. This module
+# is shared: mpi_consistency/run.sh and fsm_consistency/run.sh both call it, so BOTH suites export
+# WTD_TOL and both would otherwise print a bare literal no override could reach -- which is exactly
+# what the 2026-09-22 full run found (4 of its 21 unlinked rows came from this one line).
+WTD_TOL = float(os.environ["WTD_TOL"])   # metres; above FP reduction noise, below any real error
 
 # EVERY budget column is compared, not just recharge and ocean loss. Three tolerance CLASSES, each
 # measured rather than assumed, because they fail for genuinely different reasons and collapsing them
@@ -177,7 +182,7 @@ def main():
     # load-bearing evidence whenever a DIAGNOSTIC column is out of tolerance: it separates "the answer
     # is consistent across decompositions and an accumulator picked up reduction noise" from "the field
     # itself moved". Inferring that from the ABSENCE of a failure line is not the same as measuring it.
-    print(f"  wtd max|delta| = {maxd:.3e} m  (tol {WTD_TOL:.0e})", file=sys.stderr)
+    print(f"  wtd max|delta| = {maxd:.3e} m  (tol WTD_TOL={WTD_TOL:.0e})", file=sys.stderr)
     if maxd > WTD_TOL:
         print(f"  wtd differs: max|delta|={maxd:.3e}", file=sys.stderr)
         ok = False

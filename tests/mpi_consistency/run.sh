@@ -14,6 +14,12 @@ cd "$(dirname "$0")"
 . ../lib.sh                            # make_work: keeps the work dir when a test FAILS
 
 WTM=${1:-../../build/wtm.x}
+# DERIVED, SEPARATING: the converged water table agrees across decompositions to
+#   1.019e-08 .. 1.249e-08 m (recorded in compare.py's own notes), while a real MPI fault -- a
+#   ghost-cell error -- perturbs the field by >= 0.1 m at boundaries. The bound sits ~2 orders above
+#   the agreeing values and 5 orders below the broken ones. Both edges come from measurement.
+# SPREAD: 0   measured 2026-09-22 by repeat run; see this file's first bound.
+WTD_TOL="${WTD_TOL:-1e-6}"
 shift || true
 RANKS=("$@")
 if [[ ${#RANKS[@]} -eq 0 ]]; then RANKS=(2 4); fi
@@ -70,7 +76,7 @@ for case in "0:0" "1:0" "1:0.3"; do
     run_case "$fsm" "$rr" 1 "${label}_n1"
     for n in "${RANKS[@]}"; do
       run_case "$fsm" "$rr" "$n" "${label}_n${n}"
-      if python3 compare.py "$WORK/${label}_n1" "$WORK/${label}_n${n}"; then
+      if WTD_TOL="$WTD_TOL" python3 compare.py "$WORK/${label}_n1" "$WORK/${label}_n${n}"; then
         printf "  %-14s n=1 vs n=%-2s : PASS\n" "$label" "$n"
       else
         printf "  %-14s n=1 vs n=%-2s : FAIL\n" "$label" "$n"
