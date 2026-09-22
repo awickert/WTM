@@ -1,3 +1,5 @@
+#pragma once
+
 #include "dmda_gather.hpp"
 #include "parameters.hpp"
 

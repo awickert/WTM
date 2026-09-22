@@ -123,6 +123,42 @@ stable, reproducible 8.43 m preference, not noise.
    failure mode from "silently burns k full GW solves going nowhere" into "says so on the first
    repeat." This is only available because the tie-break is consistent.
 
+**AMENDMENT 4 — the Vec rollback surface, MEASURED (2026-09-23), and the design's list is wrong
+in both directions.**
+
+The scalars could be enumerated mechanically (`double total_*` is a syntactic signature), and that
+lint immediately caught a TENTH accumulator the design had missed. THE VECS CANNOT BE: they are
+written through dmdapack's array views (`dmdapack.rech_vec[j][i] = ...`,
+transient_groundwater.cpp:1291), so no grep lists them. AppCtx holds 39.
+
+So it was measured instead of judged: capture all 39, run, report which differ. Temporary
+instrumentation, since reverted; the list is the deliverable.
+
+```
+PROBE step 0 changed: fsm_delta_vec lake_stage wtd_global
+PROBE step 1 changed: fsm_delta_vec lake_stage wtd_global
+PROBE step 2 changed: fsm_delta_vec lake_stage wtd_global
+```
+
+The design named `starting_wtd, lake_stage, rech_vec`. It got ONE right. **`fsm_delta_vec` and
+`wtd_global` are missed entirely**, and two of its three do not change here.
+
+**SCOPE, and it is narrower than the rollback needs — do not treat this as the final list.**
+  - Measured across the COUPLING CALL only, not across solve+couple. The rollback must restore
+    whatever the WHOLE step touches, so the next measurement brackets the solve too.
+  - One fixture (fsm_cascade), n=1, three steps, `routing: continuous`, `mode: adaptive`.
+  - `rech_vec` not appearing is a result to be careful with: the coupling DOES write it
+    (WTM.cpp:346 "set the recharge for the NEXT step"), so on this fixture it is most likely
+    written to the SAME value under steady forcing. That is a fixture property, not a general one.
+
+**METHOD NOTE worth keeping.** The probe was first written as a function-local `static` object. Its
+destructor runs after MPI_FINALIZE, where VecDestroy is disallowed, and the run aborted with "This
+is disallowed by the MPI standard". Any PETSc-owning object with static lifetime has this bug --
+including the real snapshot if it is ever held that way.
+
+`src/CreateSNES.hpp` had NO include guard, so any header including it collided. Fixed with
+`#pragma once` -- correct on its own merits and unrelated to #112.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that

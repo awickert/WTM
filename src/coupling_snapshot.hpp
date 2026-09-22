@@ -16,6 +16,9 @@
 // commit; they need PETSc objects and duplicate-and-copy rather than assignment.
 #include <array>
 #include <cstddef>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "ArrayPack.hpp"
 #include "CreateSNES.hpp"
@@ -95,3 +98,96 @@ struct CouplingSnapshot {
 };
 
 }  // namespace wtm
+
+// ---------------------------------------------------------------------------------------------
+// THE VEC HALF OF THE ROLLBACK -- MEASUREMENT FIRST, not a guess.
+//
+// The scalars above could be enumerated MECHANICALLY: `double total_*` is a syntactic signature, so
+// tests/lint_norms.sh pins the set and caught a tenth accumulator the design had missed. THE VECS
+// HAVE NO SUCH SIGNATURE. They are written through dmdapack's array views
+// (`dmdapack.rech_vec[j][i] = ...`, transient_groundwater.cpp:1291), not through PETSc calls, so no
+// grep can list which ones a step mutates.
+//
+// The design says "3 arrays + BDF2 history". AppCtx holds 39. Since the design's scalar list was
+// already wrong by one, its Vec list is not something to build a silent-mass-error surface on.
+//
+// So: capture ALL of them, run a step, and ask which actually CHANGED. The answer is a measured
+// list, prunable with evidence -- the same discipline as sweeping a tolerance instead of assuming
+// it. Over-capturing is safe here (restoring an unchanged Vec is a no-op); under-capturing loses
+// water silently, which is the asymmetry that decides the default.
+#define WTM_APPCTX_VEC_LIST(X) \
+  X(ar_best_x) \
+  X(b) \
+  X(cellsize_EW_squared) \
+  X(evap_vec) \
+  X(exfiltration_vec) \
+  X(fdepth_local) \
+  X(fdepth_vec) \
+  X(fsm_delta_vec) \
+  X(geom_ew_vec) \
+  X(geom_n_vec) \
+  X(geom_s_vec) \
+  X(ksat_local) \
+  X(ksat_vec) \
+  X(lake_stage) \
+  X(mask) \
+  X(mask_local) \
+  X(open_water_evap_vec) \
+  X(picard_r) \
+  X(porosity_vec) \
+  X(precip_vec) \
+  X(rech_source) \
+  X(rech_vec) \
+  X(runoff_dist_vec) \
+  X(runoff_ratio_vec) \
+  X(sink_removed_dist_vec) \
+  X(starting_wtd) \
+  X(starting_wtd_local) \
+  X(starting_wtd_prev) \
+  X(T_local) \
+  X(topo_local) \
+  X(topo_vec) \
+  X(tr_exfil_stage1) \
+  X(tr_expl) \
+  X(tr_fwork) \
+  X(tr_head_old) \
+  X(tr_ygamma) \
+  X(vol_prev_x) \
+  X(wtd_global) \
+  X(x)
+
+namespace wtm {
+
+// Capture-and-compare only. NO restore: this exists to MEASURE which Vecs a step touches, so the
+// rollback can carry the measured set rather than a judged one. Restore lands once the list is known.
+struct CouplingVecProbe {
+  std::vector<std::pair<const char*, Vec>> saved;
+
+  void capture(const AppCtx& uc) {
+    destroy();
+#define X(name) if (uc.name) { Vec d; VecDuplicate(uc.name, &d); VecCopy(uc.name, d); saved.emplace_back(#name, d); }
+    WTM_APPCTX_VEC_LIST(X)
+#undef X
+  }
+
+  // Names of the Vecs that differ from the capture. Exact: a step that touches a Vec and puts it
+  // back bit-for-bit is correctly reported as untouched, which is what the rollback cares about.
+  std::vector<std::string> changed(const AppCtx& uc) const {
+    std::vector<std::string> out;
+    std::size_t k = 0;
+#define X(name) if (uc.name) { PetscBool eq = PETSC_FALSE; VecEqual(uc.name, saved[k].second, &eq); \
+                              if (!eq) out.emplace_back(#name); ++k; }
+    WTM_APPCTX_VEC_LIST(X)
+#undef X
+    return out;
+  }
+
+  void destroy() {
+    for (auto& p : saved) VecDestroy(&p.second);
+    saved.clear();
+  }
+  ~CouplingVecProbe() { destroy(); }
+};
+
+}  // namespace wtm
+
