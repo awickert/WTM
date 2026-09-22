@@ -51,8 +51,24 @@ run() { # $1 = nranks -> echoes "recharge loss" from the last data line
     # "line 48: run_type: command not found" and the suite failed. The settings they named are all in
     # mass_balance_config.yaml, which the sed above renders; nothing is lost by deleting them.
     # -wtm_eq_tol 0: run the full fixed cycle count (do not let the equilibrium auto-stop default fire).
-    OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" >/dev/null 2>&1
-    rm -f "$cfg"
+    # KEEP THE MODEL'S OWN WORDS. This was `>/dev/null 2>&1`, so when the model REFUSED the config
+    # (`trace: []`, the list form retired 2026-09-16) the refusal went to the bit bucket, `set -e`
+    # killed the script, and run_all.sh printed a header, a blank line and a bare FAIL. The model
+    # had said exactly what was wrong; the harness threw it away. Same class as #101.
+    local mlog; mlog=$(mktemp /tmp/${tag}_run_XXXX.log)
+    if ! OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM" "$cfg" >"$mlog" 2>&1; then
+        echo "ERROR: wtm.x failed at n=$n (config kept at $cfg). Its last words:" >&2
+        # THE MODEL'S MESSAGE FIRST, then the tail. A plain `tail` shows mpirun's termination
+        # boilerplate -- ~14 lines of it -- and buries the one line that says what was wrong.
+        if grep -qiE "^(ERROR|WARNING)" "$mlog"; then
+            grep -iE -A4 "^(ERROR|WARNING)" "$mlog" | head -20 | sed 's/^/    /' >&2
+        else
+            tail -20 "$mlog" | sed 's/^/    /' >&2
+        fi
+        exit 1
+    fi
+    rm -f "$mlog"
+    rm -f "$cfg"   # only reached on success; a failed run above keeps it for the repro
     awk 'NF>=11 && $1 ~ /^[0-9]+$/ {r=$9; o=$10} END{print r, o}' "$tf"
 }
 
