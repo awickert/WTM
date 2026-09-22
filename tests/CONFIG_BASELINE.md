@@ -26,7 +26,7 @@ reference here, because it is that suite's decision.
 | `solver.anderson.restart.*` | off | the rho-driven restart loop; `tests/adaptive_restart` is the suite that turns it on |
 | `solver.smoothing.ksat_surface` | `0` | sharp; the smooth form exists for Jacobian FD checks, which state it |
 | `solver.smoothing.ksat_soilbottom` | `0` | as above |
-| `solver.smoothing.storativity_surface` | `0.01` | sub-grid roughness, always on. MEASURED INERT under active_set (#77) |
+| `solver.smoothing.storativity_surface` | `0.01` | sub-grid roughness, always on. **#77, MEASURED INERT under `active_set`** -- the answer is identical to machine precision and the iteration count is flat (14735 -> 14728) as the width varies, while `explicit` moves both. **SCOPE: one 18x18 equilibrium fixture, which is NOT the cold-start-at-scale regime this smoothing was introduced for.** The measurement says the width is inert where it was measured; it does not say the smoothing can be removed. |
 | `solver.time_step.grow/shrink/grow_if_niter_leq/max_retries` | `1.5 / 0.25 / 8 / 15` | controller dials; suites that freeze or drive the controller state them |
 | `solver.time_step.norm` | `rms` | robust on cold spin-up; `max` is opt-in and hostage to a few kink cells |
 | `transmissivity.additive_background_transmissivity` | `0` | v2.0.1 behaviour -- no bedrock floor |
