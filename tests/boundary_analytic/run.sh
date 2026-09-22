@@ -30,6 +30,20 @@ make_work anbc
 #   because the terrain gradient (0.05/cell) makes the closed-form parabola an approximation there
 #   rather than an identity.
 FIT_TOL="${FIT_TOL:-1e-6}"   # metres; max deviation of the water table from the closed-form parabola
+# PROMOTED 2026-09-22: both were bare literals inline in the print AND in the condition, so neither
+# could be overridden and three assertions read as unlinked in the full run.
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED, and sized by the GRID, not by the residual: the parabola's vertex must land on
+#   the no-flow face, and the measurement is 0.000 on both Neumann arms. 0.1 is a tenth of a cell on
+#   this fixture, so the bound asks "the right cell" rather than "the right sub-cell position" --
+#   which is the claim a no-flow boundary actually makes.
+VERTEX_TOL="${VERTEX_TOL:-0.1}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED: the edge head gradient must match the terrain slope (0.05/cell) under a sloped
+#   no-flow boundary. Measured |offset| = 0.0058, so the bound carries 3.4x. It is a fraction of the
+#   slope itself -- 0.02 is 40% of 0.05 -- because the discrete gradient at the very edge is a
+#   one-sided difference and cannot equal the analytic slope exactly.
+GRAD_TOL="${GRAD_TOL:-0.02}"
 PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
@@ -61,9 +75,11 @@ emit neu anbcN; "$WTM" "$WORK/neu.yaml" $FL  > "$WORK/neu.log" 2>&1 || { echo "R
 emit slp anbcS; "$WTM" "$WORK/slp.yaml" $FL  > "$WORK/slp.log" 2>&1 || { echo "RUN FAILED: sloped neumann"; tail -3 "$WORK/slp.log"; exit 2; }
 
 DIR=$(ls "$WORK"/dir_*.tif | tail -1); NEU=$(ls "$WORK"/neu_*.tif | tail -1); SLP=$(ls "$WORK"/slp_*.tif | tail -1)
-FIT_TOL="$FIT_TOL" SLOPE="0.05" "$PY" - "$DIR" "$NEU" "$SLP" <<'PY'
+FIT_TOL="$FIT_TOL" VERTEX_TOL="$VERTEX_TOL" GRAD_TOL="$GRAD_TOL" \
+  SLOPE="0.05" "$PY" - "$DIR" "$NEU" "$SLP" <<'PY'
 import sys, os, numpy as np, rasterio
 tol = float(os.environ["FIT_TOL"]); slope = float(os.environ["SLOPE"])
+vertex_tol = float(os.environ["VERTEX_TOL"]); grad_tol = float(os.environ["GRAD_TOL"])
 
 # A NAN COMPARISON FAILS OPEN, so every measured quantity is checked for finiteness before it is judged.
 # This is not hypothetical: while this suite was comparing an identically-zero field, the Neumann vertex
@@ -96,8 +112,8 @@ c = np.polyfit(xn, hn, 2); n_resid = float(np.max(np.abs(hn - np.polyval(c, xn))
 print(f"  NEUMANN flat  (ocean-left, land no-flow right): parabola residual = {n_resid:.3e} m (tol FIT_TOL={tol})")
 # The DEVIATION is what is compared, so the deviation is what is printed -- the reader should not have
 # to subtract two numbers to see whether an assertion is close to its bound.
-print(f"  NEUMANN flat  vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(vertex - noflow_face):.3f} (tol 0.1)")
-if bad('neumann residual', n_resid, n_resid <= tol) or bad('neumann vertex', vertex, abs(vertex - noflow_face) <= 0.1): ok = False
+print(f"  NEUMANN flat  vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(vertex - noflow_face):.3f} (tol VERTEX_TOL={vertex_tol})")
+if bad('neumann residual', n_resid, n_resid <= tol) or bad('neumann vertex', vertex, abs(vertex - noflow_face) <= vertex_tol): ok = False
 
 # --- NEUMANN (sloped): terrain-following. The WATER-TABLE DEPTH wtd (the output) is the half-parabola whose
 #     zero-gradient vertex is on the no-flow face -> d(wtd)/dx = 0 there = CONSTANT DEPTH (parallel to terrain).
@@ -110,9 +126,9 @@ h_grad_edge = float((head[-1] - head[-2]))     # head gradient at the no-flow ed
 # bound, and 0.05 outranks a 3.5e-08 residual under the magnitude rule -- the assertion was being
 # compared against its own label. Introduced here today; caught by the probe reporting DID NOT BITE.
 print(f"  NEUMANN slope: wtd parabola residual = {s_resid:.3e} m (tol FIT_TOL={tol}) -- terrain {slope}/cell")
-print(f"  NEUMANN slope vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(s_vertex - noflow_face):.3f} (tol 0.1)")
-print(f"  NEUMANN slope edge head gradient vs terrain slope: |offset| = {abs(h_grad_edge - slope):.4f} (tol 0.02)")
-if (bad('sloped residual', s_resid, s_resid <= tol) or bad('sloped vertex', s_vertex, abs(s_vertex - noflow_face) <= 0.1)
+print(f"  NEUMANN slope vertex vs no-flow face (x = {noflow_face:.1f}): |offset| = {abs(s_vertex - noflow_face):.3f} (tol VERTEX_TOL={vertex_tol})")
+print(f"  NEUMANN slope edge head gradient vs terrain slope: |offset| = {abs(h_grad_edge - slope):.4f} (tol GRAD_TOL={grad_tol})")
+if (bad('sloped residual', s_resid, s_resid <= tol) or bad('sloped vertex', s_vertex, abs(s_vertex - noflow_face) <= vertex_tol)
         or bad('sloped edge head gradient', h_grad_edge, abs(h_grad_edge - slope) <= 0.02)): ok = False
 
 if ok:

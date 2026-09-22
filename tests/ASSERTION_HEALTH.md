@@ -299,6 +299,33 @@ overridable, well-commented bound, and its two assertions were counted as a COVE
 better without one (`QUIET` did), rename it anyway and say so in the derivation; the tool's blindness
 is worse than the slightly clumsier name.
 
+## 5c-bis. COMPUTED bounds — derived from the run's own config, and better for it
+
+A third thing the framework cannot express, alongside the seven booleans and the two framework-exempt
+suites. `ghost_boundary` computes both of its bounds at runtime:
+
+```python
+MPI_TOL_FACTOR = 5.0
+mpi_tol = MPI_TOL_FACTOR * float(os.environ["WATER_TOL"])   # solver.convergence.water_volume_tol
+```
+```sh
+BUDGET_TOL=$(awk ... config.yaml)      # the run's own water_volume_tol
+BUDGET_BOUND=$(awk -v t="$BUDGET_TOL" 'BEGIN{printf "%g", 5*t}')
+```
+
+The tool links a bound through a `NAME="${NAME:-value}"` shell default, and these have no fixed
+value to put there — which is the point. **The bound tracks the solver tolerance that sets its own
+floor.** Change the config's `water_volume_tol` and the assertion follows; a frozen default would
+not, and would silently become wrong.
+
+**Do not "fix" these into shell defaults.** It would trade a bound that stays correct for one the
+tool can see. What they owe instead is what `MPI_TOL_FACTOR` already provides: the FACTOR derived
+and measured in place — *"the six measurements span 0.66x to 2.08x, so 5x clears the worst by
+~2.4x… Raise it only with a measurement, never to make a red test green."*
+
+They will keep appearing as `unlinked` rows. That is the correct reading, and the reason the
+misconfiguration alarm fires on a MAJORITY rather than on any unlinked row at all.
+
 ## 5e. The sweep of 2026-09-21/22 — what was actually measured
 
 Every suite carrying a bound was run twice unchanged (Q6) and once per bound with that bound
