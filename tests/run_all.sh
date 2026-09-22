@@ -78,7 +78,18 @@ run() { # name  command...
     # TEE, not redirect: a suite's output must still appear as it runs. stderr is merged so the log
     # keeps the true interleaving, and the suite's own exit code is taken from PIPESTATUS -- the pipe
     # would otherwise report tee's success as the suite's.
-    local slug; slug=$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '_')
+    # THE SLUG MUST BE THE SUITE'S DIRECTORY, not its display name. assertion_health.py keys its
+    # bound table by directory (tests/<dir>/run.sh) and looks the suite up by the .out FILENAME, so a
+    # name-derived slug never matches: the 2026-09-22 full run reported ALL 149 assertions as
+    # `unlinked`, i.e. "derived is unknown". The tool was blind in exactly the mode that matters --
+    # standalone it was fine, and a genuinely UNDERIVED bound would have been invisible among the
+    # noise. Display names stay human-readable; only the filename changes.
+    local slug
+    if [[ "${1:-}" =~ ^\./([A-Za-z0-9_]+)/run\.sh$ ]]; then
+        slug="${BASH_REMATCH[1]}"
+    else
+        slug=$(printf '%s' "$name" | tr -cs 'A-Za-z0-9' '_')   # units, lints, benchmark scripts
+    fi
     "$@" 2>&1 | tee "$WTM_TOLSCAN_DIR/$slug.out"; rc=${PIPESTATUS[0]}
     NAMES+=("$name"); RESULTS+=($([ $rc -eq 0 ] && echo PASS || echo FAIL))
     # EXIT 3 = a suite on the declared-config ratchet (tests/lib.sh; unconditional since #79 Phase 5) stopped saying
