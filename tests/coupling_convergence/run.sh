@@ -121,7 +121,28 @@ for spec in "1yr:31536000:2" "05yr:15768000:4" "025yr:7884000:8"; do
 done; done
 [[ $fail -eq 0 ]] || { echo "COUPLING CONVERGENCE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PYX' || fail=1
+# PROMOTED 2026-09-22. These three were Python locals on ONE line inside the heredoc below, so
+# #121's sweep could not see them and nine assertions printed bare literals no override could
+# reach -- the single largest block of unlinked rows in the 2026-09-22 full run.
+#
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED: worst |exact residual|/recharge measured 3.732e-12 .. 5.461e-08 across the
+#   fixture x step grid, so the BINDING arm carries ~18x and the loosest ~2.7e5. The bound is sized
+#   on the worst arm deliberately: the residual is a property of fixture AND step size, and this
+#   suite exists to watch it shrink rather than to pin any one value.
+CONSERVE_TOL="${CONSERVE_TOL:-1e-6}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED bite guard: the two couplings must still DIFFER at each step, or the
+#   convergence claim is comparing a run with itself. The degenerate value is exactly 0.
+GAP_MIN="${GAP_MIN:-1e-2}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED: first order in dt means the gap should shrink by 2x when dt halves. The bound
+#   is 1.5x and NOT 2x, because the observed rate is contaminated by the O(dt^2) part of the error
+#   at the coarse end -- demanding the asymptotic factor exactly would fail a correctly first-order
+#   scheme. 1.5 admits first order while excluding a scheme that has stopped converging (1.0).
+RATE_MIN="${RATE_MIN:-1.5}"
+CONSERVE_TOL="$CONSERVE_TOL" GAP_MIN="$GAP_MIN" RATE_MIN="$RATE_MIN" \
+  WORK="$WORK" TESTS="$(readlink -f ..)" "$PY" - <<'PYX' || fail=1
 import os, sys
 W = os.environ["WORK"]
 TAGS = ["1yr", "05yr", "025yr"]                       # each half the previous
@@ -137,7 +158,9 @@ NAME = {I[n]: f"{I[n] + 1} {lbl}" for n, lbl in
          ("total_ocean_outflow", "ocean_outflow"), ("stored_volume", "stored_volume"),
          ("total_evap_removed", "evap_removed"))}
 RECH_COL, RESID_COL = I["total_recharge_added"], I["exact_budget_residual"]
-TOL_CONSERVE, MIN_GAP, MIN_RATE = 1e-6, 1e-2, 1.5
+TOL_CONSERVE = float(os.environ["CONSERVE_TOL"])   # derivations sit beside the shell defaults
+MIN_GAP      = float(os.environ["GAP_MIN"])
+MIN_RATE     = float(os.environ["RATE_MIN"])
 # The exact budget identity does NOT close on multilake at the coarsest step: 1.802e-05 of recharge,
 # BIT-IDENTICAL under both couplings, collapsing to 4.8e-10 when dt halves and 8.2e-11 at dt/4. It is
 # therefore a property of that fixture at that step size, NOT of the coupling -- which is why this
@@ -186,7 +209,7 @@ for fx, pol in POLICY.items():
             ok = w < TOL_CONSERVE
             fail |= not ok
             print(f"  {'PASS' if ok else 'FAIL'}  CONSERVATION  {t:<6} worst |exact residual|/recharge "
-                  f"{w:.3e}  (tol {TOL_CONSERVE:.0e})")
+                  f"{w:.3e}  (tol CONSERVE_TOL={TOL_CONSERVE:.0e})")
         else:
             # Held as an EXPECTED failure with a floor, so it keeps a regression test rather than
             # being tuned away -- and so the suite FAILS the day it starts closing, which means the
@@ -204,7 +227,7 @@ for fx, pol in POLICY.items():
         ok = gap[c][0] > MIN_GAP
         fail |= not ok
         print(f"  {'PASS' if ok else 'FAIL'}  NON-VACUOUS   {NAME[c]:<20} gap at the coarsest dt "
-              f"{gap[c][0]:.3e}  (need > {MIN_GAP:.0e}, else the couplings stopped differing here)")
+              f"{gap[c][0]:.3e}  (min GAP_MIN={MIN_GAP:.0e}) -- else the couplings stopped differing here")
 
     for c in pol.get("identical", []):
         ok = max(gap[c]) == 0.0
@@ -224,8 +247,12 @@ for fx, pol in POLICY.items():
         r1, r2 = g[0] / g[1], g[1] / g[2]
         ok = r1 >= MIN_RATE and r2 >= MIN_RATE
         fail |= not ok
-        print(f"  {'PASS' if ok else 'FAIL'}  FIRST ORDER   {NAME[c]:<20} shrinks >= {MIN_RATE}x per "
-              f"halving (x{r1:.2f}, x{r2:.2f})")
+        # THE BOUNDED VALUE GOES LAST. Written with the two ratios after the bound the parser found
+        # no number before it at all and could not read the line; written with both before it, the
+        # largest- and nearest-number rules disagree (2.15 vs 1.77). Only the worst ratio is
+        # compared, so only the worst ratio precedes the bound.
+        print(f"  {'PASS' if ok else 'FAIL'}  FIRST ORDER   {NAME[c]:<20} worst shrink per halving "
+              f"{min(r1, r2):.2f}x (min RATE_MIN={MIN_RATE}) -- ratios x{r1:.2f}, x{r2:.2f}")
 
     if "bounded" in pol:
         cols, bound = pol["bounded"]
