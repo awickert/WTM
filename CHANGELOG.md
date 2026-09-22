@@ -57,7 +57,10 @@ defects to be worked around, and the second and third can invalidate a naive dt-
      the outlet end up wet. Refining the time step does not help, because the choice is not a
      time-stepping error: the finest run made it slightly worse, not better.
 
-  If you need a deterministic outlet on flat ground, add a small gradient to the surface. `tests/fsm_exit_path`
+  The choice is ARBITRARY BUT CONSISTENT: arbitrary in that the terrain does not motivate it,
+  consistent in that the tie-break is a stated rule (`src/dephier.hpp:449`, "the one added last")
+  and reproduces exactly -- run to run, and bit-identically between 1 and 4 ranks. If you need an
+  outlet the TERRAIN determines rather than the tie-break, add a small gradient to the surface. `tests/fsm_exit_path`
   demonstrates the whole thing, including the tilted case that removes it.
 
 - **With FillSpillMerge on, first-order operator splitting caps the whole scheme at order 1**,
