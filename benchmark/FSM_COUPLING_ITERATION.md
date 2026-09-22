@@ -28,6 +28,53 @@ hard cap on passes, with a cheaper variant noted below.
 
 ---
 
+## AMENDMENT 2026-09-22 — Andy: ITERATION IS THE DEFAULT, not an option
+
+> "The differences during transience are big enough that this should be a standard method for
+> running WTM instead of just an option — the option becomes setting just 1 iteration (the current
+> mode)."
+
+This INVERTS the default in the plan below, which says "Default to 1 pass (today's behaviour,
+byte-identical)". It no longer does. Iterating is the method; `1` is the opt-out.
+
+**The reasoning, and why it beats the plan's own framing.** The plan measured the settled regime
+(1.58e-06) and treated the restart transient (17.6% → 5.5% → 1.7%) as secondary. That is backwards
+for this model: WTM's production job is SPIN-UP, cold start to equilibrium, so the transient is
+where essentially all compute goes and where the answer is a trajectory rather than a fixed point.
+The settled number describes the destination, not the journey.
+
+**What this changes in the plan below.**
+
+1. The scope list's item 2 (config key) now defaults to iterating, with `1` as the documented
+   escape hatch. The KEY IS STILL UNNAMED — that is Andy's to choose.
+2. The "cheaper variant" at the end stops being a variant and becomes the likely default shape:
+   iterate UNTIL THE SOURCE STOPS MOVING, with a hard cap. A fixed k multiplies the FSM serial
+   ceiling by k on every run; convergence-based iteration pays ~2 passes in transient and 1 when
+   settled.
+3. The byte-identical guard (build FIRST) does not change, but its ROLE does. It no longer proves
+   the default is inert — it proves the OPT-OUT reproduces today's answers. That is still exactly
+   the test to write first, and it is now the thing that keeps every pre-2026-09-22 result
+   reproducible.
+
+**The blast radius, stated so the decision carries its full cost.**
+
+- **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
+  is no longer the default. Those results are not wrong; they are measurements of the 1-pass method
+  and must be relabelled as such rather than silently re-baselined.
+- **The outer convergence criterion becomes load-bearing.** As an option it was a nicety; as the
+  default it decides both the answer and the cost of every production run. It needs a DERIVED
+  tolerance under `tests/ASSERTION_HEALTH.md` sec 5d-bis, not a chosen one.
+- **Cost lands on the serial ceiling.** FSM is the bottleneck for the NA 30" spin-up. Convergence-
+  based iteration roughly doubles FSM work during spin-up — which is most of the run.
+
+**The cheap measurement to take FIRST, and it needs none of this machinery.** The 2026-09-18 numbers
+were taken from two raster series with NO CODE CHANGE. The cold-start lag — the one quantity the
+plan says to get before judging the benefit, and now the one that sizes the default's cost — can be
+measured the same way today. It answers "how many passes does a cold start actually need", which is
+what the cap and the convergence tolerance both have to be set from.
+
+---
+
 PARKED 2026-09-18 by Andy, to be done AFTER the numbered list is finished. He named it correctly as a
 wander from the mission. The plan is written out so nothing has to be re-derived.
 
