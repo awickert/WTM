@@ -652,9 +652,10 @@ Parameters::Parameters(const std::string& config_file) {
         "the controller may take. There is no default, deliberately: the floor decides how much accuracy "
         "a run may silently lose (a clamped step runs LOOSER than solver.time_step.error_tol requested), "
         "so it is yours to state rather than ours to guess. MODFLOW 6 and ParFlow require it the same "
-        "way, as part of opting into adaptive stepping. A usual choice is 1e-5 of your step -- MODFLOW 6's "
-        "own documented recommendation for DTMIN, read in model time units -- which for this run's "
-        "solver.time_step.dt would be \"" + fmt::format("{:g}s", deltat * 1.0e-5) + "\". Set dt_min: \"0s\" to "
+        "way, as part of opting into adaptive stepping -- which is what they are cited for here, NOT the "
+        "value below. A usual choice is 1e-5 of your step: WTM's own scale-free convention, so the floor "
+        "keeps the same margin below the step at any step size. This is NOT MODFLOW 6's 1e-5, which is an "
+        "ABSOLUTE length in model time units. For this run's solver.time_step.dt that would be \"" + fmt::format("{:g}s", deltat * 1.0e-5) + "\". Set dt_min: \"0s\" to "
         "disable the floor entirely (the SUNDIALS/PETSc behaviour): the controller may then shrink without "
         "bound, and a collapsing step aborts with a legible message rather than being clamped.");
 

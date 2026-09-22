@@ -305,8 +305,14 @@ solver:
                                # for. That is a policy, so it is yours.
                                # 
                                # CHOOSING ONE. 1e-5 of your dt is the usual answer and what is written here
-                               # (1e-5 x 31536000 s = 315.36 s) -- MODFLOW 6's own documented recommendation
-                               # for DTMIN, read in model time units. Five orders below the step, it cannot
+                               # (1e-5 x 31536000 s = 315.36 s). That RATIO is WTM's own scale-free choice, so
+                               # the floor keeps the same margin below the step at any step size. It is NOT
+                               # MODFLOW 6's recommendation: MODFLOW's 1e-5 is an ABSOLUTE length in model time
+                               # units, advised so simulated time lands on stress-period ends -- an alignment
+                               # concern WTM does not have, since it reaches a report boundary by clamping.
+                               # What MODFLOW 6 and ParFlow ARE cited for is requiring a floor, not shipping one.
+                               #
+                               # Five orders below the step, it cannot
                                # engage on a healthy run; it engages on one already walking dt toward abort.
                                # 
                                # dt_min: "0s" DISABLES the floor -- the SUNDIALS/PETSc behaviour, and a real
