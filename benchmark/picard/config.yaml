@@ -95,7 +95,11 @@ io:
 output:
   outfile_prefix: '@PRIV@/@TAG@_out_'
   run_log: '@PRIV@/@TAG@_log.txt'
-  trace: []
+  trace:
+    dt: false
+    water_step: false
+    budget: false
+    fsm: false
   verbosity: normal
   directory: '@PRIV@/@TAG@_prov'
   if_exists: overwrite
