@@ -28,7 +28,7 @@ SCOPE** — do not reintroduce it as an open item.
 | **109** | **DONE 2026-09-21.** No default: an explicit `mode: adaptive` must STATE `dt_min`, following MODFLOW 6 and ParFlow, which require it the same way. 27 configs migrated at `1e-5 × dt`, behaviour-preserving by construction and proven by `golden` 35/35 unmoved. |
 | **124** | **PARKED BY ANDY** ("when I have time to take the decisions"). `dt_min` is the wrong SHAPE: the ERROR TARGET, not the step size, sets how small `dt` must go. **`tests/boundary_consistency/config.yaml` is on a TEMPORARY `dt_min: "0s"` and a green suite must not launder that into permanence.** Options were A (per-suite small floor), B (`"0s"` here – APPLIED, temporarily) and C (revisit the ratio generally – DONE, and it REFUTED the tidy fix: `boundary_analytic` carries the same `error_tol: 1e-08` and the same `24.192 s` floor and never engages it, so stiffness decides, not the setting). There is no option D; an earlier note saying "four options" was wrong. |
 | **111** | The corsica oscillation: fully characterised, mechanism NOT known. See `examples/island_equilibrium/OSCILLATION.md`. Not a work item unless the last candidate is to be tested. |
-| **112** | **PARKED PLAN** by Andy: iterate the FSM→recharge coupling within a step. Full design written, including the enumerated rollback state and the byte-identical guard to build first. |
+| **112** | **PARKED PLAN** by Andy: iterate the FSM→recharge coupling within a step. **CORRECTION 2026-09-22 — THE DESIGN IS NOT IN A FILE.** This row claimed it was written; searching the repo finds only the IDEA, in `benchmark/FREE_SURFACE_FLICKER.md` (cures a/b/c: iterate the coupling to a joint fixed point, tighten the split, or under-relax). The enumerated rollback state and the byte-identical guard exist only in a conversation, so a future session cannot build from this. **Before starting #112, expect to re-derive the design, not to look it up.** |
 
 Closed 2026-09-17/18: **#60** (its missing case FOUND), **#85**, **#90**, **#98**, **#108**, **#110**.
 Closed 2026-09-21/22: **#109**, **#113**, **#114**, **#115**, **#117**–**#123** (the framework's own
@@ -214,8 +214,11 @@ backwards.
 4. **`#124`** with real data: the 11 suites above are the evidence for whether any floor other than
    `boundary_consistency`'s binds. **Its `dt_min: "0s"` is TEMPORARY** and a green run does not make
    it permanent.
-5. **`#112`** if wanted — the plan is complete, including the byte-identical guard to build FIRST.
-6. **`#111`'s last candidate** if wanted — FSM's overland TRANSPORT of half the water budget, the
+5. **`#112`** if wanted — but its design is NOT in the repo (see the numbered list). Re-derive before building.
+6. **`#127`** — the ramp path records a `dt_min` it never reads, so `full_config.yaml` asserts a floor that
+   did not act. Needs per-arm config rendering and a run to verify; carries a decision (refuse vs. stop
+   emitting) that is Andy's.
+7. **`#111`'s last candidate** if wanted — FSM's overland TRANSPORT of half the water budget, the
    one pathway absent from every reduction that settled.
 
 **What is NOT a goal:** at-scale validation; re-running corsica/newton to the cap; proposing a sixth
