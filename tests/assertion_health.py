@@ -450,6 +450,20 @@ def main():
     print("  headroom is a VIRTUE on a bit-reproducible quantity and a risk only on a varying one.")
     print(f"  {len(under)} carry no detectable derivation. {len(nospread)} have no declared SPREAD,")
     print("  so their headroom cannot yet be read either way.")
+    # THE SCAN CAN BE MISCONFIGURED, AND THAT LOOKS EXACTLY LIKE HEALTHY OUTPUT. The suite key comes
+    # from the .out FILENAME and the bound table is keyed by DIRECTORY, so if a caller names its
+    # files anything else, EVERY lookup misses and every row reads `unlinked` -- "derived is
+    # unknown". The 2026-09-22 full run did exactly that for all 149 assertions, and the line
+    # reporting it read as a footnote rather than an alarm. A genuinely UNDERIVED bound would have
+    # been invisible in that noise.
+    #
+    # A few unlinked rows are normal (a line naming no bound, matched to no arm). A MAJORITY is not.
+    if rows and len(unlinked) > len(rows) // 2:
+        print()
+        print(f"  *** SCAN LOOKS MISCONFIGURED: {len(unlinked)} of {len(rows)} rows are `unlinked`. ***")
+        print("  That is not a verdict about the suites -- it is this tool failing to find their")
+        print("  bounds. Each .out file must be named for the suite DIRECTORY that owns the bounds")
+        print("  (tests/<dir>/run.sh). Check how the caller names what it writes to WTM_TOLSCAN_DIR.")
     ambs = [r for r in rows if r[7]]
     if ambs:
         print(f"  {len(ambs)} AMBIGUOUS -- more than one number before the bound could be the one")

@@ -228,6 +228,29 @@ check("the arm label is still used when the line names no bound",
       H.resolve("s", line, None, 999.0, B, A), (True, None))
 
 
+# --- a misconfigured SCAN must not read as a healthy report --------------------------------------
+# THE BUG THIS PINS: suite keys come from the .out FILENAME, bounds are keyed by DIRECTORY. When
+# run_all.sh named its files after the human-readable display label, every lookup missed and all 149
+# rows of the full run read `unlinked`. The tool said "derived is unknown for them" -- a footnote,
+# not an alarm -- and a genuinely UNDERIVED bound would have been invisible among them.
+#
+# USES A REAL SUITE AND A REAL BOUND: assertion_health always scans the actual tests/ directory
+# (from __file__), so a fabricated suite can never link and would fail this for the wrong reason.
+# That is how the first version of this test was wrong.
+import subprocess as _sp
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_LINE = "  PASS  PER-CELL   max rel error 2.963e-07 (tol CELL_TOL=1e-06) at (row 23, col 23)\n"
+def _scan(fname):
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, fname), "w").write(_LINE)
+        return _sp.run([sys.executable, os.path.join(_HERE, "assertion_health.py"), d],
+                       capture_output=True, text=True).stdout
+check("an .out named for the suite DIRECTORY links, and raises no alarm",
+      "SCAN LOOKS MISCONFIGURED" in _scan("local_ledger.out"), False)
+check("an .out named for a DISPLAY LABEL raises the misconfiguration alarm",
+      "SCAN LOOKS MISCONFIGURED" in _scan("per_cell_column_ledger.out"), True)
+
+
 print()
 if fails:
     print(f"ASSERTION TOOLS: {len(fails)} FAILED -- {', '.join(fails)}")
