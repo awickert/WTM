@@ -79,10 +79,16 @@ for integ in tr-bdf2 backward-euler bdf2; do
 done; done; done; done
 [[ $fail -eq 0 ]] || { echo "BUDGET STEP LEDGER: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" "$PY" - <<'PYX' || fail=1
+# PROMOTED 2026-09-22: was a Python local inside the heredoc, invisible to #121's sweep.
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED: worst |resid|/rech measured 4.59e-07 over 504 step-checks, ~2.2x. The suite's
+#   own header records the same quantity at step 1 as 3.1e-09, a margin of 319x -- so the BINDING
+#   value is the accumulated worst, not the per-step one, and the bound is sized on it.
+RESID_TOL="${RESID_TOL:-1e-6}"
+RESID_TOL="$RESID_TOL" WORK="$WORK" "$PY" - <<'PYX' || fail=1
 import os, glob, sys, re
 W = os.environ["WORK"]
-TOL_RESID = 1e-6
+TOL_RESID = float(os.environ["RESID_TOL"])   # derivation beside the shell default
 # STATE == ACC IS A FLOATING-POINT IDENTITY, SO ITS BUDGET IS STATED IN UNITS OF MACHINE EPSILON (#84).
 # It compares two independent summations of the SAME storage change: equal in exact arithmetic, so they
 # differ only by summation order and the only honest bound is accumulated rounding.
@@ -166,7 +172,7 @@ for stem, steps in sorted(runs.items()):
 print(f"  {'PASS' if not fail else 'FAIL'}  STATE == ACC     two independent storage computations agree over "
       f"{n_state} step-checks; worst disagreement {worst_state:.3g} eps of recharge  (tol {STATE_EPS_BUDGET:.3g})")
 print(f"  {'PASS' if not fail else 'FAIL'}  LEDGER CLOSES    over {n_resid} step-checks; worst |resid|/rech "
-      f"{worst_resid:.2e}  (tol {TOL_RESID:.0e})")
+      f"{worst_resid:.2e}  (tol RESID_TOL={TOL_RESID:.0e})")
 
 # The held defect, reported with its measured size so drift is visible rather than absorbed.
 for (fn, coll), floor in XFAIL_RESID.items():

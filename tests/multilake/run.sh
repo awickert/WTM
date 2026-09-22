@@ -80,7 +80,19 @@ run I1 15768000 10 implicit   || fail=1   # implicit, dt = 0.5  yr
 run I2  7884000 20 implicit   || fail=1   # implicit, dt = 0.25 yr
 [[ $fail -eq 0 ]] || { echo "MULTI-LAKE: FAILED (a run did not complete)"; exit 1; }
 
-WORK="$WORK" INP="$INP" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
+# PROMOTED 2026-09-22: both were Python locals inside the heredoc, invisible to #121's sweep.
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED: a filled lake's free surface must be FLAT, so the within-lake sigma is zero
+#   in exact arithmetic. Measured 2.84e-14 m over all runs -- roundoff on an O(100 m) field, i.e.
+#   ~1e-16 relative. The bound at 1e-9 m sits 5 orders above that floor and far below any real
+#   tilt, which would be centimetres.
+FLAT_TOL="${FLAT_TOL:-1e-9}"
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED bite guard: the lakes must actually have DEPTH, or a flat surface is trivially
+#   flat and the FLAT check proves nothing. The degenerate value is 0 m.
+SPREAD_MIN="${SPREAD_MIN:-1.0}"
+FLAT_TOL="$FLAT_TOL" SPREAD_MIN="$SPREAD_MIN" \
+  WORK="$WORK" INP="$INP" TESTS="$(readlink -f ..)" "$PY" - <<'PY'
 import os, sys, glob
 import numpy as np, rasterio
 sys.path.insert(0, os.environ["TESTS"])
@@ -90,7 +102,8 @@ from collections import deque
 W, INP = os.environ["WORK"], os.environ["INP"]
 topo = rasterio.open(f"{INP}/multilake_t0_topography.tif").read(1).astype(float)
 mask = rasterio.open(f"{INP}/multilake_t0_mask.tif").read(1).astype(float) > 0
-FLAT_TOL, MIN_SPREAD = 1e-9, 1.0
+FLAT_TOL   = float(os.environ["FLAT_TOL"])    # derivations beside the shell defaults
+MIN_SPREAD = float(os.environ["SPREAD_MIN"])
 
 def lakes(stem):
     """[(ncells, stage, sigma, depth_spread)] for connected ponded clusters of >=3 cells."""
@@ -126,14 +139,14 @@ spread = max(r[3] for r in R["A1"])
 ok = n >= 4 and len(stages) >= 3 and spread >= MIN_SPREAD
 fail |= not ok
 print(f"  {'PASS' if ok else 'FAIL'}  NON-TRIVIAL   {n} multi-cell lakes, {len(stages)} distinct stages, "
-      f"max within-lake depth spread {spread:.2f} m (need >=4, >=3, >={MIN_SPREAD})")
+      f"max within-lake depth spread {spread:.2f} m (min SPREAD_MIN={MIN_SPREAD}); lakes >=4, stages >=3")
 
 # 2. every lake has a flat free surface, in every run
 worst = max((r[2] for v in R.values() for r in v), default=0.0)
 ok = worst < FLAT_TOL
 fail |= not ok
 print(f"  {'PASS' if ok else 'FAIL'}  FLAT          worst free-surface sigma over all runs "
-      f"{worst:.2e} m (tol {FLAT_TOL:.0e})")
+      f"{worst:.2e} m (tol FLAT_TOL={FLAT_TOL:.0e})")
 
 # 3. active-set: stable topology + first-order convergence toward a dt->0 limit
 counts = [len(R[s]) for s in ("A1", "A2", "A4")]
