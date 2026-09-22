@@ -104,8 +104,21 @@ run" is the correct reading of any settled-regime number taken alongside it.
 - **The outer convergence criterion becomes load-bearing.** As an option it was a nicety; as the
   default it decides both the answer and the cost of every production run. It needs a DERIVED
   tolerance under `tests/ASSERTION_HEALTH.md` sec 5d-bis, not a chosen one.
-- **Cost lands on the serial ceiling.** FSM is the bottleneck for the NA 30" spin-up. Convergence-
-  based iteration roughly doubles FSM work during spin-up — which is most of the run.
+- **Cost: FAR SMALLER THAN THIS PLAN AND I BOTH ASSERTED, and the measurement was already in the
+  tree.** `benchmark/esquibel/FSM_COST.md` (task #77, 384,703 cells, 8 ranks) measures the split:
+  GW solve 3.84 s/cycle (**~99.7%**), FSM 5.5e-03 s/cycle — **0.142% mean, 0.00007% at COLD START**,
+  the case with the most water to route. The median cycle routes ~nothing and FSM early-exits in
+  ~2.4 microseconds; PETSc `-log_view` independently puts `SNESSolve` at 92.6% of total.
+  So "FSM is the serial ceiling" — asserted in the plan below (see its cheaper-variant section),
+  in `FREE_SURFACE_FLICKER.md`, and by me on 2026-09-22 — is NOT SUPPORTED at measured scale.
+  **Doubling 0.142% costs 0.142%.** `PORT_TO_UPSTREAM.md` had already drawn the conclusion for the
+  related question: FSM parallelization is "DECIDED-park (memory-only driver, no speed case)" — the
+  reason to parallelize FSM would be MEMORY, since rank 0 holds the full grid, not time.
+  **TWO CAVEATS KEPT, neither measured.** (1) The fraction grows with RANK COUNT by Amdahl: FSM is
+  fixed while the GW solve divides, and NA 30" runs on far more than 8 ranks. (2) The mean is pulled
+  up by rare routing spikes of up to ~4 s, and iterating multiplies those spikes — so for THIS
+  feature the TAIL matters more than the mean. From 0.142% there is real headroom before either
+  bites, but neither is dismissed.
 
 **The cheap measurement to take FIRST, and it needs none of this machinery.** The 2026-09-18 numbers
 were taken from two raster series with NO CODE CHANGE. The cold-start lag — the one quantity the
