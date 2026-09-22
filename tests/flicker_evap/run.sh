@@ -31,7 +31,12 @@ make_work fe
 # those maxima fall on DIFFERENT CELLS. Measured on the bare (taper-off) arm: head 1.79714, volume
 # 0.0283872. The largest head swing sits in a low-storativity cell that moves almost no water, so the
 # "flicker" this fixture detects is far smaller in water than it looks in head.
-QUIET="${QUIET:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below this (managed reads exactly 0)
+# DERIVED 2026-09-22, SEPARATING: the managed (taper on) arm measures 1.8053e-11 m of per-cycle
+#   |S*dwtd| -- effectively settled -- while the bare (taper off) arm sustains 2.838e-02 m. The bound
+#   sits inside that nine-order gap. RENAMED from QUIET 2026-09-22: assertion_health.py only
+#   recognises a bound whose NAME contains TOL/MIN/MAX/FLOOR/BAR, so this one was invisible to the
+#   framework and its two assertions read as a coverage gap that did not exist.
+QUIET_TOL="${QUIET_TOL:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below this (managed reads exactly 0)
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
@@ -40,7 +45,7 @@ QUIET="${QUIET:-2.5e-4}"    # settled if the final per-cycle |S*Δwtd| is below 
 #   cycle that does not decay. The floor at 0.015 sits 1.9x below the flickering value. Sharp, and
 #   deliberately so: if the fixture ever stops flickering this test proves nothing, and the guard
 #   should fail loudly rather than pass quietly.
-BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cycle stays far above QUIET.
+BITE_MIN="${BITE_MIN:-0.015}" # metres OF WATER VOLUME; the hard-switch limit cycle stays far above QUIET_TOL.
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py; see the note at this file's first bound.
                             # Set to PRESERVE THE ORIGINAL MARGIN rather than by scaling the old number:
                             # 1.0 against an achieved 1.79714 head was 1.80x, and 0.015 against an achieved
@@ -74,8 +79,8 @@ emit bare false   # the BARE arm is the one with the tapers off -- that is its s
 # SETTLING (managed): the largest per-cycle |Δwtd| (col 5) over the last few cycles must be small.
 VC=$(wtm_col "$WORK/managed.txt" abs_change_volume_max) || exit 1
 msettle=$(grep -E '^[0-9]' "$WORK/managed.txt" | tail -4 | awk -v c="$VC" 'BEGIN{m=0}{v=$c+0; if(v>m)m=v}END{print m}')
-awk -v v="$msettle" -v q="$QUIET" 'BEGIN{exit !(v+0 <= q+0)}' \
-  || { echo "FAIL: managed did not settle -- max recent per-cycle |S*Δwtd|=$msettle > $QUIET (taper not damping?)"; exit 1; }
+awk -v v="$msettle" -v q="$QUIET_TOL" 'BEGIN{exit !(v+0 <= q+0)}' \
+  || { echo "FAIL: managed did not settle -- max recent per-cycle |S*Δwtd|=$msettle > $QUIET_TOL (taper not damping?)"; exit 1; }
 # BITE (bare): the hard-switch run must NOT settle (limit cycle keeps the per-cycle change large).
 BC=$(wtm_col "$WORK/bare.txt" abs_change_volume_max) || exit 1
 bsettle=$(grep -E '^[0-9]' "$WORK/bare.txt" | tail -1 | awk -v c="$BC" '{print $c}')
@@ -92,17 +97,17 @@ MAN=$(ls "$WORK"/managed_*.tif | tail -1)
 # MASS BALANCE from the last two cycles: cols 9 (recharge), 18 (evap), 12 (surface_removed), 13 (ocean_outflow)
 read -r dR dE dS dO < <(grep -E '^[0-9]' "$WORK/managed.txt" | tail -2 \
   | awk 'NR==1{r=$9;e=$18;s=$12;o=$13} NR==2{print ($9-r), ($18-e), ($12-s), ($13-o)}')
-QUIET="$QUIET" MB_TOL="$MB_TOL" BSETTLE="$bsettle" MSETTLE="$msettle" \
+QUIET_TOL="$QUIET_TOL" MB_TOL="$MB_TOL" BSETTLE="$bsettle" MSETTLE="$msettle" \
   "$PY" - "$MAN" "$dR" "$dE" "$dS" "$dO" <<'PY'
 import sys, os, numpy as np, rasterio
 man = rasterio.open(sys.argv[1]).read(1).astype(float)
 dR, dE, dS, dO = map(float, sys.argv[2:6])
-q = float(os.environ["QUIET"]); mbtol = float(os.environ["MB_TOL"])
+q = float(os.environ["QUIET_TOL"]); mbtol = float(os.environ["MB_TOL"])
 above = float(man.max()); below_ok = bool((man <= q).all())
 mb = abs(dR - dE - dS - dO); rel = mb / max(abs(dR), 1e-30)
-print(f"  SETTLING       : managed max recent per-cycle |Δwtd| = {os.environ['MSETTLE']} m (tol QUIET={q}); "
+print(f"  SETTLING       : managed max recent per-cycle |Δwtd| = {os.environ['MSETTLE']} m (tol QUIET_TOL={q}); "
       f"bare (taper off) = {os.environ['BSETTLE']} m (limit cycle)")
-print(f"  NO PONDING     : max wtd = {above:.3e} m, ponding allowed and the taper drove it back (tol QUIET={q})")
+print(f"  NO PONDING     : max wtd = {above:.3e} m, ponding allowed and the taper drove it back (tol QUIET_TOL={q})")
 print(f"  MASS BALANCE   : dRech={dR:.4e} dEvap={dE:.4e} dSurf={dS:.4e} dOcean={dO:.4e} residual={mb:.3e}")
 print(f"  MASS BALANCE   : |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
 # THE DISCRIMINATOR, and the reason NO PONDING is worth asserting at all. surface_removed must be
@@ -125,7 +130,7 @@ else:
     # NAME WHAT FAILED (#119). A bare "FAIL" left a reader to compare the printed numbers
     # against their bounds by hand, and left the bite harness unable to tell a failed
     # assertion from a crash -- so every bound here reported INCONCLUSIVE.
-    if not below_ok:     print(f"  FAIL  NO PONDING: water stands above the surface, max wtd = {above:.3e} m (tol QUIET={q})")
+    if not below_ok:     print(f"  FAIL  NO PONDING: water stands above the surface, max wtd = {above:.3e} m (tol QUIET_TOL={q})")
     if rel >= mbtol:     print(f"  FAIL  MASS BALANCE: |residual|/recharge = {rel:.3e} (tol MB_TOL={mbtol})")
     if not taper_alone:  print(f"  FAIL  TAPER ALONE: a collector removed {dS:.4e} m of water, so the taper is not what settled it")
     print("FAIL")

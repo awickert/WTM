@@ -279,6 +279,26 @@ reader will see it -- not quietly left in a passing suite.
   the notes' own wording ("measured ... by assertion_probe.py") marked 49 bounds derived by
   accident.
 
+## 5d-ter. A bound's NAME must contain TOL, MIN, MAX, FLOOR or BAR
+
+`assertion_health.py` finds bounds with
+
+```python
+_DEF = re.compile(r'([A-Z_]*(?:TOL|MIN|MAX|FLOOR|BAR)[A-Z_]*)="\$\{\1:-([^}]*)\}"')
+```
+
+so a shell default whose name lacks one of those five words is **invisible to the framework**, no
+matter how correctly it is written. The regex is deliberately narrow: a rule like "any all-caps
+shell default" would sweep up `WTM`, `PY`, `RANKS`, `WORK` and every other variable in a suite.
+
+The cost of leaving this unwritten was real. `flicker_evap`'s `QUIET` was a properly promoted,
+overridable, well-commented bound, and its two assertions were counted as a COVERAGE GAP on
+2026-09-22 — a gap that did not exist. It is now `QUIET_TOL`.
+
+**So: when promoting a bound, put one of the five words in its name.** If a name genuinely reads
+better without one (`QUIET` did), rename it anyway and say so in the derivation; the tool's blindness
+is worse than the slightly clumsier name.
+
 ## 5e. The sweep of 2026-09-21/22 — what was actually measured
 
 Every suite carrying a bound was run twice unchanged (Q6) and once per bound with that bound
