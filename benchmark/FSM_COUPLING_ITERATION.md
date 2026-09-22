@@ -56,6 +56,46 @@ The settled number describes the destination, not the journey.
    the test to write first, and it is now the thing that keeps every pre-2026-09-22 result
    reproducible.
 
+**AMENDMENT 2, same day — Andy, on what the settled number actually measures.**
+
+> "The settled regime of course should have no difference: each step must necessarily be like those
+> before when the model is at equilibrium. Think about it numerically."
+
+He is right, and it invalidates the plan's headline evidence rather than merely re-weighting it.
+
+At a fixed point `w_{n+1} = w_n`, so `FSM(w_n)` and `FSM(w_{n+1})` are the SAME ARRAY. The lagged
+scheme feeds step n+1 with step n's FSM output, which at equilibrium IS step n+1's own output. **The
+lag is not small at equilibrium; it is identically zero, by construction.**
+
+So `settled regime 1.58e-06 relative` is NOT a measurement of the coupling. It is the run's DISTANCE
+FROM EQUILIBRIUM. The reasoning is circular: the lag is small because the state is barely changing,
+and the lag IS the change. The plan states its own refutation one line below the number -- "FSM's
+output stops moving because the lakes do (volume 4751.58 -> 4751.71 over 54 steps)" -- it had the
+mechanism and drew the wrong inference from it.
+
+**Consequence 1 — the lag is DEFINITIONALLY transient-only.** Not mostly. There is no regime where
+the lagged coupling is both wrong and safely ignored: the only place it can be nonzero is the
+transient, which is where all the compute goes.
+
+**Consequence 2 — THE BLAST RADIUS BELOW IS OVERSTATED, and this corrects it.** The lagged scheme's
+fixed point satisfies `w* = G(w*, FSM(w*))`; the iterated scheme solves that same equation every
+step. SAME FIXED POINT. Iterating changes the PATH, not the DESTINATION.
+
+  - Equilibrium-run goldens should NOT move on physical grounds. One bookkeeping caveat: the
+    equilibrium stop fires on per-cycle change, so a changed trajectory can change WHEN it stops and
+    therefore which state is written. Expect movement of order the stop tolerance, not of order the
+    coupling error.
+  - Transient goldens move properly, and should.
+
+**Consequence 3 — a free correctness test, orthogonal to the byte-identical guard.** Iterating must
+not move a CONVERGED equilibrium answer by more than the equilibrium tolerance. If it does, either
+the run was not converged or the iteration is wrong. The byte-identical guard checks the opt-out
+path; this checks the default's physics.
+
+**What still needs measuring is unchanged and now better posed.** The cold-start lag is the only
+quantity that sizes the cap and the convergence tolerance, and "how far from equilibrium is this
+run" is the correct reading of any settled-regime number taken alongside it.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
