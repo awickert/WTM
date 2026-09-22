@@ -31,6 +31,7 @@ make_work fe
 # those maxima fall on DIFFERENT CELLS. Measured on the bare (taper-off) arm: head 1.79714, volume
 # 0.0283872. The largest head swing sits in a low-storativity cell that moves almost no water, so the
 # "flicker" this fixture detects is far smaller in water than it looks in head.
+# SPREAD: 0   measured 2026-09-22 by repeat run; see this file's first bound.
 # DERIVED 2026-09-22, SEPARATING: the managed (taper on) arm measures 1.8053e-11 m of per-cycle
 #   |S*dwtd| -- effectively settled -- while the bare (taper off) arm sustains 2.838e-02 m. The bound
 #   sits inside that nine-order gap. RENAMED from QUIET 2026-09-22: assertion_health.py only

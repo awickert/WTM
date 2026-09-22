@@ -85,7 +85,13 @@ done; done; done; done
 #   own header records the same quantity at step 1 as 3.1e-09, a margin of 319x -- so the BINDING
 #   value is the accumulated worst, not the per-step one, and the bound is sized on it.
 RESID_TOL="${RESID_TOL:-1e-6}"
-RESID_TOL="$RESID_TOL" WORK="$WORK" "$PY" - <<'PYX' || fail=1
+# SPREAD: 0   measured 2026-09-22 by repeat run after promotion.
+# DERIVED, ONE-SIDED, in units of MACHINE EPSILON rather than metres -- see the note in the heredoc.
+#   STATE == ACC compares two independent summations of the SAME quantity, equal in exact arithmetic,
+#   so the only honest bound is accumulated rounding. A previous absolute 1e-12 was ~4500 eps and
+#   failed at 10400 eps with nothing in the model changed; stating the budget in eps is what fixed it.
+STATE_EPS_MAX="${STATE_EPS_MAX:-1048576}"   # 2**20 eps, written out: a shell default must parse as a float
+RESID_TOL="$RESID_TOL" STATE_EPS_MAX="$STATE_EPS_MAX" WORK="$WORK" "$PY" - <<'PYX' || fail=1
 import os, glob, sys, re
 W = os.environ["WORK"]
 TOL_RESID = float(os.environ["RESID_TOL"])   # derivation beside the shell default
@@ -107,7 +113,7 @@ TOL_RESID = float(os.environ["RESID_TOL"])   # derivation beside the shell defau
 # and steps, so ~1e4 eps is arithmetic. 2**20 leaves two orders of headroom for a larger domain, sits at
 # 2.3e-10 of recharge, and is still FIVE orders below the booking error this arm exists to catch -- #52
 # shows at 1e-5 of recharge, which is ~4.5e+10 eps.
-STATE_EPS_BUDGET = 2.0**20
+STATE_EPS_BUDGET = float(os.environ["STATE_EPS_MAX"])   # derivation beside the shell default
 EPS = sys.float_info.epsilon
 # The ONE known defect (#52): active_set over-books removal on the step where surface water first
 # appears. Held with a FLOOR so it keeps a regression test and this suite FAILS the day it closes --
@@ -170,7 +176,7 @@ for stem, steps in sorted(runs.items()):
                 fail = 1
 
 print(f"  {'PASS' if not fail else 'FAIL'}  STATE == ACC     two independent storage computations agree over "
-      f"{n_state} step-checks; worst disagreement {worst_state:.3g} eps of recharge  (tol {STATE_EPS_BUDGET:.3g})")
+      f"{n_state} step-checks; worst disagreement {worst_state:.3g} eps of recharge  (tol STATE_EPS_MAX={STATE_EPS_BUDGET:.3g})")
 print(f"  {'PASS' if not fail else 'FAIL'}  LEDGER CLOSES    over {n_resid} step-checks; worst |resid|/rech "
       f"{worst_resid:.2e}  (tol RESID_TOL={TOL_RESID:.0e})")
 
