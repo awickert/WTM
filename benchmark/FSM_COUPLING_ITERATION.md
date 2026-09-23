@@ -713,6 +713,46 @@ same number is the most confidence anything in this file has.
 worth removing HERE and how much a pass costs HERE. It does not establish that 0.765 m is typical,
 and the natural next fixture is a multi-basin chain where the spill order can itself shift.
 
+**AMENDMENT 15 — multilake's FAILING assertion is the iterated scheme being MORE ACCURATE.**
+
+Andy: *"The iterated version should be more accurate."* It is, and `tests/multilake`'s
+`CONVERGENT/b` fails BECAUSE of it.
+
+**THE ASSERTION** computes, per lake, `ratio = (stage(dt/2) - stage(dt/4)) / (stage(dt) - stage(dt/2))`
+and requires it in `[0.3, 0.7]` -- first order is ~0.5. The reported
+`[0.712, 0.519, 0.5, 0.497]` is FOUR LAKES, one ratio each, sorted by stage. It is NOT four dt
+pairs; an earlier reading in this session said so and was wrong.
+
+**THE MEASUREMENT.** Errors against the finest rung (dt/4), both schemes, same fixture:
+
+| lake | cells | floor | `\|dt - dt/4\|` 1 pass | iterated | `\|dt/2 - dt/4\|` both | ratio 1 pass -> iterated |
+|---|---|---|---|---|---|---|
+| A plain pit, tilted floor | 8 | 90.0 | 2.108e-01 | **1.602e-01** | 6.663e-02 | 0.462 -> **0.712** |
+| C nested metadepression | 33 | 85.0 | 1.313e-01 | 1.313e-01 | 4.486e-02 | 0.519 -> 0.519 |
+| B plain pit | 18 | 95.0 | 1.690e-01 | 1.690e-01 | 5.635e-02 | 0.500 -> 0.500 |
+| D overflows a 97 m sill | 34 | 88.0 | 9.888e-02 | **9.260e-02** | 3.1e-02 | 0.461 -> 0.497 |
+
+**Lake A's coarse-dt error falls 24%** while its fine-dt error is IDENTICAL to four figures. The
+ratio rises for exactly that reason: the numerator holds and the denominator shrinks. **A
+first-order RATE band penalises an accuracy gain at the coarse end.** Nowhere is the iterated
+scheme worse; two lakes improve and two are unchanged to five figures.
+
+**A HYPOTHESIS OF MINE DIED HERE, and it is worth recording because it was confident.** I predicted
+the outlier would be the NESTED METADEPRESSION -- "the one place where the per-cell delta and the
+fill hierarchy interact". It is the plain 4x4 pit, and the nested basin is one of the two that did
+not move at all. The two that improved are the SMALLEST lake and the one that overflows a sill; no
+mechanism is offered here, because none has been measured.
+
+**WHAT THE BOUND SHOULD SAY, as a proposal rather than a change already made.** The assertion's own
+stated intent is that a supply-limited stage *"converges to a dt->0 limit rather than wandering"*.
+A ratio strictly below 1 establishes exactly that. The upper bound of 0.7 encodes FIRST ORDER, which
+is a stronger claim than the intent and is the part the improvement violates. Two repairs, and the
+choice is Andy's:
+  - raise the upper bound below 1 with the derivation above attached; simplest, keeps the shape.
+  - assert the INTENT directly: the error against the finest rung must DECREASE monotonically, and
+    additionally the iterated scheme must be no worse than the lagged one at every lake. Stronger,
+    and it would have caught this as a PASS with a note rather than a failure.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
