@@ -159,6 +159,78 @@ including the real snapshot if it is ever held that way.
 `src/CreateSNES.hpp` had NO include guard, so any header including it collided. Fixed with
 `#pragma once` -- correct on its own merits and unrelated to #112.
 
+**AMENDMENT 5 — the FULL STEP measured (2026-09-23), and the instrument was CRASHING, not perturbing.**
+
+Amendment 4 ends "the next measurement brackets the solve". This is that measurement, and it first
+had to correct the record: the note carried into the handoff said the in-loop probe PERTURBED the
+run. It did not. It SEGV-ed it. `changed()` walked `saved[k]` by POSITION, which assumes the set of
+non-null Vecs is invariant across a step, and **A STEP CREATES VECS**:
+
+    PROBECOUNT captured=33 live=37 appeared: tr_exfil_stage1 tr_fwork tr_head_old vol_prev_x
+
+Those four are allocated lazily on first use (transient_groundwater.cpp:732, :1004, :1876, :1877),
+so the compare ran off the end of a 33-entry vector. fsm_cascade reported that only as "RUN FAILED",
+exit 2 — which is how a crash spent a day mislabelled as a perturbation. Fixed at 3c61334 (match by
+name; [CREATED] and [DESTROYED] reported separately, because undoing a creation means DESTROYING the
+Vec, not copying a value back). **No out-of-process instrument was needed.** Running the in-loop and
+a deferred-comparison instrument side by side gives step-for-step identical lists, which is the
+direct check that the in-loop VecEqual does not disturb the run.
+
+**THE STEP CHANGES 18 VECS, not 3.** Union over every arm below. The coupling call alone changed 3;
+the design named 3 and, for the coupling call, got one right.
+
+    exfiltration_vec  fsm_delta_vec  lake_stage  picard_r  rech_vec  sink_removed_dist_vec
+    starting_wtd  starting_wtd_local  starting_wtd_prev  T_local  tr_exfil_stage1  tr_expl
+    tr_fwork  tr_head_old  tr_ygamma  vol_prev_x  wtd_global  x
+
+**AND IT IS CONFIGURATION-DEPENDENT**, which is the finding that shapes the rollback. Every arm run,
+including the two the model refused and the one abandoned:
+
+| arm | step mode | solver | integrator | routing | collector | n | Vecs changed |
+|---|---|---|---|---|---|---|---|
+| fsm_cascade as shipped | adaptive | anderson | tr-bdf2 | continuous | active_set | 1 | **17** |
+| same, decomposed | adaptive | anderson | tr-bdf2 | continuous | active_set | 4 | **17, IDENTICAL SET** |
+| step-mode flip | fixed | anderson | tr-bdf2 | continuous | active_set | 1 | 16 (no `starting_wtd_prev`) |
+| integrator flip | fixed | anderson | bdf2 | continuous | active_set | 1 | 11 |
+| Newton ramp | ramp | newton | backward-euler | continuous | active_set | 1 | 10 (no `tr_*`) |
+| Anderson restart ON | adaptive | anderson | tr-bdf2 | continuous | active_set | 1 | 16 (no `vol_prev_x`) |
+| Picard | fixed | picard | backward-euler | impulse | explicit | 1 | 8 (the only `picard_r` sighting) |
+| Picard x continuous | — | picard | — | continuous | active_set | — | **REFUSED, twice over** |
+| multilake | fixed | anderson | — | continuous | active_set | 1 | **ABANDONED at 10 min wall** |
+
+Two of those rows are results rather than gaps. **Picard can never need this rollback under
+`continuous`**: `active_set` is refused on Picard (the pin is absent from its operator) and
+`explicit` is refused with `continuous` (they fight and never settle). The pair is unreachable, so
+`picard_r` only appears under `impulse`. And the multilake arm was abandoned rather than tuned —
+flipping one key on the fsm_cascade config is the better comparison anyway, because the fixture is
+then held fixed and only the subject moves.
+
+**21 of the 39 AppCtx Vecs changed on NO arm**: `ar_best_x`, `b`, `cellsize_EW_squared`, `evap_vec`,
+`fdepth_local`, `fdepth_vec`, `geom_ew_vec`, `geom_n_vec`, `geom_s_vec`, `ksat_local`, `ksat_vec`,
+`mask`, `mask_local`, `open_water_evap_vec`, `porosity_vec`, `precip_vec`, `rech_source`,
+`runoff_dist_vec`, `runoff_ratio_vec`, `topo_local`, `topo_vec`. Most are static inputs and that is
+expected. **NOT OBSERVED IS NOT NEVER**, and `ar_best_x` is the live example: the restart arm enabled
+Anderson restarting and `ar_best_x` still never moved, which means restarting did not fire on this
+fixture rather than that the Vec is inert. Treat this column as a lower bound on the surface.
+
+**THE DECISION THIS HANDS TO ANDY, and it is a decision, not an implementation detail.** The captured
+set is configuration-dependent, so there are two shapes and they trade correctness against memory:
+
+  - **Capture the measured set.** Smaller, but correctness rests on the enumeration staying right. A
+    new integrator, or an arm nobody measured, breaks it SILENTLY — which is the exact failure the
+    scalar lint exists to prevent, and there is no syntactic signature to lint here.
+  - **Capture every non-null Vec.** Correct by construction; the enumeration problem disappears. The
+    cost is memory: 39 grid vectors held for one step, which is ~120 MB at Esquibel's 384,703 cells
+    and scales linearly with the grid.
+
+A third shape exists and is worth costing: capture the measured set and keep the probe as a
+RUNTIME CHECK that nothing outside it moved, so the enumeration is verified by the run rather than
+by me. That converts a silent breakage into a loud one at the price of the comparison.
+
+SCOPE, stated as narrowly as it deserves: ONE fixture (fsm_cascade, 30x30-class), n=1 and n=4,
+`routing: continuous` except where the table says otherwise. The step-mode and integrator flips are
+single-key edits of that one config, so the FIXTURE is controlled and only the subject moves.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
