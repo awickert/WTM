@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **375** across **192** tests.
+Runs recorded: **378** across **193** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,7 +13,7 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 2 |
 | `anderson` | `active_set` | `be_volume` | 24 | **0** | 2 |
-| `anderson` | `active_set` | `tr_bdf2` | 132 | 2 | 7 |
+| `anderson` | `active_set` | `tr_bdf2` | 135 | 2 | 7 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | 1 | **0** | 2 |
 | `anderson` | `explicit` | `be_volume` | 4 | **0** | 2 |
@@ -183,6 +183,7 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `coupling_convergence/multilake_05yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/multilake_1yr_continuous` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/multilake_1yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
+| `coupling_iteration_(#112)` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1 |
 | `cross-rank_adaptive_determinism` | transient | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 4 |
 | `cross-rank_drift_regime` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,6 |
 | `dt-sensitivity_(active-set)` | equilibrium | anderson | tr_bdf2 | fixed | active_set,implicit | 0 | 0 | 1 |
@@ -261,7 +262,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **anderson** | 185 | 30 | 1 | 42 | 51 |
+| **anderson** | 188 | 30 | 1 | 42 | 51 |
 | **newton** | 13 | 8 |   | 9 | 8 |
 | **picard** | by design | 9 |   | 13 | 6 |
 
@@ -272,13 +273,13 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | **bdf2** | 20 | 11 |   | 15 | 15 |
 | **be_secant** | by design | 7 |   | 10 | 6 |
 | **be_volume** | 37 | 13 |   | 19 | 18 |
-| **tr_bdf2** | 141 | 16 | 1 | 20 | 26 |
+| **tr_bdf2** | 144 | 16 | 1 | 20 | 26 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **adaptive** | 105 | 27 |   |   | 24 |
+| **adaptive** | 108 | 27 |   |   | 24 |
 | **continuation** | 8 | 7 |   | 8 | 6 |
 | **fixed** | 85 | 13 | 1 | 56 | 35 |
 
@@ -286,7 +287,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **equilibrium** | 183 | 35 | 1 | 51 | 43 |
+| **equilibrium** | 186 | 35 | 1 | 51 | 43 |
 | **test** | 2 |   |   |   |   |
 | **transient** | 13 | 12 |   | 13 | 22 |
 
@@ -294,7 +295,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 9 | 54 | 204 |
+| **anderson** | 42 | 9 | 54 | 207 |
 | **newton** | 8 | 6 | 24 |   |
 | **picard** | 11 | 8 | 9 |   |
 
@@ -302,7 +303,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 272 | 25 | 16 |
+| **equilibrium** | 275 | 25 | 16 |
 | **test** | 2 |   |   |
 | **transient** | 35 | 13 | 12 |
 
@@ -311,13 +312,13 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | fsm \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
 | **0** | 54 | 12 | 1 | 7 | 26 |
-| **1** | 144 | 35 |   | 57 | 39 |
+| **1** | 147 | 35 |   | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
-| **0** | 103 | 25 | 179 |
+| **0** | 106 | 25 | 179 |
 | **1** | 53 | 4 | 11 |
 
 ## 4. Uncovered pairwise crossings
