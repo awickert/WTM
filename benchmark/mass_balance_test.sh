@@ -73,6 +73,12 @@ run() { # $1 = nranks -> echoes "recharge loss" from the last data line
 }
 
 echo "=== Mass-balance MPI-consistency test (small dome fixture, run_type test, fsm_on=1) ==="
+# WHAT THIS DEMONSTRATES, measured 2026-09-22 after the `trace: []` repair: the two diagnostics
+# agree to EVERY PRINTED DIGIT between n=1 and n=8 --
+#     recharge_added  1.174972e+11      loss_to_ocean  5.390356e+10
+# Recorded because this suite, unlike every bound under tests/, carries no derivation comment, so
+# its passing said nothing about how much margin it passes by. It is exact agreement, not a
+# tolerance being cleared.
 echo "WTM binary: $WTM   comparing n=1 vs n=$NRANKS"
 echo
 

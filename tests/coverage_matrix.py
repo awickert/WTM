@@ -12,6 +12,13 @@ covered on its own; the combination was not. So the useful view is which crossin
 
 Usage:
   coverage_matrix.py <fingerprint-log> [-o tests/COVERAGE.md]
+
+COUNTING THE PER-TEST TABLE: 195 rows, 192 tests, and both are right.
+Section 2 ("What each test covers") is followed by the per-SOLVER summary, whose rows
+(`anderson`, `newton`, `picard`) match the same `| `name` |` shape. A reader -- or a script --
+extracting rows past the end of section 2 picks up those three and gets 195 against a headline of
+192. 195 - 3 = 192. This was investigated once on 2026-09-22 and found to be an extraction error,
+not a generator bug; recorded here so the next person who counts does not re-find it.
 """
 import collections
 import sys
