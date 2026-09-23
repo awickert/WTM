@@ -509,6 +509,23 @@ defects to be worked around, and the second and third can invalidate a naive dt-
 
 ### Added
 
+- **`surface_water.coupling.iterations` – a step can now solve against its OWN surface water, not the
+  previous step's.** Under `routing: continuous`, FillSpillMerge's per-cell volume change is fed into
+  the *next* step's recharge source, so a step never sees its own runoff: the coupling is lagged by one
+  step. Setting `iterations: k` snapshots the state, solves, runs FSM, rolls back everything **except**
+  FSM's volume change, and re-solves the same step with that as its source – a fixed-point iteration on
+  the coupling. **`1` is the default and is byte-identical to the previous model** (`golden` 35/35
+  unmoved); there is no `0`, and `> 1` is refused by name under `impulse` and `off`, where no lagged
+  source exists to iterate against. Each extra pass is a full groundwater re-solve, not an extra FSM
+  call – FSM is 0.142% of a cycle at 384,703 cells – so `k` passes cost roughly `k` times the step.
+  The lag is **definitionally transient-only**: at equilibrium `w_{n+1} = w_n`, so `FSM(w_n)` and
+  `FSM(w_{n+1})` are the same array. Measured on `tests/fsm_cascade`, iterations 1 / 2 / 3 reach a
+  **bit-identical** final water table (max |Δwtd| = 0.000e+00 m over 900 cells) by three different
+  paths – 70, 184 and 212 solver calls over 4, 15 and 7 steps. The rollback carries a measured set of
+  18 PETSc vectors plus eleven scalars, and **checks at runtime** that nothing outside that set moved,
+  because the set depends on the configuration and an unmeasured one would lose water silently.
+  Design and its seven amendments: `benchmark/FSM_COUPLING_ITERATION.md`.
+
 - **`tests/route_equality` – a config key and the flag it abstracts must produce the same run.** All
   eight `ABSTRACTED` flags are now asserted **byte-identical** between their two routes, plus a positive
   control that `solver.method: newton` runs from YAML alone. The claim that the config expresses what a
