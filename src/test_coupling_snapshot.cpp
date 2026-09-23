@@ -37,6 +37,7 @@ TEST_CASE("coupling snapshot: every scalar round-trips EXACTLY") {
   arp.total_solver_recharge    = 9.5;
   arp.total_storage_change     = 9.75;
   params.elapsed_time_s        = 10.5;
+  params.runoff_booked_upto_s  = 10.25;   // the ELEVENTH scalar: the runoff-handoff watermark
   uc.step.dt                   = 11.5;
   uc.step.elapsed_from         = 12.5;
   uc.step.elapsed_to           = 13.5;
@@ -57,6 +58,7 @@ TEST_CASE("coupling snapshot: every scalar round-trips EXACTLY") {
   arp.total_solver_recharge    = -9.0;
   arp.total_storage_change     = -9.25;
   params.elapsed_time_s        = -10.0;
+  params.runoff_booked_upto_s  = -10.25;
   uc.step.dt                   = -11.0;
   uc.step.elapsed_from         = -12.0;
   uc.step.elapsed_to           = -13.0;
@@ -77,6 +79,7 @@ TEST_CASE("coupling snapshot: every scalar round-trips EXACTLY") {
   CHECK(arp.total_solver_recharge    == 9.5);
   CHECK(arp.total_storage_change     == 9.75);
   CHECK(params.elapsed_time_s        == 10.5);
+  CHECK(params.runoff_booked_upto_s  == 10.25);
   CHECK(uc.step.dt                   == 11.5);
   CHECK(uc.step.elapsed_from         == 12.5);
   CHECK(uc.step.elapsed_to           == 13.5);
@@ -95,6 +98,13 @@ TEST_CASE("coupling snapshot: capture does not mutate the model") {
 
   CHECK(arp.total_solver_recharge == 42.0);
   CHECK(params.elapsed_time_s     == 7.0);
+}
+
+TEST_CASE("coupling snapshot: the Parameters-field count is pinned at two") {
+  // The step body mutates exactly two params fields -- elapsed_time_s in the solve and
+  // runoff_booked_upto_s in the coupling. tests/lint_norms.sh derives that set from the source and
+  // compares it against this header, so a third appearing without a snapshot entry fails there.
+  CHECK(wtm::CouplingSnapshot::kParamsFields == 2);
 }
 
 TEST_CASE("coupling snapshot: the accumulator count is pinned at ten") {

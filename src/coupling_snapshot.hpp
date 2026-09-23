@@ -48,7 +48,22 @@ struct CouplingSnapshot {
   // other nine does NOT restore it. Found by tests/lint_norms.sh on its first run.
   double total_storage_change     = 0;
 
-  double elapsed_time_s = 0;   // params; advanced by transient_groundwater
+  // THE PARAMETERS FIELDS THE STEP BODY MUTATES. There are exactly two, and that is enumerated
+  // rather than believed: `params.<field> =/+=/++` appears in the solve (transient_groundwater.cpp)
+  // and in couple_surface_and_recharge at precisely these two sites. Every other params mutation in
+  // the tree is per-CYCLE (cycles_done, last_cycle_*), per-REPORT (infiltration_change, inside
+  // PrintValues), initialisation, or one of the per-step COUNTERS that Amendment 6 decided are to
+  // describe the accepted pass only. tests/lint_norms.sh pins this set.
+  static constexpr std::size_t kParamsFields = 2;
+  double elapsed_time_s = 0;   // params; advanced by transient_groundwater (:2475)
+  // THE ELEVENTH SCALAR, and it was missed the same way the tenth was -- by not being an
+  // `arp.total_*`, so the lint that caught the tenth could not see it. The coupling sets it to
+  // elapsed_time_s (WTM.cpp:383) as the watermark for "runoff booked up to here", and the NEXT
+  // coupling scales the runoff handoff by (elapsed_time_s - runoff_booked_upto_s) / params.deltat.
+  // Leave it unrestored and a second pass computes interval = 0, falls through the `interval > 0`
+  // guard to a scale of exactly 1.0, and hands FillSpillMerge a silently different amount of water.
+  // Found by reading the coupling for a different reason, which is the argument for the new lint.
+  double runoff_booked_upto_s = 0;
   double step_dt        = 0;   // user_context.step.*, the accepted-step record
   double step_from      = 0;
   double step_to        = 0;
@@ -69,6 +84,7 @@ struct CouplingSnapshot {
     s.total_solver_recharge    = arp.total_solver_recharge;
     s.total_storage_change     = arp.total_storage_change;
     s.elapsed_time_s           = params.elapsed_time_s;
+    s.runoff_booked_upto_s     = params.runoff_booked_upto_s;
     s.step_dt                  = uc.step.dt;
     s.step_from                = uc.step.elapsed_from;
     s.step_to                  = uc.step.elapsed_to;
@@ -90,6 +106,7 @@ struct CouplingSnapshot {
     arp.total_solver_recharge    = total_solver_recharge;
     arp.total_storage_change     = total_storage_change;
     params.elapsed_time_s        = elapsed_time_s;
+    params.runoff_booked_upto_s  = runoff_booked_upto_s;
     uc.step.dt                   = step_dt;
     uc.step.elapsed_from         = step_from;
     uc.step.elapsed_to           = step_to;

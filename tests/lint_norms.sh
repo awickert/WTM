@@ -113,6 +113,58 @@ else
 fi
 
 
+# #112 STEP-SCOPED PARAMETERS FIELDS. The check above pins `double total_*` in ArrayPack, which is
+# the one signature a grep can see. IT CANNOT SEE Parameters: the coupling mutates
+# params.runoff_booked_upto_s (the runoff-handoff watermark) and the solve mutates
+# params.elapsed_time_s, and neither is a `total_*`. The eleventh scalar was missed exactly there --
+# found by reading the coupling for an unrelated reason, not by a tool. So derive the set from the
+# SOURCE: every `params.<field> =/+=/-=/++` inside the step body must be carried by the snapshot.
+#
+# THE STEP BODY IS THE SOLVE PLUS THE COUPLING. ../src/transient_groundwater.cpp is the solve in its
+# entirety; in ../src/WTM.cpp only couple_surface_and_recharge counts, because the per-step COUNTERS
+# (solves_done, rejects_done) live in the step LOOPS and Amendment 6 decided they describe the
+# accepted pass rather than roll back.
+body=$(awk '/^static void couple_surface_and_recharge/,/^template <class elev_t>$/' ../src/WTM.cpp)
+muts=$( { printf '%s\n' "$body"; cat ../src/transient_groundwater.cpp; } \
+        | grep -vE '^\s*//' \
+        | grep -oE 'params\.[a-z_]+\s*(=[^=]|\+=|-=|\+\+)' \
+        | grep -oE 'params\.[a-z_]+' | sed 's/params\.//' | sort -u )
+nmuts=$(printf '%s\n' "$muts" | grep -c .)
+# NON-VACUOUS, and its REACH stated honestly: this guard fires only if BOTH sources come up empty,
+# because transient_groundwater.cpp alone still yields one field. A stale awk range over the coupling
+# is caught by the kParamsFields count below, not here. Measured by breaking the range on purpose.
+if [ "$nmuts" -eq 0 ]; then
+    echo "  FAIL  #112 step-scoped params check found ZERO mutations -- the awk range or the file" >&2
+    echo "        path is wrong, so it is checking nothing." >&2
+    fail=1
+else
+    missing=""
+    for f in $muts; do
+        grep -qE "params\.$f\s*=" ../src/coupling_snapshot.hpp || missing="$missing $f"
+    done
+    if [ -n "$missing" ]; then
+        echo "  FAIL  #112 the step mutates Parameters fields the snapshot does NOT restore:$missing" >&2
+        echo "        Add each to ../src/coupling_snapshot.hpp (capture AND restore), to the" >&2
+        echo "        round-trip test, and raise kParamsFields -- or, if it is a per-step COUNTER" >&2
+        echo "        rather than state, say so where it is declared and exempt it here by name." >&2
+        fail=1
+    else
+        # COUNT FIRST, THEN THE OK LINE. Printing "OK ... all $nmuts" before checking the count means
+        # a stale awk range reports success on the line above its own failure -- and the zero-guard
+        # does NOT catch that case, because transient_groundwater.cpp still contributes one field so
+        # the set is non-empty. The count pin is what actually catches a range that stopped matching.
+        k=$(grep -oE 'kParamsFields = [0-9]+' ../src/coupling_snapshot.hpp | grep -oE '[0-9]+')
+        if [ "$k" != "$nmuts" ]; then
+            echo "  FAIL  #112 kParamsFields says $k but the step mutates $nmuts -- either a field" >&2
+            echo "        was added without updating the header, or this check's awk range over" >&2
+            echo "        couple_surface_and_recharge has gone stale and is scanning nothing." >&2
+            fail=1
+        else
+            echo "  OK   #112 ROLLBACK  snapshot restores all $nmuts step-scoped Parameters fields"
+        fi
+    fi
+fi
+
 # ONE BOUND PER LINE. Two bounds on one source line SHARE the comment block above it, so
 # assertion_health.py credits the second with the first's derivation -- a FALSE DERIVED, the same
 # shape as the spread-note and arm-label bugs (tests/ASSERTION_HEALTH.md). limit_cycle's MB_TOL sat
