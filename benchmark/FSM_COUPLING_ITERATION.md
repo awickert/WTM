@@ -231,6 +231,43 @@ SCOPE, stated as narrowly as it deserves: ONE fixture (fsm_cascade, 30x30-class)
 `routing: continuous` except where the table says otherwise. The step-mode and integrator flips are
 single-key edits of that one config, so the FIXTURE is controlled and only the subject moves.
 
+**AMENDMENT 6 — the rollback SHAPE chosen, and the three decisions the loop still contains.**
+
+Andy chose (2026-09-23) the third shape of Amendment 5: **carry the measured set as copies, and let
+the RUN verify the enumeration**. Shipped at dec5266 as `CouplingVecSnapshot`, still inert.
+
+One consequence is mine, not his, and is stated rather than buried: **the check uses FINGERPRINTS,
+not copies.** Holding copies of the other 21 Vecs to compare against would cost exactly the memory
+the choice was made to avoid, so the outside-the-set check stores three norms (1, 2, infinity) per
+Vec — 3 doubles instead of a grid. It therefore cannot see a mutation that preserves all three
+norms; it is a tripwire for "this Vec is not inert after all", not a proof of equality.
+
+**DECISION 1 — THE EXCLUSION SET, and it is exactly one Vec.** A rollback that restored everything
+would restore the very quantity the iteration is solving for, and the loop would never move. So the
+iteration variable must be EXCLUDED, and under `routing: continuous` it is identifiable in one
+place: FSM's per-cell volume change is scattered into its OWN carrier, `fsm_delta_dist`
+(WTM.cpp:578), deliberately kept out of `rech_dist` because the delta is internal redistribution
+rather than external input. That carrier is `fsm_delta_vec`, and it is the only thing pass k+1 must
+inherit from pass k.
+
+  Φ(w) = G(w_n, F(w)) — restore everything, keep F(w). Exclusion set = { `fsm_delta_vec` }.
+
+`rech_vec` is NOT excluded, and that is the part worth stating because the opposite is tempting.
+Its post-step value is "the recharge for step n+1", computed from the POST-step water table. A
+re-solve of step n must use step n's own recharge — the one the previous step's coupling set — so
+`rech_vec` is restored, and the final accepted pass recomputes the next step's value anyway.
+Restoring it loses nothing; keeping it would silently advance the forcing by one step inside the
+iteration.
+
+**DECISION 2 — does an inner pass count as a solve?** `params.solves_done`, the budget trace and
+`nsteps` are all per-step counters today. My proposal: they count the ACCEPTED pass only, so every
+existing per-step diagnostic keeps meaning what it means, and the iteration reports its pass count
+SEPARATELY. The alternative — counting every pass — would make the run log comparable on cost but
+would silently change the meaning of numbers several suites assert on.
+
+**DECISION 3 — THE CONFIG KEY IS UNNAMED AND IS ANDY'S.** Iterating is the default (Amendment 1);
+`1` is the opt-out. Nothing below picks a name.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
