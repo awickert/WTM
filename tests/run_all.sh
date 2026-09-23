@@ -194,10 +194,22 @@ run "combination sweep"             ./combination_sweep/run.sh "$WTM"
 # judgement. `coupling_iteration` is absent because it already runs both schemes as its subject.
 echo
 echo "=== the continuous suites again, under the CONVERGED default (iterations > 1) ==="
-for _cs in active_set fsm_cascade fsm_consistency fsm_fullness lake_evap_equals_et \
-           multilake xrank_adaptive xrank_growth; do
-    WTM_TEST_ITERATIONS=4 run "converged: $_cs" "./$_cs/run.sh" "$WTM"
-done
+# multilake is NOT here: it runs BOTH schemes itself, because two of its assertions COMPARE them
+# and an override would leave it comparing iterated against iterated.
+#
+# WRITTEN OUT, ONE `run` PER LINE, NOT A LOOP -- and that is load-bearing. EXPECTED_SUITES is
+# `grep -c '^run "'`, so a loop (or an inline `VAR=x run ...` prefix) declares ZERO suites while
+# running eight, and the SUITE COUNT MISMATCH guard fires every time. It did, on three consecutive
+# runs, while I read the rc=1 as something else. The variable is EXPORTED for the block instead.
+export WTM_TEST_ITERATIONS=4
+run "converged: active_set"          ./active_set/run.sh "$WTM"
+run "converged: fsm_cascade"         ./fsm_cascade/run.sh "$WTM"
+run "converged: fsm_consistency"     ./fsm_consistency/run.sh "$WTM"
+run "converged: fsm_fullness"        ./fsm_fullness/run.sh "$WTM"
+run "converged: lake_evap_equals_et" ./lake_evap_equals_et/run.sh "$WTM"
+run "converged: xrank_adaptive"      ./xrank_adaptive/run.sh "$WTM"
+run "converged: xrank_growth"        ./xrank_growth/run.sh "$WTM"
+unset WTM_TEST_ITERATIONS
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
 run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
