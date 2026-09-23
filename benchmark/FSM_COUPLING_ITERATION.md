@@ -387,6 +387,67 @@ exercises it. Said plainly rather than dressed up as a visible repair.
 for any rank-0 array, and it is five runs. Re-run it before trusting the four-way exemption against
 changed code.
 
+**AMENDMENT 9 — THE ITERATION DOES NOT CONVERGE. It oscillates, on every topography tried.**
+
+Andy decided (2026-09-23) that iterating becomes the default, and asked the right question of the
+plan for a convergence-based stop: *"by 'bitwise', do you really mean that no value changes? It would
+take a long time for an iterator to get there."* Measuring the answer produced something neither of
+us expected, and it bears on the default itself rather than on the stopping rule.
+
+**WHAT WAS MEASURED.** A temporary probe recorded, for every pass of every step,
+`dmax = max|F(w^k) - F(w^{k-1})|`, the source's own magnitude, the number of cells that moved, and
+whether `F^k == F^{k-2}` bitwise. Cap of 8 passes, on `coupling_iteration`, `fsm_cascade` and
+`fsm_fullness` -- three independent topographies (single pit; a spill CHAIN; heterogeneous fullness).
+
+**RESULT: `dmax` IS FLAT.** On every step that routes water, the per-pass change stops decreasing
+after pass 2 and then holds constant to three significant figures for the remaining six passes:
+
+    fsm_cascade  step 6    2.50e+00 2.50e+00 2.50e+00 2.50e+00 2.50e+00 2.50e+00 2.50e+00
+    fsm_cascade  step 9    1.38e+00 1.38e+00 1.38e+00 1.38e+00 1.38e+00 1.38e+00 1.38e+00
+    fsm_fullness step 4    3.86e+00 3.86e+00 3.86e+00 3.86e+00 3.86e+00 3.86e+00 3.86e+00
+    coupling_it. step 2    1.47e-01 1.47e-01 1.47e-01 1.47e-01 1.47e-01 1.47e-01 1.47e-01
+
+and the source's own magnitude ALTERNATES between a large value and ~0 -- for `coupling_iteration`
+step 2: `1.47e-01, 1.65e-05, 1.47e-01, 0.00e+00, 1.47e-01, 0.00e+00, 1.47e-01`, with the moved-cell
+count flipping 184/168. **That is a period-2 orbit**, entered immediately and never left.
+
+Counting only steps with a REAL source -- the majority of steps route no surface water at all, and
+those say nothing about convergence -- roughly a QUARTER settle and three quarters oscillate.
+
+**IT IS THE OPERATOR, NOT THE ROLLBACK, and that was checked rather than assumed.** This is the
+design's own byte-identical guard, finally run: restore the source TOO, so every pass re-solves the
+identical problem, and a k=8 run must reproduce k=1 bit for bit. It does, on all three fixtures --
+`max|Δwtd| = 0.000e+00 m, 0 cells moved`. The rollback is complete; the oscillation is `Φ`.
+
+**WHAT THIS MEANS FOR THE DEFAULT, stated plainly because it cuts against the decision just taken.**
+There is no converged answer for the iteration to reach on these cases. `iterations: k` returns
+whichever state the orbit is in at pass k, so **the answer depends on the PARITY of the cap**, and
+the two states are far apart (a source of metres versus ~zero). A default that iterates would make
+the model's answer a function of a tuning knob's parity, which is worse than the lagged scheme --
+lagged is at least a single definite rule.
+
+**AND NO STOPPING RULE RESCUES IT.** A tolerance cannot fire on a sequence that does not decay.
+Bitwise convergence cannot either. Exact period-2 detection fired on only 3 of 16 moving steps, and
+two of those three were false positives of my own detector: `F^k == F^{k-2}` is trivially true when
+`F` is CONSTANT, so a real detector has to require `F^k == F^{k-2}` AND `F^k != F^{k-1}`.
+
+**THIS IS PROBABLY NOT NEW.** `FREE_SURFACE_FLICKER.md` describes non-contraction of this same outer
+operator, and task #111's corsica oscillator is measured, real and unexplained. This measurement
+gives that phenomenon a clean, cheap reproduction: three small fixtures, eight passes, no at-scale
+run required.
+
+**OPTIONS, with their costs -- none of them chosen here.**
+  1. **Keep the iteration opt-in** and do not flip the default. Costs nothing already built; the
+     machinery has just proved its worth as an INSTRUMENT, which is what the original instruction
+     asked for ("helpful both for testing and for basic correctness").
+  2. **Damp the outer loop** -- under-relaxation, or Anderson on the outer iterate. The design
+     explicitly has neither. It could turn the orbit into convergence, and it introduces a
+     parameter that would need deriving.
+  3. **Define the answer on the orbit** -- average the two states, or keep the one with the smaller
+     source. Needs a definition of "better" that is physical rather than convenient.
+  4. **Chase the mechanism first**, since it is very likely #111's. That is a research question, not
+     a config change.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
