@@ -564,6 +564,68 @@ ocean. `w_solve - S` is therefore an approximation, and how to attribute the sou
 state properly is a MODELLING decision, not a coding one. That is the question to answer before
 this is built.
 
+**AMENDMENT 12 — ANDY WAS RIGHT: THE FSM INPUTS DO CONVERGE OVER TIME, AND AMENDMENT 9 OVERSTATED.**
+
+Andy: *"I expect that we will see the FSM inputs converge over time. This is the point of a separate
+array here. We will not be able to separate out the FSM input effects easily. So we can use overall
+convergence here."* Both halves check out, and the first one corrects this document.
+
+**THE OSCILLATION IS CONFINED TO THE FILLING TRANSIENT.** Amendment 9 said "the iteration does not
+converge" and generalised a PER-STEP behaviour into a property of the scheme. Laid out per step, with
+`O` = still oscillating at pass 8, `c` = settled, `.` = FSM idle:
+
+    fsm_cascade          OOOOOOOOOOc........................   (70 steps)
+    coupling_iteration   OO.................................   (126 steps)
+
+Ten and two oscillating steps respectively, ALL at the start, and ZERO in the second half of either
+run. Once the lakes reach their sills the coupling is inert. The orbit is a property of FILLING, not
+of the scheme -- which is exactly what "the FSM inputs converge over time" predicts.
+
+**AND THE ORBIT NEVER REACHES THE ANSWER.** Under the shipped `assign` scheme, every reported
+quantity is pass-count-invariant across k = 1, 2, 3, 4 on coupling_iteration:
+
+    recharge        relative spread  0.000e+00
+    stored volume   relative spread  0.000e+00
+    evaporation     relative spread  0.000e+00
+    loss to ocean   relative spread  1.952e-04      (0.02%)
+    exact residual  ~1e-13 relative at every k
+
+So the decision Andy took -- iterating by default -- is SAFE on this evidence. The honest other half:
+these fixtures cannot DEMONSTRATE the benefit either, because they equilibrate inside one report
+interval, where the lag is definitionally zero. The cold-start measurement remains the one that would.
+
+**THE OUTER STOP, BUILT AS ANDY SPECIFIED: overall convergence, no decomposition.** Separating the
+FSM contribution from the solve's own share turned out to need an attribution the nonlinear solve
+does not give (Amendment 11), so the stop does not attempt it. It compares successive passes on the
+WHOLE state instead:
+
+  - QUANTITY: the L1 water-volume change between passes -- summed per cell, NOT the change in the
+    domain total. The iteration REDISTRIBUTES water, so a pass can move a great deal while the total
+    is unchanged; a scalar total would call that converged.
+  - TOLERANCE: `solver.convergence.water_volume_tol`, THE INNER SOLVE'S OWN BAR, reused rather than
+    invented. The outer iteration cannot resolve a change smaller than the solve producing each pass.
+    No new config key.
+  - CAP: `surface_water.coupling.iterations`, reached only where the coupling is still moving.
+
+**MEASURED COST, and this is what makes iterating affordable as a default** (coupling_iteration,
+solver calls):
+
+    cap = 1     131      the lagged scheme
+    cap = 2     252
+    cap = 4     262      (was 393 before the stop)
+    cap = 8     258      (would have been ~1000)
+
+Raising the cap from 2 to 8 costs 6 solver calls, because the stop fires as soon as the state stops
+moving. The cost of iterating is ~2x the lagged scheme, NOT kx. `golden` 35/35 unmoved at the default.
+
+**ONE DEFECT THIS INTRODUCED AND FIXED.** With an early exit, "the accepted pass" is no longer known
+before the coupling runs, and the per-step bookkeeping was keyed on `pass == passes`. It silently
+stopped firing: the run-log solve count collapsed from 131 to **1** at caps 4 and 8. The budget trace
+is therefore SPLIT into a sample (taken every pass at the same point as before, post-solve and
+pre-coupling) and an emit (once, after the loop). At `iterations: 1` it is arithmetically identical
+to the single call it replaces -- same sample point, same order, and the running previous-values
+advance exactly once per step.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
