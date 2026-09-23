@@ -34,9 +34,9 @@ transmissivity:
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
   coupling:
-    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
-                    # output (#112). Declared because it is resolved for every run, and an
-                    # absent key would leave this suite silent about which scheme it measures.
+    iterations: 4   # THE SHIPPED DEFAULT (#112). This suite's claims are INVARIANTS -- they must
+                    # hold under either coupling scheme -- so it certifies what actually ships.
+                    # See tests/COUPLING_COVERAGE.md for the rule and the classification.
   routing: continuous   # FSM ON -- the PRECONDITION: no routing, no lakes, nothing to spill
   runoff_ratio: 0
   infiltration_during_flow: false
