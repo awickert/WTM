@@ -268,6 +268,79 @@ would silently change the meaning of numbers several suites assert on.
 **DECISION 3 — THE CONFIG KEY IS UNNAMED AND IS ANDY'S.** Iterating is the default (Amendment 1);
 `1` is the opt-out. Nothing below picks a name.
 
+**AMENDMENT 7 — IT RUNS (2026-09-23). `surface_water.coupling.iterations`, and what the first runs
+measured.**
+
+Andy named the key and chose accepted-pass counting. The loop lives in one place -- a `take_step`
+lambda that all three step loops call -- so the iteration is written once rather than three times.
+
+**THE DEFAULT IS STILL 1, AND THAT IS DELIBERATE FOR NOW.** Amendment 1 says iterating becomes the
+method; flipping the default moves every equilibrium golden and re-labels every benchmark number in
+`benchmark/`, so it is its own change with its own decision. What landed here is the machinery, with
+the lagged scheme byte-identical: `golden` 35/35 unmoved.
+
+**MEASURED on tests/fsm_cascade, n=1, iterations 1 / 2 / 3:**
+
+| iterations | solver calls | steps (rejected) | final water table |
+|---|---|---|---|
+| 1 | 70  | 4 (0)  | reference |
+| 2 | 184 | 15 (1) | max\|dwtd\| = **0.000e+00 m**, 0 of 900 cells moved |
+| 3 | 212 | 7 (1)  | max\|dwtd\| = **0.000e+00 m**, 0 of 900 cells moved |
+
+Read it the right way round. The passes DO run -- 70 to 184 to 212 solver calls, and a step pattern
+that changes completely -- and the answer is nevertheless bit-identical. That is Amendment 2's
+consequence, arriving as a measurement rather than an argument: at equilibrium `w_{n+1} = w_n`, so
+`FSM(w_n)` and `FSM(w_{n+1})` are the same array and the lag is identically zero. **Same fixed
+point, three different paths.** It is also Consequence 3's free correctness test, passed at the
+strongest possible value: iterating moved a converged equilibrium answer by exactly nothing.
+
+Mass is conserved on all three. The EXACT budget residual -- the conservation check -- is
+-1.29762625e+05, -4.8019875e+04 and -1.246915e+05 against 2.83595444906e+15 of recharge, i.e. ~1e-11
+relative. The PHYSICAL residual (col 16, `ocean_loss_closing - ocean_outflow - loss_to_ocean`) does
+move, 1.44e10 to 2.38e13 to -7.52e12; that column is documented as carrying the BDF2-startup gap and
+is a path integral, so three different step patterns give three different values. Recorded rather
+than waved away, because it is the one number here that a reader might mistake for a leak.
+
+**WHAT THE FIRST RUN FOUND, and it was my bug.** `iterations: 2` aborted with "adaptive dt: step
+failed after max retries" at every dt the controller tried -- because it never tried a different
+one. A rejected later pass restored the FULL scalar snapshot, which put back the pre-step `deltat`
+and undid the shrink `update()` had just applied for the retry. The reject path now preserves the
+shrunken step size and restores everything else. A rollback that is too COMPLETE is a failure mode
+too, and this design had only ever worried about the opposite one.
+
+**THE RUNTIME CHECK FIRES, and says what Amendment 5 predicted.** Four notices per run:
+`tr_exfil_stage1`, `tr_fwork`, `tr_head_old` and `vol_prev_x` were CREATED during the step, so there
+is nothing to restore into them. All four are scratch -- each fully overwritten before it is read --
+so this is a notice, not a defect. It is printed once per message per run rather than per step,
+which is a readability choice with a cost: a second distinct cause on the same Vec would hide behind
+the first.
+
+**A THIRD CATEGORY THE ROLLBACK DOES NOT COVER, and the runtime check cannot see it.** The snapshot
+carries PETSc Vecs and scalars. It carries NO rank-0 `ArrayPack` arrays, and the coupling writes five:
+`arp.wtd`, `arp.runoff`, `arp.rech`, `arp.wtd_mid` and `arp.runoff_nominal` (the rest of what it
+touches -- `cell_area`, `topo`, `precip`, `porosity`, `evap`, `land_mask`, `runoff_ratio`,
+`open_water_evap` -- are inputs it only reads).
+
+The argument that this is safe is that each is REDERIVED from state that IS restored: `arp.wtd` is
+re-gathered from `starting_wtd`, `arp.wtd_mid` is rewritten as the pre-FSM table, `arp.runoff` is
+zeroed and re-armed every coupling, `arp.rech` is recomputed from precip/evap, and
+`arp.runoff_nominal` is set once at cycle 0. **That argument is reasoning, not measurement, and this
+file's whole history says which of those to trust.** The evidence that nothing is leaking is
+indirect: iterations 1/2/3 agree bit-for-bit and the exact budget residual stays at ~1e-11 relative,
+which a gross leak would disturb. Indirect is not the same as checked.
+
+So it is recorded as an OPEN GAP rather than closed by argument. The fix is the same shape that
+already works for the Vecs -- fingerprint the five before the step and compare after -- and it is
+cheap, since these are rank-0 arrays and the comparison is serial. Until then, the runtime check's
+scope is exactly "PETSc Vecs", and it must not be read as "the step's state".
+
+**REFUSALS, all four verified by running them:** `iterations: 0`; `> 1` with `routing: impulse`;
+`> 1` with `routing: off`; and the typo `iteration` caught by the schema with a did-you-mean.
+
+**40 suite configs migrated** to declare `iterations: 1`, because `full_config.yaml` now prints the
+key for every run and the declared-config rule (#83) makes an undeclared resolved key a failure.
+Same blast radius #109 had, and behaviour-preserving by construction.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
