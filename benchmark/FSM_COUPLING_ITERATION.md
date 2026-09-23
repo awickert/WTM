@@ -511,6 +511,59 @@ scheme change, not a config change, and it is Andy's call.
 surface water plus the signed delta, per pass), the under-relaxation switch, and the frozen baseline.
 All three were temporary and are reverted; the method is recorded here so it need not be re-derived.
 
+**AMENDMENT 11 — THE SEPARATE ARRAY IS THE RIGHT SHAPE, and three wrong versions of it were
+measured out of the way first.**
+
+Andy, on the flux idea: *"How do we apply a lateral flux? How do we do it during the step before we
+have run FSM? The continuous application seems more principled."* That objection is correct and the
+flux suggestion is withdrawn -- an a-priori flux estimate would be a worse approximation than the
+thing it replaces. And: *"Is the easier answer to have a separate array so we can see the FSM
+contribution independently?"* Yes. Here is what the measurements say it has to hold.
+
+**THREE CANDIDATE FIXES, EACH TESTED AND EACH REFUTED.** Recorded because each looked right.
+
+| candidate | oscillation | what it actually did |
+|---|---|---|
+| under-relax at w = 0.5 | removed | converges to `C/2` -- the water credited HALF to the source and half to FSM. Well defined, no physical claim. |
+| freeze the baseline at the step's start | removed | subtracts the GROUNDWATER SOLVE'S own change too (~1559 vs ~409; the ~1150 gap is the solve). Converges to the wrong quantity. |
+| ACCUMULATE the carrier within the step | removed on 69 of 70 steps | **banks the same redistribution once per pass.** Carrier magnitude measured at 1.3427e+03 / 2.6855e+03 / 5.3710e+03 for k = 2 / 4 / 8 -- exactly linear in k. |
+
+**HOW THE THIRD ONE WAS CAUGHT is the part worth keeping.** Under accumulate the water budget CLOSED
+(exact residual 3.27e-13 on fsm_cascade, 273x BETTER than assign), total recharge was unchanged to
+0.000e+00 relative, stored volume was unchanged, and the final water table was BIT-IDENTICAL. Every
+check that usually catches a mass error said fine. The only column that moved was LOSS TO OCEAN:
++278% on coupling_iteration and +545% on fsm_cascade. The phantom water enters as source and leaves
+to the sea, so the exact residual -- which is defined on the FULL source -- moves both sides together
+and closes by construction. **A closing budget is not evidence against double counting when the
+double count is in the source term.**
+
+Two explanations for that inflation were proposed and both REFUTED by measurement rather than
+argument: it is not `arp.runoff` being re-delivered (this fixture runs `runoff_ratio: 0`, so that
+carrier is re-armed to zero -- forcing it to zero changed nothing), and the carrier is not growing
+ACROSS steps (measured constant at 5.3710e+03 at every step start). The real cause is that each pass
+re-solves the step with the SAME recharge, that water reaches the surface again, and FSM routes it
+again -- so the increment never falls to zero and accumulation counts it k times.
+
+**SO THE TWO REQUIREMENTS COLLIDE, and that is the whole problem in one line.** ASSIGN gives the
+right magnitude but measures against a moving baseline, which is the -1 multiplier. ACCUMULATE fixes
+the baseline but counts the redistribution once per pass.
+
+**WHAT THE SEPARATE ARRAY MUST HOLD.** To measure FSM's delta correctly you need to know HOW MUCH OF
+THE CURRENT STATE CAME FROM THE FSM CARRIER, so it can be excluded from the baseline:
+
+    d = V(post-FSM) - V(w_solve - S)     instead of    d = V(post-FSM) - V(w_solve)
+
+and then ASSIGN as today, keeping the self-clearing property across steps. That `d` is the step's
+true total redistribution `T`, independent of the pass, so the iteration converges at pass 2 with no
+accumulation and no double count. The frozen-baseline experiment was a crude version of exactly this
+-- it subtracted the whole step's change rather than only the source's share.
+
+**THE OPEN DIFFICULTY, stated rather than glossed.** The solve is NONLINEAR: the state change the
+source produced is not exactly `S`. Some of it drains laterally, some evaporates, some leaves to the
+ocean. `w_solve - S` is therefore an approximation, and how to attribute the source's share of the
+state properly is a MODELLING decision, not a coding one. That is the question to answer before
+this is built.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
