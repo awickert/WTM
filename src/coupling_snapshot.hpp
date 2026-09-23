@@ -170,13 +170,33 @@ struct CouplingVecProbe {
 #undef X
   }
 
-  // Names of the Vecs that differ from the capture. Exact: a step that touches a Vec and puts it
-  // back bit-for-bit is correctly reported as untouched, which is what the rollback cares about.
+  // Names of the Vecs that differ from the capture, MATCHED BY NAME -- never by position.
+  //
+  // POSITION-MATCHING IS A SEGV, and it is what the first version of this did. A STEP CREATES VECS:
+  // tr_head_old, vol_prev_x, tr_exfil_stage1 and tr_fwork are allocated lazily on first use
+  // (transient_groundwater.cpp:732, :1004, :1876, :1877), so a capture taken before the solve held
+  // 33 entries while 37 were live at compare time, and saved[k] walked off the end. Measured on
+  // fsm_cascade: "captured=33 live=37 appeared: tr_exfil_stage1 tr_fwork tr_head_old vol_prev_x".
+  //
+  // The lifetime cases are reported SEPARATELY from the value case because the rollback must do
+  // something different with each. A Vec that did not exist before the step has no pre-image to
+  // copy back; undoing its creation means DESTROYING it. Folding that into "changed" would name
+  // the right Vec and imply the wrong repair.
+  //
+  // Exact: a step that touches a Vec and puts it back bit-for-bit is correctly reported as
+  // untouched, which is what the rollback cares about.
   std::vector<std::string> changed(const AppCtx& uc) const {
     std::vector<std::string> out;
-    std::size_t k = 0;
-#define X(name) if (uc.name) { PetscBool eq = PETSC_FALSE; VecEqual(uc.name, saved[k].second, &eq); \
-                              if (!eq) out.emplace_back(#name); ++k; }
+    auto captured_as = [&](const char* nm) -> Vec {
+      for (const auto& p : saved)
+        if (std::string(p.first) == nm) return p.second;
+      return nullptr;
+    };
+#define X(name) { Vec pre = captured_as(#name); \
+      if (uc.name && !pre) out.emplace_back(std::string(#name) + " [CREATED]"); \
+      else if (!uc.name && pre) out.emplace_back(std::string(#name) + " [DESTROYED]"); \
+      else if (uc.name && pre) { PetscBool eq = PETSC_FALSE; VecEqual(uc.name, pre, &eq); \
+                                 if (!eq) out.emplace_back(#name); } }
     WTM_APPCTX_VEC_LIST(X)
 #undef X
     return out;
