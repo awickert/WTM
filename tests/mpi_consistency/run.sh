@@ -54,7 +54,7 @@ run_case() { # fsm runoff_ratio nranks tag
     # fsm 0/1 became surface_water.routing off/continuous when the two keys merged (#89).
     local routing=off; [ "$fsm" = 1 ] && routing=continuous
     sed -e "s|@INPUTS@|$INP_ABS|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$tag|g" \
-        -e "s|@ROUTING@|$routing|g" -e "s|@RR@|$rr|g" config.yaml > "$cfg"
+        -e "s|@ROUTING@|$routing|g" -e "s|@ITERS@|$(coupling_iters_for "$routing")|g" -e "s|@RR@|$rr|g" config.yaml > "$cfg"
     # -wtm_eq_tol 0: pin the full fixed cycle count so the n=1-vs-n=N comparison is at the same cycle
     # (the equilibrium auto-stop default could otherwise fire at slightly MPI-decomposition-dependent cycles).
     ( cd "$WORK" && OMP_NUM_THREADS=1 mpirun -n "$n" "$WTM_ABS" "$cfg" >"$WORK/${tag}.log" 2>&1 )

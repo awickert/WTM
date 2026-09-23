@@ -92,7 +92,7 @@ mkcfg() { # $1 stem, $2 time_step.dt, $3 routing, $4 time_integration, $5 time.t
     # The scaling is for consistency with every other config in the tree. See config.yaml at dt_min.
     local dtmin; dtmin=$(awk -v d="$dt" 'BEGIN{printf "%g", d*1e-5}')
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-        -e "s|@DT@|$dt|g" -e "s|@DTMIN@|${dtmin}s|g" -e "s|@ROUTING@|$rt|g" \
+        -e "s|@DT@|$dt|g" -e "s|@DTMIN@|${dtmin}s|g" -e "s|@ROUTING@|$rt|g" -e "s|@ITERS@|$(coupling_iters_for "$rt")|g" \
         -e "s|@INTEG@|$ti|g" -e "s|@TOTAL@|$tt|g" \
         config.yaml > "$WORK/$1.yaml"
 }

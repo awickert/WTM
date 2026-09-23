@@ -31,9 +31,11 @@ transmissivity:
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
   coupling:
-    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
-                    # output (#112). Declared because it is resolved for every run, and an
-                    # absent key would leave this suite silent about which scheme it measures.
+    iterations: 4   # THE SHIPPED DEFAULT (#112), and run.sh REWRITES it per arm exactly as it
+                    # rewrites `routing` below -- the two keys are not independent.  An arm running
+                    # impulse or off has no lagged source for the iteration to retire, and the model
+                    # refuses an explicit >1 there; coupling_iters_for in lib.sh is what decides.
+                    # See tests/COUPLING_COVERAGE.md for the rule and the classification.
   routing: continuous   # THE SUBJECT, and the base arm. run.sh overrides this one key to `impulse`;
                         # the couplings differ in how drift ACCUMULATES, which is the measured thing.
   runoff_ratio: raster

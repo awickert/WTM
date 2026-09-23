@@ -74,7 +74,7 @@ mkcfg() { # $1 stem, $2 routing, $3 dt, $4 report_interval, $5 inputs, $6 region
     local inp="${5:?mkcfg needs an inputs dir}"
     local rg="${6:?mkcfg needs a region}"
     sed -e "s|@INPUTS@|$inp|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-        -e "s|@ROUTING@|$rt|g" -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" -e "s|@REGION@|$rg|g" \
+        -e "s|@ROUTING@|$rt|g" -e "s|@ITERS@|$(coupling_iters_for "$rt")|g" -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" -e "s|@REGION@|$rg|g" \
         config.yaml > "$WORK/$1.yaml"
 }
 

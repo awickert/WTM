@@ -88,7 +88,7 @@ mkcfg() { # $1 stem  $2 collector ("" = DELIBERATELY ABSENT)  $3 routing  $4 mod
     [ "$mode" = fixed ] && src=config_fixed.yaml
     [ "$mode" = ramp  ] && src=config_ramp.yaml
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
-        -e "s|@ROUTING@|$routing|g" -e "s|@METHOD@|$method|g" -e "s|@STOL@|$stol|g" \
+        -e "s|@ROUTING@|$routing|g" -e "s|@ITERS@|$(coupling_iters_for "$routing")|g" -e "s|@METHOD@|$method|g" -e "s|@STOL@|$stol|g" \
         -e "s|@INTEG@|$integ|g" -e "s|@STORAGE@|$storage|g" -e "s|@DT_TOL@|$dttol|g" \
         -e "s|@COLLECTION@|$block|" \
         "$src" > "$WORK/$stem.yaml"

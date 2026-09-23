@@ -71,7 +71,7 @@ for integ in tr-bdf2 backward-euler bdf2; do
     # marked LOAD-BEARING in that file: the per-step identity IS the trace, and the sweep must compare
     # cells at a KNOWN step rather than one a controller resized per cell.
     sed -e "s|@INPUTS@|$inp|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
-        -e "s|@ROUTING@|$coupling|g" -e "s|@COLLECTOR@|$coll|g" -e "s|@INTEG@|$integ|g" \
+        -e "s|@ROUTING@|$coupling|g" -e "s|@ITERS@|$(coupling_iters_for "$coupling")|g" -e "s|@COLLECTOR@|$coll|g" -e "s|@INTEG@|$integ|g" \
         -e "s|@REGION@|$reg|g" config.yaml > "$WORK/$stem.yaml"
     if ! "$WTM" "$WORK/$stem.yaml" > "$WORK/$stem.log" 2>&1; then
         echo "  FAIL  RUN FAILED: $stem"; tail -3 "$WORK/$stem.log" | sed 's/^/        /'; fail=1

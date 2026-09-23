@@ -70,7 +70,8 @@ for coup in continuous impulse; do for n in 1 "$NRANK"; do
   # surface_water.routing is THE SUBJECT and the only thing that varies between arms; the rank count
   # is not a config setting.
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$t|g" \
-      -e "s|^  routing: continuous|  routing: $coup|" config.yaml > "$WORK/$t.yaml"
+      -e "s|^  routing: continuous|  routing: $coup|" \
+      -e "s|^    iterations: 4|    iterations: $(coupling_iters_for "$coup")|" config.yaml > "$WORK/$t.yaml"
   apply_test_iterations "$WORK/$t.yaml"
   mpirun -n "$n" "$WTM" "$WORK/$t.yaml" > "$WORK/$t.log" 2>&1 \
     || { echo "RUN FAILED: $t"; tail -5 "$WORK/$t.log"; exit 2; }
