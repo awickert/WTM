@@ -283,3 +283,77 @@ TEST_CASE("coupling vec snapshot: the rollback list is a strict subset of the Ap
   CHECK(members_found == in_rollback);   // every rollback name IS an AppCtx Vec
   CHECK(in_appctx - in_rollback == 21);  // and 21 are left for the fingerprint check
 }
+
+// ---------------------------------------------------------------------------------------------
+// ROLLBACK COMPLETENESS, EVERY MEMBER OF THE SET -- and this is the test that actually bites.
+//
+// WHY IT EXISTS RATHER THAN A MODEL RUN. tests/coupling_iteration asserts that iterating does not
+// move a CONVERGED EQUILIBRIUM answer, and that assertion was measured NOT to catch an incomplete
+// rollback: dropping starting_wtd from WTM_COUPLING_ROLLBACK_LIST left it passing at 0.000e+00,
+// even though the run visibly changed (393 -> 378 solver calls at k=3). Equilibrium is an
+// ATTRACTOR; the lake refills to its sill whatever the trajectory did on the way, so the property
+// that makes the physics argument work is exactly what makes that assertion blunt.
+//
+// So completeness is pinned HERE, where it is decidable: every Vec in the set is given a distinct
+// value, captured, overwritten, and required to come back. Drop any one name from the list and its
+// CHECK fails by construction -- no attractor to hide behind, and no dependence on a fixture.
+TEST_CASE("coupling vec snapshot: EVERY member of the rollback set round-trips") {
+  AppCtx uc;
+  // Distinct value per Vec, so a cross-wired restore (putting lake_stage's copy into rech_vec) is
+  // caught as surely as a missing one -- the failure mode the scalar test guards the same way.
+  double v = 1.0;
+  std::vector<std::pair<const char*, double>> want;
+#define X(name) VecCreateSeq(PETSC_COMM_SELF, 3, &uc.name); VecSet(uc.name, v); \
+                want.emplace_back(#name, v); v += 1.0;
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  REQUIRE(want.size() == wtm::CouplingVecSnapshot::kRollbackVecs);   // NOT VACUOUS: 18 were made
+
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc);
+  // "the step ran": every one of them moves, to a value no Vec started at.
+#define X(name) VecSet(uc.name, -99.0);
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  snap.restore(uc);
+
+  std::size_t k = 0;
+#define X(name) { const PetscScalar* a; VecGetArrayRead(uc.name, &a); \
+                  CHECK(a[0] == want[k].second); VecRestoreArrayRead(uc.name, &a); ++k; }
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+
+#define X(name) VecDestroy(&uc.name);
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+}
+
+TEST_CASE("coupling vec snapshot: restore_keeping_fsm_delta keeps EXACTLY ONE Vec") {
+  // The exclusion set is the iteration variable and nothing else (AMENDMENT 6). If it grew to two,
+  // the second would silently stop rolling back -- a missed rollback wearing the clothes of a
+  // deliberate exclusion, which is the hardest kind to see in a diff.
+  AppCtx uc;
+  std::size_t kept = 0, restored = 0;
+#define X(name) VecCreateSeq(PETSC_COMM_SELF, 3, &uc.name); VecSet(uc.name, 1.0);
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc);
+#define X(name) VecSet(uc.name, 2.0);
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  snap.restore_keeping_fsm_delta(uc);
+#define X(name) { const PetscScalar* a; VecGetArrayRead(uc.name, &a); \
+                  if (a[0] == 2.0) ++kept; else if (a[0] == 1.0) ++restored; \
+                  VecRestoreArrayRead(uc.name, &a); }
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  CHECK(kept == 1);
+  CHECK(restored == wtm::CouplingVecSnapshot::kRollbackVecs - 1);
+  { const PetscScalar* a; VecGetArrayRead(uc.fsm_delta_vec, &a);
+    CHECK(a[0] == 2.0);   // and it is fsm_delta_vec that was kept, not some other one
+    VecRestoreArrayRead(uc.fsm_delta_vec, &a); }
+#define X(name) VecDestroy(&uc.name);
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+}
