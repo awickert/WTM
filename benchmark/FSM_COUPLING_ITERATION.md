@@ -666,6 +666,53 @@ signal any of them produce, and it is about convergence rate, not accuracy.
 COLD-START LAG.** Until a fixture holds a sustained transient, "accuracy versus compute" has compute
 measured and accuracy unmeasured, and any trade chosen now would be chosen on one number out of two.
 
+**AMENDMENT 14 — THE COLD-START MEASUREMENT, at last. Accuracy AND compute, both numbers.**
+
+Outstanding since the plan was written: every fixture equilibrates inside one report interval, where
+the lag is definitionally zero, so none of them could show what iterating BUYS. Fixed by SAMPLING
+the transient rather than building a new fixture -- `tests/coupling_iteration` at `dt = 0.1 yr`
+(`dt: 3153600`, `dt_min: "31.536s"`), `report_interval: 1`, `total: "20yr"`,
+`save_every_n_reports: 1`: 200 steps, 201 snapshots, the pit filling to its 4.000 m sill.
+
+**ACCURACY -- what the lag actually costs, measured for the first time.** Comparing each snapshot
+against the same run at `iterations: 1`:
+
+    step   1     max|dwtd| = 6.359580e-01 m over 168 cells    (lake is 0.6397 m deep here)
+    step   4     max|dwtd| = 5.147031e-01 m over 484 cells
+    step   6     max|dwtd| = 7.647142e-01 m over 464 cells    <- PEAK
+    step   7     max|dwtd| = 1.422501e-01 m over 168 cells
+    step  10+    max|dwtd| = 0.000000e+00 m                   <- filled; identical thereafter
+
+**The lagged scheme misstates the filling trajectory by up to 0.765 m -- 19% of the final lake
+depth -- across 464 cells, and agrees exactly once the lake is full.** That is the design's
+"definitionally transient-only" claim, measured instead of argued, and it is the accuracy case for
+iterating being the default.
+
+**COMPUTE -- and this corrects a number I nearly published.** Raw solver calls suggested 5.4x. They
+lie, because they conflate passes-per-step with the NUMBER OF STEPS the adaptive controller chooses:
+
+    cap   solver calls   accepted steps   calls/step
+      1       200             200            1.00
+      2      1068             534            2.00
+      4      1076             533            2.02
+      8      1096             533            2.06
+     16       470             200            2.35
+
+**The per-step cost is ~2x at every cap.** The run-total varies because the controller subdivides
+differently under the iterated coupling -- 200 -> 534 -> 533 -> 533 -> 200 steps, NOT monotone in
+the cap. So "iterating costs 2x a step" is sound; "iterating costs 2x a run" is not, and the
+difference is the controller's response, which is a separate question from the coupling.
+
+**ACCURACY SATURATES AT CAP 4.** The peak difference is 6.36e-01 at cap 2 and 7.647142e-01 at caps
+4, 8 AND 16 -- identical to seven figures. Cap 2 has not finished converging; cap 4 has, and nothing
+beyond it moves the answer. The default was set to 4 BEFORE this was measured, on the separate
+ground that a step either settles by pass 2 or does not settle at all. Two independent routes to the
+same number is the most confidence anything in this file has.
+
+**WHAT THIS DOES NOT SETTLE.** One fixture, one basin geometry, uniform forcing. It shows the lag is
+worth removing HERE and how much a pass costs HERE. It does not establish that 0.765 m is typical,
+and the natural next fixture is a multi-basin chain where the spill order can itself shift.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
