@@ -26,7 +26,7 @@ SCOPE** — do not reintroduce it as an open item.
 | **109** | **DONE 2026-09-21.** No default: an explicit `mode: adaptive` must STATE `dt_min`, following MODFLOW 6 and ParFlow, which require it the same way. 27 configs migrated at `1e-5 × dt`, behaviour-preserving by construction and proven by `golden` 35/35 unmoved. |
 | **124** | **PARKED BY ANDY** ("when I have time to take the decisions"). `dt_min` is the wrong SHAPE: the ERROR TARGET, not the step size, sets how small `dt` must go. **`tests/boundary_consistency/config.yaml` is on a TEMPORARY `dt_min: "0s"` and a green suite must not launder that into permanence.** Options were A (per-suite small floor), B (`"0s"` here – APPLIED, temporarily) and C (revisit the ratio generally – DONE, and it REFUTED the tidy fix: `boundary_analytic` carries the same `error_tol: 1e-08` and the same `24.192 s` floor and never engages it, so stiffness decides, not the setting). There is no option D; an earlier note saying "four options" was wrong. |
 | **111** | The corsica oscillation: fully characterised, mechanism NOT known. See `examples/island_equilibrium/OSCILLATION.md`. Not a work item unless the last candidate is to be tested. |
-| **112** | **IN PROGRESS 2026-09-23** — steps 1 and 2 committed and INERT. Andy: **iteration is the DEFAULT, 1 pass the opt-out**; **plain Picard**; config key unnamed (his). Design + FOUR amendments at `benchmark/FSM_COUPLING_ITERATION.md`. **NEXT = re-measure the full step OUT-OF-PROCESS: the in-loop probe PERTURBS the run (fsm_cascade rc 0 -> 2), so the INSTRUMENT is wrong, not the brackets.** The guards already caught the design's own lists being wrong twice — a TENTH accumulator, and a Vec list that was 1-of-3. |
+| **112** | **IN PROGRESS 2026-09-23** — steps 1, 2 and **2b** committed and INERT. Andy: **iteration is the DEFAULT, 1 pass the opt-out**; **plain Picard**; config key unnamed (his). Design + FIVE amendments at `benchmark/FSM_COUPLING_ITERATION.md`. **The full step is MEASURED: 18 Vecs, not 3, and the set MOVES WITH THE CONFIG (17/16/11/10/8 by arm); n=1 and n=4 give the identical set.** The previous version of this row said the in-loop probe PERTURBED the run and that step 2b needed an out-of-process instrument. **BOTH WRONG — it was a SEGV** (`changed()` matched by position; a step CREATES Vecs), fixed at 3c61334, and the in-loop and deferred instruments then agree step-for-step. **NEXT NEEDS ANDY: which capture shape** — measured set / every non-null Vec / measured set + a runtime check. The guards have now caught the design's own lists wrong three times: a TENTH accumulator, a Vec list that was 1-of-3, and a full-step list that was 3-of-18. |
 | **125** | **DONE 2026-09-23.** The MODFLOW mis-citation survived in the two places a user reads — the refusal message and the shipped `config.yaml`. Value unchanged; the false attribution dropped. |
 | **126** | **DONE 2026-09-22.** FIVE suites were never onboarded into the assertion framework. 21 unlinked rows: 2 never a defect, 3 COMPUTED-from-config and must stay so, 16 real. |
 | **127** | **OPEN, needs Andy.** The ramp RECORDS a `dt_min` it never reads, so `full_config.yaml` asserts a floor that did not act (#27/#35 class). Needs per-arm rendering across 4 suites + a run, and a refuse-vs-stop-emitting decision that is his. |
@@ -318,11 +318,12 @@ PARTIAL runs) but it is the only copy of that state, so discarding it is Andy's 
 
 **Everything below is parked by Andy or waiting on his decision. Nothing is blocked on me.**
 
-1. **`#112` step 2b — re-measure the Vec rollback surface across the FULL step, OUT-OF-PROCESS.**
-   The in-loop probe perturbs the run, so this needs a different INSTRUMENT, not different brackets.
-   Loop map for the brackets when the instrument is right: adaptive 839/856,
-   newton_continuation 893/916, fixed 930/934.
-   Then: restore for the measured set -> step 0's refactor (factor `solve + couple` into ONE
+1. **`#112` — step 2b is DONE (8ef9c52); the next move is ANDY'S DECISION on the capture shape.**
+   AMENDMENT 5 states the three options with their costs: capture the measured set (smaller, breaks
+   SILENTLY when a new integrator appears and there is no syntactic signature to lint it), capture
+   every non-null Vec (correct by construction, ~120 MB at 384,703 cells and linear in the grid), or
+   the measured set plus a runtime check that nothing outside it moved.
+   Then: restore for the chosen set -> step 0's refactor (factor `solve + couple` into ONE
    function; 4 call sites, 3 loops; prove answer-neutral with `golden`) -> config key -> the Picard
    loop with a cap and the EXACT bitwise cycle detector -> the end-to-end byte-identical guard
    (k>1 with unchanged source must equal k=1) -> `config.yaml` + CHANGELOG.
