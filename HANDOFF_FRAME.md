@@ -342,8 +342,39 @@ mechanism for the oscillation without testing a named candidate; retightening th
 blunt-without-excuse bounds (`fsm_cascade` CONS_TOL 3.3e8, `fsm_conservation` TOL 7500, the two
 MB_TOLs ~4000) without Andy deciding what the suites should accept.
 
-## READINESS
+## READINESS — checked 2026-09-23, not assumed
 
-If this file, git history and the task list survive, the state is reconstructible and verifiable
-without the conversation. Every number above is in a commit message or a committed document, with the
-command that produced it.
+**The test: if the conversation were deleted right now, could the next session reconstruct AND
+VERIFY the whole state from git + this file + the task list alone?** Yes, and here is the check
+rather than the assertion.
+
+| what a resumption needs | where it lives | how to verify it |
+|---|---|---|
+| **The next action** | `#112` row above, and goal 1 | `benchmark/FSM_COUPLING_ITERATION.md` |
+| **Why this work exists** | "WHAT THIS WORK IS FOR" | — |
+| **Andy's live decisions** | `#112` row (iteration is the default, plain Picard, key unnamed) | quoted verbatim in the amendments |
+| **Branch / HEAD / cleanliness** | header | `git status`, `git log -1` |
+| **What is committed vs inert** | `#112` row | `strings build/wtm.x \| grep -c "FULLSTEP\|PROBE step"` must be **0** |
+| **Suite state, with its caveat** | this section, below | `tests/run_all.sh` |
+| **Results WITH their method** | the "WHAT CHANGED" sections | each cites the file or command |
+| **NEGATIVE results** | `#112` row (the probe perturbs), `#124` (C refuted the tidy fix), `#111` (7 mechanisms excluded) | — |
+| **Reproduction** | commands inline throughout | — |
+
+**THE SUITE IS NOT CURRENTLY KNOWN-GREEN, and this is the thing most likely to be mis-stated.**
+`run_all.sh` was **46/46, exit 0, 547 s on 2026-09-22**. `#125` then changed `src/` and
+`config.yaml`, and `#126` changed 7 suites. Andy declined a re-run. So: *last known green, one run
+behind.* What IS verified at HEAD: build clean, 30 unit tests at n=1..8, `lint_norms.sh`,
+`test_assertion_tools.py`, 86 bounds with 0 underived, `fsm_cascade` green after the probe revert.
+
+**Binary freshness**: `build/wtm.x` postdates HEAD and no source file is newer than it. That check
+matters here — a one-commit-stale binary nearly invalidated a whole run on 2026-09-22, caught only
+because the commit timestamp was 27 seconds after the build.
+
+**Memory** carries the same frame in `~/.claude/projects/-home-awickert-models-WTM/memory/`:
+`project-frame-handoff-readiness` (READ FIRST), `project-112-coupling-iteration-state`,
+`finding-fsm-not-the-bottleneck`, `finding-tied-outlets-arbitrary-but-consistent`.
+
+**WHAT THIS FILE HAS BEEN WRONG ABOUT BEFORE** — three times, so distrust it on exactly these:
+a commit count measured against the wrong remote; a claim that `#112`'s design was written here when
+it was in the task store; and the header count going stale the moment the frame was committed. Every
+volatile number now ships with the command that recomputes it.
