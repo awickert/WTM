@@ -388,6 +388,12 @@ dt-dependent lake. Use the default collector with adaptive Δt.
 
 ## 3.5 What `error_tol` actually bounds, and what adaptive Δt is FOR (measured 2026-09-05)
 
+> **THESE ARE 1-PASS (LAGGED) COUPLING NUMBERS.** They were measured before
+> `surface_water.coupling.iterations` existed (2026-09-23), when a step always used the PREVIOUS
+> step's FillSpillMerge output. **That is no longer the default.** The numbers are not wrong and are
+> not superseded -- they describe the lagged scheme, which remains reachable and still reproduces
+> them exactly: set `surface_water.coupling.iterations: 1`. See `benchmark/FSM_COUPLING_ITERATION.md`.
+
 **`solver.time_step.error_tol` is a per-step LOCAL error target. It does not bound the error of the
 answer.** The path error accumulates over the steps taken. Measured on `tests/golden/inputs`
 `transient_test` (16x16, lakes, `fsm_on`, `continuous`, `active_set`, anderson, `-snes_stol 1e-12`,

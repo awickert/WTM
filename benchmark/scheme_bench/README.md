@@ -9,6 +9,13 @@ Reproduce: `benchmark/scheme_bench/run.sh <wtm.x> 4 250`
 (cold start from saturated, `dt` = 1 week, FSM on, `runoff_collector implicit`, `-snes_stol 1e-8`,
 auto-stop disabled so every arm runs the same budget and reveals its own floor.)
 
+> **THESE ARE 1-PASS (LAGGED) COUPLING NUMBERS.** They were measured before
+> `surface_water.coupling.iterations` existed (2026-09-23), when a step always used the PREVIOUS
+> step's FillSpillMerge output. **That is no longer the default.** The numbers are not wrong and are
+> not superseded -- they describe the lagged scheme, which remains reachable and still reproduces
+> them exactly: set `surface_water.coupling.iterations: 1`. See `benchmark/FSM_COUPLING_ITERATION.md`.
+
+
 
 ## 2026-09-16 re-run (#6): what changed, and one thing that is NOT explained
 

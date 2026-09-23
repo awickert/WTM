@@ -117,6 +117,12 @@ recharge with the drained water entirely unaccounted. The interface-flux `total_
 > still reads 3.4e-07. **A steady residual is not a small one, and only the absolute check can tell
 > you which you have.**
 >
+> **THESE ARE 1-PASS (LAGGED) COUPLING NUMBERS.** They were measured before
+> `surface_water.coupling.iterations` existed (2026-09-23), when a step always used the PREVIOUS
+> step's FillSpillMerge output. **That is no longer the default.** The numbers are not wrong and are
+> not superseded -- they describe the lagged scheme, which remains reachable and still reproduces
+> them exactly: set `surface_water.coupling.iterations: 1`. See `benchmark/FSM_COUPLING_ITERATION.md`.
+>
 > One limit stated rather than hidden: only the `impulse` arm is gated absolutely. Under
 > `surface_water.routing: continuous` FSM's volume change is handed to the NEXT step's source term, so at
 > a report boundary there is water FSM has already moved — present in `stored_volume` — whose source term

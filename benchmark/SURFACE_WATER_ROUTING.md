@@ -118,6 +118,12 @@ retained head balances inflow against a `1/dt` conductance: **`wtd_above ∝ dt`
 Essentially linear. This confirms the mechanism already noted in `tests/dt_sensitivity` and
 **contradicts the earlier "dt-independent, exact" claim in this document**, now corrected above.
 
+> **THESE ARE 1-PASS (LAGGED) COUPLING NUMBERS.** They were measured before
+> `surface_water.coupling.iterations` existed (2026-09-23), when a step always used the PREVIOUS
+> step's FillSpillMerge output. **That is no longer the default.** The numbers are not wrong and are
+> not superseded -- they describe the lagged scheme, which remains reachable and still reproduces
+> them exactly: set `surface_water.coupling.iterations: 1`. See `benchmark/FSM_COUPLING_ITERATION.md`.
+
 With FSM **on**, that dt-dependent excess is what FillSpillMerge routes, so **lake depth inherits the
 dependence** — a ~1.6 m face artifact becomes a ~3.4 m difference in modelled lake depth:
 
