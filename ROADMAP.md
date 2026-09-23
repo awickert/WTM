@@ -1,7 +1,12 @@
 # WTM: the road to a finalized, usable model
 
-The **running list** — the single source of truth for what is open, in what order, and why.
-`HANDOFF_READINESS.md` describes the *state* of the handoff; this file describes the *work remaining*.
+> **STALE as of 2026-09-23, and NOT the authority. Read `HANDOFF_FRAME.md` first.**
+> This file was last updated 2026-09-19 and still lists `#109` as open; `#109` closed 2026-09-21 and the
+> full suite ran 46/46 green on 2026-09-22. It has no rows for `#112`–`#127`. It also points at
+> `HANDOFF_READINESS.md`, which does not exist. Kept for the reasoning it records on older items;
+> **for what is open, in what order, and why, use `HANDOFF_FRAME.md`'s numbered list and the task list.**
+
+The running list of work remaining, as of 2026-09-19.
 
 **Rewritten 2026-09-11 after a staleness sweep over all 25 open items**, four agents verifying each
 claim against the tree rather than against task prose. **Twelve closed as already-done or obsolete.**

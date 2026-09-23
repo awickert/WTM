@@ -255,7 +255,11 @@ dev:
   allow_aboveground_water_columns: false
 
 output:
-  trace: []                    # [dt] -> machine-readable per-step DTTRACE lines
+  trace:                       # a MAP of channel -> true|false (the [dt] list form was
+    dt: false                  # retired 2026-09-16: it required knowing the channel
+    water_step: false          # names in order to discover them)
+    budget: false
+    fsm: false
 ```
 
 `storage:` is **gone as a setting.** It is already not a choice: active_set auto-enables volume storage
@@ -423,7 +427,7 @@ output:
   run_log: run.log
   if_exists: increment           # increment | overwrite | error
   verbosity: normal              # quiet | normal | verbose
-  trace: []                      # [dt] -> per-step DTTRACE lines   (was -wtm_dt_trace)
+  trace:                         # MAP, not a list (retired 2026-09-16)   (was -wtm_dt_trace)
 
 boundaries:
   land: neumann_toposlope        # neumann_toposlope | dirichlet_sea_level

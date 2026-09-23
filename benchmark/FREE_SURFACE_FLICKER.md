@@ -82,7 +82,7 @@ and need different guards; the existing `tests/limit_cycle` isolates only the fi
   *coupled* operator `F`; flicker = non-contraction of that OUTER iteration. Cures, in order of rigor:
   (a) **iterate the GW↔FSM coupling to a joint fixed point** (converged splitting) or
   **Anderson-accelerate / damp the outer cycle** (as Anderson already accelerates the inner GW solve);
-  (b) **tighter split** — reduce `maxiter` so FSM runs more often (cost: FSM is the serial bottleneck);
+  (b) **tighter split** — reduce `maxiter` so FSM runs more often (cost: FSM is the serial bottleneck) **(But FSM is NOT the ceiling: `benchmark/esquibel/FSM_COST.md` measures it at 0.142% of a cycle, GW solve ~99.7%. Corrected 2026-09-23.)**;
   (c) **under-relax** the surface-water update between FSM calls.
 - **Test:** [NEW] `tests/flicker_fsm_evap` — a sink + FSM + evaporation fixture; assert the coupled state
   settles (per-cycle change decays) under the chosen management. NOTE: an early prototype (shallow table,

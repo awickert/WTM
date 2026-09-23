@@ -37,6 +37,13 @@ Closed 2026-09-21/22: **#109**, **#113**, **#114**, **#115**, **#117**–**#123*
 tooling), and **#116** dissolved.
 Closed 2026-09-22/23: **#77**, **#116** (properly, via #126), **#125**, **#126**.
 
+**TWO NUMBERING SYSTEMS COLLIDE — check which one a `#N` means.** The numbered list above is the
+TASK list. The source tree also cites FORK ISSUE numbers in the same `#N` form, and they are
+unrelated: `#127` here is the ramp-path `dt_min` item, while `src/CreateSNES.hpp:109`,
+`src/CreateSNES.cpp:93` and `src/transient_groundwater.cpp:983` use `#127` for volume-weighted
+per-solve convergence. Grepping a task number out of this file can land you in unrelated solver
+code. When in doubt, the task list is authoritative for task numbers and `git log` for the rest.
+
 ## THE RULES THAT GOVERN HOW TO WORK HERE
 
 - **Do not run the full suite at will.** Run the affected suites. **The precondition Andy set for

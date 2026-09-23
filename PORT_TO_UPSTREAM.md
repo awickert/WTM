@@ -43,7 +43,7 @@ Status is on THIS branch. All flags are off by default unless noted.
 |---|---|---|---|
 | **MPI-distributed solve (DMDA) correctness** — ghost-cell exchange, MPI-consistency across rank counts | **Correctness/other.** Serial ≡ parallel verified: ghost-cell test 0.0 m; MPI-consistency matrix (evap×fsm × np 2/4/6/8) all pass; golden results rank-independent. | Verified (regression suite). | ✅ (correctness backbone for any scaling) |
 | **Distributed forcing / reduced replicated memory** (`DISTRIBUTED_ARP_DESIGN.md`) | **Other (scaling).** Replicated memory is the deployment bottleneck (single-node many-core on MSI); distributing the forcing fields reduces per-rank memory → larger domains / more ranks. | On branch. | ✅ (aligns with the parallelism goal) |
-| **FSM parallelization** | **Other (scaling).** FSM is the serial ceiling. | DECIDED-park (memory-only driver, no speed case). | ❌/park unless a speed case appears |
+| **FSM parallelization** | **Other (scaling).** FSM is the serial ceiling. **(But FSM is NOT the ceiling: `benchmark/esquibel/FSM_COST.md` measures it at 0.142% of a cycle, GW solve ~99.7%. Corrected 2026-09-23.)** | DECIDED-park (memory-only driver, no speed case). | ❌/park unless a speed case appears |
 | **TODO — quantify parallel scaling vs v2.0.1** | **Speed (unquantified).** No measured strong/weak-scaling speedup vs the v2.0.1 baseline this session, and it is unconfirmed how much MPI v2.0.1 already had. **Measure before claiming a speed "why" for parallelism.** | Open | — |
 
 ---

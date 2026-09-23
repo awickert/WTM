@@ -11,7 +11,7 @@
 // ERROR" -- and a post-commit rollback is precisely where defects #13, #14, #15, #17 and #41 lived.
 //
 // SCOPE OF THIS HEADER, stated so it is not mistaken for the whole rollback: the SCALARS only --
-// the nine arp.total_* accumulators, params.elapsed_time_s, the accepted-step record and deltat.
+// the TEN arp.total_* accumulators, params.elapsed_time_s, the accepted-step record and deltat.
 // The Vec state (starting_wtd, lake_stage, rech_vec) and the BDF2/TR-BDF2 history are a separate
 // commit; they need PETSc objects and duplicate-and-copy rather than assignment.
 #include <array>

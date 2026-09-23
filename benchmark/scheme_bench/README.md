@@ -322,7 +322,7 @@ physical improvement would not wander like that.
 
 **Conclusion: enable active-set; park #116.** Keep `-wtm_fsm_continuous` gated off — its
 source-delivery machinery is the right mechanism if FSM cadence is ever decoupled from the GW step to
-get off the serial-FSM ceiling (option B of the original design). That is a *cost* lever, not a
+get off the serial-FSM ceiling (option B of the original design) **(But FSM is NOT the ceiling: `benchmark/esquibel/FSM_COST.md` measures it at 0.142% of a cycle, GW solve ~99.7%. Corrected 2026-09-23.)**. That is a *cost* lever, not a
 correctness one, and is not what the flag was built for.
 
 **What would reopen it:** if active-set does *not* become the default. A 0.985 shock ratio is severe,
