@@ -448,6 +448,69 @@ run required.
   4. **Chase the mechanism first**, since it is very likely #111's. That is a research question, not
      a config change.
 
+**AMENDMENT 10 — WHY IT OSCILLATES: THE DELTA IS MEASURED AGAINST A MOVING BASELINE.**
+
+Andy: *"Analyze the source of the orbit... We will act with information rather than hopeful
+guesswork."* Here is the mechanism, derived, and then confirmed by three predictions that were made
+before they were tested.
+
+**THE DERIVATION, in four lines.**
+
+1. `fsm_delta = V(post-FSM) - V(pre-FSM)`, and **pre-FSM is the CURRENT pass's solve output**
+   (WTM.cpp, `wm = arp.wtd_mid`), not the step's starting state.
+2. Pass k+1 receives `F_k` as a source, so its solve output ALREADY contains that water:
+   `V(pre-FSM_{k+1}) = V(pre-FSM_1) + F_k`.
+3. FillSpillMerge then levels to the same place regardless -- **measured: the post-FSM table is
+   INVARIANT across the orbit** (fsm_cascade, both halves: `post = 2034.0000` while `pre` alternates
+   1804.416 / 1270.506).
+4. Therefore `F_{k+1} = V(sill) - V(pre-FSM_1) - F_k`, i.e.
+
+        F_{k+1} = C - F_k      -- a linear map with multiplier EXACTLY -1.
+
+Multiplier -1 is marginally unstable: no decay, no growth, period 2 forever, and
+`|F_{k+1} - F_k| = C` constant. That is why `dmax` held to seven figures instead of drifting.
+
+**THREE PREDICTIONS, EACH TESTED.**
+
+  - `F_k + F_{k+1}` must be CONSTANT within a step. Measured on fsm_cascade: **818.6077, 818.6076,
+    818.6077, 818.6076...** on one step and **2132.968, 2132.968** on another.
+  - Under-relaxation with weight w gives multiplier `(1 - 2w)`, so **w = 0.5 must converge in ONE
+    pass**, to the midpoint `C/2`. Measured: `405.7527, 409.3013, 409.3032, 409.3036, 409.3038,
+    409.3039, 409.3039` against the undamped `405.77 / 412.84` alternation -- and 409.3039 is the
+    midpoint of those two.
+  - Freezing the BASELINE at the step's starting state must remove the oscillation outright.
+    Measured, on both fixtures: fsm_cascade `1475.2060, 1559.0260, 1559.0260, 1559.0260...` and
+    coupling_iteration `0.0000` from the first pass on.
+
+**WHAT THIS MEANS, and neither escape is a fix.**
+
+*Damping is not a fix.* It converges, to `C/2` -- the state where the water is credited HALF to the
+source channel and half to FillSpillMerge's own levelling. That is a well-defined fixed point with no
+physical claim to being right.
+
+*The fixed baseline is not a fix either*, and this is the trap to avoid: `V(post-FSM) - V(w_n)`
+conflates FSM's redistribution with **the groundwater solve's own change over the step**. On
+fsm_cascade it is ~1559 against the moving baseline's ~409, and the ~1150 difference IS the solve's
+contribution, which would then be fed back as a source on top of the solve that already produced it.
+It is a diagnostic that localises the -1 to the baseline, not a formulation to adopt.
+
+**THE UNDERLYING PROBLEM, stated once and plainly.** Within a single step, "the source term
+delivered this water" and "FillSpillMerge delivered this water" are THE SAME EVENT. The lagged
+scheme keeps them distinguishable by separating them in TIME -- FSM acts at step n, its delta is a
+source at step n+1, and each is counted once. Iterating within the step collapses that separation,
+and the map's only way to express "count it once" is to alternate which channel gets the credit.
+**The lag is not an error term the iteration can remove; it is what makes the two channels
+distinguishable.**
+
+**SO THE DIRECTION, IF THE ITERATION IS STILL WANTED**, is not a stopping rule and not damping: it is
+to reformulate the delta as something the solve does not itself duplicate -- FSM's redistribution as
+a lateral FLUX applied during the step, rather than a volume jump measured after it. That is a
+scheme change, not a config change, and it is Andy's call.
+
+**THE INSTRUMENTS, worth keeping since they were each decisive:** the `WHY` probe (pre- and post-FSM
+surface water plus the signed delta, per pass), the under-relaxation switch, and the frozen baseline.
+All three were temporary and are reverted; the method is recorded here so it need not be re-derived.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
