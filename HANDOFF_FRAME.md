@@ -3,7 +3,7 @@
 **HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **commits unpushed vs `fork/bdf2-adaptive-dt`:
 recompute, do not trust a written number** — `git rev-list --count fork/bdf2-adaptive-dt..HEAD` (568 as of 42c205e; the act of writing this figure changes it, which is how the previous version of this line went stale)** (the branch's own tracking ref, and the only comparison that means anything
 here; the remote is named `fork`, and a stale `origin/master` also exists). `git log --since='2026-09-22 00:00' --oneline | wc -l` for the day's count (53 as of 42c205e).
-**Tree:** clean. `README.md`'s coverage table is in `git stash`, deliberately (see below).
+**Tree:** clean. `README.md`'s coverage table is COMMITTED and current as of the 46/46 run (2026-09-22); the older stashed version is SUPERSEDED but deliberately not dropped (see below).
 
 Treat every structural claim here as a HYPOTHESIS and check it (branch, HEAD, file, stash) before
 acting on it. That rule exists because a remembered role once justified an hour of rework.
