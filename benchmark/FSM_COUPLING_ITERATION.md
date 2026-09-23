@@ -341,6 +341,52 @@ scope is exactly "PETSc Vecs", and it must not be read as "the step's state".
 key for every run and the declared-config rule (#83) makes an undeclared resolved key a failure.
 Same blast radius #109 had, and behaviour-preserving by construction.
 
+**AMENDMENT 8 — the rank-0 gap CLOSED, and the check I built for it was worse than useless.**
+
+Amendment 7 left five rank-0 `ArrayPack` arrays outside the rollback -- `arp.wtd`, `wtd_mid`,
+`runoff`, `rech`, `runoff_nominal` -- safe by the ARGUMENT that each is rederived from state that is
+restored. Closing it produced three results, and the middle one is the uncomfortable one.
+
+**1. THE FINGERPRINT CHECK WAS BUILT, RAN, AND WAS REMOVED.** Comparing each array before and after
+the step reported `arp.wtd` and `arp.wtd_mid` on every single iterated run, and stayed SILENT on
+`arp.runoff`. Both reports were false alarms; the silence was the real defect. A step naturally
+changes the water table, so "it moved" is not evidence of anything -- and a step can leave
+`arp.runoff` with the same sum, sum of squares and max as it started with while its CONTENTS matter.
+Two false alarms per run plus a miss on the one that counted is worse than no check at all: it
+trains the reader to scroll past the line that matters. Deleted rather than tuned.
+
+**2. THE QUESTION IS DECIDABLE, AND POISONING DECIDES IT.** The property that matters is not "did it
+move" but "is it REDERIVED BEFORE IT IS READ". Fill the array with NaN immediately after the
+rollback and compare the run against a clean one: if every read is preceded by a write, the answer
+is untouched; if not, the NaN propagates. Five runs on `tests/coupling_iteration`, k=3:
+
+| poisoned after the rollback | max\|Δwtd\| vs clean | verdict |
+|---|---|---|
+| `arp.wtd` | 0.000e+00 | rederived before read |
+| `arp.wtd_mid` | 0.000e+00 | rederived before read |
+| `arp.rech` | 0.000e+00 | rederived before read |
+| `arp.runoff_nominal` | 0.000e+00 | rederived before read |
+| **`arp.runoff`** | **4.000e+00 m** | **READ FIRST -- it is step state** |
+
+4.000 m is the entire depth of the fixture's lake, so this is not a marginal reading.
+
+**3. THE MECHANISM, and it is an ordering.** The coupling ACCUMULATES into `arp.runoff`
+(`arp.runoff(i,j) += routed`, in the exfiltration gather) BEFORE it zeroes the array and re-arms it
+for the next step. Its pre-step contents are therefore read, and a second pass that inherits the
+first pass's re-armed value is reading the NEXT step's carrier instead of this one's. It is now
+restored; the other four are not, and that exemption is earned by the table above rather than by the
+paragraph that used to stand in its place.
+
+**WHAT THE FIX CHANGES ON THIS FIXTURE: NOTHING, 0.000e+00 m** -- and the reason is the same
+attractor that blunts INVARIANT. At equilibrium the pre-step and post-pass-1 runoff carriers hold
+the same steady value, so restoring makes no difference; in a transient they differ. The fix is
+correct and necessary, and its effect is below the resolution of the only fixture that currently
+exercises it. Said plainly rather than dressed up as a visible repair.
+
+**KEPT FOR NEXT TIME:** the poison experiment is the instrument that settles "rederived before read"
+for any rank-0 array, and it is five runs. Re-run it before trusting the four-way exemption against
+changed code.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
