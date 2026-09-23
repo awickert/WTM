@@ -125,9 +125,13 @@ fi
 # SOURCE: every `params.<field> =/+=/-=/++` inside the step body must be carried by the snapshot.
 #
 # THE STEP BODY IS THE SOLVE PLUS THE COUPLING. ../src/transient_groundwater.cpp is the solve in its
-# entirety; in ../src/WTM.cpp only couple_surface_and_recharge counts, because the per-step COUNTERS
-# (solves_done, rejects_done) live in the step LOOPS and Amendment 6 decided they describe the
-# accepted pass rather than roll back.
+# entirety; in ../src/WTM.cpp the range starts at couple_surface_and_recharge, because the per-step
+# COUNTERS (solves_done, rejects_done) live in the step LOOPS and Amendment 6 decided they describe
+# the accepted pass rather than roll back.
+# THE RANGE IS SLIGHTLY WIDER THAN THAT NAME SUGGESTS: it ends at the next `template <class elev_t>`,
+# so it also covers budget_trace_step and budget_trace_before, which sit between. Harmless -- both
+# only READ params -- but stated, because a range that scans more than its comment claims is how a
+# check comes to be trusted for the wrong reason.
 body=$(awk '/^static void couple_surface_and_recharge/,/^template <class elev_t>$/' ../src/WTM.cpp)
 muts=$( { printf '%s\n' "$body"; cat ../src/transient_groundwater.cpp; } \
         | grep -vE '^\s*//' \
