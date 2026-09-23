@@ -48,6 +48,7 @@ make_work fsm_consistency
 mkcfg() { # nranks -> writes $WORK/n<nranks>.yaml
     local n="$1"
     sed -e "s|@INPUTS@|$SD|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|n${n}|g" config.yaml > "$WORK/n${n}.yaml"
+    apply_test_iterations "$WORK/n${n}.yaml"
 }
 
 # -wtm_eq_tol 0: pin the full fixed cycle count so the cross-rank comparison is at the same cycle (the

@@ -177,6 +177,27 @@ run "serial rank-0 recharge path"   ./serial_recharge/run.sh "$WTM"
 run "local-in-space water ledger"   ./local_ledger/run.sh "$WTM"
 run "Newton Jacobian + contract"    ./newton_solver/run.sh "$WTM"
 run "combination sweep"             ./combination_sweep/run.sh "$WTM"
+
+# ---------------------------------------------------------------------------------------------
+# THE SAME SUITES AGAIN, UNDER THE CONVERGED DEFAULT (#112). Andy, 2026-09-23: "Current configs are
+# for 1, and should have versions in parallel built for convergence."
+#
+# Every suite config DECLARES `iterations: 1`, so the first pass above measures the LAGGED scheme and
+# is unaffected by the default flip -- which is why no golden moved. This second pass re-emits the
+# same configs with the iterating default and runs the SAME assertions against it, so each suite
+# states its claim under both schemes rather than only the one it was written for.
+#
+# ONLY `routing: continuous` SUITES APPEAR HERE, and that is forced rather than chosen: `impulse`
+# and `off` have no lagged source to iterate against, and an explicit `iterations: > 1` there is
+# refused by name. `taper` is absent for a different reason -- it emits its configs from
+# taper_test.py rather than a sed line, so the override has nowhere to attach; that is a gap, not a
+# judgement. `coupling_iteration` is absent because it already runs both schemes as its subject.
+echo
+echo "=== the continuous suites again, under the CONVERGED default (iterations > 1) ==="
+for _cs in active_set fsm_cascade fsm_consistency fsm_fullness lake_evap_equals_et \
+           multilake xrank_adaptive xrank_growth; do
+    WTM_TEST_ITERATIONS=4 run "converged: $_cs" "./$_cs/run.sh" "$WTM"
+done
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
 run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 

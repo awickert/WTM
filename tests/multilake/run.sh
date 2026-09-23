@@ -62,6 +62,7 @@ mkcfg() { # $1 stem, $2 time_step.dt, $3 time.report_interval, $4 collection.met
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
         -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" \
         -e "s|^    method: active_set|    method: $cm|" config.yaml > "$WORK/$1.yaml"
+    apply_test_iterations "$WORK/$1.yaml"
 }
 
 run() { # $1 = stem, $2 = deltat, $3 = report_interval, $4 = collector, $5.. = solver flags
