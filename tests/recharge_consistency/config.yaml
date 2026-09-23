@@ -67,6 +67,10 @@ transmissivity:
     fmin: 2
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
+  coupling:
+    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
+                    # output (#112). Declared because it is resolved for every run, and an
+                    # absent key would leave this suite silent about which scheme it measures.
   routing: off
   runoff_ratio: 0
   collection:

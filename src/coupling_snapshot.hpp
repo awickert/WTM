@@ -249,6 +249,15 @@ struct CouplingVecProbe {
 // (see `ar_best_x` there: restart was enabled and still never fired), which is exactly why the
 // check exists.
 //
+// WHAT THIS DOES NOT COVER, so the check is not read as broader than it is: rank-0 ArrayPack
+// ARRAYS. The coupling writes five -- arp.wtd, arp.runoff, arp.rech, arp.wtd_mid and
+// arp.runoff_nominal -- and none is copied or fingerprinted here. Each is believed safe because it
+// is REDERIVED from state that is restored (wtd re-gathered from starting_wtd, runoff zeroed and
+// re-armed every coupling, rech recomputed from precip/evap), but that is an argument rather than a
+// measurement, and the evidence is only indirect: iterations 1/2/3 agree bit-for-bit and the exact
+// budget holds at ~1e-11 relative. OPEN GAP, recorded in AMENDMENT 7. The fix is this same
+// fingerprint shape applied to those five, and it is cheap because they are serial rank-0 arrays.
+//
 // FOUR OF THE 18 ARE PROVABLY SCRATCH and are captured anyway. tr_head_old is refilled from
 // starting_wtd + topo over the whole owned range on every call (transient_groundwater.cpp:732-740);
 // vol_prev_x is reset at it == 0 of each solve (:1004-1005); tr_fwork and tr_exfil_stage1 are
@@ -305,8 +314,27 @@ struct CouplingVecSnapshot {
 
   // Put the measured set back, bit-for-bit. Matched by NAME, for the reason changed() is: a step
   // CREATES Vecs, so positions do not line up across a step.
-  void restore(AppCtx& uc) const {
-#define X(name) if (uc.name) { for (const auto& p : saved) if (std::string(p.first) == #name) { VecCopy(p.second, uc.name); break; } }
+  void restore(AppCtx& uc) const { restore_except(uc, nullptr); }
+
+  // RESTORE EVERYTHING EXCEPT THE ITERATION VARIABLE -- what a coupling pass actually needs.
+  //
+  // A rollback that put fsm_delta_vec back would restore the very quantity the iteration is solving
+  // for, and the loop could never move: pass k+1 would re-solve against pass k's INPUT rather than
+  // its OUTPUT. So the one carrier FillSpillMerge writes for the next step is kept, and everything
+  // else is undone. That is the fixed-point iteration written out:
+  //
+  //     Phi(w) = G(w_n, F(w))   -- restore the state, keep F(w).
+  //
+  // rech_vec is deliberately NOT kept, and the opposite is tempting. Its post-step value is the
+  // recharge for step n+1, computed from the POST-step water table; a re-solve of step n must use
+  // step n's own recharge, which the previous step's coupling set. The final accepted pass
+  // recomputes the next step's value regardless, so restoring costs nothing -- while keeping it
+  // would advance the forcing by one step inside the iteration. See AMENDMENT 6.
+  void restore_keeping_fsm_delta(AppCtx& uc) const { restore_except(uc, "fsm_delta_vec"); }
+
+  void restore_except(AppCtx& uc, const char* keep) const {
+#define X(name) if (uc.name && !(keep && std::string(keep) == #name)) { \
+      for (const auto& p : saved) if (std::string(p.first) == #name) { VecCopy(p.second, uc.name); break; } }
     WTM_COUPLING_ROLLBACK_LIST(X)
 #undef X
   }

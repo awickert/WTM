@@ -230,6 +230,10 @@ struct Parameters {
   int32_t supplied_wt     = 0;   // run.initial_water_table: omit -> saturated (wtd = 0)   [TODO: folder auto-detect]
   int32_t fsm_on          = 1;   // surface_water.routing: continuous|impulse (off -> 0)
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
+  // surface_water.coupling.iterations (#112): how many times a step re-solves against its OWN
+  // FillSpillMerge output instead of the previous step's. 1 = the lagged scheme, today's behaviour
+  // and the documented opt-out. See benchmark/FSM_COUPLING_ITERATION.md.
+  int32_t coupling_iterations = 1;
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file
   std::string verbosity = "normal";     // output.verbosity: quiet | normal | verbose (console/log chatter level)

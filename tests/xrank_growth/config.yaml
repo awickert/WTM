@@ -30,6 +30,10 @@ transmissivity:
     fmin: 2
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
+  coupling:
+    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
+                    # output (#112). Declared because it is resolved for every run, and an
+                    # absent key would leave this suite silent about which scheme it measures.
   routing: continuous   # THE SUBJECT, and the base arm. run.sh overrides this one key to `impulse`;
                         # the couplings differ in how drift ACCUMULATES, which is the measured thing.
   runoff_ratio: raster

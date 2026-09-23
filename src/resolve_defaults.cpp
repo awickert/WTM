@@ -83,12 +83,34 @@ void resolve_defaults(Parameters& params) {
     }
   }
 
+  // ---- surface_water.coupling.iterations (#112) ----------------------------------------------
+  // The iteration only means anything where the coupling is LAGGED, and that is `continuous`: FSM's
+  // per-cell volume change is handed to the NEXT step through the distributed recharge carrier
+  // (WTM.cpp:346), which is exactly the lag the iteration removes. Under `impulse` FillSpillMerge
+  // overwrites the water table in place rather than feeding a source forward, and under `off` there
+  // is no FillSpillMerge at all -- so > 1 pass would re-solve a step against nothing new.
+  //
+  // REFUSED BY NAME rather than silently clamped to 1. A request to iterate that quietly does not
+  // iterate is the defect class of #27, #28 and #49, and this key is expensive enough that finding
+  // out afterwards would waste a production run.
+  if (params.coupling_iterations > 1 && !(params.fsm_on && params.fsm_coupling_continuous))
+    throw std::runtime_error(
+        "config: surface_water.coupling.iterations > 1 needs surface_water.routing: continuous "
+        "(this run resolves to " +
+        std::string(!params.fsm_on ? "off" : "impulse") +
+        "). The iteration exists to remove the LAG in the continuous coupling, where FillSpillMerge's "
+        "per-cell volume change is handed to the NEXT step as a source. `impulse` overwrites the water "
+        "table in place and `off` runs no FillSpillMerge, so there is no lagged source to iterate "
+        "against -- extra passes would re-solve the same step against the same input. Set "
+        "routing: continuous, or coupling.iterations: 1.");
+
   // ---- RECORD, at the decision site, what this run resolved -----------------------------------
   // full_config.yaml PRINTS these rather than re-deriving them; resolved_or_die() throws if a key was
   // never recorded, so the writer cannot fall back on a second implementation of this policy.
   resolved_config::record("surface_water.collection.method", params.runoff_collector);
   resolved_config::record("surface_water.routing",
                           !params.fsm_on ? "off" : (params.fsm_coupling_continuous ? "continuous" : "impulse"));
+  resolved_config::record("surface_water.coupling.iterations", std::to_string(params.coupling_iterations));
   resolved_config::record("solver.time_integration", params.time_integration);
   resolved_config::record("solver.time_step.mode", params.time_step_mode);
 }

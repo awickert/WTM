@@ -14,6 +14,10 @@ transmissivity:
     b: 150
     fmin: 2
 surface_water:
+  coupling:
+    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
+                    # output (#112). Declared because it is resolved for every run, and an
+                    # absent key would leave this suite silent about which scheme it measures.
   routing: off   # FSM does not run. One key since 2026-09-10 (#89): with no routing there is
                  # no coupling, so `off` is the whole answer rather than a mode plus an unused coupling.
   infiltration_during_flow: false

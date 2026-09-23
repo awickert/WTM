@@ -3,6 +3,7 @@
 #include "fill_spill_merge.hpp"
 #include "git_version.hpp"  // baked-in git commit + clean/dirty state (provenance)
 #include "irf.hpp"
+#include "coupling_snapshot.hpp"
 #include "transient_groundwater.hpp"
 #include "update_effective_storativity.hpp"  // per-cycle pure-water-depth metric (S*Δwtd)
 
@@ -20,6 +21,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <set>
 #include <sstream>
 #include <iostream>
 #include <string>
@@ -799,6 +801,90 @@ void update(
   // Per-report wall-time accumulators, summed from the timers around each GW step and each FSM step below.
   double gw_seconds = 0.0, fsm_seconds = 0.0;
 
+  // #112 -- ONE STEP: solve, couple, and ITERATE THE TWO against each other.
+  //
+  // The lagged scheme feeds step n+1 with step n's FillSpillMerge output (WTM.cpp:346, "set the
+  // recharge for the NEXT step"), so a step never sees its own runoff. Iterating re-solves the step
+  // against its own output: snapshot the state, solve, couple, roll back everything EXCEPT
+  // FillSpillMerge's per-cell volume change, and solve again with that as the source.
+  //
+  //     Phi(w) = G(w_n, F(w))
+  //
+  // surface_water.coupling.iterations is the pass count; 1 is the lagged scheme and is
+  // byte-identical to the pre-#112 model, because nothing is captured and the loop runs once.
+  //
+  // WHERE THE PER-STEP BOOKKEEPING SITS (Amendment 6, Andy's decision): params.solves_done and the
+  // budget trace describe the ACCEPTED pass only, so every existing per-step diagnostic keeps
+  // meaning what it means and no suite assertion changes silently. That is why the trace lives in
+  // here rather than in the callers -- it has to fire on the last pass, not the first.
+  //
+  // A REJECTED SOLVE ON A LATER PASS restores the FULL snapshot including the source, so the caller
+  // sees exactly the state it had before the step and its own two-accumulator rollback stays
+  // correct. Returning -1 without that would leave a half-iterated step behind.
+  //
+  // Returns the solver's iteration count, or -1 if the step was REJECTED (the callers handle that;
+  // the fixed loop cannot reject).
+  const auto take_step = [&]() -> int {
+    const int passes = (params.fsm_on && params.coupling_iterations > 1) ? params.coupling_iterations : 1;
+    wtm::CouplingSnapshot    scal;
+    wtm::CouplingVecSnapshot vecs;
+    if (passes > 1) {
+      scal = wtm::CouplingSnapshot::capture(params, arp, user_context);
+      vecs.capture(user_context);
+    }
+    int its = 0;
+    for (int pass = 1; pass <= passes; ++pass) {
+      if (pass > 1) {
+        scal.restore(params, arp, user_context);
+        vecs.restore_keeping_fsm_delta(user_context);
+      }
+      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
+      zero_sink();
+      richdem::Timer tgw;
+      tgw.start();
+      its = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
+      gw_seconds += tgw.lap();
+      if (its < 0) {
+        // REJECTED. Everything an earlier pass committed has to go back -- but NOT deltat. update()
+        // SHRINKS deltat on a reject and the caller retries at that smaller step; restoring the
+        // pre-step value would hand the retry the size that just failed, and it would fail again to
+        // the retry cap. Measured before this line existed: "adaptive dt: step failed after max
+        // retries" on the first fsm_cascade run with iterations: 2, at every dt the controller tried
+        // because it never actually tried a different one.
+        if (pass > 1) {
+          const double shrunk = user_context.deltat;
+          scal.restore(params, arp, user_context);
+          vecs.restore(user_context);   // FULL restore here: a rejected step keeps no new source
+          user_context.deltat = shrunk;
+        }
+        return its;
+      }
+      if (pass == passes) {  // the ACCEPTED pass -- the one every per-step diagnostic describes
+        params.solves_done++;
+        if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
+      }
+      if (params.fsm_on)
+        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
+                                    fsm_seconds);
+      // THE ENUMERATION IS CHECKED BY THE RUN, not trusted (Amendment 5). Anything the step moved
+      // that the rollback cannot put back is named.
+      //
+      // ONCE PER RUN PER MESSAGE, and that is a readability choice with a cost worth stating: a Vec
+      // that starts moving only at, say, cycle 40 is still reported the first time it does, but a
+      // SECOND distinct cause on the same Vec would be hidden behind the first. The alternative was
+      // measured and rejected -- the four scratch Vecs a step creates (tr_head_old, tr_fwork,
+      // tr_exfil_stage1, vol_prev_x) produce four lines per step, which buries the one message that
+      // would matter. Plain strings, function-local: no PETSc object outlives MPI_FINALIZE here.
+      if (passes > 1) {
+        static std::set<std::string> said;
+        for (const auto& bad : vecs.unrestorable(user_context))
+          if (said.insert(bad).second)
+            PetscPrintf(PETSC_COMM_WORLD, "NOTE [surface_water.coupling.iterations]: %s\n", bad.c_str());
+      }
+    }
+    return its;
+  };
+
   if (user_context.use_dt_adaptive) {
     // Adaptive stepping covers the SAME cycle duration as the fixed loop would
     // (report_seconds), but with variable, error-controlled sub-steps chosen by
@@ -830,14 +916,9 @@ void update(
             "and loosen solver.time_step.error_tol if the tolerance is unreachable at any step size.",
             user_context.deltat, t));
       const double dt_taken   = user_context.deltat;
-      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       const double rech_snap  = arp.total_recharge_direct;    // roll back on a rejected step (non-converged
       const double ocean_snap = arp.total_loss_to_ocean_gw;  // OR too-inaccurate), as the continuation loop does
-      zero_sink();
-      richdem::Timer tgw_a;
-      tgw_a.start();
-      const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
-      gw_seconds += tgw_a.lap();
+      const int    its        = take_step();
       if (its < 0) {  // REJECT: update() shrank deltat and did NOT commit; retry the same step
         arp.total_recharge_direct  = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
@@ -851,11 +932,6 @@ void update(
       retries = 0;
       t += dt_taken;
       nsteps++;
-      params.solves_done++;
-      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
-      if (params.fsm_on)
-        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
-                                    fsm_seconds);
     }
     PetscPrintf(PETSC_COMM_WORLD, "adaptive dt: %d steps (%d rejected) to cover %g s (fixed would be %d)\n",
                 nsteps, rejects, cycle_duration, params.report_steps);
@@ -886,12 +962,7 @@ void update(
       const double rech_snap  = arp.total_recharge_direct;   // roll back on a rejected step
       const double ocean_snap = arp.total_loss_to_ocean_gw;
       const double dt_try     = user_context.deltat;
-      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
-      zero_sink();
-      richdem::Timer tgw_n;
-      tgw_n.start();
-      const int    its        = FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
-      gw_seconds += tgw_n.lap();
+      const int    its        = take_step();
       if (its < 0) {  // rejected (non-converged): restore accumulators, shrink dt, retry same step
         arp.total_recharge_direct = rech_snap;
         arp.total_loss_to_ocean_gw = ocean_snap;
@@ -903,19 +974,17 @@ void update(
         continue;  // do NOT advance `accepted`
       }
       accepted++;
-      params.solves_done++;
-      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
       retries = 0;
       // Grow Δt after an EASY step (converged in <= dtc_easy_iters), HOLD when hard (near the free-
       // boundary ceiling). NOTE: a residual/state-change SER controller (grow ∝ Δw_prev/Δw) was tried
       // and is WORSE here -- during the long drainage transient Δw is large and only slowly shrinking,
       // so SER holds Δt small and never advances; growing on solve-EASE advances far better. last_dh_max
       // is still tracked (below) as an equilibrium detector, not a step controller.
+      // Growth runs AFTER the step's coupling now (take_step couples internally). Answer-neutral:
+      // it moves user_context.deltat, and the coupling reads neither user_context.deltat nor
+      // user_context.step -- checked, not assumed -- using the NOMINAL params.deltat instead.
       if (its <= user_context.dtc_easy_iters) user_context.deltat *= user_context.dtc_grow;  // else HOLD
       if (user_context.deltat > user_context.dtc_dt_max) user_context.deltat = user_context.dtc_dt_max;
-      if (params.fsm_on)
-        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
-                                    fsm_seconds);
     }
     PetscPrintf(PETSC_COMM_WORLD,
                 "dt-continuation: deltat now %g s after this cycle; last max|Δw| = %g m (-> 0 at equilibrium).\n",
@@ -923,17 +992,7 @@ void update(
   } else {
     int iter_count = 0;
     while (iter_count++ < params.report_steps) {
-      const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
-      zero_sink();
-      richdem::Timer tgw;
-      tgw.start();
-      FanDarcyGroundwater::update(params, arp, user_context, dmdapack);
-      gw_seconds += tgw.lap();
-      params.solves_done++;
-      if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
-      if (params.fsm_on)
-        couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
-                                    fsm_seconds);
+      take_step();   // fixed dt never rejects, so the return value carries nothing the loop needs
     }
   }
   // fsm_off: assemble the water table + set recharge ONCE per report (FillSpillMerge is skipped inside the
@@ -1630,6 +1689,11 @@ static void write_full_config(const std::string& run_dir, const Parameters& para
   // writer cannot become a second implementation of the resolution policy -- which is how it came to
   // record `active_set` for Picard runs that enforced `explicit`.
   f << "    method: " << resolved_config::resolved_or_die("surface_water.collection.method") << "\n";
+  // The coupling iteration count, printed for EVERY run rather than only when > 1. A reader of
+  // full_config.yaml has to be able to tell a lagged run from an iterated one, and an absent line
+  // would mean "I do not know" as readily as "1". Recorded at the decision site, like the rest.
+  f << "  coupling:\n";
+  f << "    iterations: " << resolved_config::resolved_or_die("surface_water.coupling.iterations") << "\n";
 
   f << "\nsolver:\n";
   f << "  method: " << (params.solver_method.empty() ? "anderson" : params.solver_method) << "\n";

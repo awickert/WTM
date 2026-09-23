@@ -48,6 +48,10 @@ transmissivity:
     fmin: 2
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
+  coupling:
+    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
+                    # output (#112). Declared because it is resolved for every run, and an
+                    # absent key would leave this suite silent about which scheme it measures.
   routing: impulse   # HALF OF THE PRECONDITION (FSM must be ON to reach the serial loop) -- and it
                      # must be `impulse`, not the `continuous` default: continuous x
                      # infiltration_during_flow: true is REFUSED by name, because continuous hands

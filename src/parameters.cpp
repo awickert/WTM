@@ -67,8 +67,9 @@ const std::map<std::string, std::set<std::string>>& config_schema() {
       // RECORDED `impulse` for a run in which no coupling ran at all, so an FSM-off config had to declare
       // a mechanism it never used. One key, three values, and the contradiction is unrepresentable rather
       // than merely refused -- the same move as extended_soil joining collection.method (#26).
-      {"surface_water", {"routing", "runoff_ratio", "infiltration_during_flow", "collection"}},
+      {"surface_water", {"routing", "runoff_ratio", "infiltration_during_flow", "collection", "coupling"}},
       {"surface_water.collection", {"method"}},
+      {"surface_water.coupling", {"iterations"}},
       {"evaporation", {"et_sigmoid", "extinction_depth", "tapers"}},
       {"evaporation.tapers", {"surface_transition", "depth_extinction"}},
       {"evaporation.et_sigmoid", {"wtd_center", "logistic_width"}},
@@ -540,6 +541,22 @@ Parameters::Parameters(const std::string& config_file) {
   if (auto n = root["surface_water"]["collection"]["method"]) {
     runoff_collector     = n.as<std::string>();
     runoff_collector_set = true;
+  }
+  // surface_water.coupling.iterations (#112): the number of solve+FillSpillMerge passes a step
+  // takes. The lagged scheme feeds step n+1 with step n's FSM output; iterating re-solves the step
+  // against its OWN output, so the step uses its own runoff. 1 is the lagged scheme.
+  // 0 is REFUSED rather than read as "off": a step that never solves is not a mode, it is a typo,
+  // and silently treating it as 1 is the class of defect #27/#35 -- a key that reads as honoured
+  // and is not.
+  if (auto n = root["surface_water"]["coupling"]["iterations"]) {
+    const int v = n.as<int>();
+    if (v < 1)
+      throw std::runtime_error(
+          "config: surface_water.coupling.iterations must be >= 1, got " + std::to_string(v) +
+          ". 1 is the lagged coupling (a step uses the PREVIOUS step's FillSpillMerge output); "
+          "higher values re-solve the step against its own output. There is no 0: a step that "
+          "never solves is not a mode.");
+    coupling_iterations = v;
   }
 
   // WHO SIZES THE STEP -- one question, one key (solver.time_step.mode).

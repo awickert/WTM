@@ -131,6 +131,29 @@ surface_water:
                                # cannot happen. An old config is refused by name, with the translation.
                                # (`mode: ponded` and `mode: removed` both become `off`: they were already
                                # indistinguishable -- the default taper never consults the old evap_mode.)
+  coupling:
+    iterations: 1              # how many times a step solves against its OWN FillSpillMerge output (#112).
+                               # THE LAG THIS ADDRESSES. Under routing: continuous, FSM's per-cell volume
+                               # change is fed into the NEXT step's recharge source, so a step never sees
+                               # its own runoff -- the coupling is lagged by one step. Iterating removes the
+                               # lag: snapshot the state, solve, run FSM, roll back everything EXCEPT FSM's
+                               # volume change, and solve the SAME step again with that as its source.
+                               #   1  the lagged scheme. Today's model, and every result published from it.
+                               #   k  k solve+FSM passes per step; the last one is the answer.
+                               # There is no 0 -- a step that never solves is not a mode, and it is refused.
+                               # NEEDS routing: continuous, and is REFUSED otherwise by name. Under `impulse`
+                               # FSM overwrites the water table in place and under `off` it does not run, so
+                               # there is no lagged source to iterate against.
+                               # COST: each pass is a FULL GROUNDWATER RE-SOLVE, not an extra FSM call. FSM
+                               # itself is 0.142% of a cycle at 384,703 cells (benchmark/esquibel/FSM_COST.md);
+                               # the solve is ~99.7%. So k passes cost about k times the step.
+                               # CHANGES THE ANSWER during transients -- which is the point, since a spin-up
+                               # is all transient. At EQUILIBRIUM it changes nothing by construction: there
+                               # w_{n+1} = w_n, so FSM(w_n) and FSM(w_{n+1}) are the same array and the lag is
+                               # identically zero. Measured on tests/fsm_cascade: iterations 1, 2 and 3 give a
+                               # BIT-IDENTICAL final water table (max|dwtd| = 0.000e+00 m over 900 cells) by
+                               # three different paths -- 70, 184 and 212 solver calls over 4, 15 and 7 steps.
+                               # See benchmark/FSM_COUPLING_ITERATION.md for the design and its amendments.
   # runoff_ratio: 0.0          # a number in [0,1] (uniform), the string "raster" (require the raster), or omit (off)
   infiltration_during_flow: false
   collection:
