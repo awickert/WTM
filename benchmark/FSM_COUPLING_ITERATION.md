@@ -753,6 +753,36 @@ choice is Andy's:
     additionally the iterated scheme must be no worse than the lagged one at every lake. Stronger,
     and it would have caught this as a PASS with a note rather than a failure.
 
+**AMENDMENT 16 — THE MULTI-BASIN COLD START: the SPILL TIMING shifts, and in both directions.**
+
+Amendment 14's caveat was that one basin with uniform forcing cannot show what a CHAIN does, where
+the spill order can itself move. `tests/fsm_cascade` is that chain -- pit A (floor 94, sill 97)
+spills into basin B (floor 88, sill 95), which spills off-map -- run the same way: `dt = 0.1 yr`,
+`report_interval: 1`, `total: "20yr"`, 200 steps, 201 snapshots, lagged against the default.
+
+**THE DIFFERENCE IS LARGER THAN ON ONE BASIN, and it is in the ORDER as much as the magnitude.**
+
+    PEAK  max|dwtd| = 1.300623e+00 m at step 1      (single basin peaked at 7.647142e-01 m)
+
+    pit A   reaches its 97 m sill:  step 2 lagged,  step 1 iterated    ONE STEP EARLIER
+    basin B reaches its 95 m sill:  step 14 lagged, step 16 iterated   TWO STEPS LATER
+
+The two basins move in OPPOSITE directions. The iterated scheme fills the upstream pit sooner -- it
+is not holding that step's runoff back -- and reaches the downstream basin's sill LATER. At steps 9
+and 13, B's stage is lower under iteration (92.3331 vs 91.5987; 94.6133 vs 93.8289). No mechanism is
+offered for the downstream delay, because none has been measured; what is established is that the
+FILL SEQUENCE of a chain is not invariant to the coupling scheme.
+
+**AND IT IS BOUNDED IN TIME.** The schemes differ by more than 1e-6 m on 15 of 201 snapshots -- steps
+1 to 15, **1.5 yr of a 20 yr run** -- and agree to <= 1e-6 m for the remaining 185. Both reach
+exactly 97.0000 and 95.0000. Same destination, different journey, and the journey is where the
+difference lives, exactly as Amendment 2 argued and Amendment 14 first measured.
+
+**COST, consistent with the single basin:** 200 steps / 200 solver calls lagged against 500 steps /
+1036 calls iterated -- **2.07 calls per step**, with the run total set by the controller choosing
+2.5x more steps, not by the passes. That reproduces Amendment 14's finding on a second fixture and a
+different geometry, which is the point of running it.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
