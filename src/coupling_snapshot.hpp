@@ -15,6 +15,7 @@
 // The Vec state (starting_wtd, lake_stage, rech_vec) and the BDF2/TR-BDF2 history are a separate
 // commit; they need PETSc objects and duplicate-and-copy rather than assignment.
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -285,6 +286,43 @@ struct CouplingVecProbe {
   X(wtd_global) \
   X(x)
 
+// THE THIRD CATEGORY: rank-0 ArrayPack ARRAYS. Neither PETSc Vecs nor scalars, so neither of the
+// mechanisms above can see them -- and the coupling WRITES five. Enumerated from the source rather
+// than judged (couple_surface_and_recharge, and gather_wtd_to_all which it calls):
+//
+//   arp.wtd             written by the gather (transient_groundwater.cpp:2513)
+//   arp.wtd_mid         `arp.wtd_mid = arp.wtd`, the pre-FSM table
+//   arp.runoff          `.setAll(0)` then `+= routed`
+//   arp.rech            recomputed from precip/evap, then the runoff-ratio share subtracted
+//   arp.runoff_nominal  `= rr`, the share the serial recharge path reads
+//
+// FOUR OF THE FIVE ARE REDERIVED BEFORE THEY ARE READ; THE FIFTH IS NOT. That was settled by
+// MEASUREMENT, not argument: each array was filled with NaN immediately after the rollback and the
+// run compared against a clean one. Filling wtd, wtd_mid, rech or runoff_nominal changed the answer
+// by 0.000e+00 -- every read of them is preceded by a write. Filling arp.runoff moved the answer by
+// 4.000 m, the entire depth of the fixture's lake.
+//
+// arp.runoff IS STEP STATE, and the reason is an ordering: the coupling ACCUMULATES into it
+// (`arp.runoff(i,j) += routed`, in the exfiltration gather) BEFORE it zeroes it and re-arms it for
+// the next step. So its pre-step contents are read, and a second pass that inherits the re-armed
+// value from the first is reading the NEXT step's carrier. It is therefore restored -- see
+// rank0_runoff below -- and the other four are not.
+//
+// THE EXEMPTION FOR THE OTHER FOUR IS EARNED BY THAT MEASUREMENT and by nothing else. Re-run the
+// poison experiment before trusting it against changed code; the design doc records the method.
+//
+// A FINGERPRINT CHECK WAS TRIED HERE FIRST AND REMOVED. Comparing each array before and after the
+// step reported wtd and wtd_mid -- both harmless -- and stayed SILENT on arp.runoff, the one that
+// mattered, because the step can leave it with the same sum, sum of squares and max|.| it started
+// with. Two false alarms every run and a miss on the real defect is worse than no check: it trains
+// the reader to scroll past the line that matters.
+#define WTM_COUPLING_RANK0_LIST(X) \
+  X(wtd) \
+  X(wtd_mid) \
+  X(runoff) \
+  X(rech) \
+  X(runoff_nominal)
+
 namespace wtm {
 
 struct CouplingVecSnapshot {
@@ -302,7 +340,14 @@ struct CouplingVecSnapshot {
     return f;
   }
 
-  void capture(const AppCtx& uc) {
+  // arp.runoff, copied. ONE rank-0 array, because one is what the poison measurement showed is
+  // read before it is rewritten. A plain vector rather than a d2d so the snapshot owns its storage.
+  std::vector<double> rank0_runoff;
+  bool                rank0_runoff_held = false;
+
+  void capture(const AppCtx& uc) { capture(uc, nullptr); }
+
+  void capture(const AppCtx& uc, const ArrayPack* arp) {
     destroy();
 #define X(name) if (uc.name) { Vec d; VecDuplicate(uc.name, &d); VecCopy(uc.name, d); saved.emplace_back(#name, d); }
     WTM_COUPLING_ROLLBACK_LIST(X)
@@ -310,6 +355,18 @@ struct CouplingVecSnapshot {
 #define X(name) if (uc.name && !in_rollback_set(#name)) outside.emplace_back(#name, fingerprint(uc.name));
     WTM_APPCTX_VEC_LIST(X)
 #undef X
+    if (arp && arp->runoff.size()) {
+      rank0_runoff.assign(arp->runoff.size(), 0.0);
+      for (std::size_t i = 0; i < arp->runoff.size(); ++i) rank0_runoff[i] = arp->runoff(i);
+      rank0_runoff_held = true;
+    }
+  }
+
+  // Put arp.runoff back. Rank-0 only by nature: on every other rank the array is empty and this is
+  // a no-op, which is why it is guarded on size rather than on the rank id.
+  void restore_rank0(ArrayPack& arp) const {
+    if (!rank0_runoff_held || arp.runoff.size() != rank0_runoff.size()) return;
+    for (std::size_t i = 0; i < rank0_runoff.size(); ++i) arp.runoff(i) = rank0_runoff[i];
   }
 
   // Put the measured set back, bit-for-bit. Matched by NAME, for the reason changed() is: a step
@@ -341,7 +398,9 @@ struct CouplingVecSnapshot {
 
   // THE RUNTIME CHECK. Empty means the enumeration still holds for this run. Anything here is a
   // rollback that would have been incomplete -- report it loudly; do not filter it.
-  std::vector<std::string> unrestorable(const AppCtx& uc) const {
+  std::vector<std::string> unrestorable(const AppCtx& uc) const { return unrestorable(uc, nullptr); }
+
+  std::vector<std::string> unrestorable(const AppCtx& uc, const ArrayPack* arp) const {
     std::vector<std::string> out;
     // (a) a Vec outside the measured set whose fingerprint moved: the set is too small for this run.
 #define X(name) if (uc.name && !in_rollback_set(#name)) { \
@@ -351,6 +410,7 @@ struct CouplingVecSnapshot {
         break; } }
     WTM_APPCTX_VEC_LIST(X)
 #undef X
+    (void)arp;   // rank-0 arrays are settled by the poison measurement, not by a per-run check
     // (b) a Vec in the set that did not exist at capture. Today all four such Vecs are scratch
     // (see the header note), so this is a NOTICE rather than a defect -- but a future one might be
     // history, and then restoring nothing into it would be the silent case. So it is reported.
@@ -373,6 +433,8 @@ struct CouplingVecSnapshot {
     for (auto& p : saved) VecDestroy(&p.second);
     saved.clear();
     outside.clear();
+    rank0_runoff.clear();
+    rank0_runoff_held = false;
   }
   ~CouplingVecSnapshot() { destroy(); }
 };

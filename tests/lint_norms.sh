@@ -169,6 +169,48 @@ else
     fi
 fi
 
+# #112 RANK-0 ARRAYPACK ARRAYS -- the THIRD state category, and the two checks above are blind to it.
+# One pins `double total_*` in ArrayPack; the other pins Parameters fields. Neither can see
+# arp.wtd, which is a rank-0 Array2D written by the gather, nor the four the coupling writes
+# directly. Of those five, ONE (arp.runoff) is restored by the rollback and four are exempt -- an
+# exemption EARNED BY MEASUREMENT, not by argument: each was filled with NaN after the rollback and
+# only arp.runoff changed the answer (by 4.000 m; the others by 0.000e+00). A SIXTH appearing would
+# inherit neither the restore nor the measurement, so it must at least be enumerated. That is what
+# this pins: the written set and WTM_COUPLING_RANK0_LIST agree, and the count cannot drift.
+r0=$( { awk '/^static void couple_surface_and_recharge/,/^template <class elev_t>$/' ../src/WTM.cpp; \
+        cat ../src/transient_groundwater.cpp; } \
+      | grep -vE '^\s*//' \
+      | grep -oE 'arp\.[a-z_]+\([^)]*\) *(=[^=]|\+=|-=)|arp\.[a-z_]+ *(=[^=]|\+=)|arp\.[a-z_]+\.setAll' \
+      | grep -oE 'arp\.[a-z_]+' | sed 's/arp\.//' | grep -v '^total_' | sort -u )
+nr0=$(printf '%s\n' "$r0" | grep -c .)
+if [ "$nr0" -eq 0 ]; then
+    echo "  FAIL  #112 rank-0 check found ZERO written arrays -- the awk range or a file path is" >&2
+    echo "        wrong, so it is checking nothing." >&2
+    fail=1
+else
+    listed=$(grep -oE '^  X\([a-z_]+\)' ../src/coupling_snapshot.hpp | sed 's/.*X(//;s/)//' | sort -u)
+    miss=""
+    for a in $r0; do
+        printf '%s\n' "$listed" | grep -qx "$a" || miss="$miss $a"
+    done
+    if [ -n "$miss" ]; then
+        echo "  FAIL  #112 the step writes rank-0 ArrayPack arrays nothing watches:$miss" >&2
+        echo "        Add each to WTM_COUPLING_RANK0_LIST in ../src/coupling_snapshot.hpp, or -- if" >&2
+        echo "        it is genuinely not step state -- say why where it is declared." >&2
+        fail=1
+    else
+        # COUNT BEFORE THE OK LINE, for the reason the check above learned the hard way: printing
+        # success before verifying the count puts a green line directly above its own failure.
+        k=$(awk '/#define WTM_COUPLING_RANK0_LIST/,/^$/' ../src/coupling_snapshot.hpp | grep -c '^  X(')
+        if [ "$k" != "$nr0" ]; then
+            echo "  FAIL  #112 WTM_COUPLING_RANK0_LIST has $k entries but the step writes $nr0" >&2
+            fail=1
+        else
+            echo "  OK   #112 ROLLBACK  all $nr0 rank-0 ArrayPack arrays the step writes are enumerated"
+        fi
+    fi
+fi
+
 # ONE BOUND PER LINE. Two bounds on one source line SHARE the comment block above it, so
 # assertion_health.py credits the second with the first's derivation -- a FALSE DERIVED, the same
 # shape as the spread-note and arm-label bugs (tests/ASSERTION_HEALTH.md). limit_cycle's MB_TOL sat

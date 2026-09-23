@@ -357,3 +357,44 @@ TEST_CASE("coupling vec snapshot: restore_keeping_fsm_delta keeps EXACTLY ONE Ve
   WTM_COUPLING_ROLLBACK_LIST(X)
 #undef X
 }
+
+TEST_CASE("coupling vec snapshot: arp.runoff round-trips, and the other four do NOT") {
+  // THE THIRD STATE CATEGORY, settled by measurement rather than argument. Each of the five rank-0
+  // arrays the step writes was filled with NaN just after the rollback and the run compared against
+  // a clean one: wtd, wtd_mid, rech and runoff_nominal moved the answer by 0.000e+00 -- every read
+  // of them is preceded by a write -- while arp.runoff moved it by 4.000 m, the whole lake. The
+  // coupling ACCUMULATES into arp.runoff before it zeroes and re-arms it, so its pre-step contents
+  // are read and a second pass must not inherit the first pass's re-armed value.
+  //
+  // This pins both halves. The negative half matters as much: if someone adds one of the other four
+  // to the rollback, the exemption earned by that measurement has quietly changed meaning and this
+  // says so, rather than the addition looking like harmless extra safety.
+  AppCtx    uc;
+  ArrayPack arp;
+  for (d2d* a : {&arp.runoff, &arp.wtd, &arp.wtd_mid, &arp.rech, &arp.runoff_nominal}) {
+    a->resize(2, 2, 0.0);
+    a->setAll(7.0);
+  }
+
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc, &arp);
+  for (d2d* a : {&arp.runoff, &arp.wtd, &arp.wtd_mid, &arp.rech, &arp.runoff_nominal}) a->setAll(-1.0);
+  snap.restore_rank0(arp);
+
+  CHECK(arp.runoff(0) == 7.0);            // restored: it is read before it is rewritten
+  CHECK(arp.wtd(0) == -1.0);              // not restored: measured inert
+  CHECK(arp.wtd_mid(0) == -1.0);
+  CHECK(arp.rech(0) == -1.0);
+  CHECK(arp.runoff_nominal(0) == -1.0);
+}
+
+TEST_CASE("coupling vec snapshot: restore_rank0 is a no-op where the array is absent") {
+  // Every rank but 0 holds an empty arp.runoff, so the guard is on SIZE rather than on a rank id --
+  // a rank check would have to be threaded in, and would be wrong the moment the gather changes.
+  AppCtx    uc;
+  ArrayPack arp;                           // runoff never resized: size 0, as on a non-root rank
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc, &arp);
+  snap.restore_rank0(arp);                 // must not touch anything, must not crash
+  CHECK(arp.runoff.size() == 0);
+}

@@ -830,13 +830,14 @@ void update(
     wtm::CouplingVecSnapshot vecs;
     if (passes > 1) {
       scal = wtm::CouplingSnapshot::capture(params, arp, user_context);
-      vecs.capture(user_context);
+      vecs.capture(user_context, &arp);   // &arp: also fingerprint the rank-0 arrays the coupling writes
     }
     int its = 0;
     for (int pass = 1; pass <= passes; ++pass) {
       if (pass > 1) {
         scal.restore(params, arp, user_context);
         vecs.restore_keeping_fsm_delta(user_context);
+        vecs.restore_rank0(arp);   // arp.runoff: read before it is rewritten, so it IS step state
       }
       const double bt_v0 = user_context.budget_trace ? budget_trace_before(arp, user_context, dmdapack) : 0.0;
       zero_sink();
@@ -877,7 +878,7 @@ void update(
       // would matter. Plain strings, function-local: no PETSc object outlives MPI_FINALIZE here.
       if (passes > 1) {
         static std::set<std::string> said;
-        for (const auto& bad : vecs.unrestorable(user_context))
+        for (const auto& bad : vecs.unrestorable(user_context, &arp))
           if (said.insert(bad).second)
             PetscPrintf(PETSC_COMM_WORLD, "NOTE [surface_water.coupling.iterations]: %s\n", bad.c_str());
       }
