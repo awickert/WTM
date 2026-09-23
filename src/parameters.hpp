@@ -234,6 +234,10 @@ struct Parameters {
   // FillSpillMerge output instead of the previous step's. 1 = the lagged scheme, today's behaviour
   // and the documented opt-out. See benchmark/FSM_COUPLING_ITERATION.md.
   int32_t coupling_iterations = 1;
+  // Total coupling passes actually taken, summed over steps. Reported so the COST of iterating is
+  // visible in the run rather than inferred: with the outer stop active a step usually takes 2, and
+  // the cap is only reached where the coupling is still moving.
+  int64_t coupling_passes_total = 0;
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file
   std::string verbosity = "normal";     // output.verbosity: quiet | normal | verbose (console/log chatter level)

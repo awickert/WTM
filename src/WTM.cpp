@@ -21,6 +21,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <iostream>
@@ -614,23 +615,74 @@ static void couple_surface_and_recharge(Parameters& params, ArrayPack& arp, AppC
 // Their agreement is the sharpest available check that the model's story matches what it actually did.
 // Measured at 1.8e-14 relative, INCLUDING across the crossing step -- which is how #52 was established
 // as a FLUX-REPORTING defect and not a state error.
-static void budget_trace_step(const Parameters& params, ArrayPack& arp, AppCtx& user_context,
-                              DMDA_Array_Pack& dmdapack, double v_before) {
+// SPLIT INTO SAMPLE AND EMIT (#112). The trace describes ONE step, and with the coupling iteration
+// a step may take several passes whose count is not known until the outer stop fires -- so the
+// values are SAMPLED at the same point as before (post-solve, PRE-coupling) on every pass, and the
+// last sample is EMITTED once the step is done. At iterations: 1 this is arithmetically identical
+// to the single call it replaces: same sample point, same order (increment solves_done, then print),
+// and the running previous-values live in emit so they advance exactly once per step.
+struct BudgetTraceSample {
+  double v_before = 0, v_after = 0, r = 0, st = 0, o = 0, x = 0, e = 0;
+  bool   valid    = false;
+};
+
+static BudgetTraceSample budget_trace_sample(ArrayPack& arp, AppCtx& user_context,
+                                             DMDA_Array_Pack& dmdapack, double v_before) {
   const auto [xs, ys, xm, ym] = get_corners(user_context.da);
-  double v_after = 0.0;
+  BudgetTraceSample s;
+  s.v_before = v_before;
   for (int j = ys; j < ys + ym; j++)
     for (int i = xs; i < xs + xm; i++)
       if (dmdapack.mask[j][i] != 0)
-        v_after += storedVolume(dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]) * arp.cell_area[j];
+        s.v_after += storedVolume(dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]) * arp.cell_area[j];
+  s.r  = arp.total_solver_recharge;
+  s.st = arp.total_storage_change;
+  s.o  = arp.total_ocean_outflow_gw;
+  s.x  = arp.total_surface_removed;
+  s.e  = arp.total_evap_removed;
+  s.valid = true;
+  return s;
+}
+
+static void budget_trace_emit(const Parameters& params, const BudgetTraceSample& s) {
+  if (!s.valid) return;
   static double p_r = 0, p_s = 0, p_o = 0, p_x = 0, p_e = 0;
-  const double r = arp.total_solver_recharge, st = arp.total_storage_change,
-               o = arp.total_ocean_outflow_gw, x = arp.total_surface_removed, e = arp.total_evap_removed;
   PetscPrintf(PETSC_COMM_WORLD,
               "BUDGETTRACE step=%d d_rech=%.9e d_stor_acc=%.9e d_stor_state=%.9e d_ocean=%.9e "
               "d_surf=%.9e d_evap=%.9e d_resid=%.9e\n",
-              params.solves_done, r - p_r, st - p_s, v_after - v_before, o - p_o, x - p_x, e - p_e,
-              (r - p_r) - (st - p_s) - (o - p_o) - (x - p_x) - (e - p_e));
-  p_r = r; p_s = st; p_o = o; p_x = x; p_e = e;
+              params.solves_done, s.r - p_r, s.st - p_s, s.v_after - s.v_before, s.o - p_o,
+              s.x - p_x, s.e - p_e,
+              (s.r - p_r) - (s.st - p_s) - (s.o - p_o) - (s.x - p_x) - (s.e - p_e));
+  p_r = s.r; p_s = s.st; p_o = s.o; p_x = s.x; p_e = s.e;
+}
+
+// #112 -- THE OUTER CONVERGENCE MEASURE: how much water moved between two coupling passes.
+//
+// L1 OVER CELLS, not the change in the total. The coupling iteration REDISTRIBUTES water -- FSM
+// takes it from one place and puts it somewhere else -- so a run can move a great deal of water
+// while the domain total is unchanged. A scalar total would report such a pass as converged.
+//
+// Water VOLUME, because that is the quantity the per-solve test already judges (#61), so the outer
+// stop can reuse the inner solve's own tolerance rather than introduce one.
+static double coupling_water_change(ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack,
+                                    const std::vector<double>& prev, std::vector<double>& now) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  now.clear();
+  now.reserve(static_cast<std::size_t>(xm) * ym);
+  double local = 0.0;
+  std::size_t k = 0;
+  for (int j = ys; j < ys + ym; j++)
+    for (int i = xs; i < xs + xm; i++) {
+      const double v = (dmdapack.mask[j][i] != 0)
+                           ? storedVolume(dmdapack.starting_wtd[j][i], dmdapack.porosity_vec[j][i]) * arp.cell_area[j]
+                           : 0.0;
+      now.push_back(v);
+      if (k < prev.size()) local += std::fabs(v - prev[k]);
+      ++k;
+    }
+  double global = 0.0;
+  MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+  return global;
 }
 
 static double budget_trace_before(ArrayPack& arp, AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
@@ -832,6 +884,15 @@ void update(
       scal = wtm::CouplingSnapshot::capture(params, arp, user_context);
       vecs.capture(user_context, &arp);   // &arp: also fingerprint the rank-0 arrays the coupling writes
     }
+    // THE OUTER STOP. Compare successive passes in WATER VOLUME and stop at the bar the inner solve
+    // already uses (solver.convergence.water_volume_tol): the outer iteration cannot resolve a
+    // change smaller than the solve that produces each pass. No new tunable, and no tolerance of my
+    // choosing. `iterations` is the CAP, reached when a step is still moving -- which is the filling
+    // transient, where the coupling operator is not a contraction (AMENDMENT 10).
+    std::vector<double> wprev, wnow;
+    BudgetTraceSample trace;
+    int   passes_taken = 0;
+    bool  converged    = false;
     int its = 0;
     for (int pass = 1; pass <= passes; ++pass) {
       if (pass > 1) {
@@ -860,13 +921,26 @@ void update(
         }
         return its;
       }
-      if (pass == passes) {  // the ACCEPTED pass -- the one every per-step diagnostic describes
-        params.solves_done++;
-        if (user_context.budget_trace) budget_trace_step(params, arp, user_context, dmdapack, bt_v0);
-      }
+      // SAMPLE every pass; the last one survives. Which pass is last is not known here once the
+      // outer stop can fire, so the bookkeeping moved below the loop -- see the emit after it.
+      if (user_context.budget_trace) trace = budget_trace_sample(arp, user_context, dmdapack, bt_v0);
       if (params.fsm_on)
         couple_surface_and_recharge(params, arp, user_context, dmdapack, deps, mpi_rank, distribute_recharge,
                                     fsm_seconds);
+      passes_taken = pass;
+      if (passes > 1) {
+        const double moved = coupling_water_change(arp, user_context, dmdapack, wprev, wnow);
+        const double scale = std::accumulate(wnow.begin(), wnow.end(), 0.0);
+        double gscale = 0.0;
+        MPI_Allreduce(const_cast<double*>(&scale), &gscale, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+        wprev.swap(wnow);
+        if (pass > 1 && gscale > 0.0 && moved / std::fabs(gscale) < user_context.snes_volume_conv_tol) {
+          converged = true;
+          if (user_context.budget_trace)
+            PetscPrintf(PETSC_COMM_WORLD, "COUPLING converged at pass %d (relative water change %.3e)\n",
+                        pass, moved / std::fabs(gscale));
+        }
+      }
       // THE ENUMERATION IS CHECKED BY THE RUN, not trusted (Amendment 5). Anything the step moved
       // that the rollback cannot put back is named.
       //
@@ -876,6 +950,7 @@ void update(
       // measured and rejected -- the four scratch Vecs a step creates (tr_head_old, tr_fwork,
       // tr_exfil_stage1, vol_prev_x) produce four lines per step, which buries the one message that
       // would matter. Plain strings, function-local: no PETSc object outlives MPI_FINALIZE here.
+      if (converged) break;
       if (passes > 1) {
         static std::set<std::string> said;
         for (const auto& bad : vecs.unrestorable(user_context, &arp))
@@ -883,6 +958,12 @@ void update(
             PetscPrintf(PETSC_COMM_WORLD, "NOTE [surface_water.coupling.iterations]: %s\n", bad.c_str());
       }
     }
+    // THE PER-STEP BOOKKEEPING, ONCE, however many passes ran (AMENDMENT 6: the diagnostics
+    // describe the STEP). Increment first, then emit, which is the order the single-call version
+    // used -- the trace prints params.solves_done.
+    params.solves_done++;
+    if (user_context.budget_trace) budget_trace_emit(params, trace);
+    params.coupling_passes_total += passes_taken;
     return its;
   };
 
