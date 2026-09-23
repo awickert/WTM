@@ -211,3 +211,125 @@ struct CouplingVecProbe {
 
 }  // namespace wtm
 
+
+// ---------------------------------------------------------------------------------------------
+// THE ROLLBACK ITSELF: the MEASURED SET, copied -- plus a RUNTIME CHECK on everything else.
+//
+// Andy chose this shape (2026-09-23) over "capture the measured set" and "capture all 39". The
+// measured set alone is smaller but breaks SILENTLY when a new integrator appears, and unlike the
+// scalars there is no syntactic signature a lint could pin. Capturing all 39 cannot go stale but
+// costs ~120 MB at Esquibel's 384,703 cells, linear in the grid. This carries the measured set and
+// lets the RUN verify the enumeration, so a stale list fails loudly instead of losing water.
+//
+// THE CHECK USES FINGERPRINTS, NOT COPIES -- my choice, and it is the only way the shape makes
+// sense: holding copies of the other 21 to compare against would cost exactly the memory the choice
+// was made to avoid. Three norms per Vec (1, 2, infinity) is 3 doubles instead of a grid. WHAT THAT
+// GIVES UP, stated rather than glossed: a mutation that preserves all three norms is invisible to
+// it -- a permutation of entries between ranks, or a sign flip on a symmetric field. It is a
+// tripwire for "this Vec is not inert after all", not a proof of equality.
+//
+// THE SET IS THE 18 MEASURED IN AMENDMENT 5, over seven arms on one fixture. It is a LOWER BOUND
+// (see `ar_best_x` there: restart was enabled and still never fired), which is exactly why the
+// check exists.
+//
+// FOUR OF THE 18 ARE PROVABLY SCRATCH and are captured anyway. tr_head_old is refilled from
+// starting_wtd + topo over the whole owned range on every call (transient_groundwater.cpp:732-740);
+// vol_prev_x is reset at it == 0 of each solve (:1004-1005); tr_fwork and tr_exfil_stage1 are
+// written by SNESComputeFunction and VecCopy before they are read (:1876-1879). Their pre-step
+// contents cannot matter. Capturing them is 4 grid vectors of 18 -- and the asymmetry that decides
+// every question in this file says a wrong prune loses water silently while a wasted copy costs
+// memory and says so. Prune them only with a measurement, never with this paragraph.
+#define WTM_COUPLING_ROLLBACK_LIST(X) \
+  X(exfiltration_vec) \
+  X(fsm_delta_vec) \
+  X(lake_stage) \
+  X(picard_r) \
+  X(rech_vec) \
+  X(sink_removed_dist_vec) \
+  X(starting_wtd) \
+  X(starting_wtd_local) \
+  X(starting_wtd_prev) \
+  X(T_local) \
+  X(tr_exfil_stage1) \
+  X(tr_expl) \
+  X(tr_fwork) \
+  X(tr_head_old) \
+  X(tr_ygamma) \
+  X(vol_prev_x) \
+  X(wtd_global) \
+  X(x)
+
+namespace wtm {
+
+struct CouplingVecSnapshot {
+  static constexpr std::size_t kRollbackVecs = 18;
+
+  std::vector<std::pair<const char*, Vec>> saved;   // full copies: the measured set
+  // name -> {1-norm, 2-norm, inf-norm} for every Vec OUTSIDE the measured set.
+  std::vector<std::pair<const char*, std::array<double, 3>>> outside;
+
+  static std::array<double, 3> fingerprint(Vec v) {
+    std::array<double, 3> f{};
+    VecNorm(v, NORM_1, &f[0]);
+    VecNorm(v, NORM_2, &f[1]);
+    VecNorm(v, NORM_INFINITY, &f[2]);
+    return f;
+  }
+
+  void capture(const AppCtx& uc) {
+    destroy();
+#define X(name) if (uc.name) { Vec d; VecDuplicate(uc.name, &d); VecCopy(uc.name, d); saved.emplace_back(#name, d); }
+    WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+#define X(name) if (uc.name && !in_rollback_set(#name)) outside.emplace_back(#name, fingerprint(uc.name));
+    WTM_APPCTX_VEC_LIST(X)
+#undef X
+  }
+
+  // Put the measured set back, bit-for-bit. Matched by NAME, for the reason changed() is: a step
+  // CREATES Vecs, so positions do not line up across a step.
+  void restore(AppCtx& uc) const {
+#define X(name) if (uc.name) { for (const auto& p : saved) if (std::string(p.first) == #name) { VecCopy(p.second, uc.name); break; } }
+    WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  }
+
+  // THE RUNTIME CHECK. Empty means the enumeration still holds for this run. Anything here is a
+  // rollback that would have been incomplete -- report it loudly; do not filter it.
+  std::vector<std::string> unrestorable(const AppCtx& uc) const {
+    std::vector<std::string> out;
+    // (a) a Vec outside the measured set whose fingerprint moved: the set is too small for this run.
+#define X(name) if (uc.name && !in_rollback_set(#name)) { \
+      for (const auto& p : outside) if (std::string(p.first) == #name) { \
+        const auto now = fingerprint(uc.name); \
+        if (now != p.second) out.emplace_back(std::string(#name) + " moved but is OUTSIDE the rollback set"); \
+        break; } }
+    WTM_APPCTX_VEC_LIST(X)
+#undef X
+    // (b) a Vec in the set that did not exist at capture. Today all four such Vecs are scratch
+    // (see the header note), so this is a NOTICE rather than a defect -- but a future one might be
+    // history, and then restoring nothing into it would be the silent case. So it is reported.
+#define X(name) if (uc.name) { bool had = false; \
+      for (const auto& p : saved) if (std::string(p.first) == #name) { had = true; break; } \
+      if (!had) out.emplace_back(std::string(#name) + " was CREATED during the step; nothing to restore"); }
+    WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+    return out;
+  }
+
+  static bool in_rollback_set(const char* nm) {
+#define X(name) if (std::string(nm) == #name) return true;
+    WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+    return false;
+  }
+
+  void destroy() {
+    for (auto& p : saved) VecDestroy(&p.second);
+    saved.clear();
+    outside.clear();
+  }
+  ~CouplingVecSnapshot() { destroy(); }
+};
+
+}  // namespace wtm

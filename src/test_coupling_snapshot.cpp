@@ -185,3 +185,91 @@ TEST_CASE("coupling vec probe: a changed VALUE is named bare, and an untouched o
   VecDestroy(&uc.x);
   VecDestroy(&uc.lake_stage);
 }
+
+// ---------------------------------------------------------------------------------------------
+// THE VEC ROLLBACK (CouplingVecSnapshot): the measured set is COPIED, everything else is
+// FINGERPRINTED and checked. These pin both halves, and the second one pins the thing that makes
+// the whole shape worth having -- an unmeasured Vec moving is REPORTED rather than lost.
+TEST_CASE("coupling vec snapshot: a Vec in the measured set round-trips EXACTLY") {
+  AppCtx uc;
+  VecCreateSeq(PETSC_COMM_SELF, 4, &uc.lake_stage);
+  VecSetValue(uc.lake_stage, 0, 3.25, INSERT_VALUES);   // distinct entries, so a zeroing "restore"
+  VecSetValue(uc.lake_stage, 1, -7.5, INSERT_VALUES);   // cannot pass by accident
+  VecAssemblyBegin(uc.lake_stage); VecAssemblyEnd(uc.lake_stage);
+
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc);
+  VecSet(uc.lake_stage, 99.0);            // "the step ran"
+  snap.restore(uc);
+
+  const PetscScalar* a;
+  VecGetArrayRead(uc.lake_stage, &a);
+  CHECK(a[0] == 3.25);
+  CHECK(a[1] == -7.5);
+  VecRestoreArrayRead(uc.lake_stage, &a);
+  VecDestroy(&uc.lake_stage);
+}
+
+TEST_CASE("coupling vec snapshot: a Vec OUTSIDE the measured set that moves is REPORTED") {
+  // The reason this shape was chosen over capturing the measured set alone. topo_vec changed on no
+  // arm of the AMENDMENT 5 sweep, so it is fingerprinted, not copied -- and if some configuration
+  // does move it, the run must SAY SO instead of silently failing to roll it back.
+  AppCtx uc;
+  VecCreateSeq(PETSC_COMM_SELF, 4, &uc.lake_stage);   // in the set
+  VecCreateSeq(PETSC_COMM_SELF, 4, &uc.topo_vec);     // outside it
+  VecSet(uc.lake_stage, 1.0);
+  VecSet(uc.topo_vec, 2.0);
+
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc);
+  REQUIRE(snap.outside.size() == 1);       // NOT VACUOUS: there is something to check
+  CHECK(snap.unrestorable(uc).empty());    // nothing moved yet
+
+  VecSet(uc.topo_vec, 2.5);                // a Vec nobody measured moves
+  const auto bad = snap.unrestorable(uc);
+  REQUIRE(bad.size() == 1);
+  CHECK(bad[0] == "topo_vec moved but is OUTSIDE the rollback set");
+
+  VecDestroy(&uc.lake_stage);
+  VecDestroy(&uc.topo_vec);
+}
+
+TEST_CASE("coupling vec snapshot: a set member created DURING the step is reported, not skipped") {
+  // All four Vecs a step creates today are scratch (transient_groundwater.cpp:732, :1004, :1876,
+  // :1877), so this is a notice rather than a defect. It is reported because a FUTURE lazily
+  // created Vec might be history, and then restoring nothing into it is the silent case.
+  AppCtx uc;
+  VecCreateSeq(PETSC_COMM_SELF, 4, &uc.lake_stage);
+  VecSet(uc.lake_stage, 1.0);
+
+  wtm::CouplingVecSnapshot snap;
+  snap.capture(uc);
+  VecCreateSeq(PETSC_COMM_SELF, 4, &uc.tr_head_old);   // lazily allocated by the solve
+  VecSet(uc.tr_head_old, 4.0);
+
+  const auto bad = snap.unrestorable(uc);
+  REQUIRE(bad.size() == 1);
+  CHECK(bad[0] == "tr_head_old was CREATED during the step; nothing to restore");
+
+  VecDestroy(&uc.lake_stage);
+  VecDestroy(&uc.tr_head_old);
+}
+
+TEST_CASE("coupling vec snapshot: the rollback list is a strict subset of the AppCtx Vec list") {
+  // Guards drift this file cannot otherwise see. A rollback name that left AppCtx would not
+  // compile; a rollback list that quietly stopped matching the MEASURED 18 would. Both counts are
+  // asserted, so neither can move alone, and the complement is pinned so the check cannot become
+  // vacuous by the set swallowing everything.
+  std::size_t in_appctx = 0, in_rollback = 0, members_found = 0;
+#define X(name) ++in_appctx; if (wtm::CouplingVecSnapshot::in_rollback_set(#name)) ++members_found;
+  WTM_APPCTX_VEC_LIST(X)
+#undef X
+#define X(name) ++in_rollback;
+  WTM_COUPLING_ROLLBACK_LIST(X)
+#undef X
+  CHECK(in_appctx == 39);
+  CHECK(in_rollback == wtm::CouplingVecSnapshot::kRollbackVecs);
+  CHECK(in_rollback == 18);
+  CHECK(members_found == in_rollback);   // every rollback name IS an AppCtx Vec
+  CHECK(in_appctx - in_rollback == 21);  // and 21 are left for the fingerprint check
+}
