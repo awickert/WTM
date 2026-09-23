@@ -1,8 +1,8 @@
 # RESUME FRAME — read this first, then verify it against git before acting
 
-**HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **567 commits unpushed vs
-`fork/bdf2-adaptive-dt`** (the branch's own tracking ref, and the only comparison that means anything
-here; the remote is named `fork`, and a stale `origin/master` also exists). 52 commits on 2026-09-22/23.
+**HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **commits unpushed vs `fork/bdf2-adaptive-dt`:
+recompute, do not trust a written number** — `git rev-list --count fork/bdf2-adaptive-dt..HEAD` (568 as of 42c205e; the act of writing this figure changes it, which is how the previous version of this line went stale)** (the branch's own tracking ref, and the only comparison that means anything
+here; the remote is named `fork`, and a stale `origin/master` also exists). `git log --since='2026-09-22 00:00' --oneline | wc -l` for the day's count (53 as of 42c205e).
 **Tree:** clean. `README.md`'s coverage table is in `git stash`, deliberately (see below).
 
 Treat every structural claim here as a HYPOTHESIS and check it (branch, HEAD, file, stash) before
@@ -190,7 +190,7 @@ their derivations say so to stop someone "fixing" them.
 
 ## WHAT CHANGED 2026-09-22/23 — the full run, the framework's completion, and #112 starting
 
-*(52 commits since 2026-09-22 00:00. The section above overlaps on 09-22: it covers the #109 +
+*(53 commits since 2026-09-22 00:00 as of 42c205e. The section above overlaps on 09-22: it covers the #109 +
 dt_min arc, this one covers everything after.)*
 
 ### The assertion framework is COMPLETE: 86 bounds, 0 underived, 0 unlinked
