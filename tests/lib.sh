@@ -296,6 +296,20 @@ make_work() {
 # and `iterations: > 1` is REFUSED under impulse and off. A blanket override made those suites fail
 # with a config refusal that said nothing about the physics -- which is a harness error wearing the
 # costume of a finding. Here the impulse arms stay at 1 and only the continuous ones iterate.
+# The coupling iteration (#112) exists ONLY to remove the lag in `continuous` routing:
+# FillSpillMerge's per-cell volume change is handed to the NEXT step as a source, and the
+# extra passes retire that lag.  Under `impulse` (the water table is overwritten in place)
+# and `off` (no FillSpillMerge at all) there is no lagged source, so the model REFUSES an
+# explicit iterations > 1 by name.  A suite whose arms vary routing must therefore vary
+# this key with them -- one literal value for the whole config cannot be right for both.
+# See tests/COUPLING_COVERAGE.md for the rule and the per-suite classification.
+coupling_iters_for() {   # $1 = the arm's routing
+    case "$1" in
+        continuous) printf '4' ;;   # THE SHIPPED DEFAULT (#112)
+        *)          printf '1' ;;   # inert, and an explicit >1 is refused
+    esac
+}
+
 apply_test_iterations() {   # $1 = the emitted config
     local f="$1" n="${WTM_TEST_ITERATIONS:-1}"
     [ "$n" = "1" ] && return 0
