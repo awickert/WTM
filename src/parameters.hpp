@@ -230,10 +230,14 @@ struct Parameters {
   int32_t supplied_wt     = 0;   // run.initial_water_table: omit -> saturated (wtd = 0)   [TODO: folder auto-detect]
   int32_t fsm_on          = 1;   // surface_water.routing: continuous|impulse (off -> 0)
   int32_t runoff_ratio_on = 0;   // surface_water.runoff_ratio: omit -> 0 (off)
-  // surface_water.coupling.iterations (#112): how many times a step re-solves against its OWN
-  // FillSpillMerge output instead of the previous step's. 1 = the lagged scheme, today's behaviour
-  // and the documented opt-out. See benchmark/FSM_COUPLING_ITERATION.md.
-  int32_t coupling_iterations = 1;
+  // surface_water.coupling.iterations (#112): the CAP on how many times a step re-solves against
+  // its OWN FillSpillMerge output instead of the previous step's. A step normally stops earlier,
+  // when the state stops moving at the solver's own water tolerance -- so this binds only where the
+  // coupling is still in motion. ITERATING IS THE DEFAULT (Andy, 2026-09-23: "iterations must be
+  // default for correctness"); `1` is the documented opt-out and reproduces every pre-#112 result.
+  // See benchmark/FSM_COUPLING_ITERATION.md.
+  int32_t coupling_iterations = 4;
+  bool    coupling_iterations_set = false;   // did the CONFIG say so, or is this the default?
   // Total coupling passes actually taken, summed over steps. Reported so the COST of iterating is
   // visible in the run rather than inferred: with the outer stop active a step usually takes 2, and
   // the cap is only reached where the coupling is still moving.

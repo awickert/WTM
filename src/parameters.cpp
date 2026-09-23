@@ -556,7 +556,8 @@ Parameters::Parameters(const std::string& config_file) {
           ". 1 is the lagged coupling (a step uses the PREVIOUS step's FillSpillMerge output); "
           "higher values re-solve the step against its own output. There is no 0: a step that "
           "never solves is not a mode.");
-    coupling_iterations = v;
+    coupling_iterations     = v;
+    coupling_iterations_set = true;
   }
 
   // WHO SIZES THE STEP -- one question, one key (solver.time_step.mode).

@@ -90,9 +90,20 @@ void resolve_defaults(Parameters& params) {
   // overwrites the water table in place rather than feeding a source forward, and under `off` there
   // is no FillSpillMerge at all -- so > 1 pass would re-solve a step against nothing new.
   //
-  // REFUSED BY NAME rather than silently clamped to 1. A request to iterate that quietly does not
-  // iterate is the defect class of #27, #28 and #49, and this key is expensive enough that finding
-  // out afterwards would waste a production run.
+  // A DEFAULT IS NOT A REQUEST. Iterating became the default on 2026-09-23, so a config that never
+  // mentions the key can now arrive here asking for something `impulse` and `off` cannot do --
+  // through no choice of its author. That resolves quietly to 1, with a NOTE, exactly as the
+  // collector default does on Picard above. Only an EXPLICIT `iterations: > 1` is refused: a
+  // request that silently does not happen is the defect class of #27, #28 and #49, and this key is
+  // expensive enough that finding out afterwards would waste a production run.
+  if (params.coupling_iterations > 1 && !params.coupling_iterations_set &&
+      !(params.fsm_on && params.fsm_coupling_continuous)) {
+    params.coupling_iterations = 1;
+    PetscPrintf(PETSC_COMM_WORLD,
+                "NOTE: surface_water.coupling.iterations defaults to 1 under surface_water.routing: %s "
+                "(the coupling is only LAGGED, and so only worth iterating, under `continuous`).\n",
+                !params.fsm_on ? "off" : "impulse");
+  }
   if (params.coupling_iterations > 1 && !(params.fsm_on && params.fsm_coupling_continuous))
     throw std::runtime_error(
         "config: surface_water.coupling.iterations > 1 needs surface_water.routing: continuous "

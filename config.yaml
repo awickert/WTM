@@ -132,15 +132,30 @@ surface_water:
                                # (`mode: ponded` and `mode: removed` both become `off`: they were already
                                # indistinguishable -- the default taper never consults the old evap_mode.)
   coupling:
-    iterations: 1              # how many times a step solves against its OWN FillSpillMerge output (#112).
+    iterations: 4              # CAP on how many times a step solves against its OWN FillSpillMerge
+                               # output (#112). ITERATING IS THE DEFAULT; `1` is the opt-out.
                                # THE LAG THIS ADDRESSES. Under routing: continuous, FSM's per-cell volume
                                # change is fed into the NEXT step's recharge source, so a step never sees
                                # its own runoff -- the coupling is lagged by one step. Iterating removes the
                                # lag: snapshot the state, solve, run FSM, roll back everything EXCEPT FSM's
                                # volume change, and solve the SAME step again with that as its source.
-                               #   1  the lagged scheme. Today's model, and every result published from it.
-                               #   k  k solve+FSM passes per step; the last one is the answer.
+                               #   1  the LAGGED scheme -- a step uses the PREVIOUS step's FSM output.
+                               #      Every result published before 2026-09-23 was produced this way,
+                               #      and every number in benchmark/ describes it.
+                               #   k  up to k solve+FSM passes per step. A step STOPS EARLY, as soon
+                               #      as the state stops moving between passes at the solver's own
+                               #      solver.convergence.water_volume_tol -- so this is a CAP, not a
+                               #      count, and it binds only where the coupling is still in motion.
                                # There is no 0 -- a step that never solves is not a mode, and it is refused.
+                               # WHY 4: measured, not chosen by feel. On the fixtures that exercise the
+                               # coupling a step either settles by pass 2 or does not settle at all (it
+                               # enters a period-2 orbit; see AMENDMENT 10), and raising the cap from 2
+                               # to 8 cost SIX solver calls out of ~250 because the early stop absorbs
+                               # it. 4 leaves headroom for a slower-settling case than any yet measured,
+                               # at a cost the measurements say is near zero.
+                               # A DEFAULT IS NOT A REQUEST: with routing: impulse or off there is no
+                               # lagged source to iterate against, so an UNSTATED key resolves quietly
+                               # to 1 with a note. An EXPLICIT `iterations: > 1` there is refused.
                                # NEEDS routing: continuous, and is REFUSED otherwise by name. Under `impulse`
                                # FSM overwrites the water table in place and under `off` it does not run, so
                                # there is no lagged source to iterate against.
