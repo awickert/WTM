@@ -1,0 +1,122 @@
+# tests/coupling_iteration -- THE CONFIG THIS SUITE RUNS.
+#
+# A REAL FILE, not a generator's output (#83). Every setting the run resolves to is stated below.
+#
+# PROVENANCE: (none) = the suite chose it; # baseline = the model default owned once in
+# tests/CONFIG_BASELINE.md; # <reason> = the model default, examined for THIS suite and owned here.
+#
+# WHAT THIS SUITE MEASURES: surface_water.coupling.iterations (#112) -- whether a step solving
+# against its OWN FillSpillMerge output, instead of the previous step's, is (a) actually happening
+# and (b) rolled back COMPLETELY between passes.
+#
+# THE SUBJECT IS surface_water.coupling.iterations, so it is PER-ARM (@ITER@) rather than fixed.
+# Everything else is held identical across arms: the arms differ in exactly one key, which is what
+# makes the comparison about the coupling rather than about the configuration.
+#
+# surface_water.routing: continuous is a PRECONDITION and not a choice -- it is the only routing
+# under which the coupling is LAGGED, and > 1 iteration is refused by name under impulse and off.
+#
+# TOKENS substituted by run.sh: @INPUTS@, @WORK@, @STEM@, @ITER@.
+
+run:
+  type: equilibrium
+  equilibrium_stop:
+    tol: 0
+    metric: frac   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+    frac: 0.001   # INERT: equilibrium_stop.tol is 0, so nothing reads this
+  initial_water_table: supplied
+time:
+  total: "200yr"
+  report_interval: "5"
+  save_every_n_reports: 9999
+transmissivity:
+  fdepth:
+    a: 200
+    b: 150
+    fmin: 2
+  additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
+surface_water:
+  coupling:
+    iterations: @ITER@   # PER-ARM -- THE SUBJECT. 1 is the lagged scheme (a step uses the
+                         # PREVIOUS step's FillSpillMerge output); k > 1 re-solves the step
+                         # against its own output. See benchmark/FSM_COUPLING_ITERATION.md.
+  routing: continuous   # FSM ON -- the PRECONDITION: no routing, no lakes, nothing to spill
+  runoff_ratio: 0
+  infiltration_during_flow: false
+  collection:
+    method: active_set
+boundaries:
+  land: neumann_toposlope
+solver:
+  method: anderson
+  time_integration: tr-bdf2   # what `anderson` resolves to; the same at every rank count
+  tolerance: 1e-8   # baseline (tests/CONFIG_BASELINE.md)
+  max_iterations: 10000   # baseline (tests/CONFIG_BASELINE.md)
+  t_bar: false   # off -- this suite does not exercise step-averaged transmissivity
+  convergence:
+    metric: volume   # the per-solve step judged in WATER (#61), the shipped default
+    water_volume_tol: 1e-08   # the shipped per-solve water tolerance
+    residual_gate: 1e-05   # baseline (tests/CONFIG_BASELINE.md). #104: the water-step verdict is
+                           # REFUSED while the residual is above this x its initial value -- a
+                           # relative step test cannot tell a converged solve from a stalled one.
+  smoothing:
+    ksat_surface: 0   # baseline (tests/CONFIG_BASELINE.md)
+    ksat_soilbottom: 0   # baseline (tests/CONFIG_BASELINE.md)
+    storativity_surface: 0.01   # baseline (tests/CONFIG_BASELINE.md)
+  anderson:
+    restart:
+      enabled: false   # baseline (tests/CONFIG_BASELINE.md)
+      rho: 0.9   # baseline (tests/CONFIG_BASELINE.md)
+      patience: 2   # baseline (tests/CONFIG_BASELINE.md)
+      max_it: 40   # baseline (tests/CONFIG_BASELINE.md)
+      max_restarts: 30   # baseline (tests/CONFIG_BASELINE.md)
+  time_step:
+    mode: adaptive   # what the model resolves; identical at every rank count
+    dt: 31536000
+    dt_min: "315.36s"   # controller floor, required on an explicit mode: adaptive (#109). 1e-5 x dt is
+                        # WTM's own scale-free choice, and what the removed default computed. NOT
+                        # MODFLOW's recommendation, whose 1e-5 is an ABSOLUTE length in model time
+                        # units, recommended for reporting alignment rather than accuracy. MODFLOW
+                        # and ParFlow are the precedent for REQUIRING a floor, not for its value.
+                        # See benchmark/BDF2_ADAPTIVE_DESIGN.md.
+    error_tol: 0.5   # the resolved adaptive target
+    grow: 1.5   # baseline (tests/CONFIG_BASELINE.md)
+    shrink: 0.25   # baseline (tests/CONFIG_BASELINE.md)
+    grow_if_niter_leq: 8   # baseline (tests/CONFIG_BASELINE.md)
+    max_retries: 15   # baseline (tests/CONFIG_BASELINE.md)
+    norm: rms   # baseline (tests/CONFIG_BASELINE.md)
+dev:
+  storage_form: volume   # exact dV rather than the secant approximation
+  under_relaxation: 1   # baseline (tests/CONFIG_BASELINE.md)
+parallel:
+  threads_per_rank: 1   # baseline (tests/CONFIG_BASELINE.md)
+evaporation:
+  et_sigmoid:
+    wtd_center: 0.05   # the SHIPPED ET sigmoid; evaporation is active here, so this shape is part of what is measured
+    logistic_width: 0.1   # as above -- shipped ET sigmoid shape
+  extinction_depth: 8   # shipped extinction depth
+  tapers:
+    surface_transition: true   # both tapers SHIPPED-ON; the result is obtained under the default taper configuration
+    depth_extinction: true   # as above -- shipped taper configuration
+io:
+  source: '@INPUTS@'
+  region: 'coupling_iteration'
+  time_start: 't0'
+  time_end: 't0'
+output:
+  outfile_prefix: '@WORK@/@STEM@_'
+  run_log: '@WORK@/@STEM@.txt'
+  extra_rasters:            # additional rasters beside the water table. Same map shape as
+                            # trace. The ordinary snapshot is the model's answer (an error
+                            # against it is the WTM ERROR); post_groundwater is the solve's
+                            # answer before FillSpillMerge (the POST-GROUNDWATER ERROR).
+    post_groundwater: false
+  trace:
+    dt: false
+    water_step: false
+    budget: false
+    fsm: false
+  verbosity: normal   # baseline (tests/CONFIG_BASELINE.md)
+  directory: '@WORK@/@STEM@_prov'
+  if_exists: overwrite
+

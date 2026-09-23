@@ -168,6 +168,10 @@ run "water-budget closure (schemes)" ./budget_closure/run.sh "$WTM"
 run "multi-lake stages vs dt"       ./multilake/run.sh "$WTM"
 run "solve-count invariance"        ./dt_invariance/run.sh "$WTM"
 run "coupling convergence"          ./coupling_convergence/run.sh "$WTM"
+# #112. Asserts the passes are REAL before asserting anything about the answer: a dead iteration
+# loop leaves every answer-comparison in this suite passing, which is how the feature first shipped
+# green with nothing running it.
+run "coupling iteration (#112)"     ./coupling_iteration/run.sh "$WTM"
 run "per-step water ledger"         ./budget_step_ledger/run.sh "$WTM"
 run "serial rank-0 recharge path"   ./serial_recharge/run.sh "$WTM"
 run "local-in-space water ledger"   ./local_ledger/run.sh "$WTM"

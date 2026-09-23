@@ -24,6 +24,10 @@ exempt_reason() {
         fsm_cascade/run.sh)       echo "MPI identity: 1 rank vs 4 (wk vs wk4), unit-agnostic" ;;
         fsm_fullness/run.sh)      echo "MPI identity: 1 rank vs 4 (wk vs wk4), unit-agnostic" ;;
         xrank_growth/run.sh)      echo "cross-rank drift: an identity comparison, unit-agnostic" ;;
+        # #112. INVARIANT compares two runs that differ in ONE config key and must produce the SAME
+        # field -- structurally the identity claim above, not a water-table accuracy claim in head.
+        # Measured 0.000e+00 m, where head and volume agree by definition.
+        coupling_iteration/run.sh) echo "k=1 vs k>1 identity: two runs that must agree, unit-agnostic" ;;
         ghost_cell/check_results.py) echo "MPI identity across ranks, unit-agnostic" ;;
         mpi_consistency/compare.py)  echo "MPI identity across ranks, unit-agnostic" ;;
         taper/taper_test.py)         echo "MPI identity across ranks, unit-agnostic" ;;
