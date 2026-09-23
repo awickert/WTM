@@ -1,10 +1,8 @@
 # RESUME FRAME — read this first, then verify it against git before acting
 
-**HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **544 commits unpushed vs
-`fork/bdf2-adaptive-dt`** (the branch's own tracking ref, and the only comparison that means
-anything here). The remote is named `fork`, not `origin`; a stale `origin/master` ref also exists and
-is 1187 behind, which is why an earlier version of this line said "1105 vs origin" and was measuring
-the wrong thing.
+**HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **567 commits unpushed vs
+`fork/bdf2-adaptive-dt`** (the branch's own tracking ref, and the only comparison that means anything
+here; the remote is named `fork`, and a stale `origin/master` also exists). 52 commits on 2026-09-22/23.
 **Tree:** clean. `README.md`'s coverage table is in `git stash`, deliberately (see below).
 
 Treat every structural claim here as a HYPOTHESIS and check it (branch, HEAD, file, stash) before
@@ -19,20 +17,25 @@ SCOPE** — do not reintroduce it as an open item.
 
 | # | state |
 |---|---|
-| 77 | a measurement on the record, no action claimed. Not open. |
+| 77 | **CLOSED 2026-09-23.** It was a record that said MEASURED and carried no measurement. `tests/CONFIG_BASELINE.md` now has it: iterations flat 14735 -> 14728, answer identical to machine precision under `active_set`, while `explicit` moves both — **and the SCOPE caveat that had been lost**: one 18x18 equilibrium fixture, NOT the cold-start-at-scale regime the smoothing was introduced for. The width is inert WHERE MEASURED; that is not the same as the smoothing being removable. |
 | **84** | **SUPERSEDED 2026-09-20 by #113-#116.** It was question 4 of six. The framework is now `tests/ASSERTION_HEALTH.md`. |
 | **113** | **DONE 2026-09-22.** Spread measured across 32 suites and it is ZERO everywhere; 67 of 69 bounds declare it. The 2 that do not are outside the framework by nature (see 5e). |
 | **114** | **DONE 2026-09-22.** 0 of 74 bounds underived. Five MORE bounds were found and promoted en route – they were Python locals inside heredocs, so #121's sweep could not see them. |
 | **115** | **DONE 2026-09-22.** 32 suites probed; all 14 bite guards proven live. Every CANNOT PROBE turned out to be a missing marker, not a defect, and all were fixed. |
-| **116** | **DISSOLVED.** 1 of 22, not 6, and that 1 was stale scan data. |
+| **116** | **RE-OPENED then CLOSED 2026-09-22.** Its own note said "confirm at the finale run" — the finale run said **21 of 149 unlinked, not 1 of 22**, so the dissolution had been measured on a subset. The note that scheduled the check is what caught it. Resolved by #126. |
 | **109** | **DONE 2026-09-21.** No default: an explicit `mode: adaptive` must STATE `dt_min`, following MODFLOW 6 and ParFlow, which require it the same way. 27 configs migrated at `1e-5 × dt`, behaviour-preserving by construction and proven by `golden` 35/35 unmoved. |
 | **124** | **PARKED BY ANDY** ("when I have time to take the decisions"). `dt_min` is the wrong SHAPE: the ERROR TARGET, not the step size, sets how small `dt` must go. **`tests/boundary_consistency/config.yaml` is on a TEMPORARY `dt_min: "0s"` and a green suite must not launder that into permanence.** Options were A (per-suite small floor), B (`"0s"` here – APPLIED, temporarily) and C (revisit the ratio generally – DONE, and it REFUTED the tidy fix: `boundary_analytic` carries the same `error_tol: 1e-08` and the same `24.192 s` floor and never engages it, so stiffness decides, not the setting). There is no option D; an earlier note saying "four options" was wrong. |
 | **111** | The corsica oscillation: fully characterised, mechanism NOT known. See `examples/island_equilibrium/OSCILLATION.md`. Not a work item unless the last candidate is to be tested. |
-| **112** | **PARKED PLAN** by Andy, and **UPGRADED 2026-09-22: iteration is to be WTM's DEFAULT method, with 1 pass as the opt-out** — the transient lag (17.6% on a restart) is where spin-up, WTM's actual job, spends its time. This moves every golden and re-labels every benchmark as a 1-pass measurement. **Design + amendment: `benchmark/FSM_COUPLING_ITERATION.md`**, verbatim from the task store. It recommends structure B (snapshot/restore at the WTM.cpp level, keeping FSM outside the solver) and names the BYTE-IDENTICAL GUARD to build FIRST. The rollback surface is NINE accumulators plus elapsed_time_s, the step record, starting_wtd/lake_stage and the BDF2 history — not the two of #41, because that path returns ABOVE the commit block. |
+| **112** | **IN PROGRESS 2026-09-23** — steps 1 and 2 committed and INERT. Andy: **iteration is the DEFAULT, 1 pass the opt-out**; **plain Picard**; config key unnamed (his). Design + FOUR amendments at `benchmark/FSM_COUPLING_ITERATION.md`. **NEXT = re-measure the full step OUT-OF-PROCESS: the in-loop probe PERTURBS the run (fsm_cascade rc 0 -> 2), so the INSTRUMENT is wrong, not the brackets.** The guards already caught the design's own lists being wrong twice — a TENTH accumulator, and a Vec list that was 1-of-3. |
+
+| **125** | **DONE 2026-09-23.** The MODFLOW mis-citation survived in the two places a user reads — the refusal message and the shipped `config.yaml`. Value unchanged; the false attribution dropped. |
+| **126** | **DONE 2026-09-22.** FIVE suites were never onboarded into the assertion framework. 21 unlinked rows: 2 never a defect, 3 COMPUTED-from-config and must stay so, 16 real. |
+| **127** | **OPEN, needs Andy.** The ramp RECORDS a `dt_min` it never reads, so `full_config.yaml` asserts a floor that did not act (#27/#35 class). Needs per-arm rendering across 4 suites + a run, and a refuse-vs-stop-emitting decision that is his. |
 
 Closed 2026-09-17/18: **#60** (its missing case FOUND), **#85**, **#90**, **#98**, **#108**, **#110**.
 Closed 2026-09-21/22: **#109**, **#113**, **#114**, **#115**, **#117**–**#123** (the framework's own
 tooling), and **#116** dissolved.
+Closed 2026-09-22/23: **#77**, **#116** (properly, via #126), **#125**, **#126**.
 
 ## THE RULES THAT GOVERN HOW TO WORK HERE
 
@@ -185,45 +188,159 @@ recorded, not changed. Several OTHER blunt bounds are blunt CORRECTLY – the co
 (`XS_DIFF_MIN`, `LF_DISTINCT_MIN`, `DISTINCT_MIN`) ask a yes/no question, not a size question, and
 their derivations say so to stop someone "fixing" them.
 
-## THE ONE REAL OPEN ITEM
+## WHAT CHANGED 2026-09-22/23 — the full run, the framework's completion, and #112 starting
 
-`README.md`'s coverage table is in `git stash` — find by MESSAGE, `git stash list | grep 'README
-coverage table'`, never by index. It needs a full `tests/run_all.sh`, which doubles as the end-to-end
-green check. **NO LONGER BLOCKED:** `#109` is done and the assertion framework is built, so the next
-full run both regenerates this table and settles the coverage question.
+*(52 commits since 2026-09-22 00:00. The section above overlaps on 09-22: it covers the #109 +
+dt_min arc, this one covers everything after.)*
+
+### The assertion framework is COMPLETE: 86 bounds, 0 underived, 0 unlinked
+
+**THE INVERSION RULE is the idea to carry.** Spread was measured at ZERO on every assertion across
+32 suites — nothing in this tree flakes. So headroom CANNOT express flake risk; it measures
+SENSITIVITY alone, and **a LOW headroom is a SHARP test, not a fragile one.** Misreading that is
+what started the whole arc.
+
+Every bound now declares its measured spread and says where its number came from. `#113`, `#114`,
+`#115`, `#116`, `#117`-`#123`, `#125`, `#126` all closed.
+
+**Five tooling bugs, every one found by disbelieving a NUMBER rather than by reading code:**
+the spread note marked all 49 underived bounds *derived* (it says "measured", and `MEASURED` is a
+derivation keyword — the tool would have reported no work left because of its own annotation); a
+substring arm-label overwrote the exact bound name (26 rows, 5 verdicts flipped); five bounds were
+Python locals inside heredocs, invisible to `#121`'s sweep; seven assertions ran, passed and printed
+no bound; and `recharge_consistency` was already derived with the note sitting BELOW the definition.
+
+**`#126` found the framework's coverage was a SUBSET of the tree and nothing said so.** Of 21
+unlinked rows: 2 were never a defect (a correct bound the TOOL could not see, because its name
+lacked TOL/MIN/MAX/FLOOR/BAR — now documented in sec 5d-ter), 3 are COMPUTED from the run's own
+config and must STAY that way (sec 5c-bis says so explicitly), 16 were real.
+
+### The full suite ran GREEN — and is now ONE RUN BEHIND
+
+`tests/run_all.sh`: **46/46, exit 0, 547 s**, 2026-09-22. It regenerated `README.md` and
+`tests/COVERAGE.md` (375 runs, 192 tests, 36 combinations, 18 uncovered crossings), which is what
+the stashed table had been waiting for since 2026-09-16. **`#126` then touched 7 suites and `#125`
+touched `src/` and `config.yaml`, so that green result and the table are ONE RUN BEHIND.** Andy
+declined a re-run. Do not describe the tree as currently green without saying this.
+
+The ONE failure was `benchmark/mass_balance_config.yaml` still using `trace: []`, retired
+2026-09-16 — **`#101`'s class, third occurrence**: a vocabulary migration that sweeps `tests/` and
+leaves `benchmark/` behind. The harness had also sent the model's explanation to `/dev/null`.
+
+**The assertion tool was BLIND under `run_all.sh`** — it keys bounds by suite DIRECTORY and looked
+them up by the `.out` FILENAME, which `run_all` built from the display label. All 149 rows read
+`unlinked`. Correct standalone, useless in the mode that gates a release.
+
+### Two claims I propagated between documents, both refuted by files already in `benchmark/`
+
+- **FSM is NOT the serial ceiling.** `benchmark/esquibel/FSM_COST.md` measured it: GW solve ~99.7%,
+  FSM **0.142%** mean and 0.00007% at cold start. Parallelizing FSM has no speed case; the driver
+  is memory. I asserted the opposite twice and committed it.
+- **MODFLOW's `1e-5` is an ABSOLUTE length**, not a ratio to the step. The ~35-file correction had
+  reached every derived surface and missed the two a user actually reads: the refusal message and
+  the shipped `config.yaml`.
+
+**CHECK THE REPO BEFORE REPEATING THE REPO.**
+
+### `#112` STARTED — steps 1 and 2 committed, and both found the design wrong
+
+Andy took `#112` off the parked list on 2026-09-23. The design lives at
+**`benchmark/FSM_COUPLING_ITERATION.md`** — verbatim from the task store, plus FOUR amendments. It
+was never lost: it had been in the task's DESCRIPTION all along and I read only the SUBJECT.
+
+**HIS DECISIONS, which changed the design:**
+1. **ITERATION IS THE DEFAULT; 1 pass is the opt-out.** Not an option bolted on. The transient is
+   where spin-up — WTM's actual job — spends all its time.
+2. **Plain Picard.** Backed by the ~3x-per-step transient decay, implying contraction ~0.3.
+3. **The config key is unnamed. That is his.**
+
+**HIS TWO CORRECTIONS, both sharper than my analysis:**
+- **The settled-regime number is NOT the coupling error.** At a fixed point `w_{n+1} = w_n`, so
+  `FSM(w_n)` and `FSM(w_{n+1})` are the SAME ARRAY — the lag is IDENTICALLY ZERO by construction.
+  The design's headline `1.58e-06 settled` measures DISTANCE FROM EQUILIBRIUM. **The lag is
+  DEFINITIONALLY transient-only.** It also means both schemes share a fixed point, so equilibrium
+  goldens should NOT move physically — only by ~the stop tolerance.
+- **"Arbitrary but consistent?"** Yes — deterministic tie-break, reproducing bit-identically at
+  n=1 vs n=4. That buys **EXACT bitwise cycle detection**: `w^{k+2} == w^k` proves a period-2 orbit.
+  He has asked this more than once, which means the DOCS were wrong; `CHANGELOG.md` said "if you
+  need a deterministic outlet, add a gradient", implying non-determinism. Corrected.
+
+**THE GUARDS EARNED THEMSELVES TWICE — the design's "enumerated from source, not assumed" lists
+were wrong BOTH times:**
+- It said NINE accumulators. There are **TEN**: `total_storage_change` reads as derived but is
+  accumulated independently (`transient_groundwater.cpp:883` `+=`, `:2442` `-=`). Caught by
+  `tests/lint_norms.sh` on its FIRST run, before anything depended on the list.
+- It named `starting_wtd, lake_stage, rech_vec` for the Vecs. Measured across the coupling call,
+  the three that change are **`fsm_delta_vec  lake_stage  wtd_global`** — one right, two missed.
+
+**THE NEGATIVE RESULT THAT SETS THE NEXT ACTION: the in-loop probe PERTURBS the run.**
+Instrumenting solve+couple took `tests/fsm_cascade` from rc=0 to rc=2; reverting restored it.
+Almost certainly `VecEqual` being a COLLECTIVE, 39 of them inside the step loop. **A measurement
+instrument that changes what it measures is useless — do not just move the brackets.**
+
+**NEXT ACTION: measure the full step OUT-OF-PROCESS** — capture during, compare after the loop
+exits, or dump Vecs and diff externally. Precedent: the 2026-09-18 lag numbers came from two raster
+series with NO code change.
+
+**Committed and INERT** (nothing in the model calls it): `src/coupling_snapshot.hpp`,
+`src/test_coupling_snapshot.cpp` (in `test_dmda.x`), the `lint_norms.sh` set-equality guard.
+Verified: `strings build/wtm.x | grep -c "FULLSTEP\|PROBE step"` is **0**.
+
+**STILL UNMEASURED, and both gate the design:** the COLD-START lag (needs NO code — two raster
+series — and sizes both the cap and the convergence tolerance), and what a warm-started pass 2 costs
+in inner iterations (decides whether iterating is ~2x the cycle or a few percent, since **each outer
+pass is a full GW RE-SOLVE**, not a cheap FSM call).
+
+## THE README COVERAGE TABLE — DONE 2026-09-22, and the stash is SUPERSEDED
+
+`run_all.sh` regenerates `README.md` and `tests/COVERAGE.md` itself, so the 46/46 green run wrote
+them: **375 runs across 192 tests, 36 combinations, 18 uncovered crossings** (was 364/199).
+Verified there was NO coverage regression — same 36 combinations, none removed, and not one cell
+went from tested to zero, checked cell by cell against HEAD rather than by reading the diff.
+
+The delta is fully accounted for: three test labels vanished and they are exactly `#98`'s deleted
+redundant arms (`budget_closure/a_as`, `c_im`, `tr_as`); two appeared — `budget_closure/c_rof`
+(`#98`'s gap closure) and **`mass-balance_MPI`, which shows up only now because it was FAILING and
+therefore recorded no runs.** Worth knowing about this document: a suite that cannot run is
+invisible to it — it reads as absent, not as broken.
+
+**The stash is SUPERSEDED, NOT APPLIED, and NOT DROPPED.** `git stash list | grep 'README coverage
+table'` — find by MESSAGE, never by index. It is labelled WRONG in its own message (built from
+PARTIAL runs) but it is the only copy of that state, so discarding it is Andy's call, not mine.
 
 ## NEXT-SESSION GOALS, in order
 
-**Agreed with Andy 2026-09-22.** The frame update below was moved AHEAD of the full run for a
-reason: a full `run_all.sh` plus fixing what it finds is the longest operation on the list and
-therefore the likeliest moment to lose context. Updating the continuity artifact afterwards is
-backwards.
+**Everything below is parked by Andy or waiting on his decision. Nothing is blocked on me.**
 
-1. **A full `tests/run_all.sh` — 46 suites.** The precondition is met and nothing else gates it.
-   It closes three things at once: the end-to-end green check nothing has had since these changes;
-   the **11 adaptive suites not exercised in the 2026-09-22 sweep** (`adaptive_restart`,
-   `fsm_consistency`, `ghost_boundary`, `golden`, `lake_evap_equals_et`, `limit_cycle`,
-   `log_schema`, `mpi_consistency`, `storage_equivalence`, `taper`, `variable_porosity` — 16 of 27
-   adaptive suites DID run green); and the regeneration of the stashed `README.md` table.
-   **Expect failures.** Andy expects them too: "I expect errors to come up on our full-suite run
-   because we have not run it. But I expect that the net effort will still be less than running the
-   full suite more frequently."
-2. **Fix what it finds, ONE AT A TIME**, committing each. Do not batch, and do not hand the whole
-   failure list back for disposal — surface it, keep the order, let Andy pull the next item.
-3. **Regenerate the stashed `README.md` coverage table** from that run. Find the stash by MESSAGE.
-4. **`#124`** with real data: the 11 suites above are the evidence for whether any floor other than
-   `boundary_consistency`'s binds. **Its `dt_min: "0s"` is TEMPORARY** and a green run does not make
-   it permanent.
-5. **`#112`** if wanted — design at `benchmark/FSM_COUPLING_ITERATION.md`. Build the byte-identical guard FIRST.
-6. **`#127`** — the ramp path records a `dt_min` it never reads, so `full_config.yaml` asserts a floor that
-   did not act. Needs per-arm config rendering and a run to verify; carries a decision (refuse vs. stop
-   emitting) that is Andy's.
-7. **`#111`'s last candidate** if wanted — FSM's overland TRANSPORT of half the water budget, the
-   one pathway absent from every reduction that settled.
+1. **`#112` step 2b — re-measure the Vec rollback surface across the FULL step, OUT-OF-PROCESS.**
+   The in-loop probe perturbs the run, so this needs a different INSTRUMENT, not different brackets.
+   Loop map for the brackets when the instrument is right: adaptive 839/856,
+   newton_continuation 893/916, fixed 930/934.
+   Then: restore for the measured set -> step 0's refactor (factor `solve + couple` into ONE
+   function; 4 call sites, 3 loops; prove answer-neutral with `golden`) -> config key -> the Picard
+   loop with a cap and the EXACT bitwise cycle detector -> the end-to-end byte-identical guard
+   (k>1 with unchanged source must equal k=1) -> `config.yaml` + CHANGELOG.
+
+2. **The two measurements that gate `#112`'s design, and the first needs NO code:**
+   the COLD-START lag (two raster series, as on 2026-09-18) and the warm-started pass-2 cost.
+
+3. **`#124`** — `dt_min`'s SHAPE. Andy's decision. `tests/boundary_consistency/config.yaml` sits on
+   a TEMPORARY `dt_min: "0s"`; a green suite must not launder that into permanence.
+
+4. **`#127`** — the ramp RECORDS a `dt_min` it never reads. Per-arm config rendering across 4
+   suites plus a run, and a refuse-vs-stop-emitting decision that is his.
+
+5. **`#111`'s last candidate** if wanted — FSM's overland TRANSPORT of half the water budget. Its
+   metric-artifact hypothesis is ALREADY EXCLUDED by measurement (row 1 of `OSCILLATION.md`: pre-
+   and post-FSM metrics agree to 1e-12). Do not re-raise it.
+
+6. **A confirming `run_all.sh`** whenever a green baseline is wanted again — the 46/46 of
+   2026-09-22 predates `#125` and `#126`.
 
 **What is NOT a goal:** at-scale validation; re-running corsica/newton to the cap; proposing a sixth
-mechanism for the oscillation without testing one of the named candidates first; retightening the
-four blunt bounds without Andy deciding what the suites should accept.
+mechanism for the oscillation without testing a named candidate; retightening the four
+blunt-without-excuse bounds (`fsm_cascade` CONS_TOL 3.3e8, `fsm_conservation` TOL 7500, the two
+MB_TOLs ~4000) without Andy deciding what the suites should accept.
 
 ## READINESS
 
