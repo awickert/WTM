@@ -626,6 +626,46 @@ pre-coupling) and an emit (once, after the loop). At `iterations: 1` it is arith
 to the single call it replaces -- same sample point, same order, and the running previous-values
 advance exactly once per step.
 
+**AMENDMENT 13 — THE DEFAULT IS FLIPPED, and the parallel pass found ONE real difference.**
+
+Andy, 2026-09-23: *"Flip the default. Current configs are for 1, and should have versions in
+parallel built for convergence."* Both done (231ec50, cd5567b).
+
+**THE FLIP MOVED NOTHING, structurally rather than luckily.** All 47 suite configs DECLARE
+`iterations: 1`, so the existing suite still measures the lagged scheme: `golden` 35/35 unmoved.
+The default (4) applies to configs that do not state the key -- which is the shipped `config.yaml`
+and any user config.
+
+**THE PARALLEL PASS: 47 suites -> 55.** The eight `routing: continuous` suites run a second time
+with the iterating default, asserting the same things. Seven pass unchanged. **One does not**, and
+it is the accuracy question Andy raised, arriving as data:
+
+    converged: multilake
+    FAIL  CONVERGENT/b  stage difference ratios on dt halving
+                        [0.712, 0.519, 0.5, 0.497]   (first order => ~0.5, need 0.3..0.7)
+
+The three finer ratios are first-order to two figures. **The COARSEST dt is not**: 0.712 against a
+band of 0.3..0.7. So under the iterated coupling this fixture's dt-convergence degrades at coarse
+dt while remaining first-order once dt is small enough. Left FAILING rather than exempted: it is a
+measured property of the new default, and the one fixture that has so far been able to see any
+difference at all between the two schemes.
+
+**WHAT IT DOES NOT SHOW.** Nothing here says the iterated answer is WORSE -- a convergence-rate
+band is not an accuracy comparison against a truth. It says the two schemes differ in how they
+approach the dt->0 limit, on the only fixture sensitive enough to tell, and that a bound written
+for the lagged scheme does not hold for the iterated one.
+
+**ACCURACY VERSUS COMPUTE, which Andy flagged as needing a decision.** The compute side is settled
+and cheap: the outer stop makes iterating ~2x the lagged scheme, and the cap is nearly free (cap 2
+-> 8 costs six solver calls). The accuracy side CANNOT YET BE DECIDED, and this is the honest
+state: every fixture in the suite equilibrates inside one report interval, where the lag is
+definitionally zero, so none of them can show what iterating BUYS. The multilake ratio is the only
+signal any of them produce, and it is about convergence rate, not accuracy.
+
+**So the decision needs the measurement that has been outstanding since the plan was written: the
+COLD-START LAG.** Until a fixture holds a sustained transient, "accuracy versus compute" has compute
+measured and accuracy unmeasured, and any trade chosen now would be chosen on one number out of two.
+
 **The blast radius, stated so the decision carries its full cost.**
 
 - **Every golden reference moves,** and every benchmark number in `benchmark/` describes a mode that
