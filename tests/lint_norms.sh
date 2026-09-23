@@ -112,6 +112,22 @@ else
     fi
 fi
 
+
+# ONE BOUND PER LINE. Two bounds on one source line SHARE the comment block above it, so
+# assertion_health.py credits the second with the first's derivation -- a FALSE DERIVED, the same
+# shape as the spread-note and arm-label bugs (tests/ASSERTION_HEALTH.md). limit_cycle's MB_TOL sat
+# that way and was reported derived while its block described TOL only. Found by audit, not by the
+# tool; this makes the tool find the next one.
+multi=$(grep -nE '([A-Z_]*(TOL|MIN|MAX|FLOOR|BAR)[A-Z_]*)="\$\{[A-Z_]+:-[^}]*\}".*[A-Z_]*(TOL|MIN|MAX|FLOOR|BAR)[A-Z_]*="\$\{' */run.sh 2>/dev/null || true)
+if [ -n "$multi" ]; then
+    echo "  FAIL  two bounds share a LINE, so they share a derivation block:" >&2
+    printf '%s\n' "$multi" | sed 's/^/        /' >&2
+    echo "        Split them onto separate lines and give each its own derivation." >&2
+    fail=1
+else
+    echo "  OK   ONE BOUND PER LINE  no bound inherits another's derivation block"
+fi
+
 [ "$fail" -eq 0 ] && echo "LINT: no head-norm comparison, no continuation that continues into nothing" \
                   || echo "LINT: FAILED"
 exit $fail

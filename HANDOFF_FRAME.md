@@ -19,22 +19,21 @@ SCOPE** — do not reintroduce it as an open item.
 |---|---|
 | 77 | **CLOSED 2026-09-23.** It was a record that said MEASURED and carried no measurement. `tests/CONFIG_BASELINE.md` now has it: iterations flat 14735 -> 14728, answer identical to machine precision under `active_set`, while `explicit` moves both — **and the SCOPE caveat that had been lost**: one 18x18 equilibrium fixture, NOT the cold-start-at-scale regime the smoothing was introduced for. The width is inert WHERE MEASURED; that is not the same as the smoothing being removable. |
 | **84** | **SUPERSEDED 2026-09-20 by #113-#116.** It was question 4 of six. The framework is now `tests/ASSERTION_HEALTH.md`. |
-| **113** | **DONE 2026-09-22.** Spread measured across 32 suites and it is ZERO everywhere; 67 of 69 bounds declare it. The 2 that do not are outside the framework by nature (see 5e). |
-| **114** | **DONE 2026-09-22.** 0 of 74 bounds underived. Five MORE bounds were found and promoted en route – they were Python locals inside heredocs, so #121's sweep could not see them. |
-| **115** | **DONE 2026-09-22.** 32 suites probed; all 14 bite guards proven live. Every CANNOT PROBE turned out to be a missing marker, not a defect, and all were fixed. |
+| **113** | **DONE 2026-09-22.** Spread measured and it is ZERO everywhere. **Counts move as suites are onboarded — recompute, do not quote: `cd tests && python3 -c "from assertion_health import source_evidence; b,_=source_evidence('.'); print(sum(len(a) for a in b.values()))"`** (86 across 37 suites as of d4a7bcc). The 2 that do not are outside the framework by nature (see 5e). |
+| **114** | **DONE 2026-09-22.** 0 bounds underived (86 as of d4a7bcc; see #113's row for the recompute). Five MORE bounds were found and promoted en route – they were Python locals inside heredocs, so #121's sweep could not see them. |
+| **115** | **DONE 2026-09-22.** 32 suites probed at the time; all 14 bite guards then existing proven live. **#126 later onboarded 5 more suites, so 25 floors now exist and three of them postdate the bite sweep** (`coupling_convergence/GAP_MIN`, `RATE_MIN`, `multilake/SPREAD_MIN`) — each was individually proven to bite when added, but no single sweep covers all 25. Every CANNOT PROBE turned out to be a missing marker, not a defect, and all were fixed. |
 | **116** | **RE-OPENED then CLOSED 2026-09-22.** Its own note said "confirm at the finale run" — the finale run said **21 of 149 unlinked, not 1 of 22**, so the dissolution had been measured on a subset. The note that scheduled the check is what caught it. Resolved by #126. |
 | **109** | **DONE 2026-09-21.** No default: an explicit `mode: adaptive` must STATE `dt_min`, following MODFLOW 6 and ParFlow, which require it the same way. 27 configs migrated at `1e-5 × dt`, behaviour-preserving by construction and proven by `golden` 35/35 unmoved. |
 | **124** | **PARKED BY ANDY** ("when I have time to take the decisions"). `dt_min` is the wrong SHAPE: the ERROR TARGET, not the step size, sets how small `dt` must go. **`tests/boundary_consistency/config.yaml` is on a TEMPORARY `dt_min: "0s"` and a green suite must not launder that into permanence.** Options were A (per-suite small floor), B (`"0s"` here – APPLIED, temporarily) and C (revisit the ratio generally – DONE, and it REFUTED the tidy fix: `boundary_analytic` carries the same `error_tol: 1e-08` and the same `24.192 s` floor and never engages it, so stiffness decides, not the setting). There is no option D; an earlier note saying "four options" was wrong. |
 | **111** | The corsica oscillation: fully characterised, mechanism NOT known. See `examples/island_equilibrium/OSCILLATION.md`. Not a work item unless the last candidate is to be tested. |
 | **112** | **IN PROGRESS 2026-09-23** — steps 1 and 2 committed and INERT. Andy: **iteration is the DEFAULT, 1 pass the opt-out**; **plain Picard**; config key unnamed (his). Design + FOUR amendments at `benchmark/FSM_COUPLING_ITERATION.md`. **NEXT = re-measure the full step OUT-OF-PROCESS: the in-loop probe PERTURBS the run (fsm_cascade rc 0 -> 2), so the INSTRUMENT is wrong, not the brackets.** The guards already caught the design's own lists being wrong twice — a TENTH accumulator, and a Vec list that was 1-of-3. |
-
 | **125** | **DONE 2026-09-23.** The MODFLOW mis-citation survived in the two places a user reads — the refusal message and the shipped `config.yaml`. Value unchanged; the false attribution dropped. |
 | **126** | **DONE 2026-09-22.** FIVE suites were never onboarded into the assertion framework. 21 unlinked rows: 2 never a defect, 3 COMPUTED-from-config and must stay so, 16 real. |
 | **127** | **OPEN, needs Andy.** The ramp RECORDS a `dt_min` it never reads, so `full_config.yaml` asserts a floor that did not act (#27/#35 class). Needs per-arm rendering across 4 suites + a run, and a refuse-vs-stop-emitting decision that is his. |
 
 Closed 2026-09-17/18: **#60** (its missing case FOUND), **#85**, **#90**, **#98**, **#108**, **#110**.
 Closed 2026-09-21/22: **#109**, **#113**, **#114**, **#115**, **#117**–**#123** (the framework's own
-tooling), and **#116** dissolved.
+tooling). **#116 was dissolved here and that dissolution was REFUTED — see its row above.**
 Closed 2026-09-22/23: **#77**, **#116** (properly, via #126), **#125**, **#126**.
 
 **TWO NUMBERING SYSTEMS COLLIDE — check which one a `#N` means.** The numbered list above is the
@@ -48,8 +47,8 @@ code. When in doubt, the task list is authoritative for task numbers and `git lo
 
 - **Do not run the full suite at will.** Run the affected suites. **The precondition Andy set for
   the one full run is now MET** – "I think that we should make the new suites before testing
-  anything", and #113/#114/#115 are closed – so the next full `run_all.sh` is sanctioned and
-  expected. His concern was never the time: it was that a big failure list would pull focus off the
+  anything", and #113/#114/#115 are closed – so the full `run_all.sh` was sanctioned and RAN on 2026-09-22 (46/46). A further run is sanctioned whenever a
+  fresh baseline is wanted. His concern was never the time: it was that a big failure list would pull focus off the
   items still open. That is the reason to run it only when the list is otherwise clear.
 - **Do not flatter Andy.** Now in `~/.claude/CLAUDE.md` (GLOBAL, not project memory — Andy moved it
   there 2026-09-18 because it governs all work, not WTM). Attribute the METHOD, never credit the
@@ -73,7 +72,7 @@ code. When in doubt, the task list is authoritative for task numbers and `git lo
   number said the opposite).
 - **The logs APPEND.** Re-running a configuration adds a second block; a naive line count double-counts.
   `examples/island_equilibrium/summarize.py` reads the last block for this reason.
-- **`elapsed_time_s` is SIMULATED seconds, not wall clock** (`transient_groundwater.cpp:2466`). The run
+- **`elapsed_time_s` is SIMULATED seconds, not wall clock** (`transient_groundwater.cpp:2475`). The run
   log carries no wall time at all.
 
 ## THE PHYSICS RULE ANDY STATED
@@ -81,7 +80,7 @@ code. When in doubt, the task list is authoritative for task numbers and `git lo
 **"The only valid states are immediately after FSM is run; within-cycle motion is computational but not
 physical."** Written into `src/WTM.cpp`, and now ENFORCED — see the defect below.
 
-## WHAT CHANGED 2026-09-17/18 — 36 commits
+## WHAT CHANGED 2026-09-17/18 — the post-FSM metric defect arc
 
 ### The real model defect: the equilibrium metric read PRE-FSM state on the PRODUCTION path (`92051e4`)
 
@@ -130,7 +129,7 @@ Untested candidate: FSM's overland TRANSPORT of half the water budget — absent
 that settled. **An 11×11 patch of the real terrain, with the model's own piecewise `T`, converges
 monotonically.**
 
-## WHAT CHANGED 2026-09-21/22 — 38 commits
+## WHAT CHANGED 2026-09-21/22 — #109 and the assertion framework
 
 ### `#109`: `dt_min` has NO default, and an adaptive run must state it
 
@@ -151,7 +150,7 @@ edits** – the reason the next full run matters.
 cannot express flake risk. It measures SENSITIVITY alone, so **a LOW headroom is a SHARP test, not a
 fragile one.** Reading it the other way is what started this arc.
 
-74 bounds: all declare their measured spread, all say where their number came from. Two derivation
+Every bound declares its measured spread and says where its number came from (74 when this was written; 86 as of d4a7bcc). Two derivation
 shapes, defined in sec 5d-bis – a SEPARATING bound cites both edges of a measured gap (many suites
 here run a healthy arm AND a broken-by-construction one, so no convention is needed); a ONE-SIDED
 bound must say plainly that its multiplier is a CONVENTION.
@@ -224,7 +223,7 @@ config and must STAY that way (sec 5c-bis says so explicitly), 16 were real.
 
 ### The full suite ran GREEN — and is now ONE RUN BEHIND
 
-`tests/run_all.sh`: **46/46, exit 0, 547 s**, 2026-09-22. It regenerated `README.md` and
+`tests/run_all.sh`: **46/46, exit 0**, 2026-09-22 (~547 s wall, from the run's own timing and recorded nowhere else). It regenerated `README.md` and
 `tests/COVERAGE.md` (375 runs, 192 tests, 36 combinations, 18 uncovered crossings), which is what
 the stashed table had been waiting for since 2026-09-16. **`#126` then touched 7 suites and `#125`
 touched `src/` and `config.yaml`, so that green result and the table are ONE RUN BEHIND.** Andy
@@ -373,7 +372,7 @@ rather than the assertion.
 behind.* What IS verified at HEAD: build clean, 30 unit tests at n=1..8, `lint_norms.sh`,
 `test_assertion_tools.py`, 86 bounds with 0 underived, `fsm_cascade` green after the probe revert.
 
-**Binary freshness**: `build/wtm.x` postdates HEAD and no source file is newer than it. That check
+**Binary freshness**: no source file is newer than `build/wtm.x` (`find src/ CMakeLists.txt -newer build/wtm.x`). It may PREDATE HEAD when the latest commits are docs-only — that is fine; what matters is that no SOURCE is newer. That check
 matters here — a one-commit-stale binary nearly invalidated a whole run on 2026-09-22, caught only
 because the commit timestamp was 27 seconds after the build.
 

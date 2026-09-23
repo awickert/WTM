@@ -28,7 +28,19 @@ make_work lc
 # SPREAD: 0   measured 2026-09-22 by assertion_probe.py -- bit-identical across repeat runs.
 #             Headroom here therefore measures SENSITIVITY, never flake risk; see
 #             tests/ASSERTION_HEALTH.md sec 3 for why that inverts how a low headroom reads.
-TOL="${TOL:-2.5e-5}"; MB_TOL="${MB_TOL:-1e-3}"; PY="${PY:-python3}"
+TOL="${TOL:-2.5e-5}"
+# SPREAD: 0   measured 2026-09-23 by repeat run.
+# DERIVED 2026-09-23, ONE-SIDED and BLUNT -- and it needed its OWN block. It previously shared a
+#   LINE with TOL, whose comment above describes TOL only ("TOL is metres OF WATER VOLUME"), so
+#   assertion_health.py read that block as MB_TOL's derivation and reported derived=True. A FALSE
+#   DERIVED, and the third instance of this repo's recurring shape: a bound inheriting evidence
+#   that is about something else. Found by an audit on 2026-09-23, not by the tool.
+#   MEASURED: |residual|/recharge = 0.000e+00 on this fixture -- the runoff balance closes exactly
+#   (dRech 1.9760e+09 = dOcean 1.9760e+09, dSurf_removed 0). With the measurement at zero no
+#   multiplier can be derived from it, so 1e-3 is a REGRESSION PIN, the same value and shape as
+#   direct_to_runoff's and flicker_evap's MB_TOL. THREE suites carry it, not two.
+MB_TOL="${MB_TOL:-1e-3}"
+PY="${PY:-python3}"
 export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE NOW (#83): tests/limit_cycle/config.yaml. Every setting the run resolves to is

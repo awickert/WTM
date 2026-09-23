@@ -36,7 +36,7 @@ def read_rows(path):
         try:
             rows.append((int(f[0]), float(f[23]), float(f[24]), float(f[20]), int(f[21])))
             # f[20] is the column HEADED elapsed_time_s. It is SIMULATED seconds, not wall clock:
-            # transient_groundwater.cpp:2466 accumulates deltat into it. There is NO wall time in
+            # transient_groundwater.cpp:2475 accumulates deltat into it. There is NO wall time in
             # the run log -- if you need it, time the process.
         except (IndexError, ValueError):
             continue

@@ -329,7 +329,7 @@ misconfiguration alarm fires on a MAJORITY rather than on any unlinked row at al
 ## 5e. The sweep of 2026-09-21/22 — what was actually measured
 
 Every suite carrying a bound was run twice unchanged (Q6) and once per bound with that bound
-tightened (Q5). **32 suites.**
+tightened (Q5). **32 suites at the time of the sweep.** (#126 later onboarded 5 more — 37 carry bounds as of 2026-09-23. Their spread was measured per-suite on promotion, but no single sweep covers all 37.)
 
 ### Q6: spread is ZERO, everywhere
 
