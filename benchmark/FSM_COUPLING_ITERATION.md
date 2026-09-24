@@ -888,3 +888,88 @@ where it does not. FSM is the serial ceiling, so a fixed k multiplies that ceili
 The coupling lag is EXCLUDED as its cause (row 7 of examples/island_equilibrium/OSCILLATION.md): the
 source is constant to 1e-06 while the groundwater swings 24 m. This item is about correctness and
 testability, not about that.
+
+**AMENDMENT 17 — THE ITERATION MUST NOT RUN BEFORE THERE IS A LAG. The Newton abort, root-caused.**
+
+Flipping the INVARIANT suites to the shipped default (#112 phase 2) aborted `newton_solver`: the arm
+completes at `iterations: 1` and dies at 2 and above, with `DIVERGED_LINE_SEARCH`. Andy: *"It works in
+the old way. Iterations break it. Therefore, is it the recharge that does this? Or something with the
+coupling?"* — and then the two observations that supplied the answer: **"We have no prior step"** and
+**"All the water that enters FSM is entering during the first time step."**
+
+**THE MECHANISM, and it is neither of the two candidates.** The iteration exists to retire the
+one-step LAG in handing FillSpillMerge's per-cell volume change back as a source. A run does not begin
+with a lag. Measured on the fixture (`initial_water_table: supplied`, 20 yr, fixed dt):
+
+    t = 0      196 of 256 cells ponded, wtd max 5.000 m, mean 3.828
+    t = 1 yr    16 of 256 cells ponded, wtd max 10.000 m, mean 0.625
+
+    step 0   consumes a carrier that is EXACTLY ZERO (VecSet at startup) and performs the one-time
+             disposal of that initial field: 180 cells drained into 16 lake cells, which deepen to
+             10 m. Delta -7.5547e+02, peak 5.0988 m in a single cell.
+    step 1   consumes that sweep AS ITS SOURCE. Its own delta is 1.8944e-01.
+    step 2   consumes 1.8944e-01 and produces 2.7876e-01 -- the first step ordinary on both sides.
+
+The coupling map's multiplier is ~-1 (AMENDMENT 10), so it does not converge; it ALTERNATES, with
+amplitude equal to whatever FillSpillMerge must move. Measured per step, 12 passes each:
+
+    step 0   max |F_k+1 - F_k| = 8.286e+02          step 2   2.241e-01
+    step 1                       3.793e-01          step 3   9.185e-02
+
+Near equilibrium the alternation is 0.09 and nobody notices. On the cold start it is 828, and a cap of
+4 commits an arbitrary point on it. **Distance from equilibrium sets the AMPLITUDE of a
+non-converging oscillation; it does not make the iteration unstable.** The amplitude decays ~0.7% per
+double-pass, so converging the cold-start step would take ~650 passes.
+
+**WHY ONLY NEWTON.** At the failing solve the Jacobian reports a descent slope of **-36.3** while the
+residual RISES at **+0.185**, and the line search's own samples show that rate constant over a 30x
+range of lambda (6.9e-6 down to 2.1e-7) -- smooth, linear, and uphill. Anderson has no line search, so
+it commits the same arbitrary state without complaint. The arm aborts only under `newton`.
+
+**THE FIX IS STRUCTURAL, not a tuned step count:** iterate only once the PREVIOUS step consumed a
+delta. Step 0 consumed nothing; step 1 consumed something no ordinary step produced; step 2 is the
+first with a genuine predecessor. No threshold, and `iterations: 1` is bit-identical. Measured
+boundary, by forcing a single pass before step n: from step 2 the run does 20 cycles with 0
+divergences and 0 frozen cycles; from step 1 it goes degenerate; from step 0 it aborts. After the fix,
+caps 1/2/4 complete with 20/38/74 solves -- the arithmetic (2 lagged + 18 iterated) confirms the rule.
+
+**Andy's framing, which is the right one to keep:** *"FSM should make a helpfully non-smooth departure
+from a wild initial condition."* The initial sweep is not an error to be resolved. Do not smooth it.
+
+**REFUTED ALONG THE WAY, so none of these is re-derived.** Each died on one measurement:
+
+  - *Rank deficiency / a flat direction.* The direction is UPHILL and linear, not flat.
+  - *The Jacobian misses `add_recharge`'s evaporation clamp.* It is evaluated at `starting_wtd`,
+    frozen during the solve, so it is a constant source and the Jacobian is right to ignore it.
+  - *The semismooth `active_set` kink.* `implicit` fails too, and earlier.
+  - *The deliberately-inexact Jacobian.* `-snes_mf_operator` fails identically, same solve counts.
+    Large `||J-Jfd||` is also not diagnostic here: one solve hit 2.95 and still converged to 2.7e-07.
+  - *A stalled solve reported as converged (the #61/#104 family).* The `SNORM_RELATIVE` exits land at
+    6.6e-08 to 3.6e-07, BETTER than the `FNORM_ABS` ones. #104's gate is doing its job.
+  - *The rollback leaves state behind.* A true replay -- restoring the carrier too, so pass 2 solves
+    the identical system -- completes the run with identical pass-pair iteration counts (4,4 / 16,16 /
+    7,7 / 6,6). The snapshot machinery has no defect in it.
+  - *Accumulating the delta (`+=`) instead of replacing it.* It DOES kill the orbit: the increment
+    converges geometrically to 6 figures by pass 8, the answer becomes cap-independent (mean w -6.503
+    / -5.687 / -5.518 / -5.517 at caps 2/4/8/12), and closure stays the same order (3.5e2 vs 2.0e2 max
+    residual, ~1e-7 relative -- no k-fold banking). But its justification was REFUTED: the increment
+    converges to 80, not 0, so FillSpillMerge is still moving water at the fixed point and the claim
+    "nothing left to double-credit" is false. And it does not fix Newton -- identical abort with it on
+    or off. Recorded as a real property of the coupling, not as a fix.
+
+**THREE INSTRUMENTS WERE WRONG BEFORE THEY WERE RIGHT, and that is the process lesson.** All three
+produced confident, wrong conclusions that were reported and then withdrawn:
+
+  1. A carrier-scaling knob placed in `couple_surface_and_recharge` -- the WRITE side. The pass loop is
+     restore -> solve (consumes) -> couple (writes), so it scaled what the pass PRODUCED and the
+     failing solve never saw it. **The tell was there: the Jacobian error agreed to six figures across
+     every setting. A knob that changes nothing to six figures is a knob that is not connected.**
+  2. `VecNorm` on `fsm_delta_vec` read 0.0 while the carrier plainly held -7.55e+02. `DMDA_Array_Pack`
+     keeps the array checked out via `DMDAVecGetArray` for the whole run, so direct writes never
+     advance the Vec's object state and the cached norm is stale.
+  3. `VecScale` on that same Vec is illegal aliasing for the same reason. It did not merely mislead --
+     it FROZE the run: per-cycle |dwtd| went to exactly 0 while 1.6 m still moved within the cycle.
+
+**The rule that follows: read and write the ARRAY (`dmdapack.fsm_delta_dist`), never the Vec.** The
+shipped guard does this. And verify a knob BITES before believing what it says -- the same discipline
+the suites already apply to their own assertions, applied to diagnostics.
