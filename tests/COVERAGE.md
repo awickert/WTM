@@ -2,7 +2,7 @@
 
 **Generated** by `tests/coverage_matrix.py` from the fingerprints WTM itself emits, so it reflects what each run RESOLVED to rather than what its config appears to say. Do not edit by hand; re-run the suite.
 
-Runs recorded: **407** across **200** tests.
+Runs recorded: **383** across **193** tests.
 
 
 ## 1. Combination coverage: every (solver, collector, integrator) against run type
@@ -13,16 +13,16 @@ The pairwise tables further down CANNOT answer this: two pairs can each be cover
 |---|---|---|---|---|---|
 | `anderson` | `active_set` | `bdf2` | 16 | **0** | 2 |
 | `anderson` | `active_set` | `be_volume` | 24 | **0** | 2 |
-| `anderson` | `active_set` | `tr_bdf2` | 156 | 2 | 11 |
+| `anderson` | `active_set` | `tr_bdf2` | 140 | 2 | 7 |
 | `anderson` | `explicit` | `bdf2` | 4 | **0** | 1 |
 | `anderson` | `explicit` | `be_secant` | 1 | **0** | 2 |
 | `anderson` | `explicit` | `be_volume` | 4 | **0** | 2 |
-| `anderson` | `explicit` | `tr_bdf2` | 17 | **0** | 1 |
+| `anderson` | `explicit` | `tr_bdf2` | 15 | **0** | 1 |
 | `anderson` | `extended_soil` | `tr_bdf2` | 1 | **0** | **0** |
 | `anderson` | `implicit` | `bdf2` | 7 | **0** | 1 |
 | `anderson` | `implicit` | `be_secant` | 3 | **0** | 1 |
 | `anderson` | `implicit` | `be_volume` | 9 | **0** | 1 |
-| `anderson` | `implicit` | `tr_bdf2` | 21 | **0** | 1 |
+| `anderson` | `implicit` | `tr_bdf2` | 19 | **0** | 1 |
 | `anderson` | `off` | `bdf2` | 7 | **0** | 4 |
 | `anderson` | `off` | `be_secant` | 1 | **0** | 1 |
 | `anderson` | `off` | `be_volume` | 7 | **0** | 5 |
@@ -165,13 +165,6 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `combination_sweep/tr_picard_volume_implicit` | transient | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_volume_implicit_s` | transient | picard | be_volume | fixed | implicit | 1 | 0 | 1 |
 | `combination_sweep/tr_picard_volume_off` | transient | picard | be_volume | adaptive | off | 1 | 0 | 1 |
-| `converged:_active_set` | equilibrium | anderson | tr_bdf2 | adaptive,fixed | active_set,explicit,implicit | 1 | 0 | 1 |
-| `converged:_fsm_cascade` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,4 |
-| `converged:_fsm_consistency` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,2,4 |
-| `converged:_fsm_fullness` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,4 |
-| `converged:_lake_evap_equals_et` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1 |
-| `converged:_xrank_adaptive` | transient | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1,2,4,6 |
-| `converged:_xrank_growth` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,6 |
 | `coupling_convergence/cascade_025yr_continuous` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/cascade_025yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/cascade_05yr_continuous` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
@@ -190,7 +183,7 @@ Equilibrium-only, i.e. never exercised on the transient path:
 | `coupling_convergence/multilake_05yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/multilake_1yr_continuous` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
 | `coupling_convergence/multilake_1yr_impulse` | equilibrium | anderson | tr_bdf2 | fixed | active_set | 1 | 0 | 1 |
-| `coupling_iteration_(#112)` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 1 |
+| `coupling_iteration_(#112)` | equilibrium | anderson | tr_bdf2 | adaptive,fixed | active_set | 1 | 0 | 1 |
 | `cross-rank_adaptive_determinism` | transient | anderson | tr_bdf2 | adaptive | active_set | 1 | 0 | 4 |
 | `cross-rank_drift_regime` | equilibrium | anderson | tr_bdf2 | adaptive | active_set | 1 | 1 | 1,6 |
 | `dt-sensitivity_(active-set)` | equilibrium | anderson | tr_bdf2 | fixed | active_set,implicit | 0 | 0 | 1 |
@@ -269,7 +262,7 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | solver \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **anderson** | 213 | 32 | 1 | 44 | 51 |
+| **anderson** | 193 | 30 | 1 | 42 | 51 |
 | **newton** | 13 | 8 |   | 9 | 8 |
 | **picard** | by design | 9 |   | 13 | 6 |
 
@@ -280,29 +273,29 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 | **bdf2** | 20 | 11 |   | 15 | 15 |
 | **be_secant** | by design | 7 |   | 10 | 6 |
 | **be_volume** | 37 | 13 |   | 19 | 18 |
-| **tr_bdf2** | 169 | 18 | 1 | 22 | 26 |
+| **tr_bdf2** | 149 | 16 | 1 | 20 | 26 |
 
 ### dtctl x collector
 
 | dtctl \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **adaptive** | 129 | 28 |   |   | 24 |
+| **adaptive** | 108 | 27 |   |   | 24 |
 | **continuation** | 8 | 7 |   | 8 | 6 |
-| **fixed** | 89 | 14 | 1 | 58 | 35 |
+| **fixed** | 90 | 13 | 1 | 56 | 35 |
 
 ### run_type x collector
 
 | run_type \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
-| **equilibrium** | 207 | 37 | 1 | 53 | 43 |
+| **equilibrium** | 191 | 35 | 1 | 51 | 43 |
 | **test** | 2 |   |   |   |   |
-| **transient** | 17 | 12 |   | 13 | 22 |
+| **transient** | 13 | 12 |   | 13 | 22 |
 
 ### solver x integrator
 
 | solver \ integrator | bdf2 | be_secant | be_volume | tr_bdf2 |
 |---|---|---|---|---|
-| **anderson** | 42 | 9 | 54 | 236 |
+| **anderson** | 42 | 9 | 54 | 212 |
 | **newton** | 8 | 6 | 24 |   |
 | **picard** | 11 | 8 | 9 |   |
 
@@ -310,23 +303,23 @@ A blank cell is a combination **no run exercises**. `by design` and `does not co
 
 | run_type \ solver | anderson | newton | picard |
 |---|---|---|---|
-| **equilibrium** | 300 | 25 | 16 |
+| **equilibrium** | 280 | 25 | 16 |
 | **test** | 2 |   |   |
-| **transient** | 39 | 13 | 12 |
+| **transient** | 35 | 13 | 12 |
 
 ### fsm x collector
 
 | fsm \ collector | active_set | explicit | extended_soil | implicit | off |
 |---|---|---|---|---|---|
 | **0** | 54 | 12 | 1 | 7 | 26 |
-| **1** | 172 | 37 |   | 59 | 39 |
+| **1** | 152 | 35 |   | 57 | 39 |
 
 ### runoff_ratio x dtctl
 
 | runoff_ratio \ dtctl | adaptive | continuation | fixed |
 |---|---|---|---|
-| **0** | 124 | 25 | 186 |
-| **1** | 57 | 4 | 11 |
+| **0** | 106 | 25 | 184 |
+| **1** | 53 | 4 | 11 |
 
 ## 4. Uncovered pairwise crossings
 
