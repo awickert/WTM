@@ -1,4 +1,102 @@
-# RESUME FRAME — read this first, then verify it against git before acting
+# RESUME FRAME — read this first, then VERIFY it against git before acting
+
+> This file has been WRONG twice. Every structural claim below is checkable in seconds; check it.
+
+## CURRENT FRAME (2026-09-24) — supersedes everything under "SUPERSEDED" further down
+
+**State.** Branch `bdf2-adaptive-dt`, HEAD was `7dc5000` when this was written. **RECOMPUTE, never
+quote:** `git rev-parse --short HEAD`, `git rev-list --count fork/bdf2-adaptive-dt..HEAD` (2 then),
+`git status --porcelain` (clean then). Remote is `fork` (awickert); `origin` (KCallaghan) has push
+DISABLED. Pushing needs explicit current-message authorization AND `CLAUDE_ALLOW=push`.
+
+**Why this work exists.** Finish the WTM model and hand it off. At-scale validation (Esquibel, North
+America) is OUT OF SCOPE.
+
+### ARC 1 — #112, the FSM coupling iteration: **DONE**
+
+`surface_water.coupling.iterations` defaults to **4**. Two rules govern it, both structural:
+
+1. **`iterations` FOLLOWS `routing`, per arm** — the key is inert under `impulse`/`off` and an explicit
+   `>1` is refused there by name. `coupling_iters_for` in `tests/lib.sh`. Eleven suite arms aborted
+   before this was understood.
+2. **Iterate only once a LAG EXISTS** (`64b5e59`) — the carrier is zeroed at startup, so step 0
+   disposes of the initial condition's surface water and step 1 consumes that disposal. Neither is a
+   lag. Guard: iterate once the PREVIOUS step consumed a delta. No threshold, no step count.
+
+Why rule 2 matters: the coupling map's multiplier is ~-1, so it ALTERNATES rather than converging,
+with amplitude equal to whatever FillSpillMerge must move — **828 on a ponded cold start against
+0.09-0.38 in the lagged regime**. Iterating there commits an arbitrary point on an 828-wide
+oscillation and `solver.method: newton` aborts on the following step.
+
+Suites **47/47 green** (54 -> 47 when the duplicate converged pass was removed; no coverage lost —
+zero-cell count 40 before and after). Record: `benchmark/FSM_COUPLING_ITERATION.md` AMENDMENT 17,
+and **17b, which WITHDRAWS** the claim that the iteration repaired FSM's L-R asymmetry (it was the
+far side of the cold-start orbit; post-fix the schemes agree to 2.5%).
+
+**Nothing remains on #112.** Phase 4 (taper's converged arm) is moot — taper runs the default directly.
+
+### ARC 2 — #111, the corsica oscillator: **IN PROGRESS, plan written**
+
+**What it is (measured, annual sampling):** 13 cells, rows 118-123 x cols 60-65, driver `(120,63)`.
+**Period 220 yr** (not the 210 from decadal sampling), driver swing **24.52 m**, fall limb **99 yr
+three times running** while the rise varies (122, 123). Smooth at weekly resolution; the A->B transfer
+has no lag at one week; ~80% of the driver's loss cascades to the three cells downslope.
+
+**NEXT ACTION = step A of "THE PLAN FROM HERE" in `examples/island_equilibrium/OSCILLATION.md`:**
+sweep `FREE_MIN` in `benchmark/chain_numerics/chain.py` from 0.1 downward, growing the free set from
+13 cells toward the island, and watch the driver's span. Rationale: the reduction freezes 19 cells at
+their time-means because they move <0.1 m, but **small amplitude is not small influence** — only
+amplitude was ever verified. Then steps B (subsystem ablation, ~6 min per arm), C (is removal a
+feedback or a sink), D (spatial refinement — the only axis never tested).
+
+### ARTIFACT ROLES
+
+| artifact | role |
+|---|---|
+| `examples/island_equilibrium/OSCILLATION.md` | THE #111 record: behaviour, the excluded-by-measurement table (rows 1-7), refuted explanations R1-R5, the 2026-09-24 resampling results, and the plan |
+| `benchmark/chain_numerics/chain.py` | the REBUILT reduction — measured 13-cell free set, every cell free, 4 outlets each. **SETTLES** (0.005 m vs 24.52 m) |
+| `benchmark/twocell_numerics/twocell.py` | SUPERSEDED as a reduction (3 defects), but KEPT: its lagged-T sweep is still the oracle for "can the discretisation do this?" |
+| `examples/island_equilibrium/_work_corsica/` | **GITIGNORED but PERSISTS on disk.** Holds the 20 000 yr run and the restart raster `anderson_fixed_dt31536000_eq_n1_000002000_20000yr.tif`, plus `cfg_REPRO_*.yaml` |
+
+### REPRODUCE (the /tmp outputs, 895 MB, are GONE after that session — regenerate)
+
+- **Annual restart, 6 min, 630 yr, shows the cycle:** `build/wtm.x` on
+  `_work_corsica/cfg_REPRO_annual_restart.yaml`. Restarts from the 20 000 yr raster,
+  `report_interval: 1`, `equilibrium_stop.tol: 0`. **Edit `initial_water_table`, `outfile_prefix` and
+  `run_log` first — they point into a dead /tmp path.**
+- **Weekly zoom, 10 min, yr 131-166:** `cfg_REPRO_weekly_zoom.yaml`, `dt: 604800`, restarts from the
+  annual run's yr-131 snapshot.
+
+### TRAPS HIT ON 2026-09-24 — each cost real time
+
+- **`report_interval` changes the EQUILIBRIUM VERDICT.** The `frac` stop counts cells moving >1 mm
+  PER REPORT; at annual reporting that is a tenth of a decade's movement, so the run declares
+  equilibrium at cycle 26 of 630. **Always set `equilibrium_stop.tol: 0` for these diagnostics.**
+  Corsica's "never settles" headline is partly a statement about DECADAL reporting.
+- **`pgrep -f "wtm.x <cfg>"` matches the waiting shell's OWN command line** -> false "RUNNING", and a
+  launcher that waits on that pattern deadlocks against itself. Use a pidfile + `kill -0`.
+- **`cp -p` restores an OLD mtime** -> make skips the rebuild -> you run a stale binary. `touch` after
+  restoring, and check with `strings build/wtm.x | grep <new-symbol>`.
+- **DMDA arrays are checked out for the whole run.** `VecNorm` returns a stale cached value and
+  `VecScale` silently corrupts. Read/write `dmdapack.<field>_dist`. See
+  [[finding_dmda_array_vs_vec_trap]].
+- **A knob whose readings agree to six figures across every setting is NOT CONNECTED.**
+
+### #111 NEGATIVE RESULTS — do not re-walk
+
+- Time discretisation: 4x refinement (<=0.5%) and 52x (weekly vs annual, 0.3%).
+- Solve convergence: 10 000x tighter leaves the amplitude at ratio 1.0000. Not a lagged coefficient.
+- Collector choice: all three agree to 0.09 m. FSM outlet switching: lake volume bit-identical.
+- The reduction's SIZE: three sizes (2 cells, 7-cell chain, 13-cell measured set) all settle.
+- **R1 (open-water evaporation) and R3 (ponding allowance) are INCONCLUSIVE, not refuted** — they
+  ablate surface water the oscillating cells never have (they turn at -0.062 m). Their nulls were
+  guaranteed.
+- The pinned-sink hypothesis (mine, 2026-09-24) is **WITHDRAWN**: the reduction's baseline already
+  contains a pinned neighbour and it is STABLE. Pinning goes with stability here, not oscillation.
+
+---
+
+# SUPERSEDED (2026-09-22 and earlier) — kept for history, not for action
 
 **HEAD:** `git log --oneline -1`. Branch `bdf2-adaptive-dt`, LOCAL, **commits unpushed vs `fork/bdf2-adaptive-dt`:
 recompute, do not trust a written number** — `git rev-list --count fork/bdf2-adaptive-dt..HEAD` (568 as of 42c205e; the act of writing this figure changes it, which is how the previous version of this line went stale)** (the branch's own tracking ref, and the only comparison that means anything
