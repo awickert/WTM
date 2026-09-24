@@ -107,14 +107,77 @@ Nothing else varied has ever moved the amplitude by more than 1%.
 
 ## What is still untested
 
-Everything that settled omitted the same things. In the order I would take them:
+Two of the three candidates below are now dead, and a fourth has taken their place. Struck through
+with the evidence, so neither is re-walked:
 
-1. **FSM's surface routing of the `runoff_ratio` share downhill.** Half the net `P − E` (0.06 m/yr)
-   leaves as runoff and is redistributed by FSM. No reduction here modelled that transport at all.
-   Note this is the **transport**, not the one-step lag in handing it over — the lag is excluded above
-   (row 7). What is untested is that half the water budget moves overland and no reduction had it.
-2. The ET tapers and the open-water switch.
-3. Full-domain boundaries rather than a fixed ring.
+1. ~~**FSM's surface routing of the `runoff_ratio` share downhill.**~~ **REFUTED by the table above,
+   without a new run.** "Either remover alone restores the full cycle — FSM off with the collector on
+   gives 24.66 m". With FSM off there is no overland transport at all, and the full cycle persists.
+   Transport cannot be necessary. What is necessary is a **local sink at the surface**.
+2. The ET tapers and the open-water switch — and see the vacuity note below, which changes what an
+   ablation here can mean.
+3. ~~**Full-domain boundaries rather than a fixed ring.**~~ **REFUTED by measurement 2026-09-24.**
+   Peak-to-peak amplitude over 3 full periods (63 reports, 19 380–20 000 yr), by Chebyshev distance
+   from the nearer cluster centre:
+
+   | distance | land cells | max amplitude |
+   |---|---|---|
+   | 0–2 | 45 | 24.4833 m |
+   | 3–5 | 176 | 0.2170 m |
+   | 6–10 | 608 | 0.0004 m |
+   | 11–20 | 1914 | 0.0000 m |
+
+   The 11×11 block puts its ring at distance 5, where the real field moves by at most 0.217 m against
+   24.5 m in the middle. The ring genuinely does not move; fixing it at time-means cannot be what
+   suppressed the cycle.
+
+## THE OSCILLATING CELLS NEVER REACH THE SURFACE, and that makes several ablations vacuous
+
+Measured on the same 63 reports. Of the 22 cells with amplitude > 0.1 m, **one** ever attains
+`wtd >= 0`. Both drivers turn just short of it and stay there:
+
+    driver A (120,63)   amplitude 24.483 m   wtd range -24.545 .. -0.0621
+    driver B (98,75)    amplitude  9.900 m   wtd range  -9.970 .. -0.0701
+
+**So any ablation acting only on surface water could not have moved this cycle, and its null result is
+not evidence about the mechanism.** That covers R1 (halving open-water evaporation — `E_ow` applies to
+water these cells never have) and R3 (the ponding allowance, where the document already noticed "the
+cell never uses it" without drawing the conclusion). Both should be read as *inconclusive*, not as
+refutations. R4 and rows 2–6 are unaffected; they ablate things that act below the surface.
+
+## What IS at the surface: a PINNED neighbour, downhill
+
+The count above was nearly a fourth vacuous test of my own. A cell **pinned** at `wtd = 0` has zero
+amplitude by construction, so filtering on "amplitude > 0.1 m" excludes exactly the cells the removers
+are acting on. Asked without that filter — how many cells near each driver ever reach `wtd >= 0`,
+whatever their amplitude:
+
+    driver A: 1 such cell within 2 cells, 4 within 3, 13 within 8 -- every one at amplitude 0.0000 m
+    driver B: 1 within 2, 4 within 3, 17 within 8
+
+and every one of them sits **below** the driver, by 314 to 597 m of topography.
+
+So the picture is a violently oscillating cell one or two cells away from a neighbour that the remover
+holds at the surface and which never moves at all.
+
+**HYPOTHESIS, stated as one and not yet tested.** This is a relaxation oscillator whose sink is the
+pinned neighbour and whose valve is `T`. A cell held at `wtd = 0` by a remover is not a cell with a
+cap on it — it is a **Dirichlet boundary at fixed head with unlimited capacity**, because whatever
+arrives is taken away. Conductance from the driver to it goes as `exp(wtd / fdepth)` with
+`fdepth ≈ 5 m` here. The driver rises, the valve opens, it drains into a sink that cannot fill, it
+falls until the exponential shuts the valve — 24.5 m is ≈ 5 `fdepth` — and then refills over ~100 yr
+on the +0.060 m/yr it gets below the surface.
+
+If that is right it accounts for every measured fact already in this document: why **either** remover
+suffices and neither is special (all three collectors pin identically); why removal is *necessary*
+(with none, nothing is pinned, and the driver rests ponded at +0.042 m); why the offenders are the
+high, steep, thin-`fdepth` cells (small `fdepth` is a sharper valve); and why the ODE reduction did
+not oscillate (R5 gave the **driver** a surface cap, which is a limit on one cell, rather than giving
+it a **neighbour pinned at zero with unlimited removal**, which is a boundary condition).
+
+**The prediction that would falsify it:** rebuild the R5 reduction with the downhill neighbour held at
+`wtd = 0` as a Dirichlet sink instead of capping the driver. Everything else unchanged. If it still
+converges monotonically, this is wrong.
 
 The implicit-solve candidate is closed by row 6 above.
 
