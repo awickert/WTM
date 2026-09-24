@@ -249,6 +249,60 @@ reproduce a FREE, well-drained B — four outlets, not one — before its null m
 
 The implicit-solve candidate is closed by row 6 above.
 
+## THE WHOLE SYSTEM, RESAMPLED (2026-09-24) — the cycle is a SMOOTH CASCADE down the drainage line
+
+Andy: *"I think you need to simulate the whole system from the unit test, but pay special attention to
+cells A and B"*, then *"Run Corsica until you see the cycle. Then see if you should at least for a time
+store daily or weekly outputs."* Both done, on the real model rather than a reduction.
+
+**ANNUAL RESTART**, from the settled 20 000 yr state, 630 yr, `equilibrium_stop.tol: 0`:
+
+    A (120,63)   -24.581 .. -0.0617    swing 24.520 m
+    B (121,63)   -23.768 .. -10.6056   swing 13.162 m
+    period 220 yr (autocorrelation)    rise 122, 123 yr    fall 99, 99, 99 yr
+
+The **period is 220 yr, not 210** — the earlier figure came from decadal sampling. The fall limb
+repeats at 99 yr three times while the rise varies, so draining is the regular half. Rise/fall is
+1.23; the "fills ~100 yr, plunges ~60 yr" in this document overstated the asymmetry.
+
+**WHERE A'S WATER GOES.** From storage alone — no transmissivity model needed, since every cell here
+is below the surface so `dV = phi*dh`. At the steepest year (146 -> 147), A drops 1.488 m = 0.3720 m
+of water:
+
+    B (121,63)  +0.1685  45%      (122,63)  +0.0433  12%      (119,63)  +0.0044
+    (121,64)    +0.0750  20%      (123,63)  +0.0064            window net -0.0762
+
+It **cascades down the chain**: ~80% is taken up by the three cells immediately downslope, 20% leaves
+the 8x8 window. The pinned flanking cells register ±0.0000 — which is what a pinned cell must do, as
+whatever reaches it is removed and its storage never changes. They are **sinks that are invisible in
+storage**, which is why an amplitude-filtered search cannot find them.
+
+**WEEKLY ZOOM**, `dt = 604800 s`, yr 131–166, 1820 steps, restarted from the annual run's yr-131 state.
+Refining `dt` changes the numerics and not only the sampling, so the trajectory was checked first:
+sampled at each anniversary, weekly vs annual differ by **max 0.0679 m on a 22 m fall (0.3%)**,
+consistent with row 3's ≤0.5% under 4x refinement. The zoom resolves the fall; it does not change it.
+
+    weekly step   mean -0.0123   median -0.0101   max drop -0.0287 m
+    max/mean drop during the fall        2.34
+    top 1% of weeks carry                2.3% of the total movement
+    A's loss vs B's gain: strongest anticorrelation -0.654 at lag 0 weeks
+
+**The fall is SMOOTH.** The largest week is 2.3x the mean and the top 1% of weeks carry 2.3% of the
+movement — movement is spread almost exactly uniformly. There is no discrete event, no spill moment,
+no cascade of jumps. And the A -> B transfer has **no lag resolvable at one week**.
+
+**So DAILY sampling is not warranted**, and that is a measured answer rather than a preference: at
+weekly resolution nothing approaches the sampling limit, so 7x finer has nothing to resolve. Spend the
+steps on a second window or a second cluster instead.
+
+**A SAMPLING CAVEAT ON THIS DOCUMENT'S HEADLINE.** The first annual attempt stopped itself at cycle 26
+of 630, reporting equilibrium. The `frac` stop counts cells moving more than 1 mm PER REPORT; at
+`report_interval: 1` that is a year's movement instead of a decade's, so ten times fewer cells clear
+the threshold. **Corsica's "never settles, frac bottoms out at 0.001351 against 0.001" is a statement
+about decadal reporting as much as about the terrain** -- the same physical state declares equilibrium
+at annual reporting. The limit cycle is unchanged; the metric simply cannot see it. Same family as the
+per-sub-step vs per-cycle artefact in the lakeshore flicker. Runs here now set `tol: 0`.
+
 ## Caveats on my own numbers
 
 - **The hand-rolled flux budget does not close.** Adding the downhill cell's recharge to its measured
