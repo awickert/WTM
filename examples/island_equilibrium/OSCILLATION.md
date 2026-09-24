@@ -179,6 +179,35 @@ it a **neighbour pinned at zero with unlimited removal**, which is a boundary co
 `wtd = 0` as a Dirichlet sink instead of capping the driver. Everything else unchanged. If it still
 converges monotonically, this is wrong.
 
+### TESTED THE SAME DAY, AND THE SIGN IS BACKWARDS — the hypothesis above is WITHDRAWN
+
+`benchmark/twocell_numerics/twocell.py` already carries the test, and it already contained the
+configuration the hypothesis proposed. Its baseline settles at
+
+    hC = -30 (shipped):   A = -32.822   B =  0.0000   <- B IS PINNED AT THE SURFACE, and it is STABLE
+    hC =   0 (pinned far
+         boundary, swept
+         -30/-10/-3/-1/-0.1/0):          every scheme, every hC: amplitude 0.0000
+
+So a neighbour pinned at `wtd = 0` next to the driver is not what starts a cycle — in this reduction it
+is what **ends** one. Pinning goes with stability, and sweeping the far boundary from 30 m below its
+surface up to pinned at it produced zeros in explicit, lagged AND implicit at the shipped 1 yr step.
+
+**The discriminator is the other way round, and it is sharper for it.** Compare the same two cells:
+
+    reduction: B pins at 0.0000 and the system settles
+    real:      B (121,63) cycles -23.767 .. -11.064 and NEVER comes within 11 m of the surface
+
+The reduction does not fail by missing a sink. It fails by **over-filling B** — B has exactly one
+outlet (to C), backs up, and pins, while the real (121,63) drains in four directions into cells 300 to
+600 m lower and so never gets near the surface. The reduction settles in a regime the real cells never
+visit, which is exactly the caveat twocell.py states about itself; what is new is knowing WHICH way the
+mismatch runs and WHY.
+
+**So the open question is now specific:** what sustains a 24.5 m cycle in cells that are well drained,
+never reach the surface, and sit next to pinned cells that do not move? An adequate reduction has to
+reproduce a FREE, well-drained B — four outlets, not one — before its null means anything.
+
 The implicit-solve candidate is closed by row 6 above.
 
 ## Caveats on my own numbers
