@@ -149,3 +149,38 @@ def run(series, years=800, dt_yr=1.0):
 # reduction can express -- note that removal is NECESSARY for the real cycle (OSCILLATION.md) and
 # this reduction models it only as a cap, never as water routed somewhere else.
 # ================================================================================
+
+
+if __name__ == "__main__":
+    # REGENERATES THE TABLE ABOVE from the kept rasters, so the recorded numbers can be re-derived
+    # rather than trusted.  Default data: examples/island_equilibrium/_work_111/annual_restart_630yr/
+    # (untracked but persistent; see that directory's READINESS.md).  Pass another directory as argv[1].
+    import glob, re
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+        here, "..", "..", "examples", "island_equilibrium", "_work_111", "annual_restart_630yr")
+    fs = sorted(glob.glob(os.path.join(d, "*.tif")),
+                key=lambda f: int(re.search(r'_(\d{9})_', f).group(1)))[-220:]   # one full period
+    if not fs:
+        sys.exit("no rasters in %s -- regenerate with _work_corsica/cfg_REPRO_annual_restart.yaml" % d)
+    win = rasterio.windows.Window(55, 112, 20, 20)
+    sub = np.stack([rasterio.open(f).read(1, window=win) for f in fs])
+    series = np.full((len(fs), 240, 156), np.nan); series[:, 112:132, 55:75] = sub
+    model = np.nan_to_num(series.max(0) - series.min(0))
+
+    h, free, bnd = run(series, years=800)
+    print("%d reports from %s" % (len(fs), os.path.normpath(d)))
+    print("free cells %d (amp > %.2f m); boundaries %d, of them pinned at 0: %d\n"
+          % (len(free), FREE_MIN, len(bnd), sum(1 for v in bnd.values() if v == 0.0)))
+    if h is None:
+        sys.exit("DIVERGED")
+    sec = h[len(h)//2:]
+    print("%-12s %-14s %-12s" % ("cell", "reduction (m)", "MODEL (m)"))
+    for i, rc in enumerate(free):
+        print("(%d,%d)%s %-14.4f %-12.2f" % (rc[0], rc[1], " "*(6-len(str(rc[1]))),
+                                             sec[:, i].max()-sec[:, i].min(), model[rc]))
+    drv = free.index(max(free, key=lambda rc: model[rc]))
+    span = sec[:, drv].max() - sec[:, drv].min()
+    print("\ndriver (%d,%d): reduction %.4f m vs model %.2f m -- %s"
+          % (free[drv][0], free[drv][1], span, model[free[drv]],
+             "SETTLES" if span < 0.1 else "OSCILLATES, re-read the conclusion above"))

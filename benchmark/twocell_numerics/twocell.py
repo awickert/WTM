@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 """IS THE CORSICA LIMIT CYCLE A NUMERICAL ARTIFACT?  Two cells, three schemes, a sweep in dt.
 
+SUPERSEDED AS A REDUCTION (2026-09-24) -- KEPT as the discretisation oracle. Three measured defects
+mean its NULL ("the reduction settles, so the continuous equations do not oscillate") could not have
+come out otherwise: cell B pins at the cap, leaving a SCALAR system where a cycle is impossible by
+construction; two cells cannot carry the THIRTEEN-cell mode the real oscillation occupies; and its
+fixed point is held up by DISCARDING 86% of the inflow through an outlet throttled 624x by a boundary
+30 m below its own surface. See examples/island_equilibrium/OSCILLATION.md and, for the rebuilt
+reduction that fixes all three (and still settles -- so the conclusion below stands, on better
+evidence), benchmark/chain_numerics/chain.py.
+
+What this file is still GOOD FOR, and why it is not deleted: the LAGGED-vs-IMPLICIT sweep below is a
+cheap oracle for "can the discretisation manufacture a cycle like this?" -- run it before attributing
+any new oscillation to physics.
+
 WHY THIS EXISTS. examples/island_equilibrium reports that corsica never satisfies the equilibrium stop:
 ~32 of 14064 cells run a ~210 yr limit cycle of up to 24.5 m. Five explanations were refuted by
 measurement (task #111). The last of them was refuted by writing the local physics out as an ODE and

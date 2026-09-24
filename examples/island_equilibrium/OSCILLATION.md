@@ -96,6 +96,15 @@ clamp never engages here: 0 of 41 reports have the driver above ground.
   Both converge **monotonically** to a stable fixed point, with the whole oscillating cluster strictly
   interior in the 11×11.
 
+  **CAVEAT ADDED 2026-09-24, and it is an OPEN inconsistency in this document.** The two-cell study
+  was later found to carry three defects that made its null inevitable (cell pinning -> a scalar
+  system; two cells of a thirteen-cell mode; a fixed point held up by discarding 86% of the inflow).
+  **The 5×5 and 11×11 patches above have NOT been re-examined for the same three defects.** In
+  particular it is unknown whether their cells pin at the cap, and the 11×11's ring sits at Chebyshev
+  distance 5 where the real field still moves 0.217 m. Treat R5 as UNAUDITED rather than as
+  established, and audit it before citing it. The rebuilt reduction that IS audited, and which
+  reaches the same verdict, is `benchmark/chain_numerics/chain.py`.
+
 ## The one thing that changes it
 
 **Surface removal is necessary.** With `routing: off` *and* `collection.method: off`, the driver rests
