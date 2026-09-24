@@ -131,7 +131,7 @@ mkcfg() { # $1 stem  $2 collector  $3 total_time  $4 routing  $5 method  $6 ksmo
     # derived here rather than passed in, and the config states the value the run resolves to.
     local integ=backward-euler; [ "$method" = anderson ] && integ=tr-bdf2
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$stem|g" \
-        -e "s|@COLLECTOR@|$coll|g" -e "s|@TOTAL@|$total|g" -e "s|@ROUTING@|$routing|g" \
+        -e "s|@COLLECTOR@|$coll|g" -e "s|@TOTAL@|$total|g" -e "s|@ROUTING@|$routing|g" -e "s|@ITERS@|$(coupling_iters_for "$routing")|g" \
         -e "s|@METHOD@|$method|g" -e "s|@KSMOOTH@|$ksm|g" -e "s|@EQ_TOL@|$eqt|g" \
         -e "s|@INTEG@|$integ|g" -e "s|@MAXIT@|$maxit|g" \
         config.yaml > "$WORK/$stem.yaml"
