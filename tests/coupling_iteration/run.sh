@@ -27,7 +27,13 @@
 # dropping any one name fails three cases by construction. Both are kept; neither substitutes.
 #
 # Asserts, Anderson + TR-BDF2 + active-set skim + continuous routing:
-#   RAN         : k=2 costs measurably more solver calls than k=1 (the passes are real).
+#   RAN         : on the TRANSIENT arms, k=2 costs measurably more solver calls than k=1 (the
+#                 passes are real). Asserted there and not on the equilibrium arms because those
+#                 carry no lag on 130 of 131 steps -- see the note at run_arm t1.
+#   NO LAG, NO   : on the EQUILIBRIUM arms, k=2 costs almost nothing extra. This pins the #112
+#   COST          lag-chain guard from the other side: the iteration must decline to run where
+#                 there is nothing to retire. RAN and this one together say "runs when it should,
+#                 and only then".
 #   LAKE        : the fixture actually ponds water (without a lake there is nothing to couple).
 #   INVARIANT   : the converged answer at k=2 and k=3 equals the k=1 answer.
 #   CONSERVES   : the exact water budget still closes at k>1.
@@ -46,11 +52,12 @@ PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 
 # THE CONFIG IS A FILE (#83): tests/coupling_iteration/config.yaml. The arms differ in exactly ONE
 # key, surface_water.coupling.iterations, which is the subject.
-emit() { # $1 stem, $2 iterations
-  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" -e "s|@ITER@|$2|g" config.yaml > "$WORK/$1.yaml"
+emit() { # $1 stem, $2 iterations, $3 config file (default config.yaml)
+  sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" -e "s|@ITER@|$2|g" \
+      "${3:-config.yaml}" > "$WORK/$1.yaml"
 }
-run_arm() { # $1 stem, $2 iterations
-  emit "$1" "$2"
+run_arm() { # $1 stem, $2 iterations, $3 config file (optional; set -u is on, hence the default)
+  emit "$1" "$2" "${3:-}"
   "$WTM" "$WORK/$1.yaml" > "$WORK/$1.err" 2>&1 \
     || { echo "RUN FAILED: $1 (iterations=$2)"; tail -3 "$WORK/$1.err"; exit 2; }
 }
@@ -58,12 +65,23 @@ echo "=== coupling iteration: does the step re-solve against its own surface wat
 run_arm k1 1
 run_arm k2 2
 run_arm k3 3
+# THE TRANSIENT ARMS, and they are what makes RAN mean anything. The equilibrium arms above spend
+# 130 of their 131 steps with the carrier EXACTLY ZERO -- measured, by tracing the lag-chain decision
+# -- because the lake reaches its sill in one adaptive step and then sits there with nothing for
+# FillSpillMerge to move. RAN used to pass on those arms only because the iteration was re-solving
+# identical systems 130 times; once the model stopped doing pointless work, the ratio fell to 1.008
+# and the guard fired. It was right to. config_transient.yaml holds dt fixed at 1/32 yr and stops at
+# 1 yr, so the run stays in the FILLING regime the fixture was built to provide.
+run_arm t1 1 config_transient.yaml
+run_arm t2 2 config_transient.yaml
 
 # SOLVER CALLS PER ARM. Counted from the solver's own per-solve line, not from a timer: wall time on
 # a 24x24 fixture rounds to 0.0 s and could not tell a doubled cost from a dead loop.
 n1=$(grep -a -c 'Number of nonlinear iterations' "$WORK/k1.err")
 n2=$(grep -a -c 'Number of nonlinear iterations' "$WORK/k2.err")
 n3=$(grep -a -c 'Number of nonlinear iterations' "$WORK/k3.err")
+t1=$(grep -a -c 'Number of nonlinear iterations' "$WORK/t1.err")
+t2=$(grep -a -c 'Number of nonlinear iterations' "$WORK/t2.err")
 
 # SPREAD: 0   measured 2026-09-23 -- a repeat run of the k=2 arm reproduced both the final water
 #             table (max|Δwtd| = 0.000e+00 m) and the solver-call count (252) exactly. Headroom here
@@ -72,7 +90,27 @@ n3=$(grep -a -c 'Number of nonlinear iterations' "$WORK/k3.err")
 #   physics -- it is the non-vacuity guard. A DEAD loop gives a ratio of exactly 1.000, because k=2
 #   would run one pass like k=1. Measured n2/n1 = 252/131 = 1.924. The bound sits in that gap: 1.5 is
 #   50% above the dead value and 22% below the measured one, so neither edge is close.
-RAN_MIN="${RAN_MIN:-1.5}"   # solver calls at k=2 relative to k=1
+# RE-DERIVED 2026-09-24 AND MOVED TO THE TRANSIENT ARMS. The old bound was measured on the
+#   EQUILIBRIUM arms (252/131 = 1.924) and it was measuring waste: 130 of those 131 steps carry no
+#   lag at all, and the iteration was re-solving each of them a second time to reach the same
+#   answer. Once the model declined that work the ratio fell to 132/131 = 1.008 and this guard fired,
+#   correctly -- but a guard that only passes while the model wastes work is not a guard.
+# SPREAD: 0   measured 2026-09-24 -- a repeat of BOTH transient arms reproduced the solver-call
+#             counts exactly (32 and 54) and the final water table to 0.000e+00 m.
+# DERIVED 2026-09-24, SEPARATING: on config_transient.yaml, t1 = 32 solves (32 steps, one pass each)
+#   and t2 = 54, so 22 of the 32 steps actually iterate and the ratio is 1.688. A DEAD loop still
+#   gives exactly 1.000. 1.35 sits in that gap: 35% above the dead value and 20% below the measured
+#   one, so neither edge is close. The detail string reports the step count, not just the ratio,
+#   because "22 of 32 steps carried a lag" is the fact this asserts.
+RAN_MIN="${RAN_MIN:-1.35}"   # solver calls at k=2 relative to k=1, on the TRANSIENT arms
+# SPREAD: 0   measured 2026-09-24 with the transient bound above.
+# DERIVED 2026-09-24, SEPARATING, and this is the OTHER half of RAN -- it pins the lag-chain guard
+#   (#112) from the opposite side: where there is NO lag, the iteration must NOT cost anything. On
+#   the equilibrium arms the carrier is exactly zero on 130 of 131 steps, so k=2 may spend at most
+#   the one step that does carry a delta: measured k2-k1 = 1 extra solve. WITHOUT the guard the same
+#   arms measured 252-131 = 121 extra. 10 is 10x above the measured 1 and 12x below the 121 that
+#   iterating-regardless produces, so it separates the two regimes with room on both sides.
+EQ_EXTRA_MAX="${EQ_EXTRA_MAX:-10}"   # extra solver calls at k=2 on the EQUILIBRIUM arms
 # SPREAD: 0   measured 2026-09-23; see the note at this file's first bound.
 # DERIVED 2026-09-23, SEPARATING: a fixture that stopped ponding gives 0 cells, and this one gives
 #   168 (at a max depth of 4.000 m, which is exactly sill 96 - floor 92, so the lake is full). 50 is
@@ -98,9 +136,11 @@ CONS_TOL="${CONS_TOL:-1e-10}"   # |exact budget residual| / recharge, at every a
 K1=$(ls "$WORK"/k1_*.tif | tail -1); K2=$(ls "$WORK"/k2_*.tif | tail -1); K3=$(ls "$WORK"/k3_*.tif | tail -1)
 
 RAN_MIN="$RAN_MIN" LAKE_MIN="$LAKE_MIN" INVAR_TOL="$INVAR_TOL" CONS_TOL="$CONS_TOL" \
-N1="$n1" N2="$n2" N3="$n3" "$PY" - "$K1" "$K2" "$K3" "$WORK/k1.txt" "$WORK/k2.txt" "$WORK/k3.txt" <<'PY'
+EQ_EXTRA_MAX="$EQ_EXTRA_MAX" N1="$n1" N2="$n2" N3="$n3" T1="$t1" T2="$t2" "$PY" - "$K1" "$K2" "$K3" "$WORK/k1.txt" "$WORK/k2.txt" "$WORK/k3.txt" <<'PY'
 import sys, os, numpy as np, rasterio
 ran_min = float(os.environ["RAN_MIN"]); lake_min = float(os.environ["LAKE_MIN"])
+eq_extra_max = int(os.environ["EQ_EXTRA_MAX"])
+t1n, t2n = int(os.environ["T1"]), int(os.environ["T2"])
 invar_tol = float(os.environ["INVAR_TOL"]); cons_tol = float(os.environ["CONS_TOL"])
 n1, n2, n3 = (int(os.environ[k]) for k in ("N1", "N2", "N3"))
 w1, w2, w3 = [rasterio.open(p).read(1).astype(float) for p in sys.argv[1:4]]
@@ -124,9 +164,13 @@ lake = int((w1 > 1e-6).sum())
 ratio = n2 / n1 if n1 else 0.0
 r1, r2, r3 = resid(sys.argv[4]), resid(sys.argv[5]), resid(sys.argv[6])
 
-check("RAN (k=2 costs more solves than k=1)", ratio > ran_min,
-      f"solver calls {n1} -> {n2} -> {n3}, ratio n2/n1 = {ratio:.3f} (tol RAN_MIN={ran_min})"
-      f" -- a DEAD iteration would give exactly 1.000")
+t_ratio = t2n / t1n if t1n else 0.0
+check("RAN (the passes are real, in the regime that HAS a lag)", t_ratio > ran_min,
+      f"transient arms: {t1n} -> {t2n} solver calls, so {t2n - t1n} of {t1n} steps iterated"
+      f" (ratio {t_ratio:.3f}, tol RAN_MIN={ran_min}) -- a DEAD iteration gives exactly 1.000")
+check("NO LAG, NO COST (the #112 guard declines pointless passes)", (n2 - n1) <= eq_extra_max,
+      f"equilibrium arms: {n1} -> {n2} -> {n3} solver calls, so k=2 spent {n2 - n1} extra"
+      f" (tol EQ_EXTRA_MAX={eq_extra_max}) -- iterating regardless measured 121 extra")
 check("LAKE (the fixture ponds water)", lake >= lake_min,
       f"{lake} cells with standing water, max depth {w1.max():.3f} m (tol LAKE_MIN={lake_min})")
 check("INVARIANT (iterating does not move the converged answer)", max(d2, d3) < invar_tol,
