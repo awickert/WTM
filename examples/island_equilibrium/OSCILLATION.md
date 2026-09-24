@@ -312,6 +312,70 @@ per-sub-step vs per-cycle artefact in the lakeshore flicker. Runs here now set `
 - **The two-cell reduction settles at `A = −32.8, B = 0`**, which is not where the real cells sit (they
   cycle 0 to −24.5). A null in the reduction does not prove a null in the model.
 
+## THE PLAN FROM HERE (2026-09-24)
+
+The candidate list is now short, and every step below states what result would KILL it. Ordered by
+cost x decisiveness, not by how interesting it is.
+
+**Already excluded -- do not re-walk.** Time discretisation (4x refinement, row 3; and 52x, weekly vs
+annual, 0.3%); solve convergence (10 000x tighter, row 6); a lagged nonlinear coefficient (same);
+collector choice (all three agree to 0.09 m); FSM outlet switching (row 2); the pre-FSM metric (row
+1); open-water evaporation magnitude and the ponding allowance (R1/R3 -- but note these are
+INCONCLUSIVE rather than refuted, since the cells never reach the surface); the extinction taper (R4);
+the reduction's SIZE (three sizes tried, all settle).
+
+### A. Is it the reduction's FIXED BOUNDARY?  (hours, no model runs)
+
+`benchmark/chain_numerics` freezes 19 cells at their measured time-means because they move < 0.1 m.
+**Small amplitude is not small influence** -- a boundary moving 0.1 m in phase with the driver can
+pump the system, and I verified amplitude, never influence. Sweep `FREE_MIN` 0.1 -> 0.03 -> 0.01 ->
+0.003, growing the free set from 13 cells toward the whole island, and watch the driver's span.
+
+  - KILLS IT: the span stays < 0.1 m at every size. Then the continuous physics is exonerated at all
+    scales and the answer is in the discretisation or the implementation.
+  - CONFIRMS IT: the span climbs toward 24.5 m as the boundary recedes. Then there is a domain size
+    at which the local physics does carry the cycle, and the reductions were all simply clamped.
+
+### B. Which SUBSYSTEM?  (~6 min per arm -- the cheapest decisive test available)
+
+The annual restart from the settled state reproduces the cycle in 630 steps / 6 minutes. That makes a
+one-at-a-time ablation affordable for the first time. Disable, separately: the storativity surface
+smoothing (`solver.smoothing.storativity_surface`, untested and centred exactly where the driver
+turns), the ET sigmoid, `runoff_ratio` (half the forcing), the surface-transition taper, and
+`dev.storage_form`. Each arm: does the 24.5 m cycle survive?
+
+  - Any arm that kills the cycle localises the mechanism to one code path in one run.
+  - All arms survive: the mechanism is in the core groundwater discretisation, not an add-on.
+
+### C. Is the REMOVAL a feedback, or just a sink?  (one code probe + 2 runs)
+
+Removal is NECESSARY (both removers off -> the driver rests ponded at +0.042 m and nothing cycles),
+but the reductions model it as a fixed-head cap and they settle. The untested distinction: in the
+model, is the removal RATE at the pinned cells constant, or does it oscillate in phase with the
+driver? Instrument per-cell removal over one period, then replace the state-dependent clamp with a
+FIXED extraction at its own time-mean.
+
+  - KILLS the feedback story: the cycle survives fixed-rate extraction -> removal is a passive sink
+    and the cap treatment in the reductions was fair.
+  - CONFIRMS it: the cycle dies -> the loop runs THROUGH the remover, which no reduction here has.
+
+### D. Is it the SPATIAL discretisation?  (a day; the one axis never tested)
+
+Every refinement so far has been in TIME. The cycle lives on 687 x 928 m cells with `fdepth` ~5 m and
+200-600 m topographic drops between neighbours -- a hillslope resolved by about one cell. Refine the
+DEM 2x and 4x and re-run. Note this is not a pure refinement: resampling changes slope, hence
+`fdepth`, hence `T`. So the control is to coarsen the refined result back and check it reproduces the
+coarse run before comparing cycles.
+
+  - KILLS the physics story: the cycle weakens or vanishes with resolution -> it is a
+    spatial-discretisation artefact of an under-resolved hillslope, which would also explain why no
+    continuous reduction reproduces it.
+  - CONFIRMS it: amplitude and period converge -> it is real physics the reductions keep missing.
+
+**Order: A, then B, then C, then D.** A is nearly free and could dissolve the puzzle; B is cheap and
+localises; C tests the one mechanism the reductions structurally cannot express; D is the most
+expensive and the most likely to be definitive if A-C all come back null.
+
 ## No model change is implied
 
 The behaviour is `dt`-invariant, coupling-invariant, collector-invariant, ponding-invariant, and
