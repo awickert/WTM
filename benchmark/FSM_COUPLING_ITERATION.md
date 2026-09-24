@@ -973,3 +973,26 @@ produced confident, wrong conclusions that were reported and then withdrawn:
 **The rule that follows: read and write the ARRAY (`dmdapack.fsm_delta_dist`), never the Vec.** The
 shipped guard does this. And verify a knob BITES before believing what it says -- the same discipline
 the suites already apply to their own assertions, applied to diagnostics.
+
+**AMENDMENT 17b — WITHDRAWN: the iteration did NOT repair FillSpillMerge's L-R asymmetry.**
+
+Before the lag-chain guard, `fsm_exit_path`'s centre L-R xfail was measured at **2.4441e-07 m** under
+the default against **7.2081e+00 m** lagged -- a collapse of seven orders of magnitude, reproduced on
+a second geometry (`centre_eq`, 8.4277e+00 -> 2.9311e-07) and on both axes. It was reported as the
+iteration having all but removed the tie-break asymmetry of #64, and the xfail was to be restated
+around it.
+
+**It does not survive the fix.** Re-measured with the guard in, same fixture, same 128 fixed steps:
+
+    centre      iterations 1   L-R 7.2081e+00     iterations 4   L-R 7.0289e+00   (2.5% apart)
+    centre_eq   iterations 1   L-R 8.4277e+00     iterations 4   L-R 8.4134e+00   (0.2% apart)
+
+The near-symmetric answer was the model sitting on the far side of the cold-start orbit -- an
+artefact of iterating the initial sweep, which the guard now prevents -- and not a property of the
+iteration at all. #64's arbitrary tie-break is untouched, the xfail is NOT stale, and the suite passes
+unchanged at the default.
+
+Worth keeping as a caution: the artefact was *pleasing* -- a large, clean, reproducible improvement on
+a known defect, on two geometries and two axes. Reproducibility across fixtures did not make it real,
+because every one of those runs shared the same bug. A result that confirms what you were hoping for
+deserves the re-measurement first, not last.
