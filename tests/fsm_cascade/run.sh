@@ -28,7 +28,6 @@ PY="${PY:-python3}"; export OMP_NUM_THREADS=1
 # no lakes, nothing spills, and every assertion here is about where spilled water ends up.
 emit() { # $1 stem -- ONE arm, run at several rank counts; the rank count is not a config setting
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" config.yaml > "$WORK/$1.yaml"
-  apply_test_iterations "$WORK/$1.yaml"
 }
 emit skim
 "$WTM" "$WORK/skim.yaml" > "$WORK/skim.err" 2>&1 \

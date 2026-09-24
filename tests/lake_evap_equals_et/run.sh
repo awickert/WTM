@@ -49,7 +49,6 @@ emit () { # $1 region, $2 tag, $3 et_sigmoid.wtd_center, $4 et_sigmoid.logistic_
   sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|${rg}_${tg}|g" \
       -e "s|@REGION@|$rg|g" -e "s|@WTDC@|$wc|g" -e "s|@WIDTH@|$lw|g" \
       config.yaml > "$WORK/${rg}_${tg}.yaml"
-  apply_test_iterations "$WORK/${rg}_${tg}.yaml"
   "$WTM" "$WORK/${rg}_${tg}.yaml" > "$WORK/${rg}_${tg}.log" 2>&1 \
     || { echo "RUN FAILED: $rg $tg"; tail -5 "$WORK/${rg}_${tg}.log"; exit 2; }
 }

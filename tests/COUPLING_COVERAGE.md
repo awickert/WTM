@@ -49,7 +49,7 @@ template it with a `continuous` arm. The rest are INERT and need no thought beyo
 | `coupling_convergence` | INVARIANT | how FSM's result reaches the solver -- again routing, not the pass count |
 | `newton_solver` | INVARIANT | Jacobian and contract; routing is one dial among several |
 
-## WHAT THIS REPLACED
+## WHAT THIS REPLACED (removed 2026-09-24)
 
 The `WTM_TEST_ITERATIONS` override and its `apply_test_iterations` helper existed to run seven
 suites a second time under the default. It did its job -- it is what found multilake's band -- but as
@@ -57,4 +57,10 @@ a permanent structure it was the wrong shape: the knowledge that a suite ran twi
 `run_all.sh`, a suite with mixed routing arms could be made vacuous by it (`active_set` and
 `xrank_growth` both were, on the first attempt), and a passing re-run mostly proved the suite still
 worked rather than that the scheme was right. With INVARIANT suites declaring the default outright,
-the override has nothing left to do.
+the override had nothing left to do, and it is now gone -- along with `run_all.sh`'s converged
+parallel pass, which re-ran those seven suites a second time.
+
+**Verified dead before removal rather than argued.** `apply_test_iterations` rewrote a line reading
+`iterations: 1`, which no longer appears in any of those configs, so it could not fire. A trace
+planted inside it printed nothing across a full 54-suite run. The suite count drops 54 -> 47 and
+every one of those seven still runs, once, under the default it declares.

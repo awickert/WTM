@@ -74,9 +74,9 @@ mkcfg() { # $1 stem, $2 dt, $3 report_interval, $4 collection.method, $5 couplin
     local cm="${4:?mkcfg needs a collection.method: active_set or the implicit control}"
     # THE COUPLING SCHEME IS PER-ARM AND EXPLICIT (#112). This suite runs BOTH -- the lagged
     # 1-pass scheme and the iterating default -- because its convergence claim is a COMPARISON
-    # between them, and a comparison cannot be made from one invocation. It is therefore NOT in
-    # run_all.sh's converged parallel pass, and does NOT call apply_test_iterations: an override
-    # would rewrite the lagged arms too and leave the suite comparing iterated against iterated.
+    # between them, and a comparison cannot be made from one invocation. That is why the arms set
+    # the key here rather than inheriting it: a suite whose SUBJECT is the difference between two
+    # schemes has to name both, and cannot take whichever one the config happens to declare.
     local it="${5:?mkcfg needs coupling.iterations: this suite compares 1 against the default}"
     sed -e "s|@INPUTS@|$INP|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
         -e "s|@DT@|$dt|g" -e "s|@REPORT@|$ri|g" \

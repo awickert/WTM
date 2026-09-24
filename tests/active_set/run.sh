@@ -121,7 +121,6 @@ emit() { # $1 stem, $2 collection.method, $3 time_step.mode, $4 routing  (ALL RE
       -e "s|^  routing: continuous|  routing: $rt|" \
       -e "s|^    iterations: 4|    iterations: $(coupling_iters_for "$rt")|" \
       "${dials[@]}" config.yaml > "$WORK/$1.yaml"
-  apply_test_iterations "$WORK/$1.yaml"
 }
 run() { # stem  collector  step-mode  routing  [extra-flags]
   emit "$1" "$2" "$3" "$4"

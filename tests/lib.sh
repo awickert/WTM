@@ -287,15 +287,6 @@ make_work() {
     trap _wtm_work_cleanup EXIT
 }
 
-# #112 -- THE CONVERGED PARALLEL PASS. run_all.sh runs the continuous suites a SECOND time with
-# WTM_TEST_ITERATIONS set, so each suite states its claims under the iterating default as well as
-# under the lagged one it was written for. Call this on every emitted config.
-#
-# GUARDED ON THE ROUTING THE CONFIG ACTUALLY RESOLVED TO, and that is not fussiness: several suites
-# carry MIXED arms (active_set and xrank_growth each emit `impulse` arms alongside continuous ones),
-# and `iterations: > 1` is REFUSED under impulse and off. A blanket override made those suites fail
-# with a config refusal that said nothing about the physics -- which is a harness error wearing the
-# costume of a finding. Here the impulse arms stay at 1 and only the continuous ones iterate.
 # The coupling iteration (#112) exists ONLY to remove the lag in `continuous` routing:
 # FillSpillMerge's per-cell volume change is handed to the NEXT step as a source, and the
 # extra passes retire that lag.  Under `impulse` (the water table is overwritten in place)
@@ -310,9 +301,3 @@ coupling_iters_for() {   # $1 = the arm's routing
     esac
 }
 
-apply_test_iterations() {   # $1 = the emitted config
-    local f="$1" n="${WTM_TEST_ITERATIONS:-1}"
-    [ "$n" = "1" ] && return 0
-    grep -q "^  routing: continuous" "$f" || return 0
-    sed -i "s|^    iterations: 1.*|    iterations: $n   # PER-ARM (#112): the converged parallel pass|" "$f"
-}

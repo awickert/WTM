@@ -178,38 +178,14 @@ run "local-in-space water ledger"   ./local_ledger/run.sh "$WTM"
 run "Newton Jacobian + contract"    ./newton_solver/run.sh "$WTM"
 run "combination sweep"             ./combination_sweep/run.sh "$WTM"
 
-# ---------------------------------------------------------------------------------------------
-# THE SAME SUITES AGAIN, UNDER THE CONVERGED DEFAULT (#112). Andy, 2026-09-23: "Current configs are
-# for 1, and should have versions in parallel built for convergence."
+# THE CONVERGED PARALLEL PASS IS GONE (#112 phase 3). It ran seven `routing: continuous` suites a
+# SECOND time with WTM_TEST_ITERATIONS=4, because every config then DECLARED `iterations: 1` and the
+# first pass therefore only ever measured the lagged scheme. Those suites now declare the shipped
+# default themselves, so the first pass IS the converged pass and the second was pure duplication.
 #
-# Every suite config DECLARES `iterations: 1`, so the first pass above measures the LAGGED scheme and
-# is unaffected by the default flip -- which is why no golden moved. This second pass re-emits the
-# same configs with the iterating default and runs the SAME assertions against it, so each suite
-# states its claim under both schemes rather than only the one it was written for.
-#
-# ONLY `routing: continuous` SUITES APPEAR HERE, and that is forced rather than chosen: `impulse`
-# and `off` have no lagged source to iterate against, and an explicit `iterations: > 1` there is
-# refused by name. `taper` is absent for a different reason -- it emits its configs from
-# taper_test.py rather than a sed line, so the override has nowhere to attach; that is a gap, not a
-# judgement. `coupling_iteration` is absent because it already runs both schemes as its subject.
-echo
-echo "=== the continuous suites again, under the CONVERGED default (iterations > 1) ==="
-# multilake is NOT here: it runs BOTH schemes itself, because two of its assertions COMPARE them
-# and an override would leave it comparing iterated against iterated.
-#
-# WRITTEN OUT, ONE `run` PER LINE, NOT A LOOP -- and that is load-bearing. EXPECTED_SUITES is
-# `grep -c '^run "'`, so a loop (or an inline `VAR=x run ...` prefix) declares ZERO suites while
-# running eight, and the SUITE COUNT MISMATCH guard fires every time. It did, on three consecutive
-# runs, while I read the rc=1 as something else. The variable is EXPORTED for the block instead.
-export WTM_TEST_ITERATIONS=4
-run "converged: active_set"          ./active_set/run.sh "$WTM"
-run "converged: fsm_cascade"         ./fsm_cascade/run.sh "$WTM"
-run "converged: fsm_consistency"     ./fsm_consistency/run.sh "$WTM"
-run "converged: fsm_fullness"        ./fsm_fullness/run.sh "$WTM"
-run "converged: lake_evap_equals_et" ./lake_evap_equals_et/run.sh "$WTM"
-run "converged: xrank_adaptive"      ./xrank_adaptive/run.sh "$WTM"
-run "converged: xrank_growth"        ./xrank_growth/run.sh "$WTM"
-unset WTM_TEST_ITERATIONS
+# VERIFIED DEAD BEFORE REMOVAL, not assumed: apply_test_iterations rewrote `iterations: 1`, which no
+# longer appears in any of those configs, so the override could not fire. A trace planted in it
+# printed nothing across a full 54-suite run. The override and its helper are removed with the pass.
 run "nested DH + skim spill-accuracy" ./fsm_fullness/run.sh "$WTM"
 run "cascade A->B->ocean (skim)"    ./fsm_cascade/run.sh "$WTM"
 
