@@ -514,9 +514,9 @@ defects to be worked around, and the second and third can invalidate a naive dt-
   the *next* step's recharge source, so a step never sees its own runoff: the coupling is lagged by one
   step. Setting `iterations: k` snapshots the state, solves, runs FSM, rolls back everything **except**
   FSM's volume change, and re-solves the same step with that as its source – a fixed-point iteration on
-  the coupling. **`1` is the default and is byte-identical to the previous model** (`golden` 35/35
-  unmoved); there is no `0`, and `> 1` is refused by name under `impulse` and `off`, where no lagged
-  source exists to iterate against. Each extra pass is a full groundwater re-solve, not an extra FSM
+  the coupling. **The default is `4`**; `1` selects the lagged scheme and is byte-identical to the
+  pre-iteration model (`golden` 35/35 unmoved). There is no `0`, and `> 1` is refused by name under
+  `impulse` and `off`, where no lagged source exists to iterate against. Each extra pass is a full groundwater re-solve, not an extra FSM
   call – FSM is 0.142% of a cycle at 384,703 cells – so `k` passes cost roughly `k` times the step.
   The lag is **definitionally transient-only**: at equilibrium `w_{n+1} = w_n`, so `FSM(w_n)` and
   `FSM(w_{n+1})` are the same array. Measured on `tests/fsm_cascade`, iterations 1 / 2 / 3 reach a
@@ -524,7 +524,23 @@ defects to be worked around, and the second and third can invalidate a naive dt-
   paths – 70, 184 and 212 solver calls over 4, 15 and 7 steps. The rollback carries a measured set of
   18 PETSc vectors plus eleven scalars, and **checks at runtime** that nothing outside that set moved,
   because the set depends on the configuration and an unmeasured one would lose water silently.
-  Design and its seven amendments: `benchmark/FSM_COUPLING_ITERATION.md`.
+  **The first two steps of a run never iterate, and that is a correctness requirement rather than an
+  optimisation.** The iteration exists to retire the one-step lag, and a run does not begin with one:
+  the carrier is zeroed at startup, so step 0 consumes nothing and instead performs the ONE-TIME
+  disposal of the initial condition's surface water, while step 1's source *is* that disposal, handed
+  over late. Neither is a lag. The coupling map's multiplier is ~-1, so it does not converge – it
+  **alternates**, with amplitude equal to whatever FillSpillMerge must move. On a ponded initial
+  condition (`tests/newton_solver`: 196 of 256 cells start under 5 m of water, swept into 16 lake
+  cells in a single step) that amplitude is 828, against 0.09–0.38 once the run is in its lagged
+  regime. Iterating there commits an arbitrary point on an 828-wide oscillation, and `solver.method:
+  newton` then **aborts** on the following step with `DIVERGED_LINE_SEARCH` – the Jacobian reports a
+  descent slope of -36.3 while the residual rises at a measured, constant +0.185. Anderson has no line
+  search and never noticed. The guard is structural, not a tuned step count: iterate once the
+  *previous* step consumed a delta. No threshold, and `iterations: 1` is untouched.
+
+  Design and its seventeen amendments: `benchmark/FSM_COUPLING_ITERATION.md`. Which suite certifies
+  which coupling scheme, and the rule that `iterations` must follow `routing` per arm:
+  `tests/COUPLING_COVERAGE.md`.
 
 - **`tests/route_equality` – a config key and the flag it abstracts must produce the same run.** All
   eight `ABSTRACTED` flags are now asserted **byte-identical** between their two routes, plus a positive
