@@ -58,7 +58,15 @@ feedback or a sink), D (spatial refinement — the only axis never tested).
 | `benchmark/twocell_numerics/twocell.py` | SUPERSEDED as a reduction (3 defects), but KEPT: its lagged-T sweep is still the oracle for "can the discretisation do this?" |
 | `examples/island_equilibrium/_work_corsica/` | **GITIGNORED but PERSISTS on disk.** Holds the 20 000 yr run and the restart raster `anderson_fixed_dt31536000_eq_n1_000002000_20000yr.tif`, plus `cfg_REPRO_*.yaml` |
 
-### REPRODUCE (the /tmp outputs, 895 MB, are GONE after that session — regenerate)
+### RAW DATA — kept, untracked, at `examples/island_equilibrium/_work_111/`
+
+The run output the #111 numbers came from was MOVED out of the dead /tmp path and now lives in
+`examples/island_equilibrium/_work_111/` (895 MB; gitignored by `_work_*/`, so it persists on disk but
+never enters git): `annual_restart_630yr/` (631 rasters, the cycle) and `weekly_zoom_yr131_166/`
+(1821 rasters, the fall resolved), plus both repro configs and **`READINESS.md`**, the handoff
+readiness test worked through item by item. So the measurements can be RE-DERIVED rather than trusted.
+
+### REPRODUCE (if the raw data is ever lost)
 
 - **Annual restart, 6 min, 630 yr, shows the cycle:** `build/wtm.x` on
   `_work_corsica/cfg_REPRO_annual_restart.yaml`. Restarts from the 20 000 yr raster,
