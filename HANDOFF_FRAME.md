@@ -49,6 +49,20 @@ their time-means because they move <0.1 m, but **small amplitude is not small in
 amplitude was ever verified. Then steps B (subsystem ablation, ~6 min per arm), C (is removal a
 feedback or a sink), D (spatial refinement — the only axis never tested).
 
+### OPEN, PARKED ON ANDY — pending, NOT declined
+
+- **#124** — `dt_min` is the wrong SHAPE (an error target, not a step size, sets how small dt goes).
+  `boundary_consistency` is running on a TEMPORARY `dt_min: "0s"`, and a green suite must not make
+  that permanent. Options A/B/C (not four): B applied temporarily; C done, and it refuted deriving
+  the floor from `error_tol`.
+- **#127** — the ramp path RECORDS a `dt_min` it never reads: a provenance value that looks consulted
+  and is not.
+- **#128** — a BACKUP POLICY for `~/.claude`, which Andy asked for AFTER this compaction. The
+  directory is not version-controlled, so the global `debugging` skill and every project memory are
+  unbacked; `~/misc/claude-config-backup-2026-09-24/` is a snapshot, not a policy. Scope, mechanism
+  and whether anything leaves the machine are Andy's calls — transcripts and credentials must be
+  decided separately before any `git init`. See the task for the full framing.
+
 ### ARTIFACT ROLES
 
 | artifact | role |
