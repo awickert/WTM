@@ -51,9 +51,10 @@ transmissivity:
   additive_background_transmissivity: 0   # baseline (tests/CONFIG_BASELINE.md)
 surface_water:
   coupling:
-    iterations: 1   # the LAGGED coupling: a step uses the PREVIOUS step's FillSpillMerge
-                    # output (#112). Declared because it is resolved for every run, and an
-                    # absent key would leave this suite silent about which scheme it measures.
+    iterations: @ITERS@   # PER-ARM, and it FOLLOWS the routing above: the shipped default 4
+                    # where routing is continuous, else 1 (the model refuses an explicit >1 where
+                    # there is no lagged source to iterate against).  Emitted by coupling_iters_for
+                    # in lib.sh; see tests/COUPLING_COVERAGE.md for the rule and the classification.
   routing: @ROUTING@
   runoff_ratio: 0   # PER-CASE: 0, or the raster for the runoff cases
   collection:

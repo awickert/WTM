@@ -28,7 +28,7 @@ fail=0
 
 emit() {  # $1 stem  $2 geometry  $3 mode  $4 dt  $5 nstep  $6 routing
   sed -e "s|@INPUTS@|$(readlink -f inputs_$2)|g" -e "s|@WORK@|$WORK|g" -e "s|@STEM@|$1|g" \
-      -e "s|@MODE@|$3|g" -e "s|@DT@|$4|g" -e "s|@NSTEP@|$5|g" -e "s|@ROUTING@|$6|g" config.yaml > "$WORK/$1.yaml"
+      -e "s|@MODE@|$3|g" -e "s|@DT@|$4|g" -e "s|@NSTEP@|$5|g" -e "s|@ROUTING@|$6|g" -e "s|@ITERS@|$(coupling_iters_for "$6")|g" config.yaml > "$WORK/$1.yaml"
   grep -q '@' "$WORK/$1.yaml" && { echo "  FAIL  $1: unsubstituted token in config" >&2; fail=1; return 1; }
   "$WTM" "$WORK/$1.yaml" > "$WORK/$1.log" 2>&1 \
     || { echo "  FAIL  $1: run did not complete"; tail -3 "$WORK/$1.log" | sed 's/^/        /'; fail=1; return 1; }
