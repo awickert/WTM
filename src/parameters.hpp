@@ -242,6 +242,14 @@ struct Parameters {
   // visible in the run rather than inferred: with the outer stop active a step usually takes 2, and
   // the cap is only reached where the coupling is still moving.
   int64_t coupling_passes_total = 0;
+  // THE LAG CHAIN. The iteration exists to retire the ONE-STEP LAG in the continuous coupling, so it
+  // is only meaningful once there IS a lag. A run does not start with one: the carrier is zeroed at
+  // startup, so step 0 consumes nothing and instead performs the one-time disposal of the initial
+  // condition's surface water, and step 1's source IS that disposal, handed over late. Neither is a
+  // lag, and iterating against them is iterating against an initialisation transient. This records
+  // whether the PREVIOUS step consumed a delta; the step after that one is the first in the steady
+  // lagged regime. See benchmark/FSM_COUPLING_ITERATION.md (AMENDMENT 17) for the measurements.
+  bool    coupling_prev_step_consumed_delta = false;
   double  runoff_ratio_uniform = -1.0;  // >=0: uniform runoff ratio everywhere; <0: read the runoff_ratio raster
   std::string initial_wt_path;          // run.initial_water_table: <path> -> load the starting WT from this file
   std::string verbosity = "normal";     // output.verbosity: quiet | normal | verbose (console/log chatter level)

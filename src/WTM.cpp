@@ -346,6 +346,22 @@ static void accumulate_into_owned(AppCtx& user_context, const T* full_r0, PetscS
   DMDAVecRestoreArray(user_context.da, user_context.wtd_global, &scratch);
 }
 
+// Does the carrier hold anything for this step to consume? Read through the ARRAY, not the Vec:
+// DMDA_Array_Pack keeps fsm_delta_dist checked out via DMDAVecGetArray for the whole run, so the Vec's
+// object state never advances and VecNorm hands back a stale cached value -- measured returning 0.0
+// while the carrier plainly held -7.55e+02. The test is against exact zero and needs no tolerance: the
+// carrier is VecSet to 0.0 at startup and is only ever written by FillSpillMerge's delta.
+static bool coupling_carrier_is_nonzero(AppCtx& user_context, DMDA_Array_Pack& dmdapack) {
+  const auto [xs, ys, xm, ym] = get_corners(user_context.da);
+  int local_any = 0;
+  for (int j = ys; j < ys + ym && !local_any; j++)
+    for (int i = xs; i < xs + xm; i++)
+      if (dmdapack.fsm_delta_dist[j][i] != 0.0) { local_any = 1; break; }
+  int global_any = 0;
+  MPI_Allreduce(&local_any, &global_any, 1, MPI_INT, MPI_MAX, PETSC_COMM_WORLD);
+  return global_any != 0;
+}
+
 // Per-timestep surface-water coupling (tight coupling: FillSpillMerge runs EVERY step -- see
 // benchmark/FSM_EVERY_STEP_DESIGN.md). Assemble the water table on rank 0, hand this step's above-surface
 // removal to FSM, run FillSpillMerge (timed into fsm_seconds), scatter the post-FSM table back, then set the
@@ -877,7 +893,26 @@ void update(
   // Returns the solver's iteration count, or -1 if the step was REJECTED (the callers handle that;
   // the fixed loop cannot reject).
   const auto take_step = [&]() -> int {
-    const int passes = (params.fsm_on && params.coupling_iterations > 1) ? params.coupling_iterations : 1;
+    int passes = (params.fsm_on && params.coupling_iterations > 1) ? params.coupling_iterations : 1;
+    // ONLY ITERATE ONCE THERE IS A LAG TO RETIRE (#112, AMENDMENT 17). Does this step consume a
+    // carrier at all, and did the step before it? Measured on newton_solver's ponded fixture (196 of
+    // 256 cells start under 5 m of surface water):
+    //
+    //     step 0  consumes 0 (the carrier is zeroed at startup) and SWEEPS the initial surface water
+    //             into lakes in one go -- 180 cells drained, delta -7.5547e+02, peak 5.0988 m/cell
+    //     step 1  consumes that sweep as its source; its own delta is 1.8944e-01
+    //     step 2  consumes 1.8944e-01 and produces 2.7876e-01 -- both sides ordinary at last
+    //
+    // The coupling map has multiplier ~-1, so it does not converge, it ALTERNATES, with amplitude set
+    // by however much FillSpillMerge must move: 8.286e+02 at step 0 against 3.79e-01 / 2.24e-01 /
+    // 9.18e-02 at steps 1/2/3. Iterating at step 0 therefore commits an arbitrary point on an
+    // 828-wide oscillation, and Newton's line search cannot solve the next step's second pass from
+    // it (Anderson has no line search, so it never notices). That initial sweep is not an error to be
+    // resolved -- it is the model making a deliberately abrupt departure from an unphysical initial
+    // condition, and it should stay abrupt. Measured boundary: iterating from step 2 runs 20 cycles
+    // with 0 divergences; from step 1 the run goes degenerate; from step 0 it aborts.
+    const bool consumes_delta = coupling_carrier_is_nonzero(user_context, dmdapack);
+    if (!params.coupling_prev_step_consumed_delta) passes = 1;
     wtm::CouplingSnapshot    scal;
     wtm::CouplingVecSnapshot vecs;
     if (passes > 1) {
@@ -964,6 +999,8 @@ void update(
     params.solves_done++;
     if (user_context.budget_trace) budget_trace_emit(params, trace);
     params.coupling_passes_total += passes_taken;
+    // Only reached on an ACCEPTED step: a reject returns above, leaving the chain where it was.
+    params.coupling_prev_step_consumed_delta = consumes_delta;
     return its;
   };
 
