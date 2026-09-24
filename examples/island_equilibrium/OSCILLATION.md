@@ -204,6 +204,45 @@ outlet (to C), backs up, and pins, while the real (121,63) drains in four direct
 visit, which is exactly the caveat twocell.py states about itself; what is new is knowing WHICH way the
 mismatch runs and WHY.
 
+### AND THE REDUCTION'S FIXED POINT IS NOT PHYSICAL — it is the discard absorbing a shut boundary
+
+Andy, on the uncapped run piling to +283 m: *"Is this because you grabbed just two cells without
+opening their other boundaries?"* Yes, and it is measurable.
+
+B's only outlet is to C, and C is held at `hC = -30` — 30 m below its OWN surface — which throttles
+the interface transmissivity:
+
+    hC = -30 (shipped)   T_C = 9.824e-07    624x smaller than T at the surface
+    hC =   0 (opened)    T_C = 6.130e-04
+
+To pass `2R` (its own recharge plus A's) through the shipped outlet, B would need `h_B ≈ +1435 m`. No
+physical head balances it, so uncapped B simply fills — monotone rising in all 1999 steps of the
+second half, ending +283 m above ground. Open the outlet (`hC = 0`) and it settles at -19.7 m instead.
+
+**With the cap on, that shut boundary is invisible, because the discard is doing the draining.** At
+the settled state, in m/yr:
+
+    recharge in (2R)          0.1200
+    out via the outlet QBC    0.0167    14%
+    out via the CAP           0.1033    86%
+    balance                   0.0000
+
+So the reduction's "stable fixed point at A = -32.8, B = 0" is not the local physics reaching
+equilibrium. It is 86% of the water being thrown away at B's surface because the only way out is
+closed. A fixed point held up by a discard is not evidence that the physics has one.
+
+**That is the THIRD independent reason this reduction cannot speak to corsica**, and they stack:
+
+1. B pins at the cap, so the system is scalar in `h_A` — and a scalar autonomous ODE cannot oscillate.
+   The null was guaranteed before any physics was evaluated.
+2. Two cells cannot carry a five-cell mode. The real oscillation is a stripe down column 63 —
+   amplitudes 5.97 / **24.48** / 12.70 / 5.13 / 1.17 at rows 119–123 — peaking at A and decaying both
+   ways. A and B are a two-cell slice through it.
+3. Its equilibrium is maintained by discarding 86% of the inflow through a boundary that is shut.
+
+None of these is about the physics being wrong. All three are about the REDUCTION being the wrong
+shape, and each one alone is enough to void its result.
+
 **So the open question is now specific:** what sustains a 24.5 m cycle in cells that are well drained,
 never reach the surface, and sit next to pinned cells that do not move? An adequate reduction has to
 reproduce a FREE, well-drained B — four outlets, not one — before its null means anything.
